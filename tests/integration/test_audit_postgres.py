@@ -40,7 +40,7 @@ def test_last_event_sees_uncommitted_rows_of_the_same_transaction(app_conn: PgCo
 def test_app_role_cannot_update_delete_or_truncate(app_conn: PgConn) -> None:
     persisted(app_conn)
     for sql in ("UPDATE audit_events SET release = 'x'", "DELETE FROM audit_events", "TRUNCATE audit_events"):
-        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege, match="permission denied"):
             app_conn.execute(sql)
         app_conn.rollback()
 
@@ -56,9 +56,11 @@ def test_even_the_table_owner_is_blocked_by_trigger(app_conn: PgConn,
 def test_seq_is_unique_per_run(app_conn: PgConn) -> None:
     persisted(app_conn, count=2)
     store = PgAuditEvents(app_conn)
-    dup = chain_events("run-0001", events_of("run-0001", 1), None)  # seq 0 otra vez
-    with pytest.raises(psycopg.errors.UniqueViolation):
+    fresh = [e.model_copy(update={"event_id": "evt-fresh-0001"}) for e in events_of("run-0001", 1)]
+    dup = chain_events("run-0001", fresh, None)  # seq 0 otra vez, event_id nuevo
+    with pytest.raises(psycopg.errors.UniqueViolation) as exc:
         store.append_events("run-0001", dup)
+    assert exc.value.diag.constraint_name == "audit_events_pkey"
     app_conn.rollback()
 
 

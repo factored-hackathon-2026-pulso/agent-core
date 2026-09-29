@@ -42,5 +42,9 @@ def app_conn(admin_conn: "psycopg.Connection[Any]") -> Iterator["psycopg.Connect
 
     apply_audit_schema(admin_conn, app_role=APP_ROLE)
     dsn = ADMIN_DSN.replace("agentcore:agentcore-dev-only", f"{APP_ROLE}:{APP_PASSWORD}")
+    assert dsn != ADMIN_DSN, "el DSN de aplicación no difiere del de administración"
     with psycopg.connect(dsn, autocommit=False, options=f"-c search_path={SCHEMA}") as conn:
+        row = conn.execute("SELECT current_user").fetchone()
+        assert row is not None and row[0] == APP_ROLE, "app_conn no usa el rol de aplicación"
+        conn.rollback()
         yield conn
