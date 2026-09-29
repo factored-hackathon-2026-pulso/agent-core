@@ -88,7 +88,7 @@ def verify_of(graph: FlowGraph, write: WriteToolNode) -> VerifyNode | None:
 
 
 def flow_mode(flow: Flow) -> str | None:
-    """`task` o `conversational` si todos los `end` son declarables en él; None si no hay `end` o se mezclan."""
+    """`task` o `conversational` si todos los `end` son declarables en él; None si no hay o se mezclan."""
     ends = [node for node in flow.nodes if isinstance(node, EndNode)]
     if not ends:
         return None
