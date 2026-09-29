@@ -1,9 +1,10 @@
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import timedelta
 from decimal import Decimal
 from types import TracebackType
 from typing import Protocol, Self
 
+from agent_core.domain.base import UtcDatetime
 from agent_core.domain.events import EngineEvent
 from agent_core.domain.identity import PrincipalKey
 from agent_core.domain.json import JsonValue
@@ -20,7 +21,7 @@ class UnitOfWork(Protocol):
     def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None,
                  tb: TracebackType | None) -> None: ...
 
-    def acquire_turn(self, run_id: str, turn_id: str, now: datetime, ttl: timedelta) -> None:
+    def acquire_turn(self, run_id: str, turn_id: str, now: UtcDatetime, ttl: timedelta) -> None:
         """Visible de inmediato. Otro lease vigente → `TurnInProgress`."""
         ...
 
@@ -61,11 +62,11 @@ class UnitOfWork(Protocol):
 
     def enqueue_outbox(self, message: OutboxMessage) -> None: ...
 
-    def add_usage(self, principal: PrincipalKey, cost_usd: Decimal, now: datetime) -> None:
+    def add_usage(self, principal: PrincipalKey, cost_usd: Decimal, now: UtcDatetime) -> None:
         """Suma `cost_usd` y 1 hit al principal (lo lee `CostCounters`). Lo llama M4."""
         ...
 
-    def list_inactive(self, now: datetime, limit: int) -> list[str]:
+    def list_inactive(self, now: UtcDatetime, limit: int) -> list[str]:
         """run_ids `open` con `inactive_after < now`, ordenados por `inactive_after`."""
         ...
 

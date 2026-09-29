@@ -150,3 +150,23 @@ def test_every_exported_class_and_function_has_its_own_docstring() -> None:
     """DoD M0 §10: la API pública está documentada."""
     assert _missing_docstrings(domain) == []
     assert _missing_docstrings(ports) == []
+
+
+def test_port_time_parameters_are_utc_aware_annotated() -> None:
+    """M0 §2.9: todo instante que cruza un puerto es `UtcDatetime`, no un `datetime` suelto."""
+    import datetime
+    import typing
+
+    from agent_core.domain.base import UtcDatetime
+
+    for name in ports.__all__:
+        proto = getattr(ports, name)
+        if not (inspect.isclass(proto) and Protocol in proto.__mro__):
+            continue
+        for method_name, method in vars(proto).items():
+            if not callable(method) or method_name.startswith("__"):
+                continue
+            for arg, hint in typing.get_type_hints(method, include_extras=True).items():
+                assert hint is not datetime.datetime, f"{name}.{method_name}({arg}) usa datetime plano"
+                if arg in {"now", "return"} and "datetime" in repr(hint):
+                    assert hint == UtcDatetime, (name, method_name, arg)
