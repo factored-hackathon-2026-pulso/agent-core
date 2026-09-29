@@ -1,7 +1,8 @@
 """Vistas `model`/`audit`, renderer y búsqueda de PII en claro (M7 §2, §3). Única salida de `full`."""
 
 import re
-from collections.abc import Callable
+import unicodedata
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date
 
@@ -11,6 +12,7 @@ from agent_core.domain import Fingerprint, JsonValue, OnBehalfOf, Principal, dum
 from agent_core.domain.base import Model
 from agent_core.ports import AuthzPort, Clock, KeyProvider, KeyPurpose
 from agent_core.views.classification import UNCLASSIFIED, UNTRUSTED, FieldClassifier, FieldRule, field_name
+from agent_core.views.detector import EMAIL_RE, MIN_DIGITS, digit_runs
 from agent_core.views.fingerprints import fingerprint
 from agent_core.views.quasi import Dropped, apply_quasi
 from agent_core.views.tokens import MASK, TOKEN_RE, mask, neutralize
@@ -66,6 +68,27 @@ def _neutral(value: JsonValue) -> JsonValue:
 
 def _present(value: JsonValue | Dropped) -> JsonValue:
     return None if isinstance(value, Dropped) else value
+
+
+_MIN_NEEDLE = 4
+_NUMBER_SEPARATORS = str.maketrans("", "", " .-+")
+
+
+def _leaves(value: JsonValue, path: str) -> Iterator[tuple[str, JsonValue]]:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            # Igual que `_walk`: un "." en la clave cuenta como "_" para clasificar.
+            yield from _leaves(item, f"{path}.{key.replace('.', '_')}")
+    elif isinstance(value, list):
+        for item in value:
+            yield from _leaves(item, path)
+    else:
+        yield path, value
+
+
+def _digits_present(digits: str, runs: set[str]) -> bool:
+    return any(run == digits or (len(run) >= MIN_DIGITS and (digits.endswith(run) or run.endswith(digits)))
+               for run in runs)
 
 
 class ViewService:
@@ -169,3 +192,26 @@ class ViewService:
                 return {"untrusted_text": {"length": len(text), "fingerprint": fp}}
             case _:
                 return value
+
+    def find_clear_pii(self, text: str, facts_full: Mapping[str, JsonValue]) -> list[str]:
+        """Rutas de hechos `pii_direct` que aparecen en claro, más `pattern:email`. Nunca devuelve valores."""
+        visible = unicodedata.normalize("NFKC", TOKEN_RE.sub(" ", text))
+        folded = visible.casefold()
+        runs = digit_runs(visible)
+        found: set[str] = set()
+        for name, value in facts_full.items():
+            for path, leaf in _leaves(value, name):
+                if leaf is None or self._classifier.rule(path).field_class != "pii_direct":
+                    continue
+                needle = unicodedata.normalize("NFKC", _text(leaf))
+                digits = needle.translate(_NUMBER_SEPARATORS)
+                if digits.isascii() and digits.isdigit() and len(digits) >= MIN_DIGITS:
+                    if _digits_present(digits, runs):
+                        found.add(path)
+                elif len(needle) >= _MIN_NEEDLE and re.search(
+                    rf"(?<!\w){re.escape(needle.casefold())}(?!\w)", folded
+                ):
+                    found.add(path)
+        if EMAIL_RE.search(visible):
+            found.add("pattern:email")
+        return sorted(found)
