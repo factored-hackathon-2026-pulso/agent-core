@@ -22,6 +22,9 @@ forbidden_modules =
     agent_core.knowledge
     agent_core.turn
     agent_core.api
+    agent_core.adapters
+    agent_core.cli
+    agent_core.contracts
 
 [importlinter:contract:flows]
 name = M1 (flows) solo usa domain, ports
@@ -216,3 +219,24 @@ forbidden_modules =
     agent_core.response
     agent_core.interpreter
     agent_core.knowledge
+
+[importlinter:contract:adapters]
+name = adapters solo usa domain, ports
+type = forbidden
+source_modules =
+    agent_core.adapters
+forbidden_modules =
+    agent_core.flows
+    agent_core.views
+    agent_core.guards
+    agent_core.actions
+    agent_core.decision
+    agent_core.response
+    agent_core.interpreter
+    agent_core.handoff
+    agent_core.audit
+    agent_core.knowledge
+    agent_core.turn
+    agent_core.api
+    agent_core.cli
+    agent_core.contracts
