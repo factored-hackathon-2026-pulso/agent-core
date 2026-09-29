@@ -6,9 +6,18 @@ de proveedor dan el mismo artefacto, con `split_hash` y `run_id` derivados por h
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from decimal import Decimal
 
 from agent_core.decision.calibration.artifact import CalibrationArtifact, IsotonicMap, Target
 from agent_core.decision.calibration.isotonic import fit_isotonic
+from agent_core.decision.calibration.metrics import (
+    Scored,
+    coverage,
+    ece,
+    macro_f1,
+    precision_at_threshold,
+    recall_at_threshold,
+)
 from agent_core.decision.calibration.thresholds import Prediction, choose_threshold
 from agent_core.decision.schema import check_schema_supported, validate_output
 from agent_core.decision.types import DecisionConfigError, DecisionProvider, ProviderError, ProviderTimeout
@@ -60,6 +69,7 @@ def calibrate(model_def: DecisionModelDef, dev_split: Sequence[DevExample],
             raise DecisionConfigError(f"proveedor sin adaptador registrado: {provider}")
     check_schema_supported(model_def.output_schema)
 
+    all_rows: dict[tuple[str, str, str], list[_Row]] = {}
     calibrators: dict[tuple[str, str, str], IsotonicMap] = {}
     thresholds: dict[tuple[str, str, str, str], float] = {}
     for spec in model_def.providers:
@@ -72,6 +82,7 @@ def calibrate(model_def: DecisionModelDef, dev_split: Sequence[DevExample],
                 continue
             rows = _run(providers[spec.provider], spec, model_def, batch, lang, fields)
             for name in fields:
+                all_rows[(name, spec.provider, lang)] = rows[name]
                 _fit_field(name, spec.provider, lang, rows[name], method, targets[name], min_support,
                            calibrators, thresholds)
 
@@ -96,9 +107,53 @@ def calibrate(model_def: DecisionModelDef, dev_split: Sequence[DevExample],
         "targets": {name: {"metric": targets[name].metric, "value": targets[name].value} for name in fields},
         "min_samples": dict(min_samples), "min_support": min_support,
     }))[:16]
-    return CalibrationArtifact(
+    artifact = CalibrationArtifact(
         run_id=run_id, split_hash=split_hash, method=method, calibrators=calibrators, thresholds=thresholds,
         target={name: targets[name] for name in fields}, limitations=limitations)
+    synthetic = {lang: any(e.synthetic for e in examples if e.lang == lang) for lang in langs}
+    samples = {lang: sum(e.lang == lang for e in examples) for lang in langs}
+    return artifact.model_copy(update={"metrics": _metrics(artifact, all_rows, synthetic, samples)})
+
+
+def _fmt(value: float | None) -> str | None:
+    """Métricas como string con 6 decimales: JSON canónico estable (M0 no admite `float` en `JsonValue`)."""
+    return None if value is None else format(Decimal(repr(value)).quantize(Decimal("0.000001")), "f")
+
+
+def _metrics(artifact: CalibrationArtifact, all_rows: dict[tuple[str, str, str], list[_Row]],
+             synthetic: dict[str, bool], samples: dict[str, int]) -> dict[str, JsonValue]:
+    """ECE, macro-F1, precisión al umbral y cobertura (y recall al umbral si el objetivo es recall), por
+    idioma y proveedor, evaluados con las calibraciones y umbrales finales del artefacto."""
+    languages: dict[str, JsonValue] = {}
+    for lang in sorted(synthetic):
+        providers: dict[str, JsonValue] = {}
+        for (name, provider, row_lang), rows in sorted(all_rows.items(), key=lambda item: item[0]):
+            if row_lang != lang:
+                continue
+            calibrator = artifact.calibrator(name, provider, lang)
+            scored: list[Scored] = []
+            for r in rows:
+                p_cal = None if r.p_raw is None else (calibrator.apply(r.p_raw) if calibrator else (
+                    r.p_raw if artifact.method == "none" else None))
+                threshold = (artifact.thresholds.get((name, r.predicted, provider, lang))
+                             if r.predicted is not None else None)
+                scored.append(Scored(r.truth, r.predicted, p_cal,
+                                     p_cal is not None and threshold is not None and p_cal >= threshold))
+            entry: dict[str, JsonValue] = {
+                "n": len(rows),
+                "ece": _fmt(ece([(s.p_cal, s.predicted == s.truth) for s in scored
+                                 if s.p_cal is not None and s.predicted is not None])),
+                "macro_f1": _fmt(macro_f1([s.truth for s in scored], [s.predicted for s in scored])),
+                "precision_at_threshold": _fmt(precision_at_threshold(scored)),
+                "coverage": _fmt(coverage(scored)),
+            }
+            if artifact.target[name].metric == "recall":
+                entry["recall_at_threshold"] = _fmt(recall_at_threshold(scored))
+            fields_for = providers.setdefault(provider, {})
+            assert isinstance(fields_for, dict)
+            fields_for[name] = entry
+        languages[lang] = {"synthetic": synthetic[lang], "samples": samples[lang], "providers": providers}
+    return {"languages": languages}
 
 
 def _run(provider: DecisionProvider, spec: object, model_def: DecisionModelDef, batch: list[DevExample],
