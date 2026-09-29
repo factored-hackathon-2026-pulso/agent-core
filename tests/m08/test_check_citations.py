@@ -36,7 +36,12 @@ def test_page_ref_present_and_allowed_passes() -> None:
 
 def test_one_failure_per_bad_citation_in_order() -> None:
     failures = _check(["f9", "f1", "f2"], {"f1"})
-    assert [f.detail.split()[0] for f in failures] == ["f9", "f2"]
+    assert [f.detail for f in failures] == ["cita 1: cita_inexistente", "cita 3: cita_no_permitida"]
+
+
+def test_detail_never_repeats_the_model_written_citation() -> None:
+    (failure,) = _check(["SECRETO-XYZ"], set())
+    assert "SECRETO" not in failure.detail
 
 
 def test_no_citations_is_fine() -> None:

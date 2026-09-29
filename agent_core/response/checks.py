@@ -20,27 +20,34 @@ def check_format(draft: Draft, ctx: ValidationContext) -> list[Failure]:
     return []
 
 
+PII_DETAIL_PREFIX = "PII en claro"
+
+
 def check_citations(draft: Draft, ctx: ValidationContext) -> list[Failure]:
-    """Comprobación 2: cada cita existe (hechos o páginas) y está en `allowed`. Una falla por cita."""
+    """Comprobación 2: cada cita existe (hechos o páginas) y está en `allowed`. Una falla por cita.
+
+    El detalle lleva la posición de la cita (1-based), nunca su texto: lo escribe el modelo."""
     failures: list[Failure] = []
-    for citation in draft.citations:
+    for position, citation in enumerate(draft.citations, start=1):
         if citation not in ctx.facts_model_view and citation not in ctx.pages_model_view:
-            failures.append(Failure(check="citations", detail=f"{citation} cita_inexistente"))
+            failures.append(Failure(check="citations", detail=f"cita {position}: cita_inexistente"))
         elif citation not in ctx.allowed:
-            failures.append(Failure(check="citations", detail=f"{citation} cita_no_permitida"))
+            failures.append(Failure(check="citations", detail=f"cita {position}: cita_no_permitida"))
     return failures
 
 
 def check_tokens_pii(draft: Draft, ctx: ValidationContext) -> list[Failure]:
-    """Comprobación 4: todo token existe en el vault y no hay PII en claro (solo rutas, nunca valores)."""
+    """Comprobación 4: todo token existe en el vault y no hay PII en claro (solo rutas, nunca valores).
+
+    El detalle de un token desconocido lleva su posición entre los tokens del texto, no el token."""
     failures = [
-        Failure(check="tokens_pii", detail=f"token desconocido: {token}")
-        for token in _unique(match.group(0) for match in TOKEN_RE.finditer(draft.text))
+        Failure(check="tokens_pii", detail=f"token desconocido en la posición {position}")
+        for position, token in enumerate(_unique(m.group(0) for m in TOKEN_RE.finditer(draft.text)), start=1)
         if not ctx.vault.exists(token)
     ]
     clear = ctx.find_clear_pii(draft.text)
     if clear:
-        failures.append(Failure(check="tokens_pii", detail="PII en claro: " + ", ".join(clear)))
+        failures.append(Failure(check="tokens_pii", detail=f"{PII_DETAIL_PREFIX}: " + ", ".join(clear)))
     return failures
 
 

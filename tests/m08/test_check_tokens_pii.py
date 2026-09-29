@@ -17,7 +17,8 @@ def _check(text: str, vault: TokenVault | None = None, *, with_pii: bool = False
 
 def test_t_m8_06a_unknown_token_fails_and_known_token_passes() -> None:
     failures = _check("Tu documento es ⟦doc:7⟧")
-    assert [f.check for f in failures] == ["tokens_pii"] and "⟦doc:7⟧" in failures[0].detail
+    assert [f.check for f in failures] == ["tokens_pii"]
+    assert failures[0].detail == "token desconocido en la posición 1" and "⟦" not in failures[0].detail
     vault = make_vault()
     token = vault.tokenize("1023456789", "document_number", "doc")
     assert _check(f"Tu documento es {token}", vault) == []

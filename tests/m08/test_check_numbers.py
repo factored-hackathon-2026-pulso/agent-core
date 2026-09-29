@@ -48,7 +48,8 @@ def test_compute_fact_backs_a_converted_amount() -> None:  # T-M8-02
 def test_calculated_figure_without_its_compute_fact_is_rejected() -> None:  # T-M8-03
     facts = {"f_usd": {"monto_usd": "250.00"}}
     failures = _check("Son 250,00 USD, o sea $1.000.000,00", ["f_usd"], facts, DOT_COMMA)
-    assert [f.check for f in failures] == ["numbers"] and "1.000.000,00" in failures[0].detail
+    assert [f.check for f in failures] == ["numbers"]
+    assert failures[0].detail == "cifra 2 sin fuente" and "1.000.000" not in failures[0].detail
 
 
 def test_digits_inside_tokens_are_ignored() -> None:  # T-M8-10
@@ -73,7 +74,7 @@ def test_trailing_zeros_do_not_matter_but_value_must_be_equal() -> None:
 
 def test_without_number_format_ambiguous_reading_is_rejected() -> None:  # P1
     failures = _check("Tu cargo es de 1.234", ["f1"], {"f1": {"monto": "1234"}}, None)
-    assert [f.check for f in failures] == ["numbers"] and "ambigua" in failures[0].detail
+    assert [f.check for f in failures] == ["numbers"] and failures[0].detail == "cifra 1 ambigua"
 
 
 def test_without_number_format_unambiguous_reading_is_accepted() -> None:  # P1
@@ -94,7 +95,7 @@ def test_with_number_format_the_ambiguous_shape_reads_by_format() -> None:
 
 def test_unreadable_figure_is_rejected() -> None:
     failures = _check("Versión 1.2.3", [], {}, DOT_COMMA)
-    assert [f.check for f in failures] == ["numbers"] and "ilegible" in failures[0].detail
+    assert [f.check for f in failures] == ["numbers"] and failures[0].detail == "cifra 1 ilegible"
 
 
 def test_percent_and_date_are_compared_against_facts() -> None:
@@ -106,14 +107,14 @@ def test_percent_and_date_are_compared_against_facts() -> None:
 
 def test_non_business_numbers_count_like_any_figure() -> None:  # P2 (decidido: cuentan igual)
     failures = _check("Sigue el paso 2 dentro de 24 horas", [], {}, DOT_COMMA)
-    assert [f.detail for f in failures] == ["cifra sin fuente: 2", "cifra sin fuente: 24"]
+    assert [f.detail for f in failures] == ["cifra 1 sin fuente", "cifra 2 sin fuente"]
     assert _check("Sigue el paso 2 dentro de 24 horas", ["f1"], {"f1": {"paso": 2, "sla_horas": 24}},
                   DOT_COMMA) == []
 
 
 def test_one_failure_per_figure_in_order_and_no_pii_in_detail() -> None:
     failures = _check("Son 5 y 6 y 7", ["f1"], {"f1": {"n": 6}}, DOT_COMMA)
-    assert [f.detail for f in failures] == ["cifra sin fuente: 5", "cifra sin fuente: 7"]
+    assert [f.detail for f in failures] == ["cifra 1 sin fuente", "cifra 3 sin fuente"]
 
 
 def test_nested_lists_and_ints_and_decimal_values_are_indexed() -> None:
