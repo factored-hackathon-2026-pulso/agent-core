@@ -1,7 +1,6 @@
 """Puente hacia M7: vistas `model` y `audit` de slots y hechos del run. `full` solo sale por `ctx.views`."""
 
-from agent_core.domain import Fact, InvalidRuntimeRef, JsonValue, RunState, ToolDef
-from agent_core.domain.refs import EntityRef
+from agent_core.domain import EntityRef, Fact, InvalidRuntimeRef, JsonValue, RunState, ToolDef
 from agent_core.flows import Path
 from agent_core.interpreter.context import StepContext
 from agent_core.interpreter.resolve import MissingPath, resolve_path, walk

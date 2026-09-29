@@ -48,6 +48,14 @@ def test_escalate_builds_request_with_priority_expr() -> None:
         "policy:monto", "disputas", "high")
 
 
+def test_priority_expr_non_string_result_falls_back_to_normal() -> None:
+    w = World()
+    esc = {"id": "e", "type": "escalate", "config": {
+        "reason_code": "policy:monto", "priority_expr": {"if": [True, 5, "low"]}}}
+    out = w.step(w.state(flow(esc)))
+    assert out.escalation is not None and out.escalation.priority == "normal"
+
+
 def test_escalate_defaults_queue_and_priority() -> None:
     w = World()
     out = w.step(w.state(flow({"id": "e", "type": "escalate", "config": {"reason_code": "tool_failure"}})))

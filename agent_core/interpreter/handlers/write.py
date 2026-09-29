@@ -34,6 +34,8 @@ def handle_confirm(node: ConfirmNode, state: RunState, ctx: StepContext, resume:
                                                    action_ctx)
     except MissingPath:
         return escalate_now(state, ctx, "validation_failed")
+    if result in ("yes", "no", "max_attempts"):
+        state = clear_attempts(state, node.id)
     return NodeResult(state, result_key=result, events=events)
 
 

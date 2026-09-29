@@ -51,12 +51,16 @@ def validate_slot(validator: SlotValidator | None, raw: JsonValue) -> tuple[bool
 
 def handle_collect(node: CollectNode, state: RunState, ctx: StepContext, resume: Resume) -> NodeResult:
     cfg = node.config
-    try:
-        prompt = render_message(state, ctx, cfg.prompt_ref)
-    except MissingPath:
-        return escalate_now(state, ctx, "validation_failed")
-    if resume.kind != "slot_answer":
+
+    def ask() -> NodeResult:
+        try:
+            prompt = render_message(state, ctx, cfg.prompt_ref)
+        except MissingPath:
+            return escalate_now(state, ctx, "validation_failed")
         return NodeResult(state, stop=Stop.awaiting_slot, messages=[prompt])
+
+    if resume.kind != "slot_answer":
+        return ask()
     ok, value = validate_slot(cfg.validator, resume.value)
     if ok:
         slot = Slot(value=value, status="validated", source_turn=state.turn_count)
@@ -68,5 +72,5 @@ def handle_collect(node: CollectNode, state: RunState, ctx: StepContext, resume:
         "repair_turns_used": state.repair_turns_used + 1,  # D15: M4 lo lee
     })
     if attempts >= cfg.max_attempts:
-        return NodeResult(state, result_key="max_attempts")
-    return NodeResult(state, stop=Stop.awaiting_slot, messages=[prompt])
+        return NodeResult(clear_attempts(state, node.id), result_key="max_attempts")
+    return ask()

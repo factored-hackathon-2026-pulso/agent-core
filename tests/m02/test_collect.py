@@ -55,7 +55,7 @@ def test_t_m2_05_reprompts_then_exits_by_max_attempts() -> None:
     assert "codigo" not in retry.state.slots
     exhausted = w.step(retry.state, _answer("xyz"))
     assert exhausted.escalation is not None and exhausted.escalation.reason_code == "low_confidence"
-    assert (exhausted.state.node_attempts["c"], exhausted.state.repair_turns_used) == (2, 2)
+    assert ("c" not in exhausted.state.node_attempts, exhausted.state.repair_turns_used) == (True, 2)
     assert exhausted.state.active_flow.node_id == "esc"  # type: ignore[union-attr]
 
 
@@ -85,3 +85,15 @@ def test_validate_slot(validator: SlotValidator | None, raw: object, ok: bool, v
 def test_decide_validator_is_not_supported_yet() -> None:
     with pytest.raises(NotImplementedError):
         validate_slot(SlotValidator(kind="decide", value="m@1.0.0"), "texto")
+
+
+def test_max_attempts_exit_clears_attempts_so_a_loop_back_starts_from_zero() -> None:
+    w = _world()
+    node = _collect()
+    node["next"] = {"ok": "fin", "max_attempts": "c"}  # vuelve al mismo collect
+    state = w.step(w.state(flow(node, *TAIL))).state
+    state = w.step(state, _answer("abc")).state
+    again = w.step(state, _answer("xyz"))
+    assert again.stop is Stop.awaiting_slot and "c" not in again.state.node_attempts
+    retry = w.step(again.state, _answer("bad"))
+    assert retry.state.node_attempts["c"] == 1

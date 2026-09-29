@@ -1,5 +1,7 @@
 """Bucle de M2 (§3.1): ejecuta nodos hasta uno que espera al principal o uno terminal."""
 
+from dataclasses import replace
+
 from agent_core.domain import (
     ActiveFlow,
     EngineEvent,
@@ -17,6 +19,7 @@ from agent_core.interpreter.context import NO_RESUME, Resume, StepContext, StepO
 from agent_core.interpreter.events import Events
 from agent_core.interpreter.handlers import HANDLERS
 from agent_core.interpreter.handlers.base import escalation_request
+from agent_core.ports import UnitOfWork
 
 
 def _node(flow: Flow, node_id: str) -> Node:
@@ -43,10 +46,19 @@ def start_flow(state: RunState, flow: Flow) -> RunState:
 def advance(state: RunState, ctx: StepContext, resume: Resume) -> StepOutcome:
     if state.active_flow is None:
         raise IllegalTransition("advance necesita un flow activo")
-    events: list[EngineEvent] = []
+    pending: list[EngineEvent] = []
     messages: list[Message] = []
     rejected: list[RejectedDraft] = []
     factory = Events(ctx)
+    real_record = ctx.record
+
+    def flushing_record(uow: UnitOfWork, state: RunState, events: list[EngineEvent]) -> None:
+        # Los eventos pendientes (anteriores al commit de M3) se persisten antes que los de M3 y no
+        # vuelven a `StepOutcome.events` (§6).
+        real_record(uow, state, [*pending, *events])
+        pending.clear()
+
+    handler_ctx = replace(ctx, record=flushing_record)
     while True:
         active = state.active_flow
         assert active is not None
@@ -55,23 +67,23 @@ def advance(state: RunState, ctx: StepContext, resume: Resume) -> StepOutcome:
         state, exhausted = enter_node(state, ctx)
         if exhausted:
             request = escalation_request(ctx, "budget_exceeded")
-            return StepOutcome(state, Stop.terminal, messages, events, escalation=request,
+            return StepOutcome(state, Stop.terminal, messages, pending, escalation=request,
                                rejected_drafts=rejected)
         kind = node_kind(node)
-        events.append(factory.node_entered(state, active.flow, node.id, kind or "", resume.kind))
+        pending.append(factory.node_entered(state, active.flow, node.id, kind or "", resume.kind))
         handler = HANDLERS.get(kind or "")
         if handler is None:
             raise IllegalTransition(f"no hay handler para el tipo de nodo {kind!r}")
-        result = handler(node, state, ctx, resume)
+        result = handler(node, state, handler_ctx, resume)
         resume = NO_RESUME
         state = result.state
-        events.extend(result.events)
+        pending.extend(result.events)
         messages.extend(result.messages)
         rejected.extend(result.rejected)
         if result.stop is not None:
             if result.result_key is not None:
                 state = _move(state, node, result.result_key)
-            return StepOutcome(state, result.stop, messages, events, result.end_outcome, result.escalation,
+            return StepOutcome(state, result.stop, messages, pending, result.end_outcome, result.escalation,
                                result.confirmation, result.step_up, result.output, rejected)
         if result.result_key is None:
             raise IllegalTransition(f"el handler de {node.id} no devolvió rama ni detención")

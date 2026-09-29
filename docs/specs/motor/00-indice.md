@@ -100,7 +100,7 @@ Todo JSON que entra al núcleo se lee con `agent_core.domain.loads` (números co
 | `awaiting`, `awaiting_node_id`, `pending_offer` | M4 (con el `Stop` de M2) |
 | `state_version` | `UnitOfWork` (`save_run`) |
 | `pending_intents`, `clarifications_used`, `degraded_turns` | M4 |
-| `repair_turns_used` | M2 (suma en `collect`) / M4 (lee) |
+| `repair_turns_used` | M2 (collect) / M4 (confirm; lee) |
 | `active_flow`, `slots`, `facts`, `decisions`, `node_attempts`, `budgets_used`, `open_questions` | M2 |
 | `actions` | M3 |
 | `token_map` | M7 |

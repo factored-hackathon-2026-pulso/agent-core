@@ -48,7 +48,7 @@ def advance(state: RunState, ctx: StepContext, resume: Resume) -> StepOutcome
 def start_flow(state: RunState, flow: Flow) -> RunState               # primer nodo = flow.nodes[0]; reinicia node_attempts (D5)
 ```
 
-`DecisionPort` y `ResponderPort` (con `DecisionResult`, `GenerateRequest`, `GenerateResult`) viven en `interpreter/ports.py`: M5 y M8 aún no existen y sus adaptadores los implementarán (D1). Exporta además `CircuitBreaker`, `evaluate`, `truthy` y `NO_RESUME`.
+`DecisionPort` y `ResponderPort` (con `DecisionResult`, `GenerateRequest`, `GenerateResult`) viven en `interpreter/ports.py`: M5 y M8 aún no existen y sus adaptadores los implementarán (D1). M4 debe inyectar **un único `CircuitBreaker` compartido por todo el proceso** (el default por `StepContext` es solo para pruebas; un breaker por turno nunca acumularía fallas). Exporta además `CircuitBreaker`, `evaluate`, `truthy` y `NO_RESUME`.
 
 Internamente, un registro `HANDLERS: dict[str, NodeHandler]`; cada handler es `(node, state, ctx, resume) -> NodeResult{result_key | stop, state, messages, events}`. Agregar un tipo de nodo es agregar un handler y su esquema en M1.
 
@@ -86,6 +86,8 @@ Rutas permitidas en `args`, plantillas y `rule`: `slots.<x>`, `facts.<x>.value[.
 | `escalate` | Devuelve `EscalationRequest{reason_code, target_queue = agent.default_target_queue, priority: priority_expr evaluada o "normal"}` (D13); `stop = terminal` |
 | `end` | `end_outcome = config.outcome`; aplica `output_map` en modo task; `stop = terminal` |
 
+**Contadores `node_attempts`:** `collect` los limpia al pasar y al salir por `max_attempts`; `confirm`, al resolver `yes`, `no` o `max_attempts`; una `tool` de lectura los limpia en `ok`; una `tool` de escritura, en cualquier resultado distinto de `denied`. Así un flow que vuelve al mismo nodo arranca de cero.
+
 ### 3.4 Step-up (ADR 0010)
 
 Si `ToolExecutor` devuelve `step_up_required`, el nodo **no avanza**: emite `step_up_requested`, suma `node_attempts[node]` y para en `awaiting_step_up` con `{required_level, reason}`. El siguiente turno llega con `Resume(step_up_retry)` y reintenta el mismo nodo. Cada `step_up_required` suma un intento y al **superar** `step_up_max_attempts` (2 por defecto; la 3.ª solicitud) → `EscalationRequest(auth_insufficient)` (D9). El contador se limpia al terminar bien el nodo.
@@ -119,7 +121,7 @@ Subconjunto cerrado: `JSONLOGIC_OPS` de M1 (`var`, `==`, `!=`, `>`, `>=`, `<`, `
 
 ## 6. Eventos que emite
 
-`node_entered`, `rule_evaluated`, `tool_called` (lectura y `compute`), `step_up_requested`, `access_denied` (`tool_denied`). `decision_made` lo emite M5 y los de acciones M3; M2 los agrega a la lista del `StepOutcome`. Los eventos que devuelve `execute_write` ya los persistió el `EventRecorder` dentro de los commits de M3: no deben volver a agregarse; el recorder de M4 vacía primero los eventos pendientes del turno.
+`node_entered`, `rule_evaluated`, `tool_called` (lectura y `compute`), `step_up_requested`, `access_denied` (`tool_denied`). `decision_made` lo emite M5 y los de acciones M3; M2 los agrega a la lista del `StepOutcome`. Los eventos que devuelve `execute_write` ya los persistió el `EventRecorder` dentro de los commits de M3: no vuelven a agregarse. Para que el orden persistido sea `node_entered…`, `action_confirmed`, `action_dispatched`, `tool_called`, `advance` entrega a los handlers un `StepContext` cuyo `record` envuelve al de M4: antes de cada commit propio de M3 llama `record(uow, state, [*pendientes, *nuevos])` y vacía los pendientes (los eventos acumulados hasta ese momento, incluido el `node_entered` del nodo actual). Lo ya volcado así no se repite en `StepOutcome.events` ni se vuelca dos veces.
 
 ## 7. Pruebas
 
@@ -168,6 +170,27 @@ Vía `tool_called` (lectura y `compute`), por `tool@v`: latencia p50/p95, tasa p
 - [x] LOC registradas: `agent_core/interpreter` 1.356; `tests/m02` + `testing/fakes/decision.py` + `testing/fakes/responder.py` 1.524; total 2.880 (sobre la estimación de 1.500–2.000 con pruebas; el paquete solo queda dentro).
 - [x] Sin TODO sin issue.
 
+## Decisiones D1–D16
+
+| # | Decisión |
+|---|---|
+| D1 | M5/M8 no existen: `DecisionPort` y `ResponderPort` locales en `interpreter/ports.py`; se conservan los nombres `decisions` y `responder` |
+| D2 | `StepContext` gana `ids`, `vault`, `uow_factory`, `record`, `turn_id`, `breaker` |
+| D3 | `Resume.token`; `StepOutcome.output` y `rejected_drafts` |
+| D4 | `begin_turn(state, clock)` reinicia contadores por turno (lo llama M4) |
+| D5 | `start_flow(state, flow)`: entrada = `flow.nodes[0]`; reinicia `node_attempts` |
+| D6 | El render de plantillas vive en M2; `ResponderPort` solo `generate`; sin `response_emitted` en fase 1 |
+| D7 | Un slot `claimed` cuenta como ausente en toda resolución; ruta ausente → `error` o `escalate(validation_failed)` |
+| D8 | Para `decide` un slot se proyecta como `untrusted_text`; para plantillas, vista `model` normal |
+| D9 | Step-up: cada `step_up_required` suma un intento; al superar `step_up_max_attempts` → `auth_insufficient` |
+| D10 | Breaker: 5 fallas en 60 s por `tool@v`; corte = `tool_called` `error="circuit_open"`; parámetros por constructor |
+| D11 | El evaluador registra las rutas que lee (`reads`) para `rule_evaluated.inputs` |
+| D12 | Nodos sin rama `error`: `escalate(validation_failed)`; `decide` → `low_confidence`; `rule` → `null` |
+| D13 | Escalamientos del motor: cola por defecto del agente y prioridad `normal`; `priority_expr` no string → `normal` |
+| D14 | Validadores de `collect`: `type`, `regex` (`fullmatch`), `enum` (sin mayúsculas); `decide` pendiente |
+| D15 | `repair_turns_used` lo suma M2 (`collect`); M4 lo lee (y suma en `confirm`) |
+| D16 | `respond(await)` avanza el puntero antes de parar en `awaiting_user` |
+
 ## 11. Abiertos
 
 - Validador `decide` de `collect`: no se sabe qué campo de la decisión valida (hoy `NotImplementedError`, D14).
@@ -175,3 +198,9 @@ Vía `tool_called` (lectura y `compute`), por `tool@v`: latencia p50/p95, tasa p
 - Quién emite `response_emitted` de las plantillas que renderiza M2 (M8 o M4 al cablearse, D6).
 - Parámetros del circuit breaker por `tool_def` (hoy por constructor, D10).
 - Reinicio de `node_attempts` al terminar un flow (hoy solo lo reinicia `start_flow`).
+- (a) Step-up de escritura: M3 `execute_write` devuelve solo `"step_up_required"`, sin el nivel requerido; M2 usa `min_auth_level` de la tool. Requiere que M3 lo transporte.
+- (b) `StepOutcome.output` es la vista completa: M4/M9 deben pasarlo por M7. Un `priority_expr` que lea hechos podría meter datos completos en `EscalationRequest.priority`.
+- (c) Verificar que el hecho de readback de `verify` se proyecta con el `source`/`untrusted_fields` de la tool de escritura (M3 `FactSource` no tiene referencia al readback).
+- (d) `GenerateRequest` no lleva el presupuesto restante de llamadas a modelo (nota para M8).
+- (e) `step_up_requested` también se emite en la solicitud (max+1)-ésima, la que escala.
+- (f) Seguimiento de G0: compilar la regex de `collect` en validación de flows.

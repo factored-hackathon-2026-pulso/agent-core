@@ -62,7 +62,8 @@ def test_confirm_proposes_then_yes_by_button_executes_and_verifies() -> None:
     # Los eventos del commit de M3 ya están en el almacén y NO se repiten en `done.events`.
     persisted = _types(w.store.events["run-0001"])
     assert "action_dispatched" in persisted and "action_dispatched" not in _types(done.events)
-    assert "action_confirmed" in _types(done.events) and "action_verified" in _types(done.events)
+    assert "action_confirmed" in persisted and "action_confirmed" not in _types(done.events)
+    assert "action_verified" in _types(done.events)
 
 
 def test_confirm_no_cancels_and_unclear_re_asks_with_a_rotated_token() -> None:
@@ -129,6 +130,26 @@ def test_write_step_up_stops_on_same_node_and_retry_continues() -> None:
     assert second.stop is Stop.terminal and [a.state for a in second.state.actions] == [ActionState.verified]
 
 
+def test_write_step_up_exhaustion_escalates_auth_insufficient() -> None:
+    w, f = _world(level="step_up")
+    out = _yes(w, w.step(_start(w, f)))
+    for _ in range(2):  # step_up_max_attempts = 2: el intento 3 escala
+        assert out.stop is Stop.awaiting_step_up
+        out = w.step(w.persist(out.state), Resume("step_up_retry"))
+    assert out.stop is Stop.terminal
+    assert out.escalation is not None and out.escalation.reason_code == "auth_insufficient"
+
+
+def test_events_are_persisted_in_order_and_not_repeated_in_the_outcome() -> None:
+    w, f = _world()
+    done = _yes(w, w.step(_start(w, f)))
+    persisted = _types(w.store.events["run-0001"])
+    assert persisted == ["node_entered", "action_confirmed", "node_entered", "action_dispatched",
+                         "tool_called"]
+    stored = {e.event_id for e in w.store.events["run-0001"]}
+    assert not stored & {e.event_id for e in done.events}  # lo volcado no se repite en el outcome
+
+
 def test_write_denied_takes_denied_branch_with_access_denied() -> None:
     w, f = _world(write_script=(Scripted(ToolStatus.denied),))
     proposed = w.step(_start(w, f))
@@ -136,3 +157,18 @@ def test_write_denied_takes_denied_branch_with_access_denied() -> None:
     out = _yes(w, proposed)
     assert out.escalation is not None and out.escalation.reason_code == "tool_failure"
     assert "access_denied" in _types(out.events)
+
+
+def test_confirm_clears_attempts_on_yes_no_and_max_attempts() -> None:
+    w, f = _world()
+    first = w.step(_start(w, f))
+    unclear = w.step(w.persist(first.state), Resume("confirm_answer", "unclear"))
+    assert unclear.state.node_attempts["confirmar"] == 1
+    no = w.step(w.persist(unclear.state), Resume("confirm_answer", "no"))
+    assert "confirmar" not in no.state.node_attempts
+    w, f = _world()
+    state = w.step(_start(w, f)).state
+    for _ in range(2):
+        out = w.step(w.persist(state), Resume("confirm_answer", "unclear"))
+        state = out.state
+    assert "confirmar" not in state.node_attempts
