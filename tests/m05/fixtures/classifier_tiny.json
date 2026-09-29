@@ -1,0 +1,15 @@
+{
+  "format": "tfidf-logreg-v1",
+  "data_hash": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "vocab": {"sí": 0, "sim": 1, "no": 2, "não": 3, "cancela": 4, "cancelar": 5},
+  "idf": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+  "classes": {"command": ["affirm", "cancel", "deny"]},
+  "coef": {
+    "command": [
+      [2.0, 2.0, -1.0, -1.0, -1.0, -1.0],
+      [-1.0, -1.0, -1.0, -1.0, 2.0, 2.0],
+      [-1.0, -1.0, 2.0, 2.0, -1.0, -1.0]
+    ]
+  },
+  "intercept": {"command": [0.0, 0.0, 0.0]}
+}
