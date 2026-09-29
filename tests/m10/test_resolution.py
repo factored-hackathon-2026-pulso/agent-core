@@ -89,6 +89,30 @@ def test_concurrent_resolution_is_rejected_while_the_lease_is_held() -> None:
     assert busy.value.code is ProblemCode.turn_in_progress
 
 
+def test_two_interleaved_resolutions_only_one_wins() -> None:
+    """Con el lease tomado por la primera llamada, la segunda (otro id de lease) recibe 409."""
+    advisor, obo = advisor_with_delegation()
+    losers: list[EngineError] = []
+    holder: list[object] = []
+
+    def recorder(uow, state, events):  # type: ignore[no-untyped-def]
+        uow.append_events(state.run_id, events)
+        try:
+            holder[0].service.record_resolution(  # type: ignore[attr-defined]
+                "handoff-0001", advisor, "otra", "incomplete", on_behalf_of=obo)
+        except EngineError as err:
+            losers.append(err)
+
+    world = make_world(authz=HandoffAuthz(), record=recorder)
+    holder.append(world)
+    escalate_and_commit(world, seed_run(world, make_state()), REQUEST)
+    world.service.record_resolution("handoff-0001", advisor, "caso_resuelto", "useful", on_behalf_of=obo)
+    assert len(losers) == 1 and losers[0].code is ProblemCode.turn_in_progress and losers[0].status == 409
+    assert [e.type for e in world.store.events["run-0001"]] == ["escalated", "handoff_resolved"]
+    record = HandoffRecord.model_validate(world.store.handoffs["handoff-0001"])
+    assert record.resolution is not None and record.resolution.resolution_code == "caso_resuelto"
+
+
 def test_the_recorder_hook_receives_the_event_in_the_same_transaction() -> None:
     seen: list[tuple[str, list[str]]] = []
 

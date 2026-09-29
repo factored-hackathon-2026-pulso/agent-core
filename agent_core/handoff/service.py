@@ -100,13 +100,14 @@ class HandoffService:
             payload=EscalatedPayload(reason_code=request.reason_code, target_queue=request.target_queue,
                                      priority=request.priority, handoff_ref=handoff_ref),
         )
+        reportable = self._authz.reportable_attrs()
         outbox = OutboxMessage(
             message_id=self._ids.new_id(IdKind.message), type="handoff_created", run_id=state.run_id,
             payload=to_jsonable(HandoffCreatedPayload(
                 handoff_ref=handoff_ref, run_id=state.run_id, target_queue=request.target_queue,
                 priority=request.priority, reason_code=request.reason_code, language=state.locale,
                 reportable_attrs={k: v for k, v in sorted(state.principal.attrs.items())
-                                  if k in self._authz.reportable_attrs()},
+                                  if k in reportable},
             )),
             created_at=now,
         )
@@ -167,7 +168,9 @@ class HandoffService:
             record = self._load_record(uow, handoff_ref)
             run = self._load_run(uow, record.packet.run_id)
             self._authorize(reader, on_behalf_of, run)
-            lease = f"resolve-{handoff_ref}"
+            # El lease es por run y re-entrante por turn_id: un id único por llamada evita que dos
+            # resoluciones concurrentes lo adquieran a la vez.
+            lease = f"resolve-{handoff_ref}-{self._ids.new_id(IdKind.turn)}"
             try:
                 uow.acquire_turn(run.run_id, lease, now, _RESOLUTION_LEASE)
             except TurnInProgress:

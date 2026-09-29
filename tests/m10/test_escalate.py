@@ -132,6 +132,33 @@ def test_a_failure_building_the_packet_escalates_with_a_degraded_packet() -> Non
     assert packet.degraded_packet is True and packet.reason_code == "customer_request"
     assert world.store.runs["run-0001"].status == "escalated"
     assert all(f.value is None for f in packet.verified_facts)
+    assert packet.evidence_refs == [] and packet.claimed_not_verified == [] and packet.open_questions == []
+    (event,) = world.store.events["run-0001"]
+    assert event.type == "escalated"
+    (pending,) = InMemoryOutbox(world.store).pending(10)
+    assert pending.type == "handoff_created"
+
+
+def test_escalate_rejects_an_already_escalated_run() -> None:
+    world = make_world()
+    state = seed_run(world, make_state())
+    closed, *_ = escalate_and_commit(world, state, REQUEST)
+    with pytest.raises(HandoffPreconditionError):
+        world.service.escalate(closed, REQUEST, [], uow=world.store.uow())
+
+
+def test_put_handoff_failure_propagates_and_is_not_degraded() -> None:
+    world = make_world()
+    state = seed_run(world, make_state())
+    uow = world.store.uow()
+
+    def boom(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("store caído")
+
+    uow.put_handoff = boom  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="store caído"):
+        world.service.escalate(state, REQUEST, [], uow=uow, turn_id="turn-0001")
+    assert world.store.handoffs == {}
 
 
 def test_escalate_is_deterministic_and_draws_ids_in_a_fixed_order() -> None:

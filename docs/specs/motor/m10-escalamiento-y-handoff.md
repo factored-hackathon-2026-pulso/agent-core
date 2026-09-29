@@ -129,6 +129,7 @@ Precisión/recall de escalamiento (contra referencias de la unidad 6), `handoff_
 9. Paquete degradado si la construcción falla; falla de `put_handoff` no se degrada.
 10. `open_questions` con guarda de PII en claro (`find_clear_pii`).
 11. Textos: `state.locale` con caída a `es`; mensaje de traspaso desde `agent.templates.handoff` con respaldo por defecto.
+12. `get` devuelve `run.subject` tal cual a lectores autorizados (`authorize_subject` ya concede ese subject; no pasa por render). `put_handoff` debe ser upsert (`record_resolution` sobrescribe el registro). El lease de `record_resolution` (id único por llamada) se libera solo al commit: si algo falla antes, queda tomado hasta el TTL de 30 s.
 
 ## 12. Abiertos
 
