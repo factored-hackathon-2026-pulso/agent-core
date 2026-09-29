@@ -61,6 +61,7 @@ from agent_core.turn.ports import (
 from agent_core.turn.recovery import position_at_verify
 from agent_core.turn.refs import pinned_ref
 from agent_core.turn.results import awaiting_for, build_turn_result
+from agent_core.turn.templates import render_engine
 
 
 class TurnEngine:
@@ -307,10 +308,48 @@ class TurnEngine:
             return EngineError(ProblemCode.run_closed, "run vencido por inactividad")
         if self._recover(frame):  # paso 5
             return self._finish(frame, record=True)
-        with frame.meter.stage("flow"):  # paso 6
-            frame.state, events = self._actions.expire_tokens(frame.state, turn_id=turn_id)
-            frame.buffer.add(*events)
-        raise NotImplementedError("pasos 7-12: Tasks 11-16")
+        frame.state, events = self._actions.expire_tokens(frame.state, turn_id=turn_id)  # paso 6
+        frame.buffer.add(*events)
+        if self._guard(frame):  # paso 7: unsupported / tamaño → plantilla, sin Understand ni flow
+            return self._finish(frame, record=True)
+        raise NotImplementedError("pasos 8-12: Tasks 12-16")
+
+    def _guard(self, frame: TurnFrame) -> bool:
+        """Paso 7. Devuelve `True` si el turno termina aquí con una plantilla del motor."""
+        turn = frame.turn
+        assert turn is not None
+        state = frame.state
+        with frame.meter.stage("guards"):
+            result, events = self._guards.run(
+                frame.text_model,
+                state,
+                frame.agent,
+                frame.release,
+                turn.lang,
+                False,
+                turn_id=frame.turn_id,
+            )
+        frame.buffer.fill(
+            self._events.turn_started(state, frame.turn_id, frame.client_turn_id, guards=result.to_output())
+        )
+        frame.buffer.add(*events)  # `injection_flagged` lo construye M6 y lo agrega M4
+        update: dict[str, Any] = {}
+        if result.lang.decision != "unsupported":
+            update["locale"] = result.lang.locale
+        if result.injection.flagged:
+            frame.degraded = True
+            update["degraded_turns"] = [*state.degraded_turns, state.turn_count]
+        if update:
+            frame.state = state.model_copy(update=update)
+        templates = frame.agent.templates
+        if result.lang.decision == "unsupported":
+            ref, locale = templates.unsupported_language, frame.agent.default_locale
+        elif not result.size_ok:
+            ref, locale = templates.input_too_large, frame.state.locale
+        else:
+            return False
+        frame.messages.append(render_engine(self._registry, frame.release, ref, locale))
+        return True
 
     def _recover(self, frame: TurnFrame) -> bool:
         """Devuelve `True` si la recuperación terminó el flow (C9): el turno acaba ahí y el mensaje no se
