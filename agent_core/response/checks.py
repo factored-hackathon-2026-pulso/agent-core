@@ -3,6 +3,7 @@
 import re
 from collections.abc import Callable, Iterable
 
+from agent_core.guards import detect_language
 from agent_core.response.types import Draft, Failure, ValidationContext
 from agent_core.views import TOKEN_PATTERN
 
@@ -44,3 +45,15 @@ def check_tokens_pii(draft: Draft, ctx: ValidationContext) -> list[Failure]:
 
 def _unique(items: Iterable[str]) -> list[str]:
     return list(dict.fromkeys(items))
+
+
+def check_language(draft: Draft, ctx: ValidationContext) -> list[Failure]:
+    """Comprobación 5: el idioma de mayor puntaje es el `locale` (`short`/`undetermined` no rechazan)."""
+    decision = detect_language(draft.text, ctx.lang_cfg, ctx.lang_thresholds, list(ctx.supported_locales),
+                               ctx.locale)
+    if decision.decision in ("short", "undetermined") or not decision.top2:
+        return []
+    detected = decision.top2[0][0]
+    if detected == ctx.locale:
+        return []
+    return [Failure(check="language", detail=f"idioma esperado {ctx.locale}, detectado {detected}")]
