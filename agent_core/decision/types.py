@@ -76,3 +76,12 @@ class DecisionOutput:
         return (f"DecisionOutput(decision_id={self.decision_id!r}, provider_used={self.provider_used!r}, "
                 f"model_version={self.model_version!r}, fallback_depth={self.fallback_depth}, "
                 f"model_calls={self.model_calls}, above_threshold={self.above_threshold!r})")
+
+
+@dataclass(frozen=True, slots=True)
+class EventScope:
+    """Contexto que `decide` necesita para armar `decision_made` (P2)."""
+    run_id: str
+    release: str
+    turn_id: str | None = None
+    session_id: str | None = None

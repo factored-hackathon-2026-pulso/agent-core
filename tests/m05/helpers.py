@@ -1,12 +1,23 @@
 """Constructores sintéticos para las pruebas de M5 (sin datos reales)."""
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
-from agent_core.decision.calibration.artifact import CalibrationArtifact, IsotonicMap, Target
-from agent_core.domain import CalibrationRef, DecisionModelDef, JsonValue, ProviderSpec
+from agent_core.decision.calibration.artifact import (
+    CalibrationArtifact,
+    InMemoryCalibrationSource,
+    IsotonicMap,
+    Target,
+)
+from agent_core.decision.service import DecisionService
+from agent_core.decision.types import EventScope
+from agent_core.domain import CalibrationRef, DecisionModelDef, EntityRef, JsonValue, ProviderSpec
 from agent_core.views import TokenVault
+from testing.fakes.clock import FakeClock
 from testing.fakes.ids import FakeIds
 from testing.fakes.keys import FakeKeyProvider
+from testing.fakes.provider import ScriptedProvider
+from testing.fakes.registry import InMemoryRegistry
 
 SPLIT_HASH = "b" * 64
 RUN_ID = "run-1"
@@ -55,3 +66,36 @@ def identity_map() -> IsotonicMap:
 
 def vault(ids: FakeIds | None = None) -> TokenVault:
     return TokenVault(RUN_ID, FakeKeyProvider.default(), ids or FakeIds())
+
+
+@dataclass
+class Rig:
+    service: DecisionService
+    clock: FakeClock
+    ids: FakeIds
+    registry: InMemoryRegistry
+    sources: InMemoryCalibrationSource
+    providers: dict[str, ScriptedProvider]
+    vault: TokenVault
+
+
+def scope() -> EventScope:
+    return EventScope(run_id=RUN_ID, release="release-1", turn_id="turn-0001")
+
+
+def make_service(definition: DecisionModelDef | None = None, *,
+                 artifacts: Sequence[CalibrationArtifact] = ()) -> Rig:
+    """`DecisionService` con un `ScriptedProvider` por cada proveedor de la cadena, reloj e ids falsos."""
+    definition = definition or model_def()
+    clock, ids = FakeClock(), FakeIds()
+    registry = InMemoryRegistry()
+    registry.add(definition)
+    sources = InMemoryCalibrationSource({a.run_id: a for a in artifacts})
+    providers = {spec.provider: ScriptedProvider(spec.provider, clock=clock) for spec in definition.providers}
+    service = DecisionService(registry, providers, sources, clock, ids)
+    return Rig(service, clock, ids, registry, sources, providers, vault(ids))
+
+
+def ref(definition: DecisionModelDef | None = None) -> EntityRef:
+    definition = definition or model_def()
+    return EntityRef(id=definition.id, version=definition.version)

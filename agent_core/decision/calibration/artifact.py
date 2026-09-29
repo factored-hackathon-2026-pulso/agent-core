@@ -4,7 +4,8 @@ Las claves compuestas se serializan como listas de `{"key": [...], "value": ...}
 salida es determinista (JCS) y sin ambigüedad aunque un valor contenga separadores."""
 
 from bisect import bisect_right
-from typing import Literal, Self
+from collections.abc import Mapping
+from typing import Literal, Protocol, Self
 
 from pydantic import Field, model_validator
 
@@ -102,3 +103,21 @@ def _key(entry: dict[str, JsonValue]) -> list[str]:
     if not isinstance(key, list) or not all(isinstance(k, str) for k in key):
         raise ValueError("clave de tabla mal formada")
     return [k for k in key if isinstance(k, str)]
+
+
+class CalibrationSource(Protocol):
+    """Origen de artefactos por `run_id` (P6). No es un puerto de M0."""
+
+    def get(self, run_id: str) -> CalibrationArtifact | None: ...
+
+
+class InMemoryCalibrationSource:
+    def __init__(self, artifacts: Mapping[str, CalibrationArtifact] | None = None) -> None:
+        self._artifacts = dict(artifacts or {})
+
+    def add(self, *artifacts: CalibrationArtifact) -> None:
+        for artifact in artifacts:
+            self._artifacts[artifact.run_id] = artifact
+
+    def get(self, run_id: str) -> CalibrationArtifact | None:
+        return self._artifacts.get(run_id)
