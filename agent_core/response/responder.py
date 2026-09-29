@@ -11,7 +11,6 @@ from agent_core.domain import (
     EntityKind,
     EntityRef,
     EscalationRequest,
-    GatewayError,
     GenerateConfig,
     JsonValue,
     Locale,
@@ -102,7 +101,7 @@ class Responder:
                     {"check": f.check, "detail": f.detail} for f in last_failures]
             try:
                 result = meter.call(partial(ctx.gateway.generate, prompt, inputs, ctx.locale, DRAFT_SCHEMA))
-            except GatewayError:
+            except Exception:
                 break
             parsed = parse_draft(result.output)
             if isinstance(parsed, Failure):

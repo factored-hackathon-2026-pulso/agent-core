@@ -151,3 +151,56 @@ def test_undeclared_fact_names_are_not_allowed_or_sent() -> None:
     assert [d.failures for d in rejected] == [["citations"], ["citations"]]
     assert all("cita_no_permitida" in d.reason for d in rejected)
     assert w.gateway.calls[0].inputs["facts"] == {}
+
+
+PII_DRAFT = gen("Tu documento 1023456789 fue verificado y tu disputa sigue en revisión, gracias.", ["f-pqr"])
+
+
+def _flag(text: str) -> list[str]:
+    return ["cliente.document_number"] if "1023456789" in text else []
+
+
+def test_draft_with_clear_pii_is_stored_without_text_and_reason_has_no_pii() -> None:
+    w = World([PII_DRAFT, PII_DRAFT], find_clear_pii=_flag)
+    message, rejected, events = w.run()
+    assert isinstance(message, Message) and message.kind == "template"
+    assert [d.text_model for d in rejected] == ["", ""]
+    assert all("tokens_pii" in d.failures and "1023456789" not in d.reason for d in rejected)
+    assert "1023456789" not in repr(w.gateway.calls[1].inputs) and "1023456789" not in repr(events)
+
+
+def test_unknown_token_draft_keeps_its_text_for_the_transcript() -> None:
+    unknown = gen("Hola ⟦name:9⟧, tu disputa sigue en revisión y te avisaremos pronto.", [])
+    w = World([unknown, unknown])
+    _, rejected, _ = w.run()
+    assert rejected[0].failures == ["tokens_pii"] and rejected[0].text_model.startswith("Hola")
+
+
+def test_validation_feedback_never_repeats_model_written_text() -> None:
+    evil = gen("Hola ⟦name:9⟧, el cargo es 987654 y sigue en revisión, avisaremos pronto.", ["SECRETO-XYZ"])
+    w = World([evil, evil])
+    _, rejected, _ = w.run()
+    feedback = repr(w.gateway.calls[1].inputs["validation_feedback"])
+    assert all(bad not in feedback for bad in ("SECRETO", "987654", "⟦name:9⟧"))
+    assert all(bad not in d.reason for d in rejected for bad in ("SECRETO", "987654", "⟦name:9⟧"))
+    assert {"citations", "numbers", "tokens_pii"} <= {c for d in rejected for c in d.failures}
+
+
+class _BrokenGateway:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def generate(self, *args: object, **kwargs: object) -> GenerationResult:
+        self.calls += 1
+        raise RuntimeError("falla del cliente HTTP")
+
+
+def test_non_gateway_error_is_a_gateway_failure_and_goes_to_the_template() -> None:
+    w = World()
+    broken = _BrokenGateway()
+    ctx = replace(w.ctx, gateway=broken)  # type: ignore[arg-type]
+    message, rejected, events = w.responder.generate(CONFIG, w.state, ctx)
+    assert isinstance(message, Message) and message.kind == "template" and rejected == []
+    payload = _payload(events)
+    assert broken.calls == 1 and payload.fallback_used
+    assert payload.llm is not None and payload.llm.calls == 1 and payload.llm.cost_known is False

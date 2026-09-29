@@ -90,3 +90,17 @@ def test_latency_is_integer_milliseconds_floor() -> None:
     meter.call(call)
     usage = meter.usage()
     assert usage is not None and usage.latency_ms == 1
+
+
+def test_non_gateway_exception_is_counted_as_a_call_with_unknown_cost_and_reraised() -> None:
+    clock = FakeClock()
+    meter = UsageMeter(clock)
+
+    def boom() -> GenerationResult:
+        clock.advance(timedelta(milliseconds=20))
+        raise RuntimeError("falla del cliente HTTP")
+
+    with pytest.raises(RuntimeError):
+        meter.call(boom)
+    usage = meter.usage()
+    assert usage is not None and usage.calls == 1 and usage.cost_known is False and usage.latency_ms == 20

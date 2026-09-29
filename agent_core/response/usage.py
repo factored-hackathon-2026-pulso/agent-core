@@ -37,6 +37,11 @@ class UsageMeter:
                 self._cost += error.cost_usd
             self._add_model(error.model)
             raise
+        except Exception:
+            # Falla que no es `GatewayError` (p. ej. el cliente HTTP): cuenta la llamada, costo desconocido.
+            self._record(started)
+            self._cost_known = False
+            raise
         self._record(started)
         self._tokens_in += result.tokens_in
         self._tokens_out += result.tokens_out
