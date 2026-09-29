@@ -2,6 +2,7 @@
 
 from itertools import pairwise
 
+from agent_core.adapters.system_clock import SystemClock
 from agent_core.views.detector import detect, digit_runs
 
 
@@ -57,3 +58,42 @@ def test_hit_repr_has_no_value() -> None:
 
 def test_digit_runs() -> None:
     assert digit_runs("pagué 1.500 el +57 300 123 4567") == {"1500", "573001234567"}
+
+
+def test_digit_run_touching_an_email_is_cut_not_dropped() -> None:
+    assert _found("llama 3001234567 1023@example.test") == [
+        ("doc", "3001234567"), ("email", "1023@example.test"),
+    ]
+
+
+def test_digit_run_fully_inside_an_email_local_part_is_only_the_email() -> None:
+    assert _found("escribe a 1023456789@example.test ya") == [("email", "1023456789@example.test")]
+
+
+def test_two_emails_and_numbers_stay_disjoint_and_sorted() -> None:
+    text = "a 1023456789 1@x.test luego 3001234567 2@y.test fin"
+    hits = detect(text)
+    assert [(hit.tag, hit.value) for hit in hits] == [
+        ("doc", "1023456789"), ("email", "1@x.test"), ("doc", "3001234567"), ("email", "2@y.test"),
+    ]
+    assert all(a.end <= b.start for a, b in pairwise(hits))
+
+
+def test_ordinary_separators_do_not_defeat_the_detector() -> None:
+    assert _found("300  123  4567") == [("tel", "3001234567")]
+    assert _found("cc 1023–456–789") == [("tel", "1023456789")]
+    assert _found("cc 1,023,456,789") == [("doc", "1023456789")]
+    assert _found("cc 1023 - 4567891") == [("doc", "10234567891")]
+    assert _found("cc 1023	456789") == [("tel", "1023456789")]
+
+
+def test_iso_date_still_ignored_with_wider_separators() -> None:
+    assert _found("el 2026-09-12 y el 2026-01-31") == []
+
+
+def test_detector_is_linear_on_long_hostile_text() -> None:
+    clock = SystemClock()
+    for text in ("1 " * 20000, "1-" * 20000, "9" * 50000, "a1@" * 10000, " - " * 20000 + "1"):
+        start = clock.monotonic_ns()
+        detect(text)
+        assert clock.monotonic_ns() - start < 2_000_000_000
