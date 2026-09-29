@@ -17,6 +17,7 @@ from agent_core.views.untrusted import wrap_untrusted
 from agent_core.views.vault import TokenVault
 
 _STRICT = ("pii_direct", "pii_quasi")
+_PASS = FieldRule(field_class="public")
 
 
 class ViewsConfigError(RuntimeError):
@@ -85,29 +86,39 @@ class ViewService:
             fingerprint=fingerprint(data_full, self._keys),
         )
 
-    def _rule(self, path: str, untrusted: frozenset[str]) -> FieldRule | None:
-        """Precedencia: pii explícita > `untrusted_fields` > resto del catálogo > sin clasificar."""
+    def _rule(self, path: str, value: JsonValue, untrusted: frozenset[str], inside: bool) -> FieldRule | None:
+        """Precedencia: pii explícita > `untrusted_fields` > resto del catálogo > sin clasificar.
+
+        Dentro de un contenedor `untrusted_text`, todo string sin regla pii propia es `untrusted_text`."""
         rule = self._classifier.lookup(path)
         if rule is not None and rule.field_class in _STRICT:
             return rule
+        if inside:
+            return UNTRUSTED if isinstance(value, str) else _PASS
         if path in untrusted or field_name(path) in untrusted:
             return UNTRUSTED
         return rule
 
-    def _walk(self, value: JsonValue, path: str, ctx: _Ctx, leaf: _Leaf) -> JsonValue | Dropped:
+    def _walk(self, value: JsonValue, path: str, ctx: _Ctx, leaf: _Leaf,
+              inside: bool = False) -> JsonValue | Dropped:
         if value is None:
             return None
-        rule = self._rule(path, ctx.untrusted)
-        if rule is None and isinstance(value, dict):
-            out: dict[str, JsonValue] = {}
-            for key, item in value.items():
-                projected = self._walk(item, f"{path}.{key}", ctx, leaf)
-                if not isinstance(projected, Dropped):
-                    out[neutralize(key)] = projected
-            return out
-        if rule is None and isinstance(value, list):
-            items = [self._walk(item, path, ctx, leaf) for item in value]
-            return [item for item in items if not isinstance(item, Dropped)]
+        rule = self._rule(path, value, ctx.untrusted, inside)
+        container = isinstance(value, dict | list)
+        if container and (rule is None or (rule.field_class == "untrusted_text") or rule is _PASS):
+            # Un contenedor sin clasificar o `untrusted_text` se recorre: cada hijo toma su propia clase.
+            nested = inside or rule is not None
+            if isinstance(value, dict):
+                out: dict[str, JsonValue] = {}
+                for key, item in value.items():
+                    child = f"{path}.{key.replace('.', '_')}"
+                    projected = self._walk(item, child, ctx, leaf, nested)
+                    if not isinstance(projected, Dropped):
+                        out[neutralize(key)] = projected
+                return out
+            if isinstance(value, list):
+                items = [self._walk(item, path, ctx, leaf, nested) for item in value]
+                return [item for item in items if not isinstance(item, Dropped)]
         return leaf(value, path, UNCLASSIFIED if rule is None else rule, ctx)
 
     def _model_leaf(self, value: JsonValue, path: str, rule: FieldRule, ctx: _Ctx) -> JsonValue | Dropped:

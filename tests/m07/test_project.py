@@ -161,3 +161,75 @@ def test_missing_key_is_a_startup_error() -> None:
     )
     with pytest.raises(ViewsConfigError):
         ViewService(keys, FieldAuthz(set()), FakeClock())
+
+
+def test_declared_untrusted_container_is_walked_and_pii_child_is_tokenized() -> None:
+    data = {"customer": {"first_name": "Ana", "note": "hola", "visits": 3}}
+    vault = make_vault()
+    views = make_service().project(data, "t", ["customer"], vault)
+    assert views.model == {"customer": {
+        "first_name": "⟦name:1⟧",
+        "note": '<datos_no_confiables fuente="t.customer.note">hola</datos_no_confiables>',
+        "visits": 3,
+    }}
+    assert "Ana" not in str(views.model)
+    assert "Ana" not in str(views.audit)
+    audit = views.audit["customer"]  # type: ignore[index]
+    assert audit["first_name"] == "***"
+    assert audit["note"]["untrusted_text"]["length"] == 4
+    assert audit["visits"] == 3
+
+
+def test_catalog_untrusted_container_is_walked() -> None:
+    catalog = {**CATALOG, "thread": FieldRule(field_class="untrusted_text")}
+    data = {"thread": {"messages": [{"first_name": "Ana", "text": "hola"}]}}
+    views = make_service(catalog=catalog).project(data, "t", [], make_vault())
+    assert "Ana" not in str(views.model) and "Ana" not in str(views.audit)
+    assert views.model["thread"]["messages"][0]["first_name"] == "⟦name:1⟧"  # type: ignore[index]
+    assert "<datos_no_confiables" in views.model["thread"]["messages"][0]["text"]  # type: ignore[index]
+
+
+def test_declared_untrusted_scalar_keeps_working() -> None:
+    views = make_service().project({"notes": ["a", "b"]}, "tickets", ["notes"], make_vault())
+    assert views.model == {"notes": [
+        '<datos_no_confiables fuente="tickets.notes">a</datos_no_confiables>',
+        '<datos_no_confiables fuente="tickets.notes">b</datos_no_confiables>',
+    ]}
+
+
+def test_dotted_key_does_not_resolve_by_last_segment() -> None:
+    views = make_service().project({"a.status": "Ana Perez"}, "t", [], make_vault())
+    assert views.model == {"a.status": "⟦pii:1⟧"}
+    assert "Ana" not in str(views.audit)
+
+
+@pytest.mark.parametrize(("value", "text"), [
+    (7, "7"), (Decimal("1.50"), "1.50"), (True, "true"), ("", ""),
+])
+def test_non_string_and_empty_values_under_pii_rules(value: object, text: str) -> None:
+    views = make_service().project({"document_number": value}, "customers", [], make_vault())  # type: ignore[dict-item]
+    assert views.model == {"document_number": "⟦doc:1⟧"}
+    assert "***" in str(views.audit)
+
+
+def test_nested_path_exact_rule_before_last_segment() -> None:
+    catalog = {**CATALOG, "tabla.padre.campo": FieldRule(field_class="public"),
+               "campo": FieldRule(field_class="pii_direct", tag="doc")}
+    service = make_service(catalog=catalog)
+    views = service.project({"padre": {"campo": "visible"}}, "tabla", [], make_vault())
+    assert views.model == {"padre": {"campo": "visible"}}
+    other = service.project({"padre": {"campo": "x"}}, "otra", [], make_vault())
+    assert other.model == {"padre": {"campo": "⟦doc:1⟧"}}
+
+
+def test_list_elements_under_unclassified_list_are_each_projected() -> None:
+    views = make_service().project({"items": ["Ana", "Luis"]}, "t", [], make_vault())
+    assert views.model == {"items": ["⟦pii:1⟧", "⟦pii:2⟧"]}
+    assert views.audit == {"items": ["***", "***"]}
+
+
+def test_container_under_quasi_rule_is_dropped() -> None:
+    views = make_service().project({"postal_code": {"a": 1}, "date_of_birth": ["x"], "status": "ok"},
+                                   "t", [], make_vault())
+    assert views.model == {"status": "ok"}
+    assert views.audit == {"status": "ok"}

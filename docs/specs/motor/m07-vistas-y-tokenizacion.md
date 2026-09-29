@@ -57,6 +57,7 @@ def verify_fingerprint(data: Any, fp: Fingerprint, keys: KeyProvider) -> bool
 - Los campos se identifican por ruta `tabla.campo`; los resultados de tools declaran su tabla de origen (`source`). Para un dict anidado la ruta es `tabla.padre.campo`; los elementos de una lista conservan la ruta de la lista. La búsqueda prueba la ruta exacta y después el último segmento.
 - Precedencia al proyectar: `pii_direct`/`pii_quasi` explícitos > `untrusted_fields` de la tool > resto del catálogo > sin clasificar (`pii_direct`).
 - Un contenedor (dict o lista) sin clasificar se recorre; uno clasificado se trata entero (`pii_direct` → un token de su JSON; `pii_quasi` → se elimina; `financial`/`public` → pasa). `null` pasa en todas las vistas.
+- Un contenedor `untrusted_text` (por `untrusted_fields` o catálogo) también se recorre: cada hijo con regla `pii_direct`/`pii_quasi` explícita toma su clase (la explícita gana) y todo otro string se trata como `untrusted_text` (envuelto); los valores no string pasan. Un `.` dentro de una clave se trata como `_` al clasificar (cae a sin clasificar → `pii_direct`); la clave de salida conserva su texto.
 
 ### 3.2 Vista `model`
 
@@ -70,6 +71,8 @@ def verify_fingerprint(data: Any, fp: Fingerprint, keys: KeyProvider) -> bool
 **Formato del token:** `⟦<tag>:<n>⟧`, p. ej. `⟦doc:1⟧`, `⟦tx:3⟧`; `n` es un contador por tag dentro del run. Regex: `⟦([a-z]{1,12}):([1-9][0-9]*)⟧`.
 
 **Detector:** email; secuencias de 6 o más dígitos con separadores sueltos (espacio, punto, guion), con límites solo contra otros dígitos (detecta `CC1023456789`). Con `+` o 10 dígitos separados por espacio o guion → `tel` (campo `mobile_phone`); 12 o más → `prod` (`product_number`); el resto → `doc` (`document_number`). Las fechas `AAAA-MM-DD` se ignoran. Es conservador a propósito: un monto de 6 o más dígitos en texto libre se tokeniza. Los nombres propios en texto libre no se detectan (límite conocido).
+
+**Claves de dict:** son nombres de esquema; solo se neutralizan `⟦`/`⟧`. Un identificador usado como clave no se tokeniza (límite conocido).
 
 ### 3.3 Vista `audit`
 
