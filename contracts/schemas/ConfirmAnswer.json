@@ -1,6 +1,7 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "additionalProperties": false,
+  "description": "Respuesta del usuario (sí/no) a una confirmación, con su token (M0 §2.8).",
   "properties": {
     "answer": {
       "enum": [

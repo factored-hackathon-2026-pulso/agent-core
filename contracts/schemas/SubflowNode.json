@@ -31,6 +31,7 @@
     },
     "SubflowConfig": {
       "additionalProperties": false,
+      "description": "Configuración del nodo `subflow` (M0 §2.5).",
       "properties": {
         "flow": {
           "$ref": "#/$defs/RefSpec"
@@ -58,6 +59,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Nodo `subflow` de un flow (M0 §2.5).",
   "properties": {
     "config": {
       "$ref": "#/$defs/SubflowConfig"

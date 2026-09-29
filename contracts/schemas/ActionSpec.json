@@ -66,6 +66,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Acción de escritura que propone un nodo `confirm`: tool y argumentos (M0 §2.5).",
   "properties": {
     "args": {
       "additionalProperties": {

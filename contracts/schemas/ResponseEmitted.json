@@ -29,6 +29,7 @@
     },
     "LlmUsage": {
       "additionalProperties": false,
+      "description": "Uso agregado del LLM en una respuesta: llamadas, latencia, tokens y costo (M0 §2.10).",
       "properties": {
         "calls": {
           "minimum": 0,
@@ -88,6 +89,7 @@
     },
     "ResponseEmittedPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `response_emitted` (vista audit, M0 §2.10).",
       "properties": {
         "claims": {
           "items": {
@@ -157,6 +159,7 @@
     },
     "ValidatorOutcome": {
       "additionalProperties": false,
+      "description": "Resultado del validador de respuestas (M8): fallas y regeneraciones (M0 §2.10).",
       "properties": {
         "failures": {
           "items": {
@@ -184,6 +187,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Evento `response_emitted` de la cadena de auditoría (M0 §2.10).",
   "properties": {
     "event_id": {
       "title": "Event Id",

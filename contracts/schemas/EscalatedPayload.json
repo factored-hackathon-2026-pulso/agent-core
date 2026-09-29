@@ -1,6 +1,7 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "additionalProperties": false,
+  "description": "Payload del evento `escalated` (vista audit, M0 §2.10).",
   "properties": {
     "handoff_ref": {
       "title": "Handoff Ref",

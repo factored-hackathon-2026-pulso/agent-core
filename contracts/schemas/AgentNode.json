@@ -3,6 +3,7 @@
   "$defs": {
     "AgentNodeConfig": {
       "additionalProperties": false,
+      "description": "Configuración del nodo `agent` (M0 §2.5).",
       "properties": {
         "goal": {
           "title": "Goal",
@@ -63,6 +64,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Nodo `agent` de un flow (M0 §2.5).",
   "properties": {
     "config": {
       "$ref": "#/$defs/AgentNodeConfig"

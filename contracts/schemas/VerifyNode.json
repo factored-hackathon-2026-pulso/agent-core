@@ -66,6 +66,7 @@
     },
     "VerifyConfig": {
       "additionalProperties": false,
+      "description": "Configuración del nodo `verify` (M0 §2.5).",
       "properties": {
         "by": {
           "pattern": "^(idempotency_key|fact:.+)$",
@@ -95,6 +96,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Nodo `verify` de un flow (M0 §2.5).",
   "properties": {
     "config": {
       "$ref": "#/$defs/VerifyConfig"

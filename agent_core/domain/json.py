@@ -174,4 +174,5 @@ def canonical_bytes(value: object) -> bytes:
 
 
 def sha256_hex(data: bytes) -> str:
+    """SHA-256 en hexadecimal minúscula de `data`."""
     return hashlib.sha256(data).hexdigest()

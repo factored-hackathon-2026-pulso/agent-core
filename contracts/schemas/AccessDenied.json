@@ -3,6 +3,7 @@
   "$defs": {
     "AccessDeniedPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `access_denied` (vista audit, M0 §2.10).",
       "properties": {
         "reason": {
           "$ref": "#/$defs/AccessDeniedReason"
@@ -26,6 +27,7 @@
       "type": "object"
     },
     "AccessDeniedReason": {
+      "description": "Motivos por los que se deniega un acceso (M0 §2.10).",
       "enum": [
         "principal_expired",
         "delegation_expired",
@@ -62,6 +64,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Evento `access_denied` de la cadena de auditoría (M0 §2.10).",
   "properties": {
     "event_id": {
       "title": "Event Id",

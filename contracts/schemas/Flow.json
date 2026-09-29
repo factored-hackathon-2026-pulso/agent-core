@@ -3,6 +3,7 @@
   "$defs": {
     "ActionSpec": {
       "additionalProperties": false,
+      "description": "Acción de escritura que propone un nodo `confirm`: tool y argumentos (M0 §2.5).",
       "properties": {
         "args": {
           "additionalProperties": {
@@ -23,6 +24,7 @@
     },
     "AgentNode": {
       "additionalProperties": false,
+      "description": "Nodo `agent` de un flow (M0 §2.5).",
       "properties": {
         "config": {
           "$ref": "#/$defs/AgentNodeConfig"
@@ -56,6 +58,7 @@
     },
     "AgentNodeConfig": {
       "additionalProperties": false,
+      "description": "Configuración del nodo `agent` (M0 §2.5).",
       "properties": {
         "goal": {
           "title": "Goal",
@@ -88,6 +91,7 @@
     },
     "Approver": {
       "additionalProperties": false,
+      "description": "Aprobador de un nodo `await_approval` (M0 §2.5).",
       "properties": {
         "principal_type": {
           "$ref": "#/$defs/PrincipalType"
@@ -108,6 +112,7 @@
     },
     "AwaitApprovalConfig": {
       "additionalProperties": false,
+      "description": "Configuración del nodo `await_approval` (M0 §2.5).",
       "properties": {
         "approver": {
           "$ref": "#/$defs/Approver"
@@ -131,6 +136,7 @@
     },
     "AwaitApprovalNode": {
       "additionalProperties": false,
+      "description": "Nodo `await_approval` de un flow (M0 §2.5).",
       "properties": {
         "config": {
           "$ref": "#/$defs/AwaitApprovalConfig"
@@ -164,6 +170,7 @@
     },
     "CollectConfig": {
       "additionalProperties": false,
+      "description": "Configuración del nodo `collect` (M0 §2.5).",
       "properties": {
         "max_attempts": {
           "default": 2,
@@ -199,6 +206,7 @@
     },
     "CollectNode": {
       "additionalProperties": false,
+      "description": "Nodo `collect` de un flow (M0 §2.5).",
       "properties": {
         "config": {
           "$ref": "#/$defs/CollectConfig"
@@ -232,6 +240,7 @@
     },
     "ConfirmConfig": {
       "additionalProperties": false,
+      "description": "Configuración del nodo `confirm` (M0 §2.5).",
       "properties": {
         "action": {
           "$ref": "#/$defs/ActionSpec"
@@ -266,6 +275,7 @@
     },
     "ConfirmNode": {
       "additionalProperties": false,
+      "description": "Nodo `confirm` de un flow (M0 §2.5).",
       "properties": {
         "config": {
           "$ref": "#/$defs/ConfirmConfig"
@@ -339,6 +349,7 @@
     },
     "DecideNode": {
       "additionalProperties": false,
+      "description": "Nodo `decide` de un flow (M0 §2.5).",
       "properties": {
         "config": {
           "$ref": "#/$defs/DecideConfig"
@@ -372,6 +383,7 @@
     },
     "EndConfig": {
       "additionalProperties": false,
+      "description": "Configuración del nodo `end` (M0 §2.5).",
       "properties": {
         "outcome": {
           "$ref": "#/$defs/Outcome"
@@ -400,6 +412,7 @@
     },
     "EndNode": {
       "additionalProperties": false,
+      "description": "Nodo `end` de un flow (M0 §2.5).",
       "properties": {
         "config": {
           "$ref": "#/$defs/EndConfig"
@@ -433,6 +446,7 @@
     },
     "EscalateConfig": {
       "additionalProperties": false,
+      "description": "Configuración del nodo `escalate` (M0 §2.5).",
       "properties": {
         "priority_expr": {
           "$ref": "#/$defs/JsonValue",
@@ -463,6 +477,7 @@
     },
     "EscalateNode": {
       "additionalProperties": false,
+      "description": "Nodo `escalate` de un flow (M0 §2.5).",
       "properties": {
         "config": {
           "$ref": "#/$defs/EscalateConfig"
@@ -496,6 +511,7 @@
     },
     "GenerateConfig": {
       "additionalProperties": false,
+      "description": "Configuración del nodo `generate` (M0 §2.5).",
       "properties": {
         "allowed_facts": {
           "items": {
@@ -561,6 +577,7 @@
       ]
     },
     "Outcome": {
+      "description": "Resultado final de un run (M0 §2.7).",
       "enum": [
         "resolved",
         "abstained",
@@ -575,6 +592,7 @@
       "type": "string"
     },
     "PrincipalType": {
+      "description": "Tipo de principal que invoca el motor (ADR 0006, M0 §2.3).",
       "enum": [
         "customer",
         "advisor",
@@ -614,6 +632,7 @@
     },
     "RespondConfig": {
       "additionalProperties": false,
+      "description": "Configuración del nodo `respond` (M0 §2.5).",
       "properties": {
         "await": {
           "default": false,
@@ -656,6 +675,7 @@
     },
     "RespondNode": {
       "additionalProperties": false,
+      "description": "Nodo `respond` de un flow (M0 §2.5).",
       "properties": {
         "config": {
           "$ref": "#/$defs/RespondConfig"
@@ -689,6 +709,7 @@
     },
     "RuleConfig": {
       "additionalProperties": false,
+      "description": "Configuración del nodo `rule` (M0 §2.5).",
       "properties": {
         "expr": {
           "$ref": "#/$defs/JsonValue",
@@ -711,6 +732,7 @@
     },
     "RuleNode": {
       "additionalProperties": false,
+      "description": "Nodo `rule` de un flow (M0 §2.5).",
       "properties": {
         "config": {
           "$ref": "#/$defs/RuleConfig"
@@ -744,6 +766,7 @@
     },
     "SlotValidator": {
       "additionalProperties": false,
+      "description": "Validador de un slot recolectado (M0 §2.5).",
       "properties": {
         "kind": {
           "enum": [
@@ -768,6 +791,7 @@
     },
     "SubflowConfig": {
       "additionalProperties": false,
+      "description": "Configuración del nodo `subflow` (M0 §2.5).",
       "properties": {
         "flow": {
           "$ref": "#/$defs/RefSpec"
@@ -795,6 +819,7 @@
     },
     "SubflowNode": {
       "additionalProperties": false,
+      "description": "Nodo `subflow` de un flow (M0 §2.5).",
       "properties": {
         "config": {
           "$ref": "#/$defs/SubflowConfig"
@@ -828,6 +853,7 @@
     },
     "ToolConfig": {
       "additionalProperties": false,
+      "description": "Configuración del nodo `tool` (M0 §2.5).",
       "properties": {
         "args": {
           "additionalProperties": {
@@ -860,6 +886,7 @@
     },
     "ToolNode": {
       "additionalProperties": false,
+      "description": "Nodo `tool` de un flow (M0 §2.5).",
       "properties": {
         "config": {
           "$ref": "#/$defs/ToolConfig"
@@ -893,6 +920,7 @@
     },
     "VerifyConfig": {
       "additionalProperties": false,
+      "description": "Configuración del nodo `verify` (M0 §2.5).",
       "properties": {
         "by": {
           "pattern": "^(idempotency_key|fact:.+)$",
@@ -922,6 +950,7 @@
     },
     "VerifyNode": {
       "additionalProperties": false,
+      "description": "Nodo `verify` de un flow (M0 §2.5).",
       "properties": {
         "config": {
           "$ref": "#/$defs/VerifyConfig"
@@ -983,6 +1012,7 @@
     },
     "WriteToolNode": {
       "additionalProperties": false,
+      "description": "Nodo `write_tool` de un flow (M0 §2.5).",
       "properties": {
         "config": {
           "$ref": "#/$defs/WriteToolConfig"
@@ -1016,6 +1046,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Flow versionado: lista de nodos, el primero es la entrada (M0 §2.4).",
   "properties": {
     "id": {
       "pattern": "^[a-z0-9][a-z0-9_/-]*$",

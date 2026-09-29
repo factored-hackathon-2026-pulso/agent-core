@@ -3,6 +3,7 @@
   "$defs": {
     "ActionSpec": {
       "additionalProperties": false,
+      "description": "Acción de escritura que propone un nodo `confirm`: tool y argumentos (M0 §2.5).",
       "properties": {
         "args": {
           "additionalProperties": {
@@ -23,6 +24,7 @@
     },
     "ConfirmConfig": {
       "additionalProperties": false,
+      "description": "Configuración del nodo `confirm` (M0 §2.5).",
       "properties": {
         "action": {
           "$ref": "#/$defs/ActionSpec"
@@ -120,6 +122,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Nodo `confirm` de un flow (M0 §2.5).",
   "properties": {
     "config": {
       "$ref": "#/$defs/ConfirmConfig"

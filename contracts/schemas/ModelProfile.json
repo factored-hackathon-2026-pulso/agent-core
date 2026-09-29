@@ -3,6 +3,7 @@
   "$defs": {
     "ModelPrice": {
       "additionalProperties": false,
+      "description": "Tarifa de un modelo por millón de tokens, con fuente y fecha (M0 §2.4).",
       "properties": {
         "as_of": {
           "format": "date",
@@ -51,6 +52,7 @@
       "type": "object"
     },
     "StructuredMode": {
+      "description": "Modo de salida estructurada de un modelo: nativo o por prompt (M0 §2.4).",
       "enum": [
         "native",
         "prompted"
@@ -60,6 +62,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Perfil de un modelo de lenguaje: alias de endpoint, parámetros y tarifa (ADR 0016).",
   "properties": {
     "endpoint_alias": {
       "minLength": 1,

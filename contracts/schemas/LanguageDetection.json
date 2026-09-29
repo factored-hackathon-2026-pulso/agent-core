@@ -1,6 +1,7 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "additionalProperties": false,
+  "description": "Configuración versionada de la detección de idioma, con detector fijado (M0 §2.4).",
   "properties": {
     "candidates": {
       "items": {

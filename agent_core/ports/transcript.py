@@ -4,6 +4,7 @@ from agent_core.domain.shared import TranscriptEntry
 
 
 class TranscriptStore(Protocol):
+    """Puerto de almacenamiento del transcript (M0 §2.9)."""
     def append(self, entry: TranscriptEntry) -> str:
         """Devuelve el `entry_id`."""
         ...

@@ -43,6 +43,7 @@ PositiveTimedelta = Annotated[timedelta, AfterValidator(_positive)]
 
 
 class SlotValidator(Model):
+    """Validador de un slot recolectado (M0 §2.5)."""
     kind: Literal["type", "regex", "enum", "decide"]
     value: JsonValue
 
@@ -57,6 +58,7 @@ class DecideConfig(Model):
 
 
 class RuleConfig(Model):
+    """Configuración del nodo `rule` (M0 §2.5)."""
     policy: RefSpec | None = None
     expr: JsonValue = None
 
@@ -68,6 +70,7 @@ class RuleConfig(Model):
 
 
 class CollectConfig(Model):
+    """Configuración del nodo `collect` (M0 §2.5)."""
     slot: str
     prompt_ref: RefSpec
     validator: SlotValidator | None = None  # None: texto no vacío
@@ -75,6 +78,7 @@ class CollectConfig(Model):
 
 
 class ToolConfig(Model):
+    """Configuración del nodo `tool` (M0 §2.5)."""
     tool: RefSpec
     args: dict[str, JsonValue] = Field(default_factory=dict)
     save_as: SaveAs
@@ -90,11 +94,13 @@ class WriteToolConfig(Model):
 
 
 class ActionSpec(Model):
+    """Acción de escritura que propone un nodo `confirm`: tool y argumentos (M0 §2.5)."""
     tool: RefSpec
     args: dict[str, JsonValue] = Field(default_factory=dict)
 
 
 class ConfirmConfig(Model):
+    """Configuración del nodo `confirm` (M0 §2.5)."""
     action: ActionSpec
     summary_template: RefSpec
     reprompt_template: RefSpec | None = None
@@ -102,6 +108,7 @@ class ConfirmConfig(Model):
 
 
 class VerifyConfig(Model):
+    """Configuración del nodo `verify` (M0 §2.5)."""
     readback: RefSpec
     by: Annotated[str, StringConstraints(pattern=r"^(idempotency_key|fact:.+)$")]
     predicate: JsonValue
@@ -109,6 +116,7 @@ class VerifyConfig(Model):
 
 
 class GenerateConfig(Model):
+    """Configuración del nodo `generate` (M0 §2.5)."""
     prompt_ref: RefSpec
     allowed_facts: list[str] = Field(default_factory=list)
     knowledge_refs: list[str] = Field(default_factory=list)  # se reemplaza al cerrar el tema #10
@@ -116,6 +124,7 @@ class GenerateConfig(Model):
 
 
 class RespondConfig(Model):
+    """Configuración del nodo `respond` (M0 §2.5)."""
     template_ref: RefSpec | None = None
     generate: GenerateConfig | None = None
     await_: bool = Field(default=False, alias="await")
@@ -129,17 +138,20 @@ class RespondConfig(Model):
 
 
 class EscalateConfig(Model):
+    """Configuración del nodo `escalate` (M0 §2.5)."""
     reason_code: ReasonCodeStr
     target_queue: str | None = None  # None: agent.default_target_queue
     priority_expr: JsonValue = None
 
 
 class EndConfig(Model):
+    """Configuración del nodo `end` (M0 §2.5)."""
     outcome: Outcome
     output_map: dict[str, str] | None = None
 
 
 class AgentNodeConfig(Model):
+    """Configuración del nodo `agent` (M0 §2.5)."""
     tools_allowed: list[RefSpec]
     max_steps: PositiveInt
     prompt_ref: RefSpec
@@ -147,17 +159,20 @@ class AgentNodeConfig(Model):
 
 
 class SubflowConfig(Model):
+    """Configuración del nodo `subflow` (M0 §2.5)."""
     flow: RefSpec
     map_in: dict[str, str] = Field(default_factory=dict)
     map_out: dict[str, str] = Field(default_factory=dict)
 
 
 class Approver(Model):
+    """Aprobador de un nodo `await_approval` (M0 §2.5)."""
     principal_type: PrincipalType
     roles: list[str] = Field(default_factory=list)
 
 
 class AwaitApprovalConfig(Model):
+    """Configuración del nodo `await_approval` (M0 §2.5)."""
     approver: Approver
     summary_template: RefSpec
     timeout: PositiveTimedelta
@@ -169,66 +184,79 @@ class _NodeBase(Model):
 
 
 class DecideNode(_NodeBase):
+    """Nodo `decide` de un flow (M0 §2.5)."""
     type: Literal["decide"]
     config: DecideConfig
 
 
 class RuleNode(_NodeBase):
+    """Nodo `rule` de un flow (M0 §2.5)."""
     type: Literal["rule"]
     config: RuleConfig
 
 
 class CollectNode(_NodeBase):
+    """Nodo `collect` de un flow (M0 §2.5)."""
     type: Literal["collect"]
     config: CollectConfig
 
 
 class ToolNode(_NodeBase):
+    """Nodo `tool` de un flow (M0 §2.5)."""
     type: Literal["tool"]
     config: ToolConfig
 
 
 class WriteToolNode(_NodeBase):
+    """Nodo `write_tool` de un flow (M0 §2.5)."""
     type: Literal["tool"]
     config: WriteToolConfig
 
 
 class ConfirmNode(_NodeBase):
+    """Nodo `confirm` de un flow (M0 §2.5)."""
     type: Literal["confirm"]
     config: ConfirmConfig
 
 
 class VerifyNode(_NodeBase):
+    """Nodo `verify` de un flow (M0 §2.5)."""
     type: Literal["verify"]
     config: VerifyConfig
 
 
 class RespondNode(_NodeBase):
+    """Nodo `respond` de un flow (M0 §2.5)."""
     type: Literal["respond"]
     config: RespondConfig
 
 
 class EscalateNode(_NodeBase):
+    """Nodo `escalate` de un flow (M0 §2.5)."""
     type: Literal["escalate"]
     config: EscalateConfig
 
 
 class EndNode(_NodeBase):
+    """Nodo `end` de un flow (M0 §2.5)."""
     type: Literal["end"]
     config: EndConfig
 
 
 class AgentNode(_NodeBase):
+    """Nodo `agent` de un flow (M0 §2.5)."""
     type: Literal["agent"]
     config: AgentNodeConfig
 
 
 class SubflowNode(_NodeBase):
+    """Nodo `subflow` de un flow (M0 §2.5)."""
     type: Literal["subflow"]
     config: SubflowConfig
 
 
 class AwaitApprovalNode(_NodeBase):
+    """Nodo `await_approval` de un flow (M0 §2.5)."""
     type: Literal["await_approval"]
     config: AwaitApprovalConfig
 

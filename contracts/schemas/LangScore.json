@@ -1,6 +1,7 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "additionalProperties": false,
+  "description": "Idioma candidato con su puntuación.",
   "properties": {
     "lang": {
       "title": "Lang",

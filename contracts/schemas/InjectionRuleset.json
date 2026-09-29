@@ -3,6 +3,7 @@
   "$defs": {
     "InjectionRule": {
       "additionalProperties": false,
+      "description": "Regla de detección de inyección: regex o frase literal (M0 §2.4).",
       "properties": {
         "id": {
           "minLength": 1,
@@ -33,6 +34,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Conjunto versionado de reglas de detección de inyección (M0 §2.4).",
   "properties": {
     "id": {
       "pattern": "^[a-z0-9][a-z0-9_/-]*$",

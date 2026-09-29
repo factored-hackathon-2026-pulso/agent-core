@@ -38,6 +38,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Configuración del nodo `escalate` (M0 §2.5).",
   "properties": {
     "priority_expr": {
       "$ref": "#/$defs/JsonValue",

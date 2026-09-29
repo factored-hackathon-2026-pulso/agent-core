@@ -27,6 +27,7 @@ _PINNED_DETECTOR = r"^[a-z][a-z0-9_-]*@(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:
 
 
 class Budgets(Model):
+    """Presupuestos duros de un agente por turno y por run (M0 §2.4)."""
     max_nodes_per_turn: PositiveInt
     max_model_calls_per_turn: PositiveInt
     max_tokens_per_run: PositiveInt
@@ -47,6 +48,7 @@ class EngineTemplates(Model):
 
 
 class Agent(Model):
+    """Agente descrito como datos versionados: flow de entrada, límites y plantillas (M0 §2.4)."""
     id: EntityId
     version: ExactVersion
     mode: Mode
@@ -74,6 +76,7 @@ class Agent(Model):
 
 
 class Flow(Model):
+    """Flow versionado: lista de nodos, el primero es la entrada (M0 §2.4)."""
     id: EntityId
     version: ExactVersion
     priority: int
@@ -81,17 +84,20 @@ class Flow(Model):
 
 
 class EscalateAction(Model):
+    """Acción de una interrupción que escala a una cola (M0 §2.4)."""
     type: Literal["escalate"]
     target_queue: str
     priority: str
 
 
 class StartFlowAction(Model):
+    """Acción de una interrupción que inicia un flow (M0 §2.4)."""
     type: Literal["start_flow"]
     flow: RefSpec
 
 
 class Interrupt(Model):
+    """Interrupción de una release: prioridad y acción (escalar o iniciar un flow) (M0 §2.4)."""
     id: EntityId
     priority: int
     action: Annotated[EscalateAction | StartFlowAction, Field(discriminator="type")]
@@ -99,6 +105,7 @@ class Interrupt(Model):
 
 
 class LanguageDetection(Model):
+    """Configuración versionada de la detección de idioma, con detector fijado (M0 §2.4)."""
     id: EntityId
     version: ExactVersion
     detector: Annotated[str, StringConstraints(pattern=_PINNED_DETECTOR)]  # "lingua@<versión exacta>"
@@ -110,6 +117,7 @@ class LanguageDetection(Model):
 
 
 class InjectionRule(Model):
+    """Regla de detección de inyección: regex o frase literal (M0 §2.4)."""
     id: str = Field(min_length=1)
     pattern: str = Field(min_length=1)
     kind: Literal["regex", "phrase"]
@@ -126,12 +134,14 @@ class InjectionRule(Model):
 
 
 class InjectionRuleset(Model):
+    """Conjunto versionado de reglas de detección de inyección (M0 §2.4)."""
     id: EntityId
     version: ExactVersion
     rules: list[InjectionRule]
 
 
 class Release(Model):
+    """Conjunto inmutable de versiones exactas de entidades que forman un despliegue (M0 §2.4)."""
     id: str = Field(min_length=1)
     status: Literal["active", "revoked"]
     entities: dict[EntityKind, dict[EntityId, ExactVersion]] = Field(default_factory=dict)
@@ -151,6 +161,7 @@ class Release(Model):
 
 
 class Policy(Model):
+    """Política versionada: expresión, responsable y justificación (M0 §2.4)."""
     id: EntityId
     version: ExactVersion
     owner: str
@@ -159,6 +170,7 @@ class Policy(Model):
 
 
 class Template(Model):
+    """Plantilla versionada de respuesta por locale (M0 §2.4)."""
     id: EntityId
     version: ExactVersion
     locales: dict[Locale, str] = Field(min_length=1)
@@ -166,6 +178,7 @@ class Template(Model):
 
 
 class Prompt(Model):
+    """Prompt versionado por locale, con su perfil de modelo (M0 §2.4)."""
     id: EntityId
     version: ExactVersion
     locales: dict[Locale, str] = Field(min_length=1)
@@ -174,11 +187,13 @@ class Prompt(Model):
 
 
 class StructuredMode(StrEnum):
+    """Modo de salida estructurada de un modelo: nativo o por prompt (M0 §2.4)."""
     native = "native"
     prompted = "prompted"
 
 
 class ModelPrice(Model):
+    """Tarifa de un modelo por millón de tokens, con fuente y fecha (M0 §2.4)."""
     input_per_mtok: NonNegativeMoney
     output_per_mtok: NonNegativeMoney
     source: str = Field(min_length=1)
@@ -186,6 +201,7 @@ class ModelPrice(Model):
 
 
 class ModelProfile(Model):
+    """Perfil de un modelo de lenguaje: alias de endpoint, parámetros y tarifa (ADR 0016)."""
     id: EntityId
     version: ExactVersion
     endpoint_alias: str = Field(min_length=1)  # alias del endpoint, nunca credenciales ni URL
@@ -198,6 +214,7 @@ class ModelProfile(Model):
 
 
 class RiskClass(StrEnum):
+    """Clase de riesgo de una tool; determina si escribe y qué confirmación exige (M0 §2.4)."""
     read = "read"
     compute = "compute"
     write_reversible = "write_reversible"
@@ -206,6 +223,7 @@ class RiskClass(StrEnum):
 
 
 class ToolDef(Model):
+    """Definición versionada de una tool: riesgo, nivel de autenticación e idempotencia (M0 §2.4)."""
     id: EntityId
     version: ExactVersion
     risk_class: RiskClass
@@ -229,16 +247,19 @@ class ToolDef(Model):
 
 
 class ProviderSpec(Model):
+    """Proveedor de una decisión (jev, classifier, llm_structured o rule) y su configuración."""
     provider: Literal["jev", "classifier", "llm_structured", "rule"]
     config: dict[str, JsonValue] = Field(default_factory=dict)
 
 
 class CalibrationRef(Model):
+    """Método de calibración de un modelo de decisión y la corrida que lo produjo (M0 §2.4)."""
     method: Literal["none", "isotonic", "platt", "temperature"]
     run: str | None = None
 
 
 class DecisionModelDef(Model):
+    """Definición de un modelo de decisión: esquema de salida, proveedores y calibración (M0 §2.4)."""
     id: EntityId
     version: ExactVersion
     output_schema: dict[str, JsonValue]

@@ -3,6 +3,7 @@ from typing import Protocol
 
 
 class IdKind(StrEnum):
+    """Clases de identificador que emite el `IdSource` (M0 §2.9)."""
     run = "run"
     session = "session"
     turn = "turn"

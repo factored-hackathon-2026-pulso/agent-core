@@ -2,6 +2,7 @@
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "$defs": {
     "PrincipalType": {
+      "description": "Tipo de principal que invoca el motor (ADR 0006, M0 §2.3).",
       "enum": [
         "customer",
         "advisor",
@@ -13,6 +14,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Identidad comparable de un principal (tipo e id), sin credenciales (M0 §2.3).",
   "properties": {
     "id": {
       "anyOf": [

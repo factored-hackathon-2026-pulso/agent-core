@@ -13,6 +13,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Payload del evento `step_up_requested` (vista audit, M0 §2.10).",
   "properties": {
     "attempt": {
       "exclusiveMinimum": 0,

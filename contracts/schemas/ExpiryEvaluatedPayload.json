@@ -1,6 +1,7 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "additionalProperties": false,
+  "description": "Payload del evento `expiry_evaluated` (vista audit, M0 §2.10).",
   "properties": {
     "expired": {
       "title": "Expired",

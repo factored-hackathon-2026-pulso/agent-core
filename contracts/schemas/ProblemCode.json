@@ -1,5 +1,6 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "description": "Códigos de problema estables que expone la API (M0 §2.11).",
   "enum": [
     "credentials_invalid",
     "principal_expired",

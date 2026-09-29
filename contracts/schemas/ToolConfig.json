@@ -66,6 +66,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Configuración del nodo `tool` (M0 §2.5).",
   "properties": {
     "args": {
       "additionalProperties": {

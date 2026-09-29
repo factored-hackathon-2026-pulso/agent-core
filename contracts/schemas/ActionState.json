@@ -1,5 +1,6 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "description": "Estados del ciclo de vida de una `Action` (M0 §2.6).",
   "enum": [
     "proposed",
     "confirmed",

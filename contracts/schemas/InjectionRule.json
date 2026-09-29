@@ -1,6 +1,7 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "additionalProperties": false,
+  "description": "Regla de detección de inyección: regex o frase literal (M0 §2.4).",
   "properties": {
     "id": {
       "minLength": 1,

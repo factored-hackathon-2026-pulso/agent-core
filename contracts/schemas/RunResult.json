@@ -12,6 +12,7 @@
       "type": "string"
     },
     "Awaiting": {
+      "description": "Qué espera el run del usuario en el siguiente turno (M0 §2.7).",
       "enum": [
         "none",
         "slot",
@@ -89,6 +90,7 @@
     },
     "Message": {
       "additionalProperties": false,
+      "description": "Mensaje al usuario: plantilla o generado, con su locale (M0 §2.8).",
       "properties": {
         "kind": {
           "enum": [
@@ -117,6 +119,7 @@
       "type": "object"
     },
     "Outcome": {
+      "description": "Resultado final de un run (M0 §2.7).",
       "enum": [
         "resolved",
         "abstained",
@@ -132,6 +135,7 @@
     },
     "StepUpPrompt": {
       "additionalProperties": false,
+      "description": "Solicitud de elevar el nivel de autenticación (M0 §2.8).",
       "properties": {
         "reason": {
           "title": "Reason",
@@ -150,6 +154,7 @@
     },
     "TurnResult": {
       "additionalProperties": false,
+      "description": "Resultado de un turno: mensajes, estado esperado y outcome (M0 §2.8).",
       "properties": {
         "awaiting": {
           "$ref": "#/$defs/Awaiting"
@@ -247,6 +252,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Resultado de crear o consultar un run (M0 §2.8).",
   "properties": {
     "first_turn": {
       "anyOf": [

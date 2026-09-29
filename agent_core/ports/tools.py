@@ -11,6 +11,7 @@ __all__ = ["ToolCallContext", "ToolExecutor", "ToolResult", "ToolStatus"]
 
 
 class ToolCallContext(Model):
+    """Contexto de una llamada a tool: run, release, principal y sujeto (M0 §2.9)."""
     run_id: str
     release: str
     principal: Principal
@@ -31,6 +32,7 @@ class ToolResult(Model):
 
 
 class ToolExecutor(Protocol):
+    """Puerto de ejecución de tools (M0 §2.9)."""
     def execute(self, tool: EntityRef, args: dict[str, JsonValue], bound_params: dict[str, str],
                 ctx: ToolCallContext, idempotency_key: str | None = None) -> ToolResult:
         """Lectura/compute: ok|error|timeout|denied|step_up_required. Escritura: ok|denied|uncertain|

@@ -3,6 +3,7 @@
   "$defs": {
     "GuardsOutput": {
       "additionalProperties": false,
+      "description": "Salida de los guardarraíles de entrada (idioma, inyección, tamaño) de un turno (M0 §2.10).",
       "properties": {
         "injection": {
           "$ref": "#/$defs/InjectionGuard"
@@ -25,6 +26,7 @@
     },
     "InjectionGuard": {
       "additionalProperties": false,
+      "description": "Resultado del detector de inyección: señales y versión del ruleset (M0 §2.10).",
       "properties": {
         "flagged": {
           "title": "Flagged",
@@ -51,6 +53,7 @@
     },
     "LangGuard": {
       "additionalProperties": false,
+      "description": "Resultado de la detección de idioma del turno (M0 §2.10).",
       "properties": {
         "decision": {
           "enum": [
@@ -110,6 +113,7 @@
     },
     "LangScore": {
       "additionalProperties": false,
+      "description": "Idioma candidato con su puntuación.",
       "properties": {
         "lang": {
           "title": "Lang",
@@ -131,6 +135,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Payload del evento `turn_started` (vista audit, M0 §2.10).",
   "properties": {
     "client_turn_id": {
       "anyOf": [

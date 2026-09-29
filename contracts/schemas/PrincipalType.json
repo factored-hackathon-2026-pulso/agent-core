@@ -1,5 +1,6 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "description": "Tipo de principal que invoca el motor (ADR 0006, M0 §2.3).",
   "enum": [
     "customer",
     "advisor",

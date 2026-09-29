@@ -12,6 +12,7 @@ Mode = Literal["conversational", "task"]
 
 
 class Outcome(StrEnum):
+    """Resultado final de un run (M0 §2.7)."""
     resolved = "resolved"
     abstained = "abstained"
     cancelled = "cancelled"
@@ -38,6 +39,7 @@ def is_declarable(outcome: Outcome, mode: str) -> bool:
 
 
 class ReasonCode(StrEnum):
+    """Códigos de motivo de escalamiento o cierre (M0 §2.7)."""
     low_confidence = "low_confidence"
     budget_exceeded = "budget_exceeded"
     tool_failure = "tool_failure"
@@ -64,6 +66,7 @@ ReasonCodeStr = Annotated[str, AfterValidator(_check_reason)]
 
 
 class Awaiting(StrEnum):
+    """Qué espera el run del usuario en el siguiente turno (M0 §2.7)."""
     none = "none"
     slot = "slot"
     confirmation = "confirmation"

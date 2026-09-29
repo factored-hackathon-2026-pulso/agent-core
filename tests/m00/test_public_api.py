@@ -127,3 +127,26 @@ def test_id_kinds_match_spec() -> None:
     assert {k.value for k in ports.IdKind} == {
         "run", "session", "turn", "action", "decision", "fact", "call", "handoff", "event", "message"}
     assert {k.value for k in ports.KeyPurpose} == {"fingerprint", "token_map"}
+
+
+def _missing_docstrings(module: object) -> list[str]:
+    """Clases y funciones exportadas cuyo `__dict__` propio no trae docstring (no vale el heredado)."""
+    exported = getattr(module, "__all__")  # noqa: B009
+    missing = []
+    for name in exported:
+        obj = getattr(module, name)
+        if inspect.isclass(obj):
+            doc = vars(obj).get("__doc__")
+        elif inspect.isfunction(obj):
+            doc = obj.__doc__
+        else:
+            continue
+        if not (isinstance(doc, str) and doc.strip()):
+            missing.append(name)
+    return sorted(missing)
+
+
+def test_every_exported_class_and_function_has_its_own_docstring() -> None:
+    """DoD M0 §10: la API pública está documentada."""
+    assert _missing_docstrings(domain) == []
+    assert _missing_docstrings(ports) == []

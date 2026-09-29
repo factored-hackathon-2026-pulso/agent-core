@@ -11,6 +11,7 @@ from agent_core.domain.outcomes import ReasonCodeStr
 
 
 class ToolStatus(StrEnum):
+    """Estado del resultado de una tool (M0 §2.8)."""
     ok = "ok"
     error = "error"
     timeout = "timeout"
@@ -44,6 +45,7 @@ class Fingerprint(Model):
 
 
 class TranscriptEntry(Model):
+    """Entrada del transcript de un run, con el texto tal como lo vio el modelo (M0 §2.8)."""
     run_id: str
     turn_id: str
     role: Literal["user", "assistant", "rejected_draft"]
@@ -52,11 +54,13 @@ class TranscriptEntry(Model):
 
 
 class TranscriptRef(Model):
+    """Referencia a una entrada del transcript, con su huella (M0 §2.8)."""
     entry_id: str
     fingerprint: Fingerprint
 
 
 class OutboxMessage(Model):
+    """Mensaje de la bandeja de salida transaccional (M0 §2.8)."""
     message_id: str
     type: Literal["handoff_created"]
     run_id: str

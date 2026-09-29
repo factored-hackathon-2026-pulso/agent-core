@@ -1,6 +1,7 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "additionalProperties": false,
+  "description": "Referencia al sujeto de un run (tipo y referencia opaca) (M0 §2.3).",
   "properties": {
     "kind": {
       "minLength": 1,

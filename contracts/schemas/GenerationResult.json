@@ -38,6 +38,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Resultado de una generación del LLM: salida, tokens, costo y modelo (M0 §2.9).",
   "properties": {
     "cost_usd": {
       "anyOf": [

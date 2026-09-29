@@ -66,6 +66,7 @@
     },
     "RuleConfig": {
       "additionalProperties": false,
+      "description": "Configuración del nodo `rule` (M0 §2.5).",
       "properties": {
         "expr": {
           "$ref": "#/$defs/JsonValue",
@@ -88,6 +89,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Nodo `rule` de un flow (M0 §2.5).",
   "properties": {
     "config": {
       "$ref": "#/$defs/RuleConfig"

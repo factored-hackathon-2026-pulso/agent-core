@@ -1,6 +1,7 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "additionalProperties": false,
+  "description": "Origen de un hecho: tipo, referencia y entradas (M0 §2.6).",
   "properties": {
     "inputs": {
       "items": {

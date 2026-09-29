@@ -1,6 +1,7 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "additionalProperties": false,
+  "description": "Entrada del transcript de un run, con el texto tal como lo vio el modelo (M0 §2.8).",
   "properties": {
     "reason": {
       "anyOf": [

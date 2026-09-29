@@ -38,6 +38,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Validador de un slot recolectado (M0 §2.5).",
   "properties": {
     "kind": {
       "enum": [

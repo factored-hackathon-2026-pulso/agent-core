@@ -66,6 +66,7 @@
     },
     "SlotValidator": {
       "additionalProperties": false,
+      "description": "Validador de un slot recolectado (M0 §2.5).",
       "properties": {
         "kind": {
           "enum": [
@@ -90,6 +91,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Configuración del nodo `collect` (M0 §2.5).",
   "properties": {
     "max_attempts": {
       "default": 2,

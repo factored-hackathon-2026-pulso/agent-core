@@ -3,6 +3,7 @@
   "$defs": {
     "FactSource": {
       "additionalProperties": false,
+      "description": "Origen de un hecho: tipo, referencia y entradas (M0 §2.6).",
       "properties": {
         "inputs": {
           "items": {
@@ -70,6 +71,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Hecho verificado con su origen (tool, compute, identidad o conocimiento); vista `full` (M0 §2.6).",
   "properties": {
     "fact_id": {
       "title": "Fact Id",

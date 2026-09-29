@@ -38,6 +38,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Resultado guardado de una decisión (`decide`): valor, probabilidades y proveedor (M0 §2.6).",
   "properties": {
     "decision_id": {
       "title": "Decision Id",

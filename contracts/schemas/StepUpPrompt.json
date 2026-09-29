@@ -13,6 +13,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Solicitud de elevar el nivel de autenticación (M0 §2.8).",
   "properties": {
     "reason": {
       "title": "Reason",

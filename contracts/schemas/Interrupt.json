@@ -3,6 +3,7 @@
   "$defs": {
     "EscalateAction": {
       "additionalProperties": false,
+      "description": "Acción de una interrupción que escala a una cola (M0 §2.4).",
       "properties": {
         "priority": {
           "title": "Priority",
@@ -56,6 +57,7 @@
     },
     "StartFlowAction": {
       "additionalProperties": false,
+      "description": "Acción de una interrupción que inicia un flow (M0 §2.4).",
       "properties": {
         "flow": {
           "$ref": "#/$defs/RefSpec"
@@ -75,6 +77,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Interrupción de una release: prioridad y acción (escalar o iniciar un flow) (M0 §2.4).",
   "properties": {
     "action": {
       "discriminator": {

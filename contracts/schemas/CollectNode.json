@@ -3,6 +3,7 @@
   "$defs": {
     "CollectConfig": {
       "additionalProperties": false,
+      "description": "Configuración del nodo `collect` (M0 §2.5).",
       "properties": {
         "max_attempts": {
           "default": 2,
@@ -101,6 +102,7 @@
     },
     "SlotValidator": {
       "additionalProperties": false,
+      "description": "Validador de un slot recolectado (M0 §2.5).",
       "properties": {
         "kind": {
           "enum": [
@@ -125,6 +127,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Nodo `collect` de un flow (M0 §2.5).",
   "properties": {
     "config": {
       "$ref": "#/$defs/CollectConfig"

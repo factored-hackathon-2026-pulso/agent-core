@@ -31,6 +31,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Nodo `write_tool` de un flow (M0 §2.5).",
   "properties": {
     "config": {
       "$ref": "#/$defs/WriteToolConfig"
