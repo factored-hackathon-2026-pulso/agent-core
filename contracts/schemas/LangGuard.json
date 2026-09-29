@@ -3,6 +3,7 @@
   "$defs": {
     "LangScore": {
       "additionalProperties": false,
+      "description": "Idioma candidato con su puntuación.",
       "properties": {
         "lang": {
           "title": "Lang",
@@ -24,6 +25,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Resultado de la detección de idioma del turno (M0 §2.10).",
   "properties": {
     "decision": {
       "enum": [

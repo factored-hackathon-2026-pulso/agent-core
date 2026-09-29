@@ -2,6 +2,7 @@
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "$defs": {
     "ActionState": {
+      "description": "Estados del ciclo de vida de una `Action` (M0 §2.6).",
       "enum": [
         "proposed",
         "confirmed",
@@ -39,6 +40,7 @@
       "type": "object"
     },
     "InvalidationReason": {
+      "description": "Motivos por los que se invalida o cancela una acción (M0 §2.6).",
       "enum": [
         "cancel",
         "abandoned",
@@ -88,6 +90,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Acción de escritura propuesta al usuario, con su token de confirmación y ciclo de vida (M0 §2.6).",
   "properties": {
     "action_id": {
       "title": "Action Id",

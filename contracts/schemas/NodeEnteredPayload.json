@@ -25,6 +25,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Payload del evento `node_entered` (vista audit, M0 §2.10).",
   "properties": {
     "flow": {
       "$ref": "#/$defs/EntityRef"

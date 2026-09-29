@@ -3,6 +3,7 @@
   "$defs": {
     "InjectionFlaggedPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `injection_flagged` (vista audit, M0 §2.10).",
       "properties": {
         "ruleset": {
           "title": "Ruleset",
@@ -34,6 +35,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Evento `injection_flagged` de la cadena de auditoría (M0 §2.10).",
   "properties": {
     "event_id": {
       "title": "Event Id",

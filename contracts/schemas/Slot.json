@@ -38,6 +38,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Valor de un slot recolectado, `claimed` o `validated`, y el turno de origen (M0 §2.6).",
   "properties": {
     "source_turn": {
       "minimum": 0,

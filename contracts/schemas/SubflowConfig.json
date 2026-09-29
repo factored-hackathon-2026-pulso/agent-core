@@ -31,6 +31,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Configuración del nodo `subflow` (M0 §2.5).",
   "properties": {
     "flow": {
       "$ref": "#/$defs/RefSpec"

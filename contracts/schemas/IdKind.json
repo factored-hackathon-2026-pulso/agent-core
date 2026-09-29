@@ -1,5 +1,6 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "description": "Clases de identificador que emite el `IdSource` (M0 §2.9).",
   "enum": [
     "run",
     "session",

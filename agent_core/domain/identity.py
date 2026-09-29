@@ -8,6 +8,7 @@ from agent_core.domain.base import Model, UtcDatetime
 
 
 class PrincipalType(StrEnum):
+    """Tipo de principal que invoca el motor (ADR 0006, M0 §2.3)."""
     customer = "customer"
     advisor = "advisor"
     service = "service"
@@ -53,17 +54,20 @@ class AuthLevel(StrEnum):
 
 
 class AuthInfo(Model):
+    """Nivel de autenticación de un principal y el instante en que lo obtuvo (ADR 0010)."""
     level: AuthLevel
     at: UtcDatetime
     simulated: bool = False  # OTP de prueba etiquetado (ADR 0010)
 
 
 class PrincipalKey(Model):
+    """Identidad comparable de un principal (tipo e id), sin credenciales (M0 §2.3)."""
     type: PrincipalType
     id: str | None = Field(min_length=1)
 
 
 class SubjectRef(Model):
+    """Referencia al sujeto de un run (tipo y referencia opaca) (M0 §2.3)."""
     kind: str = Field(min_length=1)
     ref: str = Field(min_length=1)
 

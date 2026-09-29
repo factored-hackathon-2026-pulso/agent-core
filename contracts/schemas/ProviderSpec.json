@@ -38,6 +38,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Proveedor de una decisión (jev, classifier, llm_structured o rule) y su configuración.",
   "properties": {
     "config": {
       "additionalProperties": {

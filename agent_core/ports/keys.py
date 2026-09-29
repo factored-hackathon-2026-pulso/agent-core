@@ -3,6 +3,7 @@ from typing import Protocol
 
 
 class KeyPurpose(StrEnum):
+    """Propósito de una clave: huella o cifrado del `token_map` (M0 §2.9)."""
     fingerprint = "fingerprint"
     token_map = "token_map"
 

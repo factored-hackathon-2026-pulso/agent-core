@@ -60,6 +60,7 @@
     },
     "RuleEvaluatedPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `rule_evaluated` (vista audit, M0 §2.10).",
       "properties": {
         "inputs": {
           "additionalProperties": {
@@ -99,6 +100,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Evento `rule_evaluated` de la cadena de auditoría (M0 §2.10).",
   "properties": {
     "event_id": {
       "title": "Event Id",

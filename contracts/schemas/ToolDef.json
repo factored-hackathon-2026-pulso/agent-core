@@ -12,6 +12,7 @@
       "type": "string"
     },
     "RiskClass": {
+      "description": "Clase de riesgo de una tool; determina si escribe y qué confirmación exige (M0 §2.4).",
       "enum": [
         "read",
         "compute",
@@ -24,6 +25,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Definición versionada de una tool: riesgo, nivel de autenticación e idempotencia (M0 §2.4).",
   "properties": {
     "confirmation_ttl": {
       "default": "PT5M",

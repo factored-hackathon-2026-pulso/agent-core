@@ -3,6 +3,7 @@
   "$defs": {
     "ConfirmAnswer": {
       "additionalProperties": false,
+      "description": "Respuesta del usuario (sí/no) a una confirmación, con su token (M0 §2.8).",
       "properties": {
         "answer": {
           "enum": [
@@ -26,6 +27,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Entrada de un turno conversacional: texto o respuesta de confirmación (M0 §2.8).",
   "properties": {
     "channel": {
       "title": "Channel",

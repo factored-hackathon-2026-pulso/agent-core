@@ -31,6 +31,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Prompt versionado por locale, con su perfil de modelo (M0 §2.4).",
   "properties": {
     "id": {
       "pattern": "^[a-z0-9][a-z0-9_/-]*$",

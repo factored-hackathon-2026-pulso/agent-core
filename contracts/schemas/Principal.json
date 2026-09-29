@@ -3,6 +3,7 @@
   "$defs": {
     "AuthInfo": {
       "additionalProperties": false,
+      "description": "Nivel de autenticación de un principal y el instante en que lo obtuvo (ADR 0010).",
       "properties": {
         "at": {
           "format": "date-time",
@@ -36,6 +37,7 @@
       "type": "string"
     },
     "PrincipalType": {
+      "description": "Tipo de principal que invoca el motor (ADR 0006, M0 §2.3).",
       "enum": [
         "customer",
         "advisor",

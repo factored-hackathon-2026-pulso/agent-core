@@ -19,6 +19,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Payload del evento `command_emitted` (vista audit, M0 §2.10).",
   "properties": {
     "above_threshold": {
       "additionalProperties": {

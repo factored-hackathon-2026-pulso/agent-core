@@ -1,6 +1,7 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "additionalProperties": false,
+  "description": "Tarifa de un modelo por millón de tokens, con fuente y fecha (M0 §2.4).",
   "properties": {
     "as_of": {
       "format": "date",

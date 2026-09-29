@@ -6,6 +6,7 @@ from agent_core.domain.refs import AgentSelector, EntityRef
 
 
 class RegistryPort(Protocol):
+    """Puerto de lectura del registro de entidades y releases (M0 §2.9)."""
     def resolve_release(self, selector: AgentSelector, principal: Principal) -> Release: ...
 
     def release_status(self, release_id: str) -> Literal["active", "revoked"]: ...

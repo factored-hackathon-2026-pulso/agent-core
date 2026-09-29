@@ -13,11 +13,13 @@ from agent_core.domain.state import RunStatus
 
 
 class ConfirmAnswer(Model):
+    """Respuesta del usuario (sí/no) a una confirmación, con su token (M0 §2.8)."""
     token: str
     answer: Literal["yes", "no"]
 
 
 class TurnInput(Model):
+    """Entrada de un turno conversacional: texto o respuesta de confirmación (M0 §2.8)."""
     session_id: str
     text: str = ""
     channel: str
@@ -33,6 +35,7 @@ class TurnInput(Model):
 
 
 class RunInput(Model):
+    """Entrada para crear un run de tipo task (M0 §2.8)."""
     agent: AgentSelector
     subject: SubjectRef | None = None
     input: dict[str, JsonValue] | None = None
@@ -41,6 +44,7 @@ class RunInput(Model):
 
 
 class Message(Model):
+    """Mensaje al usuario: plantilla o generado, con su locale (M0 §2.8)."""
     kind: Literal["template", "generated"]
     text: str
     locale: Locale
@@ -56,11 +60,13 @@ class ConfirmationPrompt(Model):
 
 
 class StepUpPrompt(Model):
+    """Solicitud de elevar el nivel de autenticación (M0 §2.8)."""
     required_level: AuthLevel
     reason: str
 
 
 class TurnResult(Model):
+    """Resultado de un turno: mensajes, estado esperado y outcome (M0 §2.8)."""
     run_id: str
     turn_id: str
     messages: list[Message]
@@ -75,6 +81,7 @@ class TurnResult(Model):
 
 
 class RunResult(Model):
+    """Resultado de crear o consultar un run (M0 §2.8)."""
     run_id: str
     session_id: str | None = None
     release: str

@@ -60,6 +60,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Payload del evento `rule_evaluated` (vista audit, M0 §2.10).",
   "properties": {
     "inputs": {
       "additionalProperties": {

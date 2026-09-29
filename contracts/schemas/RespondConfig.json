@@ -3,6 +3,7 @@
   "$defs": {
     "GenerateConfig": {
       "additionalProperties": false,
+      "description": "Configuración del nodo `generate` (M0 §2.5).",
       "properties": {
         "allowed_facts": {
           "items": {
@@ -62,6 +63,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Configuración del nodo `respond` (M0 §2.5).",
   "properties": {
     "await": {
       "default": false,

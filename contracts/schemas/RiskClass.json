@@ -1,5 +1,6 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "description": "Clase de riesgo de una tool; determina si escribe y qué confirmación exige (M0 §2.4).",
   "enum": [
     "read",
     "compute",

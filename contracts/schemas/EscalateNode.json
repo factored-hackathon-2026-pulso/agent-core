@@ -3,6 +3,7 @@
   "$defs": {
     "EscalateConfig": {
       "additionalProperties": false,
+      "description": "Configuración del nodo `escalate` (M0 §2.5).",
       "properties": {
         "priority_expr": {
           "$ref": "#/$defs/JsonValue",
@@ -68,6 +69,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Nodo `escalate` de un flow (M0 §2.5).",
   "properties": {
     "config": {
       "$ref": "#/$defs/EscalateConfig"

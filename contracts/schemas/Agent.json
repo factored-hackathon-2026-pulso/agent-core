@@ -13,6 +13,7 @@
     },
     "Budgets": {
       "additionalProperties": false,
+      "description": "Presupuestos duros de un agente por turno y por run (M0 §2.4).",
       "properties": {
         "max_cost_per_run": {
           "anyOf": [
@@ -97,6 +98,7 @@
       "type": "object"
     },
     "PrincipalType": {
+      "description": "Tipo de principal que invoca el motor (ADR 0006, M0 §2.3).",
       "enum": [
         "customer",
         "advisor",
@@ -136,6 +138,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Agente descrito como datos versionados: flow de entrada, límites y plantillas (M0 §2.4).",
   "properties": {
     "budgets": {
       "$ref": "#/$defs/Budgets"

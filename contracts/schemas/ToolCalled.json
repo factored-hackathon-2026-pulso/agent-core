@@ -86,6 +86,7 @@
     },
     "ToolCalledPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `tool_called` (vista audit, M0 §2.10).",
       "properties": {
         "action_id": {
           "anyOf": [
@@ -172,6 +173,7 @@
       "type": "object"
     },
     "ToolStatus": {
+      "description": "Estado del resultado de una tool (M0 §2.8).",
       "enum": [
         "ok",
         "error",
@@ -185,6 +187,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Evento `tool_called` de la cadena de auditoría (M0 §2.10).",
   "properties": {
     "event_id": {
       "title": "Event Id",

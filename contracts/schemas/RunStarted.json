@@ -24,6 +24,7 @@
       "type": "object"
     },
     "PrincipalType": {
+      "description": "Tipo de principal que invoca el motor (ADR 0006, M0 §2.3).",
       "enum": [
         "customer",
         "advisor",
@@ -35,6 +36,7 @@
     },
     "RunStartedPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `run_started` (vista audit, M0 §2.10).",
       "properties": {
         "agent": {
           "$ref": "#/$defs/EntityRef"
@@ -86,6 +88,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Evento `run_started` de la cadena de auditoría (M0 §2.10).",
   "properties": {
     "event_id": {
       "title": "Event Id",

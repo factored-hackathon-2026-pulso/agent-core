@@ -31,6 +31,7 @@ Alias = Annotated[str, StringConstraints(pattern=rf"^{_ALIAS}$")]
 
 
 class EntityKind(StrEnum):
+    """Clases de entidad del registro (M0 §2.4)."""
     agent = "agent"
     flow = "flow"
     decision_model = "decision_model"

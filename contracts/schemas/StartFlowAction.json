@@ -31,6 +31,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Acción de una interrupción que inicia un flow (M0 §2.4).",
   "properties": {
     "flow": {
       "$ref": "#/$defs/RefSpec"

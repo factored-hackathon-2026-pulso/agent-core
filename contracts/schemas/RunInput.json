@@ -80,6 +80,7 @@
     },
     "SubjectRef": {
       "additionalProperties": false,
+      "description": "Referencia al sujeto de un run (tipo y referencia opaca) (M0 §2.3).",
       "properties": {
         "kind": {
           "minLength": 1,
@@ -101,6 +102,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Entrada para crear un run de tipo task (M0 §2.8).",
   "properties": {
     "agent": {
       "$ref": "#/$defs/AgentSelector"

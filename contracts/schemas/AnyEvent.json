@@ -3,6 +3,7 @@
   "$defs": {
     "AccessDenied": {
       "additionalProperties": false,
+      "description": "Evento `access_denied` de la cadena de auditoría (M0 §2.10).",
       "properties": {
         "event_id": {
           "title": "Event Id",
@@ -106,6 +107,7 @@
     },
     "AccessDeniedPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `access_denied` (vista audit, M0 §2.10).",
       "properties": {
         "reason": {
           "$ref": "#/$defs/AccessDeniedReason"
@@ -129,6 +131,7 @@
       "type": "object"
     },
     "AccessDeniedReason": {
+      "description": "Motivos por los que se deniega un acceso (M0 §2.10).",
       "enum": [
         "principal_expired",
         "delegation_expired",
@@ -143,6 +146,7 @@
     },
     "ActionCancelled": {
       "additionalProperties": false,
+      "description": "Evento `action_cancelled` de la cadena de auditoría (M0 §2.10).",
       "properties": {
         "event_id": {
           "title": "Event Id",
@@ -246,6 +250,7 @@
     },
     "ActionCancelledPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `action_cancelled` (vista audit, M0 §2.10).",
       "properties": {
         "action_id": {
           "title": "Action Id",
@@ -264,6 +269,7 @@
     },
     "ActionConfirmed": {
       "additionalProperties": false,
+      "description": "Evento `action_confirmed` de la cadena de auditoría (M0 §2.10).",
       "properties": {
         "event_id": {
           "title": "Event Id",
@@ -367,6 +373,7 @@
     },
     "ActionConfirmedPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `action_confirmed` (vista audit, M0 §2.10).",
       "properties": {
         "action_id": {
           "title": "Action Id",
@@ -390,6 +397,7 @@
     },
     "ActionDispatched": {
       "additionalProperties": false,
+      "description": "Evento `action_dispatched` de la cadena de auditoría (M0 §2.10).",
       "properties": {
         "event_id": {
           "title": "Event Id",
@@ -493,6 +501,7 @@
     },
     "ActionDispatchedPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `action_dispatched` (vista audit, M0 §2.10).",
       "properties": {
         "action_id": {
           "title": "Action Id",
@@ -517,6 +526,7 @@
     },
     "ActionVerified": {
       "additionalProperties": false,
+      "description": "Evento `action_verified` de la cadena de auditoría (M0 §2.10).",
       "properties": {
         "event_id": {
           "title": "Event Id",
@@ -620,6 +630,7 @@
     },
     "ActionVerifiedPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `action_verified` (vista audit, M0 §2.10).",
       "properties": {
         "action_id": {
           "title": "Action Id",
@@ -657,6 +668,7 @@
       "type": "string"
     },
     "Awaiting": {
+      "description": "Qué espera el run del usuario en el siguiente turno (M0 §2.7).",
       "enum": [
         "none",
         "slot",
@@ -685,6 +697,7 @@
     },
     "CommandEmitted": {
       "additionalProperties": false,
+      "description": "Evento `command_emitted` de la cadena de auditoría (M0 §2.10).",
       "properties": {
         "event_id": {
           "title": "Event Id",
@@ -788,6 +801,7 @@
     },
     "CommandEmittedPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `command_emitted` (vista audit, M0 §2.10).",
       "properties": {
         "above_threshold": {
           "additionalProperties": {
@@ -860,6 +874,7 @@
     },
     "DecisionMade": {
       "additionalProperties": false,
+      "description": "Evento `decision_made` de la cadena de auditoría (M0 §2.10).",
       "properties": {
         "event_id": {
           "title": "Event Id",
@@ -963,6 +978,7 @@
     },
     "DecisionMadePayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `decision_made` (vista audit, M0 §2.10).",
       "properties": {
         "above_threshold": {
           "additionalProperties": {
@@ -1111,6 +1127,7 @@
     },
     "Escalated": {
       "additionalProperties": false,
+      "description": "Evento `escalated` de la cadena de auditoría (M0 §2.10).",
       "properties": {
         "event_id": {
           "title": "Event Id",
@@ -1214,6 +1231,7 @@
     },
     "EscalatedPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `escalated` (vista audit, M0 §2.10).",
       "properties": {
         "handoff_ref": {
           "title": "Handoff Ref",
@@ -1243,6 +1261,7 @@
     },
     "ExpiryEvaluated": {
       "additionalProperties": false,
+      "description": "Evento `expiry_evaluated` de la cadena de auditoría (M0 §2.10).",
       "properties": {
         "event_id": {
           "title": "Event Id",
@@ -1346,6 +1365,7 @@
     },
     "ExpiryEvaluatedPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `expiry_evaluated` (vista audit, M0 §2.10).",
       "properties": {
         "expired": {
           "title": "Expired",
@@ -1404,6 +1424,7 @@
     },
     "GuardsOutput": {
       "additionalProperties": false,
+      "description": "Salida de los guardarraíles de entrada (idioma, inyección, tamaño) de un turno (M0 §2.10).",
       "properties": {
         "injection": {
           "$ref": "#/$defs/InjectionGuard"
@@ -1426,6 +1447,7 @@
     },
     "HandoffResolved": {
       "additionalProperties": false,
+      "description": "Evento `handoff_resolved` de la cadena de auditoría (M0 §2.10).",
       "properties": {
         "event_id": {
           "title": "Event Id",
@@ -1529,6 +1551,7 @@
     },
     "HandoffResolvedPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `handoff_resolved` (vista audit, M0 §2.10).",
       "properties": {
         "handoff_quality": {
           "enum": [
@@ -1562,6 +1585,7 @@
     },
     "InjectionFlagged": {
       "additionalProperties": false,
+      "description": "Evento `injection_flagged` de la cadena de auditoría (M0 §2.10).",
       "properties": {
         "event_id": {
           "title": "Event Id",
@@ -1665,6 +1689,7 @@
     },
     "InjectionFlaggedPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `injection_flagged` (vista audit, M0 §2.10).",
       "properties": {
         "ruleset": {
           "title": "Ruleset",
@@ -1696,6 +1721,7 @@
     },
     "InjectionGuard": {
       "additionalProperties": false,
+      "description": "Resultado del detector de inyección: señales y versión del ruleset (M0 §2.10).",
       "properties": {
         "flagged": {
           "title": "Flagged",
@@ -1721,6 +1747,7 @@
       "type": "object"
     },
     "InvalidationReason": {
+      "description": "Motivos por los que se invalida o cancela una acción (M0 §2.6).",
       "enum": [
         "cancel",
         "abandoned",
@@ -1770,6 +1797,7 @@
     },
     "LabelScore": {
       "additionalProperties": false,
+      "description": "Etiqueta con su probabilidad (top-k de una decisión).",
       "properties": {
         "label": {
           "title": "Label",
@@ -1791,6 +1819,7 @@
     },
     "LangGuard": {
       "additionalProperties": false,
+      "description": "Resultado de la detección de idioma del turno (M0 §2.10).",
       "properties": {
         "decision": {
           "enum": [
@@ -1850,6 +1879,7 @@
     },
     "LangScore": {
       "additionalProperties": false,
+      "description": "Idioma candidato con su puntuación.",
       "properties": {
         "lang": {
           "title": "Lang",
@@ -1871,6 +1901,7 @@
     },
     "LlmUsage": {
       "additionalProperties": false,
+      "description": "Uso agregado del LLM en una respuesta: llamadas, latencia, tokens y costo (M0 §2.10).",
       "properties": {
         "calls": {
           "minimum": 0,
@@ -1930,6 +1961,7 @@
     },
     "NodeEntered": {
       "additionalProperties": false,
+      "description": "Evento `node_entered` de la cadena de auditoría (M0 §2.10).",
       "properties": {
         "event_id": {
           "title": "Event Id",
@@ -2033,6 +2065,7 @@
     },
     "NodeEnteredPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `node_entered` (vista audit, M0 §2.10).",
       "properties": {
         "flow": {
           "$ref": "#/$defs/EntityRef"
@@ -2067,6 +2100,7 @@
       "type": "object"
     },
     "Outcome": {
+      "description": "Resultado final de un run (M0 §2.7).",
       "enum": [
         "resolved",
         "abstained",
@@ -2081,6 +2115,7 @@
       "type": "string"
     },
     "PrincipalType": {
+      "description": "Tipo de principal que invoca el motor (ADR 0006, M0 §2.3).",
       "enum": [
         "customer",
         "advisor",
@@ -2092,6 +2127,7 @@
     },
     "ResponseEmitted": {
       "additionalProperties": false,
+      "description": "Evento `response_emitted` de la cadena de auditoría (M0 §2.10).",
       "properties": {
         "event_id": {
           "title": "Event Id",
@@ -2195,6 +2231,7 @@
     },
     "ResponseEmittedPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `response_emitted` (vista audit, M0 §2.10).",
       "properties": {
         "claims": {
           "items": {
@@ -2264,6 +2301,7 @@
     },
     "RuleEvaluated": {
       "additionalProperties": false,
+      "description": "Evento `rule_evaluated` de la cadena de auditoría (M0 §2.10).",
       "properties": {
         "event_id": {
           "title": "Event Id",
@@ -2367,6 +2405,7 @@
     },
     "RuleEvaluatedPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `rule_evaluated` (vista audit, M0 §2.10).",
       "properties": {
         "inputs": {
           "additionalProperties": {
@@ -2406,6 +2445,7 @@
     },
     "RunClosed": {
       "additionalProperties": false,
+      "description": "Evento `run_closed` de la cadena de auditoría (M0 §2.10).",
       "properties": {
         "event_id": {
           "title": "Event Id",
@@ -2509,6 +2549,7 @@
     },
     "RunClosedPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `run_closed` (vista audit, M0 §2.10).",
       "properties": {
         "closed_by": {
           "enum": [
@@ -2533,6 +2574,7 @@
     },
     "RunStarted": {
       "additionalProperties": false,
+      "description": "Evento `run_started` de la cadena de auditoría (M0 §2.10).",
       "properties": {
         "event_id": {
           "title": "Event Id",
@@ -2636,6 +2678,7 @@
     },
     "RunStartedPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `run_started` (vista audit, M0 §2.10).",
       "properties": {
         "agent": {
           "$ref": "#/$defs/EntityRef"
@@ -2687,6 +2730,7 @@
     },
     "StepUpRequested": {
       "additionalProperties": false,
+      "description": "Evento `step_up_requested` de la cadena de auditoría (M0 §2.10).",
       "properties": {
         "event_id": {
           "title": "Event Id",
@@ -2790,6 +2834,7 @@
     },
     "StepUpRequestedPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `step_up_requested` (vista audit, M0 §2.10).",
       "properties": {
         "attempt": {
           "exclusiveMinimum": 0,
@@ -2815,6 +2860,7 @@
     },
     "ToolCalled": {
       "additionalProperties": false,
+      "description": "Evento `tool_called` de la cadena de auditoría (M0 §2.10).",
       "properties": {
         "event_id": {
           "title": "Event Id",
@@ -2918,6 +2964,7 @@
     },
     "ToolCalledPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `tool_called` (vista audit, M0 §2.10).",
       "properties": {
         "action_id": {
           "anyOf": [
@@ -3004,6 +3051,7 @@
       "type": "object"
     },
     "ToolStatus": {
+      "description": "Estado del resultado de una tool (M0 §2.8).",
       "enum": [
         "ok",
         "error",
@@ -3017,6 +3065,7 @@
     },
     "TurnCompleted": {
       "additionalProperties": false,
+      "description": "Evento `turn_completed` de la cadena de auditoría (M0 §2.10).",
       "properties": {
         "event_id": {
           "title": "Event Id",
@@ -3120,6 +3169,7 @@
     },
     "TurnCompletedPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `turn_completed` (vista audit, M0 §2.10).",
       "properties": {
         "awaiting": {
           "$ref": "#/$defs/Awaiting"
@@ -3169,6 +3219,7 @@
     },
     "TurnStages": {
       "additionalProperties": false,
+      "description": "Duración por etapa del turno, en milisegundos (M0 §2.10).",
       "properties": {
         "flow_ms": {
           "anyOf": [
@@ -3228,6 +3279,7 @@
     },
     "TurnStarted": {
       "additionalProperties": false,
+      "description": "Evento `turn_started` de la cadena de auditoría (M0 §2.10).",
       "properties": {
         "event_id": {
           "title": "Event Id",
@@ -3331,6 +3383,7 @@
     },
     "TurnStartedPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `turn_started` (vista audit, M0 §2.10).",
       "properties": {
         "client_turn_id": {
           "anyOf": [
@@ -3361,6 +3414,7 @@
     },
     "ValidatorOutcome": {
       "additionalProperties": false,
+      "description": "Resultado del validador de respuestas (M8): fallas y regeneraciones (M0 §2.10).",
       "properties": {
         "failures": {
           "items": {

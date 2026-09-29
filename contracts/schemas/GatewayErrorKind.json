@@ -1,5 +1,6 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "description": "Clases de falla del gateway de LLM (M0 §2.11).",
   "enum": [
     "timeout",
     "unavailable",

@@ -19,6 +19,7 @@
     },
     "CommandEmittedPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `command_emitted` (vista audit, M0 §2.10).",
       "properties": {
         "above_threshold": {
           "additionalProperties": {
@@ -91,6 +92,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Evento `command_emitted` de la cadena de auditoría (M0 §2.10).",
   "properties": {
     "event_id": {
       "title": "Event Id",

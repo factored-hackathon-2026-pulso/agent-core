@@ -38,6 +38,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Mensaje de la bandeja de salida transaccional (M0 §2.8).",
   "properties": {
     "created_at": {
       "format": "date-time",

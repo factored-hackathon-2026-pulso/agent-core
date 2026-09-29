@@ -1,6 +1,7 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "additionalProperties": false,
+  "description": "Intención mencionada por el usuario que queda en cola tras el flow activo (M0 §2.6).",
   "properties": {
     "flow": {
       "title": "Flow",

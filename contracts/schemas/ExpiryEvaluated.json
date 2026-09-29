@@ -3,6 +3,7 @@
   "$defs": {
     "ExpiryEvaluatedPayload": {
       "additionalProperties": false,
+      "description": "Payload del evento `expiry_evaluated` (vista audit, M0 §2.10).",
       "properties": {
         "expired": {
           "title": "Expired",
@@ -35,6 +36,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Evento `expiry_evaluated` de la cadena de auditoría (M0 §2.10).",
   "properties": {
     "event_id": {
       "title": "Event Id",

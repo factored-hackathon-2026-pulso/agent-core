@@ -1,6 +1,7 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "additionalProperties": false,
+  "description": "Consumo acumulado de presupuestos del run y del turno (M0 §2.6).",
   "properties": {
     "run_cost": {
       "anyOf": [

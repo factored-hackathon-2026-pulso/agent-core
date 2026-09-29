@@ -38,6 +38,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Política versionada: expresión, responsable y justificación (M0 §2.4).",
   "properties": {
     "expr": {
       "$ref": "#/$defs/JsonValue"

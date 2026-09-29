@@ -17,18 +17,21 @@ RunStatus = Literal["open", "closed", "escalated"]
 
 
 class Slot(Model):
+    """Valor de un slot recolectado, `claimed` o `validated`, y el turno de origen (M0 §2.6)."""
     value: JsonValue
     status: Literal["claimed", "validated"]
     source_turn: NonNegativeInt
 
 
 class FactSource(Model):
+    """Origen de un hecho: tipo, referencia y entradas (M0 §2.6)."""
     kind: Literal["tool", "compute", "identity", "knowledge"]
     ref: str
     inputs: list[str] = Field(default_factory=list)
 
 
 class Fact(Model):
+    """Hecho verificado con su origen (tool, compute, identidad o conocimiento); vista `full` (M0 §2.6)."""
     fact_id: str
     value: JsonValue  # vista full
     source: FactSource
@@ -36,6 +39,7 @@ class Fact(Model):
 
 
 class Decision(Model):
+    """Resultado guardado de una decisión (`decide`): valor, probabilidades y proveedor (M0 §2.6)."""
     decision_id: str
     value: dict[str, JsonValue]
     p_cal: dict[str, Probability | None]
@@ -44,6 +48,7 @@ class Decision(Model):
 
 
 class ActionState(StrEnum):
+    """Estados del ciclo de vida de una `Action` (M0 §2.6)."""
     proposed = "proposed"
     confirmed = "confirmed"
     executing = "executing"
@@ -56,6 +61,7 @@ class ActionState(StrEnum):
 
 
 class InvalidationReason(StrEnum):
+    """Motivos por los que se invalida o cancela una acción (M0 §2.6)."""
     cancel = "cancel"
     abandoned = "abandoned"
     interrupt = "interrupt"
@@ -66,6 +72,7 @@ class InvalidationReason(StrEnum):
 
 
 class Action(Model):
+    """Acción de escritura propuesta al usuario, con su token de confirmación y ciclo de vida (M0 §2.6)."""
     action_id: str
     confirm_node_id: NodeId
     flow: EntityRef
@@ -81,18 +88,21 @@ class Action(Model):
 
 
 class ActiveFlow(Model):
+    """Flow activo del run: nodo actual y slots locales (M0 §2.6)."""
     flow: EntityRef
     node_id: NodeId
     local_slots: dict[str, JsonValue] = Field(default_factory=dict)
 
 
 class PendingIntent(Model):
+    """Intención mencionada por el usuario que queda en cola tras el flow activo (M0 §2.6)."""
     flow: str
     priority: int
     mention_order: NonNegativeInt
 
 
 class BudgetsUsed(Model):
+    """Consumo acumulado de presupuestos del run y del turno (M0 §2.6)."""
     run_tokens: NonNegativeInt = 0
     run_cost: Decimal = Decimal("0")
     turn_nodes: NonNegativeInt = 0
@@ -109,6 +119,7 @@ class EncryptedBlob(Model):
 
 
 class RunState(MutableModel):
+    """Estado completo de un run; se actualiza con `model_copy(update=...)` y se revalida (M0 §2.6)."""
     run_id: str
     session_id: str | None = None
     state_version: NonNegativeInt = 0

@@ -1,5 +1,6 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "description": "Códigos de motivo de escalamiento o cierre (M0 §2.7).",
   "enum": [
     "low_confidence",
     "budget_exceeded",

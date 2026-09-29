@@ -2,6 +2,7 @@
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "$defs": {
     "Awaiting": {
+      "description": "Qué espera el run del usuario en el siguiente turno (M0 §2.7).",
       "enum": [
         "none",
         "slot",
@@ -14,6 +15,7 @@
     },
     "TurnStages": {
       "additionalProperties": false,
+      "description": "Duración por etapa del turno, en milisegundos (M0 §2.10).",
       "properties": {
         "flow_ms": {
           "anyOf": [
@@ -73,6 +75,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Payload del evento `turn_completed` (vista audit, M0 §2.10).",
   "properties": {
     "awaiting": {
       "$ref": "#/$defs/Awaiting"

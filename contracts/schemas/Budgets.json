@@ -1,6 +1,7 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "additionalProperties": false,
+  "description": "Presupuestos duros de un agente por turno y por run (M0 §2.4).",
   "properties": {
     "max_cost_per_run": {
       "anyOf": [

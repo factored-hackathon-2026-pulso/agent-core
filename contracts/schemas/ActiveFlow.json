@@ -60,6 +60,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Flow activo del run: nodo actual y slots locales (M0 §2.6).",
   "properties": {
     "flow": {
       "$ref": "#/$defs/EntityRef"

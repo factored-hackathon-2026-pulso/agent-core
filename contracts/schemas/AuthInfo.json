@@ -13,6 +13,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Nivel de autenticación de un principal y el instante en que lo obtuvo (ADR 0010).",
   "properties": {
     "at": {
       "format": "date-time",

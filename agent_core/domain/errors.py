@@ -39,6 +39,7 @@ class CredentialsInvalid(DomainError):
 
 
 class GatewayErrorKind(StrEnum):
+    """Clases de falla del gateway de LLM (M0 §2.11)."""
     timeout = "timeout"
     unavailable = "unavailable"
     rate_limited = "rate_limited"
@@ -70,6 +71,7 @@ class GatewayError(DomainError):
 
 
 class ProblemCode(StrEnum):
+    """Códigos de problema estables que expone la API (M0 §2.11)."""
     credentials_invalid = "credentials_invalid"
     principal_expired = "principal_expired"
     subject_forbidden = "subject_forbidden"

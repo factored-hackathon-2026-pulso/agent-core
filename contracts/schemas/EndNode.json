@@ -3,6 +3,7 @@
   "$defs": {
     "EndConfig": {
       "additionalProperties": false,
+      "description": "Configuración del nodo `end` (M0 §2.5).",
       "properties": {
         "outcome": {
           "$ref": "#/$defs/Outcome"
@@ -30,6 +31,7 @@
       "type": "object"
     },
     "Outcome": {
+      "description": "Resultado final de un run (M0 §2.7).",
       "enum": [
         "resolved",
         "abstained",
@@ -45,6 +47,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Nodo `end` de un flow (M0 §2.5).",
   "properties": {
     "config": {
       "$ref": "#/$defs/EndConfig"

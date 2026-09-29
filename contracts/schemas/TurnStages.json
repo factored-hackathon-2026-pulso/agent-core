@@ -1,6 +1,7 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "additionalProperties": false,
+  "description": "Duración por etapa del turno, en milisegundos (M0 §2.10).",
   "properties": {
     "flow_ms": {
       "anyOf": [

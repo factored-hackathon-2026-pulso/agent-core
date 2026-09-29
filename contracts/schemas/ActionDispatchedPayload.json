@@ -25,6 +25,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Payload del evento `action_dispatched` (vista audit, M0 §2.10).",
   "properties": {
     "action_id": {
       "title": "Action Id",

@@ -2,6 +2,7 @@
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "$defs": {
     "PrincipalType": {
+      "description": "Tipo de principal que invoca el motor (ADR 0006, M0 §2.3).",
       "enum": [
         "customer",
         "advisor",
@@ -13,6 +14,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Payload del evento `handoff_resolved` (vista audit, M0 §2.10).",
   "properties": {
     "handoff_quality": {
       "enum": [

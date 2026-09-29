@@ -3,6 +3,7 @@
   "$defs": {
     "CalibrationRef": {
       "additionalProperties": false,
+      "description": "Método de calibración de un modelo de decisión y la corrida que lo produjo (M0 §2.4).",
       "properties": {
         "method": {
           "enum": [
@@ -70,6 +71,7 @@
     },
     "ProviderSpec": {
       "additionalProperties": false,
+      "description": "Proveedor de una decisión (jev, classifier, llm_structured o rule) y su configuración.",
       "properties": {
         "config": {
           "additionalProperties": {
@@ -97,6 +99,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Definición de un modelo de decisión: esquema de salida, proveedores y calibración (M0 §2.4).",
   "properties": {
     "calibrated_fields": {
       "items": {
