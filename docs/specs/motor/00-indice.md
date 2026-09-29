@@ -216,7 +216,7 @@ M0 define el esquema de cada evento; M11 los encadena y persiste. El módulo emi
 |---|---|---|
 | #10 Integración de ADR 0015 (conocimiento) | M12 (propuesta de integración), M1, M8 | abierto; M12 trae una propuesta |
 | Formato numérico por país: el `locale` del run es `es`/`pt`, pero ADR 0011 parsea por `es-CO`/`es-MX`/`es-AR`/`pt` | M8 | **nuevo**, detectado al partir la spec |
-| Detector de injection: la spec dice "marca y cuenta" pero no define el método | M6 | **nuevo**; M6 propone un detector por patrones versionado |
+| Detector de injection: la spec dice "marca y cuenta" pero no define el método | M6 | **resuelto** en M6 rev. 2: reglas regex/frase versionadas en la release, texto normalizado; reemplazable por un clasificador detrás de `scan_injection` |
 | Generalización de `pii_quasi` sin definir (qué hace con la fecha de nacimiento o el código postal) | M7 | **resuelto** en M7 rev. 2: regla como dato (`QuasiRule`: `drop`, `age_bucket`), por defecto `drop` |
 | Formato del token de PII sin definir | M7 | **resuelto** en M7 rev. 2: `⟦tag:n⟧`, contador por tag dentro del run |
 | `request_summary` del handoff: generado o por plantilla | M10 | **nuevo**; M10 propone plantilla en el MVP |
