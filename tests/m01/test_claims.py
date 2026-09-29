@@ -34,6 +34,7 @@ def test_unrelated_fact_does_not_claim() -> None:
     assert _claims(d)["aviso"] == frozenset()
 
 
+# T-M1-35
 def test_fallback_template_counts() -> None:
     d = base()
     d["nodes"].append({"id": "gen", "type": "respond",
@@ -51,6 +52,7 @@ def test_allowed_facts_count() -> None:
     assert _claims(d)["gen"] == frozenset({"confirmar"})
 
 
+# T-M1-35
 def test_read_tool_propagates() -> None:
     d = base()
     d["nodes"] += [
@@ -61,6 +63,7 @@ def test_read_tool_propagates() -> None:
     assert _claims(d)["aviso"] == frozenset({"confirmar"})
 
 
+# T-M1-35
 def test_decide_then_compute_propagates() -> None:
     d = base()
     d["nodes"] += [
@@ -74,6 +77,7 @@ def test_decide_then_compute_propagates() -> None:
     assert _claims(d)["aviso"] == frozenset({"confirmar"})
 
 
+# T-M1-35
 def test_end_output_map_is_a_reader() -> None:
     d = base()
     d["nodes"].append({"id": "fin_map", "type": "end",
