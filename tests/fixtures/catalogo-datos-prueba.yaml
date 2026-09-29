@@ -1,0 +1,4 @@
+# Catálogo de datos de prueba (M11 decisión 13). Todo inventado; nunca datos del dataset real.
+email_domains: [example.test]
+numbers: ["1023456789", "3001234567", "4111000011112222"]
+values: ["Ana Prueba", "Luis Muestra", "cust-001", "tx-demo-1", "tx-demo-2", "1023456789", "3001234567"]

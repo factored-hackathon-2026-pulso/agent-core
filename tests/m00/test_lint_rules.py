@@ -139,7 +139,7 @@ def test_every_subpackage_is_a_contract_source() -> None:
 
 def test_every_module_contract_forbids_adapters_cli_and_contracts() -> None:
     for name, contract in _contracts().items():
-        if name.endswith((":domain_sin_ports", ":adapters")):  # adapters ya forbids cli y contracts
+        if name.endswith((":domain_sin_ports", ":adapters", ":telemetry")):  # ya prohíben cli y contracts
             continue
         forbidden = set(contract["forbidden_modules"])
         assert {"agent_core.adapters", "agent_core.cli", "agent_core.contracts"} <= forbidden, name
