@@ -1,6 +1,6 @@
 # M8 — Validador de respuesta y `respond(generate)`
 
-- Estado: borrador · Fase 4
+- Estado: borrador · rev. 2 parcial (2026-09-29: decisiones P1 y P2; el resto de los abiertos de interfaz sigue pendiente) · Fase 4
 - Paquete: `agent_core.response`
 - Origen: spec general §8.3, §5 (`respond`), §4.8, §10 (fallas del validador), §13.7
 - ADRs: 0011 (validación numérica por locale, hechos `compute`), 0012 (idioma del texto), 0008 (validador sobre vista `model`)
@@ -21,7 +21,9 @@ class ValidationContext:
     fact_sources: dict[str, FactSource]   # para saber si una cifra viene de compute
     allowed: set[str]                     # fact_ids/page_refs que el nodo permite citar
     pages_model_view: dict[str, PageView] # vacío hasta M12
-    vault: TokenVault; locale: str; number_format: str; lang_cfg: LanguageDetection
+    vault: TokenVault; locale: str; lang_cfg: LanguageDetection
+    number_format: NumberFormat | None    # dato opcional; lo produce quien construye el contexto (ver 3.3)
+class NumberFormat:     thousands: str; decimal: str               # p. ej. (".", ",") o (",", ".")
 class Failure:          check: Literal["format", "citations", "numbers", "tokens_pii", "language"]; detail: str
 class ValidationResult: ok: bool; failures: list[Failure]
 
@@ -40,7 +42,7 @@ class Responder:
 1. **Formato:** la salida del gateway parsea como `{text, citations}`.
 2. **Citas:** cada cita existe en `facts` o en páginas recuperadas en el run **y** está en `allowed` (de `generate.allowed_facts` o `knowledge_from` de M12).
 3. **Cifras:**
-   - Se extraen del texto números, montos, porcentajes y fechas con el parser del `number_format` (`1.234,56` o `1,234.56`).
+   - Se extraen del texto números, montos, porcentajes y fechas con el parser del `number_format` del contexto (`1.234,56` o `1,234.56`); sin `number_format`, ver 3.3.
    - Cada cifra debe ser **numéricamente igual** a un valor de un hecho o página citados, con la precisión de la moneda (`Decimal`, sin tolerancia relativa).
    - Si la cifra no aparece en ningún hecho de origen `tool`/`identity`, debe venir de un hecho `compute`. Una cifra calculada sin su `compute` falla.
    - Se ignoran los dígitos dentro de tokens de M7.
@@ -61,13 +63,14 @@ si la plantilla no puede renderizarse → EscalationRequest(validation_failed)
 - Cada borrador rechazado y su motivo se devuelve como `RejectedDraft` para que M11 lo mande al transcript.
 - Las plantillas (`respond.template_ref`) no pasan por las comprobaciones 2 y 3 (son texto fijo con variables de hechos), pero sí por la 4.
 
-### 3.3 Formato numérico
+### 3.3 Formato numérico (decidido 2026-09-29, Abierto resuelto)
 
-ADR 0011 parsea por `es-CO`, `es-MX`, `es-AR` y `pt`, pero el `locale` del run es solo `es`/`pt`. Propuesta:
+M8 **no** se acopla a teléfono, canal ni `principal.attrs.country`, y no contiene ninguna tabla país→formato.
 
-- `number_format` = f(idioma del turno, país del subject), con el país tomado de `principal.attrs.country` o del hecho de identidad.
-- Tabla por defecto: `es-CO` y `es-AR` → `1.234,56`; `es-MX` → `1,234.56`; `pt` (clientes de MX/CO/AR) → `1.234,56`.
-- Si no hay país, el parser acepta ambos formatos solo cuando la lectura es inequívoca (p. ej. `1.234,56`); una cifra ambigua como `1.234` sin contexto se rechaza.
+- El formato llega como dato opcional `number_format` (`NumberFormat(thousands, decimal)`) dentro del `ValidationContext`. Lo produce un nodo o tool fuera de M8 (la correspondencia `es-CO`/`es-MX`/`es-AR`/`pt` de ADR 0011 es responsabilidad de quien construye el contexto).
+- Con `number_format`, las cifras se leen con ese formato (`1.234,56` con punto/coma; `1,234.56` con coma/punto).
+- Sin `number_format`, el parser acepta **solo lecturas inequívocas** y rechaza el resto: `1.234,56`, `1,234.56`, `1.234.567` y `12,5` se leen sin ambigüedad; `1.234` y `1,234` (un solo separador seguido de exactamente 3 dígitos) son ambiguos y se rechazan (`cifra_ambigua`).
+- **No** se implementa la mejora "aceptar una cifra ambigua si alguna lectura coincide exactamente con un hecho citado": no está aprobada.
 
 ## 4. Invariantes
 
@@ -91,7 +94,7 @@ ADR 0011 parsea por `es-CO`, `es-MX`, `es-AR` y `pt`, pero el `locale` del run e
 
 | ID | Caso | §13 |
 |---|---|---|
-| T-M8-01 | `1.234,56` en `es-CO` y `1,234.56` en `es-MX` pasan contra el mismo hecho | 7 |
+| T-M8-01 | `1.234,56` con `number_format` punto/coma y `1,234.56` con coma/punto pasan contra el mismo hecho; sin `number_format`, `1.234` se rechaza | 7 |
 | T-M8-02 | Conversión con hecho `compute` citado pasa | 7 |
 | T-M8-03 | Cifra calculada sin hecho `compute` se rechaza | 7 |
 | T-M8-04 | Respuesta en un idioma distinto del `locale` se rechaza; una corta no | 7, 8 |
@@ -112,7 +115,7 @@ ADR 0011 parsea por `es-CO`, `es-MX`, `es-AR` y `pt`, pero el `locale` del run e
 ## 9. Puntos de iteración
 
 - Comprobación nueva = función `check_x(draft, ctx)` en la lista ordenada + ID de `Failure`. Así entran las de conocimiento de M12.
-- Parser por locale: tabla de formatos.
+- Formato numérico: dato `number_format` del contexto (sin tabla en M8).
 - Número de regeneraciones: parámetro (1 en la spec).
 
 ## 10. Definición de terminado
@@ -122,5 +125,6 @@ ADR 0011 parsea por `es-CO`, `es-MX`, `es-AR` y `pt`, pero el `locale` del run e
 
 ## 11. Abiertos
 
-- **Formato numérico por país** (propuesta en 3.3): tema nuevo detectado al partir la spec.
-- Qué hacer con números que no son cifras de negocio ("paso 2", "24 horas"). Propuesta: cuentan igual y deben venir de un hecho o de la plantilla; se mide el falso rechazo antes de relajar la regla.
+- ~~**Formato numérico por país**~~ **Resuelto 2026-09-29:** `number_format` es un dato opcional del `ValidationContext` que produce un nodo/tool fuera de M8; sin él solo se aceptan lecturas inequívocas y `1.234` se rechaza (3.3). Queda sin aprobar, y sin implementar, aceptar una cifra ambigua cuando alguna lectura coincida exactamente con un hecho citado.
+- ~~**Números que no son cifras de negocio** ("paso 2", "24 horas")~~ **Resuelto 2026-09-29:** cuentan igual que cualquier cifra y deben venir de un hecho o de la plantilla. No se añade `allowed_literals` (tocaría M0). El falso rechazo se mide con el conjunto etiquetado (10) antes de considerar cualquier relajación.
+- **Pendientes de decisión (plan de implementación, Task 1, P3–P7):** campos de `ValidationContext` para PII en claro e idioma (`find_clear_pii`, umbrales, idiomas soportados); firma de `Responder.generate` frente a `ResponderPort` de M2; semántica de la comprobación de idioma frente a `LangDecision` con `UNCALIBRATED`; `allowed_facts` (`facts.<nombre>`) frente a citas por `fact_id`; renderizado de plantillas dentro de M8.
