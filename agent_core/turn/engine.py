@@ -14,6 +14,7 @@ from agent_core.domain import (
     EntityRef,
     EscalationRequest,
     Flow,
+    IllegalTransition,
     InvalidationReason,
     OnBehalfOf,
     Outcome,
@@ -31,7 +32,7 @@ from agent_core.domain import (
     TurnResult,
 )
 from agent_core.handoff import HandoffService
-from agent_core.interpreter import StepContext, advance, begin_turn, start_flow
+from agent_core.interpreter import NO_RESUME, StepContext, Stop, advance, begin_turn, start_flow
 from agent_core.ports import (
     AuditSink,
     AuthzPort,
@@ -57,6 +58,7 @@ from agent_core.turn.ports import (
     TurnRuntime,
     UnderstandPort,
 )
+from agent_core.turn.recovery import position_at_verify
 from agent_core.turn.refs import pinned_ref
 from agent_core.turn.results import awaiting_for, build_turn_result
 
@@ -303,7 +305,26 @@ class TurnEngine:
             return self._finish(frame, record=True)
         if self._expired(frame):  # paso 4 (P2): se cierra y el mensaje no se procesa
             return EngineError(ProblemCode.run_closed, "run vencido por inactividad")
-        raise NotImplementedError("pasos 5-12: Tasks 10-16")
+        if self._recover(frame):  # paso 5
+            return self._finish(frame, record=True)
+        with frame.meter.stage("flow"):  # paso 6
+            frame.state, events = self._actions.expire_tokens(frame.state, turn_id=turn_id)
+            frame.buffer.add(*events)
+        raise NotImplementedError("pasos 7-12: Tasks 11-16")
+
+    def _recover(self, frame: TurnFrame) -> bool:
+        """Devuelve `True` si la recuperación terminó el flow (C9): el turno acaba ahí y el mensaje no se
+        procesa. Si el flow queda esperando al usuario, el mensaje se procesa normalmente."""
+        pending = self._actions.pending_recovery(frame.state)
+        if not pending:
+            return False
+        if frame.state.active_flow is None:
+            raise IllegalTransition(f"{frame.state.run_id}: acción en executing sin flow activo")
+        flow = self._registry.get(frame.state.active_flow.flow, Flow)
+        frame.state = position_at_verify(frame.state, pending, flow)
+        frame.resume = NO_RESUME
+        self._advance(frame)
+        return frame.closed or frame.state.active_flow is None or frame.stop is Stop.terminal
 
     def _expired(self, frame: TurnFrame) -> bool:
         """Evalúa `now − last_activity_at > inactivity_ttl` (estricto), emite `expiry_evaluated` en cada
