@@ -47,6 +47,11 @@ _MESSAGES = {"missing": "campo obligatorio", "extra_forbidden": "campo no permit
 _UNKNOWN_TAG = ("union_tag_invalid", "union_tag_not_found")
 
 
+def error_message(error_type: str) -> str:
+    """Mensaje fijo en español para un tipo de error de Pydantic (nunca su texto ni su valor de entrada)."""
+    return _MESSAGES.get(error_type, f"valor inválido ({_clip(error_type)})")
+
+
 def _clip(value: object, limit: int = MAX_ECHO) -> str:
     """Texto acotado para eco en mensajes: nunca más de `limit` caracteres del original."""
     text = value if isinstance(value, str) else repr(value)
@@ -100,7 +105,7 @@ def parse_flow(raw: JsonValue, *, source: str | None = None) -> Flow:
             if err["type"] in _UNKNOWN_TAG:
                 message = "nodo fuera del catálogo"
             else:
-                message = _MESSAGES.get(err["type"], f"valor inválido ({_clip(err['type'])})")
+                message = error_message(err["type"])
             violations.append(
                 Violation(
                     rule=rule,

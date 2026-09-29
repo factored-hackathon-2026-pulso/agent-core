@@ -11,9 +11,9 @@ from types import MappingProxyType
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, ValidationError
 
 from agent_core.domain import EntityKind, Interrupt, RefSpec, RegistryEntity, Template
-from agent_core.flows.context import clip
+from agent_core.flows.context import clip, pointer_segment
 from agent_core.flows.paths import template_vars
-from agent_core.flows.schema import parse_flow
+from agent_core.flows.schema import MAX_ERRORS, error_message, parse_flow
 from agent_core.flows.view import ENTITY_TYPES, best_version, parse_version
 from agent_core.flows.violations import FlowSchemaError, Violation, sort_violations
 from agent_core.flows.yaml_loader import MAX_BYTES, YamlError, load_yaml
@@ -129,6 +129,7 @@ DIRS: Mapping[EntityKind, str] = MappingProxyType(
 # Cotas del recorrido: el directorio del registro es entrada no confiable (M1 §3.11).
 MAX_FILES_PER_DIR = 5_000  # entradas (de cualquier tipo) por carpeta; si se excede no se carga esa carpeta
 MAX_FILES_TOTAL = 5_000  # archivos `.yaml` leídos en todo el registro
+MAX_ENTRIES_TOTAL = 20_000  # entradas de cualquier tipo (archivos, carpetas, otras) examinadas en total
 MAX_TREE_DEPTH = 8  # niveles de subcarpetas bajo cada carpeta de tipo
 _REPARSE_POINT = 0x400  # FILE_ATTRIBUTE_REPARSE_POINT: enlaces simbólicos y junctions de Windows
 _BAD_CHARS = re.compile(r'[<>:"|?*\\\x00-\x1f]')
@@ -159,6 +160,7 @@ def _is_link(mode_and_attrs: os.stat_result) -> bool:
 class _Budget:
     def __init__(self) -> None:
         self.files = 0
+        self.entries = 0
         self.exhausted = False
 
 
@@ -193,6 +195,12 @@ def _scan(root: Path, folder: str, recursive: bool, budget: _Budget) -> tuple[li
             msg = f"más de {MAX_FILES_PER_DIR} entradas en la carpeta; no se carga"
             violations.append(_g0_01(rel_dir, msg))
             continue
+        if budget.entries + len(names) > MAX_ENTRIES_TOTAL:
+            msg = f"más de {MAX_ENTRIES_TOTAL} entradas en total; se detiene la carga"
+            violations.append(_g0_01(rel_dir, msg))
+            budget.exhausted = True
+            break
+        budget.entries += len(names)
         subdirs: list[tuple[Path, int]] = []
         for name in sorted(names):
             path = current / name
@@ -276,6 +284,21 @@ def _prompt_problem(data: Mapping[str, object]) -> str | None:
     return None
 
 
+def _model_violations(rel: str, exc: ValidationError) -> list[Violation]:
+    """Una violación por error de Pydantic (máx. MAX_ERRORS), con mensaje fijo y sin valores de entrada."""
+    errors = exc.errors(include_url=False, include_context=False, include_input=False)
+    found = [
+        _g0_01(
+            f"{rel}#/" + "/".join(pointer_segment(str(p)) for p in err["loc"]) if err["loc"] else rel,
+            error_message(err["type"]),
+        )
+        for err in errors[:MAX_ERRORS]
+    ]
+    if len(errors) > MAX_ERRORS:
+        found.append(_g0_01(rel, f"se omitieron {len(errors) - MAX_ERRORS} errores más"))
+    return found
+
+
 def _load_file(
     reg: AuthoringRegistry, root: Path, root_resolved: Path, kind: EntityKind, path: Path
 ) -> list[Violation]:
@@ -309,10 +332,7 @@ def _load_file(
     try:
         entity = ENTITY_TYPES[kind].model_validate(payload)
     except ValidationError as exc:
-        return [
-            _g0_01(f"{rel}#/" + "/".join(str(p) for p in err["loc"]), f"valor inválido: {err['msg']}")
-            for err in exc.errors()
-        ]
+        return _model_violations(rel, exc)
     reg.add(entity, rel)
     return []
 
@@ -325,9 +345,7 @@ def _load_release(reg: AuthoringRegistry, root: Path, root_resolved: Path, path:
     try:
         decl = ReleaseDecl.model_validate(data)
     except ValidationError as exc:
-        first = exc.errors()[0]
-        where = "/".join(str(p) for p in first["loc"])
-        return [_g0_01(rel, f"release inválida en {clip(where, 60)}: {first['msg']}")]
+        return _model_violations(rel, exc)
     if decl.id != path.name.removesuffix(".yaml"):
         return [_g0_01(rel, "el id de la release debe coincidir con el nombre del archivo")]
     reg.add_release(decl, rel)

@@ -1,11 +1,13 @@
 import shutil
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from agent_core.domain import EntityKind, Flow, RefSpec, Template
 from agent_core.flows import registry as registry_mod
 from agent_core.flows.registry import load_registry
+from agent_core.flows.schema import MAX_ERRORS
 from agent_core.flows.validate import validate_flow, validate_registry
 from agent_core.flows.violations import Violation
 from agent_core.flows.yaml_loader import MAX_BYTES
@@ -132,16 +134,65 @@ def test_oversized_file_is_rejected_without_reading(tmp_path: Path, monkeypatch:
     root = _copy(tmp_path)
     path = root / "tools" / "grande@1.0.0.yaml"
     path.write_bytes(b"#" + b"a" * MAX_BYTES + b"\n")
+    real_open = Path.open
 
-    def boom(self: Path) -> bytes:
-        raise AssertionError("no debe leerse un archivo sobre el tope")
+    def guarded(self: Path, *args: Any, **kwargs: Any) -> Any:
+        if self.name.startswith("grande"):
+            raise AssertionError("no debe abrirse un archivo sobre el tope")
+        return real_open(self, *args, **kwargs)
 
-    real_read = Path.read_bytes
-    monkeypatch.setattr(
-        Path, "read_bytes", lambda self: boom(self) if self.name.startswith("grande") else real_read(self)
-    )
+    monkeypatch.setattr(Path, "open", guarded)
     _, violations = load_registry(root)
     assert _found(violations) == [("G0-01", "tools/grande@1.0.0.yaml")]
+    assert "1 MiB" in violations[0].message
+
+
+def test_non_flow_errors_are_bounded_and_deterministic(tmp_path: Path) -> None:
+    root = _copy(tmp_path)
+    extra = "".join(f"k{i}: secreto-{i}\n" for i in range(600))
+    _write(root, "tools/muchos@1.0.0.yaml", "id: muchos\nversion: 1.0.0\nrisk_class: read\n"
+                                            "min_auth_level: session\nidempotent: true\n" + extra)
+    _, first = load_registry(root)
+    _, second = load_registry(root)
+    assert first == second
+    assert len(first) == MAX_ERRORS + 1
+    assert sum("se omitieron 400 errores" in v.message for v in first) == 1
+    assert all("secreto" not in v.message and "Extra inputs" not in v.message for v in first)
+
+
+def test_pydantic_messages_are_spanish_and_do_not_echo_input(tmp_path: Path) -> None:
+    root = _copy(tmp_path)
+    _write(root, "tools/mala@1.0.0.yaml", "id: mala\nversion: 1.0.0\nrisk_class: valor-secreto-xyz\n")
+    _write(root, "releases/mala.yaml", "id: mala\nagents: 7\nlanguage_detection: lang-es-pt@1\nextra: 1\n")
+    _, violations = load_registry(root)
+    assert len(violations) >= 3
+    text = " ".join(v.message for v in violations)
+    for english in ("Field required", "Extra inputs", "Input should", "valid "):
+        assert english not in text
+    assert "valor-secreto-xyz" not in text
+    assert any(v.message == "campo obligatorio" for v in violations)
+    assert any(v.message == "campo no permitido" for v in violations)
+    assert all(v.message.startswith(("campo", "valor inválido")) for v in violations)
+
+
+def test_error_path_escapes_slash_in_keys(tmp_path: Path) -> None:
+    root = _copy(tmp_path)
+    _write(root, "tools/barra@1.0.0.yaml", "id: barra\nversion: 1.0.0\nrisk_class: read\n"
+                                           "min_auth_level: session\nidempotent: true\n'a/b~c': 1\n")
+    _, violations = load_registry(root)
+    assert [v.path for v in violations] == ["tools/barra@1.0.0.yaml#/a~1b~0c"]
+
+
+def test_entry_budget_counts_dirs_and_other_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "reg"
+    for i in range(8):
+        (root / "tools" / f"d{i}").mkdir(parents=True)
+        _write(root, f"policies/nota{i}.txt", "x")
+    monkeypatch.setattr(registry_mod, "MAX_ENTRIES_TOTAL", 10)
+    _, violations = load_registry(root)
+    assert len(violations) == 1
+    assert "entradas en total" in violations[0].message
+    assert violations[0].path == "tools"
 
 
 def test_symlinked_file_and_dir_are_not_followed(tmp_path: Path) -> None:
@@ -211,7 +262,8 @@ def test_release_problems_are_violations(tmp_path: Path) -> None:
     _write(root, "releases/otra.yaml", "id: distinta\nagents: []\n")
     _write(root, "releases/lista.yaml", "- 1\n")
     _, violations = load_registry(root)
-    assert _found(violations) == [("G0-01", "releases/lista.yaml"), ("G0-01", "releases/otra.yaml")]
+    assert sorted({(v.path or "").split("#")[0] for v in violations}) == [
+        "releases/lista.yaml", "releases/otra.yaml"]
 
 
 def test_violations_are_deterministic_and_use_forward_slashes(tmp_path: Path) -> None:
