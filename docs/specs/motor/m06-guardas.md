@@ -1,6 +1,6 @@
 # M6 — Guardas de entrada
 
-- Estado: borrador · Fase 4
+- Estado: rev. 2 (2026-09-29) · Fase 4
 - Paquete: `agent_core.guards`
 - Origen: spec general §4.3 (idioma, tamaño, injection), §4.5.6 (modo degradado), §8.3.5 (idioma en el validador), §15 (riesgo de mensajes cortos)
 - ADRs: 0012 (detector de idioma), 0005 (JEV fuera del idioma), 0008 (`untrusted_text`)
@@ -15,18 +15,27 @@ Guardas deterministas y locales que corren **antes** de Understand: decidir el `
 ## 2. Interfaz pública
 
 ```python
+class LangThresholds:  switch_threshold: float = 1.0; unsupported_threshold: float = 1.0
+                       min_distance: float = 0.10                       # corrida de calibración (unidad 6); 1.0 = desactivado
 class LangDecision:  decision: Literal["kept", "switched", "short", "undetermined", "unsupported"]
                      locale: str; locale_prior: str | None; letters: int
                      top2: list[tuple[str, float]]; detector: str        # "lingua@<versión>"
 def detect_language(text_model_view: str, cfg: LanguageDetection, thresholds: LangThresholds,
                     supported: list[str], prior: str | None) -> LangDecision      # función pura
 
-class InjectionResult: flagged: bool; signals: list[str]; ruleset: str          # "injection-rules@v"
+class InjectionResult: flagged: bool; signals: list[str]; ruleset: str          # "<id>@<versión>" o "none"
 def scan_injection(text: str, ruleset: InjectionRuleset) -> InjectionResult
 
 class GuardResult:   lang: LangDecision; size_ok: bool; injection: InjectionResult
+                     def to_output(self) -> GuardsOutput                          # para TurnStartedPayload.guards
 class GuardService:
-    def run(self, text_model_view, state, agent, release, request_lang, first_turn: bool) -> tuple[GuardResult, list[EngineEvent]]
+    def __init__(self, registry: RegistryPort, clock: Clock, ids: IdSource,
+                 calibrations: Mapping[str, LangThresholds] | None = None)
+    def run(self, text_model_view, state, agent, release, request_lang, first_turn: bool,
+            *, turn_id: str | None = None) -> tuple[GuardResult, list[EngineEvent]]
+    def scan_untrusted(self, text, state, release, *, turn_id: str | None = None) -> tuple[InjectionResult, list[EngineEvent]]
+    def validate_release(self, release: Release, agent: Agent) -> None            # error de arranque (GuardsConfigError)
+class GuardsConfigError(Exception)
 ```
 
 ## 3. Comportamiento
@@ -43,9 +52,19 @@ class GuardService:
 
 El detector se construye una vez por proceso por versión de configuración (`lru_cache`), porque cargar lingua es caro.
 
+**Aclaraciones (rev. 2):**
+
+- Conjunto de candidatos de lingua: `supported ∪ cfg.unsupported`; `cfg.candidates` debe contener a `supported` (si no, `GuardsConfigError`).
+- Un umbral solo está activo si es `< 1.0`; con 1.0 la regla nunca se cumple, aunque `lingua` devuelva 1.0.
+- `unsupported` conserva `locale = prior`; M4 responde con la plantilla `unsupported_language` en el idioma por defecto del agente.
+- `min_distance` es un campo calibrado de `LangThresholds` (sin corrida vale 0.10).
+- `thresholds_from` se resuelve con el mapeo `calibrations` que recibe `GuardService`; ausente en el mapeo equivale a "sin corrida".
+- Con `short` no se ejecuta `lingua`: `top2 = []`.
+- Limpieza (paso 1): NFC; se quitan etiquetas `<datos_no_confiables …>`/`</datos_no_confiables>`, tokens `⟦tag:n⟧`, URLs, emails, montos (`$`, `€`, `£` con cifras) y códigos de moneda (`COP`, `MXN`, `ARS`, `USD`, `EUR`, `BRL`); se descartan dígitos, símbolos y emojis y quedan letras, marcas, puntuación y espacios.
+
 ### 3.2 Tamaño
 
-`len(text) > max_input_chars` (propuesta: 4.000, configurable en la release) → `size_ok = false`; M4 responde con una plantilla y no procesa el turno.
+`len(text) > max_input_chars` (propuesta: 4.000, configurable en la release) → `size_ok = false`; M4 responde con una plantilla y no procesa el turno. Si `size_ok = false` no se evalúan idioma ni injection (`lang = short` con `letters` 0, injection sin marcar).
 
 ### 3.3 Injection (propuesta para el MVP)
 
@@ -55,6 +74,8 @@ La spec dice que el detector "marca y cuenta" sin definir el método. Propuesta:
 - `flagged = true` si alguna regla coincide. `signals` lista los ids de las reglas.
 - Se aplica al texto del usuario **y** a los campos `untrusted_text` que M7 envuelve antes de mandarlos a un modelo.
 - Reemplazable por un clasificador detrás de la misma interfaz, si la suite adversarial lo justifica.
+
+**Normalización (rev. 2):** antes de comparar, el texto pasa por `html.unescape`, NFKC, eliminación de caracteres de formato (categoría `Cf`, p. ej. `​`), minúsculas y colapso de espacios; las frases del ruleset se normalizan igual y las regex se compilan con `re.IGNORECASE`. `Release.injection_ruleset = None` → no se escanea (`ruleset = "none"`). El escaneo de campos `untrusted_text` lo hace `GuardService.scan_untrusted` con `scope = "untrusted_field"` en el evento; `run` usa `scope = "user_text"`.
 
 M4 activa el modo degradado con `flagged = true`.
 
@@ -74,8 +95,7 @@ M4 activa el modo degradado con `flagged = true`.
 
 ## 6. Eventos que emite
 
-- Salida de guardas dentro de `turn_started`: `{detector@v, letters, top2, decision, locale_prior, locale, injection: {flagged, signals, ruleset}, size_ok}`.
-- `injection_flagged {signals, ruleset}` cuando aplica.
+- La salida de guardas viaja en `turn_started` (`GuardResult.to_output()`); **lo emite M4** (índice §6). M6 solo construye `injection_flagged {signals, ruleset, scope}`.
 
 ## 7. Pruebas
 
@@ -107,10 +127,13 @@ M4 activa el modo degradado con `flagged = true`.
 ## 10. Definición de terminado
 
 - `detect_language` y `scan_injection` puras con T-M6-01…10 en verde.
-- Ruleset de injection inicial en `agent-registry` con sus casos.
+- Ruleset de injection inicial y sus casos como fixture (`testing/injection_fixtures.py`), listo para publicarse en `agent-registry` (publicación pendiente, repo externo).
 - Latencia p95 de las guardas < 20 ms en nuestro entorno (propuesta).
 
 ## 11. Abiertos
 
-- Método del detector de injection (propuesta en 3.3, pendiente de aprobación).
-- Distancia mínima entre los dos primeros candidatos: ¿valor fijo o calibrado? Propuesta: calibrado en la misma corrida.
+Ninguno de M6. Resueltos en rev. 2 (2026-09-29, decisiones confirmadas por el usuario): método de injection (§3.3), distancia mínima calibrada (§3.1). Dependencias de integración: quién invoca `scan_untrusted` (M2/M5), quién construye `calibrations` (M9/CLI con las corridas de la unidad 6) y la publicación del ruleset en `agent-registry`.
+
+## Cambios
+
+- rev. 2 (2026-09-29): `LangThresholds`; `GuardService(registry, clock, ids, calibrations)`; `turn_id` en `run`; `scan_untrusted`; `validate_release`; `GuardResult.to_output`; normalización de injection; umbral 1.0 = desactivado; `size_ok = false` omite idioma e injection.
