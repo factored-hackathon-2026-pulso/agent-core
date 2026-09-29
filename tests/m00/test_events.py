@@ -5,7 +5,7 @@ import pytest
 from pydantic import TypeAdapter, ValidationError
 
 from agent_core.domain.events import EVENT_EMITTERS, EVENT_TYPES, MEASURED_FIELDS, AnyEvent, EngineEvent
-from agent_core.domain.json import canonical_bytes, sha256_hex
+from agent_core.domain.json import canonical_bytes, dumps, loads, sha256_hex
 from tests.m00.samples import SAMPLE_PAYLOADS, make_event, reverse_keys
 
 EVENTS = TypeAdapter(AnyEvent)
@@ -151,3 +151,10 @@ def test_timestamps_are_normalized_to_utc() -> None:
     assert event.ts.utcoffset().total_seconds() == 0  # type: ignore[union-attr]
     with pytest.raises(ValidationError):
         EVENTS.validate_python(make_event("run_closed") | {"ts": "2026-09-28T07:00:00"})
+
+
+@pytest.mark.parametrize("event_type", sorted(SAMPLE_PAYLOADS))
+def test_event_canonical_hash_survives_persist_reload(event_type: str) -> None:
+    event = EVENTS.validate_python(make_event(event_type))
+    reloaded = EVENTS.validate_python(loads(dumps(event)))
+    assert canonical_bytes(event) == canonical_bytes(reloaded)

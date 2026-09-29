@@ -3,6 +3,8 @@ from decimal import Decimal
 from enum import StrEnum
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from agent_core.domain.json import canonical_bytes, dumps, loads, sha256_hex, to_jsonable
 
@@ -120,3 +122,42 @@ def test_huge_decimal_exponent_rejected() -> None:
     with pytest.raises(ValueError):
         loads('{"x": 1E999999999}')
     assert canonical_bytes({"x": Decimal("1E+1000")}) == b'{"x":"1' + b"0" * 1000 + b'"}'
+
+
+# --- Estabilidad del hash canónico tras persistir y recargar (dumps -> loads) -----------------------------
+
+_json_leaf = st.one_of(
+    st.none(),
+    st.booleans(),
+    st.integers(min_value=-(2**70), max_value=2**70),
+    st.text(max_size=8),
+    st.decimals(allow_nan=False, allow_infinity=False, places=None).filter(
+        lambda d: abs(d.as_tuple().exponent) <= 50  # type: ignore[operator]
+    ),
+    st.sampled_from(
+        [Decimal("500"), Decimal("5E+2"), Decimal("-0"), Decimal("0"), Decimal("0.0"), Decimal("-0.0"),
+         Decimal("500.00"), Decimal(2**53), Decimal(-(2**53)), Decimal("1E+30")]
+    ),
+)
+_json_values = st.recursive(
+    _json_leaf,
+    lambda children: st.one_of(
+        st.lists(children, max_size=3), st.dictionaries(st.text(max_size=4), children, max_size=3)
+    ),
+    max_leaves=8,
+)
+
+
+@given(_json_values)
+def test_canonical_bytes_survive_dumps_loads(value: object) -> None:
+    assert canonical_bytes(value) == canonical_bytes(loads(dumps(value)))
+
+
+@pytest.mark.parametrize("text", ["500", "5E+2", "-0", "0", "-500", "1E+30"])
+def test_integral_decimal_canonicalizes_as_number(text: str) -> None:
+    assert canonical_bytes({"n": Decimal(text)}) == canonical_bytes({"n": int(Decimal(text))})
+
+
+def test_integral_decimal_beyond_safe_int_is_string_and_scaled_stays_string() -> None:
+    assert canonical_bytes({"n": Decimal(2**53)}) == b'{"n":"9007199254740992"}'
+    assert canonical_bytes({"n": Decimal("500.00")}) == b'{"n":"500.00"}'

@@ -146,10 +146,16 @@ def dumps(value: object) -> str:
 def _prepare_jcs(value: Any) -> Any:
     if value is None or isinstance(value, bool | str | float):
         return value
+    if isinstance(value, Decimal):
+        exponent = value.as_tuple().exponent
+        if isinstance(exponent, int) and exponent >= 0:
+            # `dumps` lo escribe sin punto y `loads` lo devuelve como int: se canoniza igual (sin deriva tras
+            # persistir y recargar). Los Decimal con escala ("500.00") siguen como string.
+            value = int(value)
+        else:
+            return format(value, "f")
     if isinstance(value, int):
         return str(value) if abs(value) > _MAX_SAFE_INT else value
-    if isinstance(value, Decimal):
-        return format(value, "f")
     if isinstance(value, dict):
         return {key: _prepare_jcs(item) for key, item in value.items()}
     if isinstance(value, list):
@@ -158,7 +164,8 @@ def _prepare_jcs(value: Any) -> Any:
 
 
 def canonical_bytes(value: object) -> bytes:
-    """JCS (RFC 8785): `Decimal` → string con su escala; `int` fuera de ±(2⁵³−1) → string."""
+    """JCS (RFC 8785): `Decimal` con escala → string; `Decimal` entero → el int de `loads(dumps(x))`;
+    `int` fuera de ±(2⁵³−1) → string."""
     try:
         result: bytes = rfc8785.dumps(_prepare_jcs(to_jsonable(value)))
     except RecursionError:

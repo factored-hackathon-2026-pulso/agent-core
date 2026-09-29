@@ -229,3 +229,15 @@ def test_model_copy_update_coherent_and_original_unchanged() -> None:
     bumped = state.model_copy(update={"state_version": 1})
     assert bumped.state_version == 1
     assert state.state_version == 0
+
+
+def test_run_state_canonical_hash_survives_persist_reload() -> None:
+    from agent_core.domain.json import canonical_bytes
+
+    state = full_run_state()
+    state = state.model_copy(
+        update={"facts": {**state.facts, "n": {"fact_id": "n", "value": {"cantidad": Decimal("500")},
+                                                "source": {"kind": "compute", "ref": "x@1"}, "ts": NOW}}}
+    )
+    restored = RunState.model_validate(loads(dumps(state)))
+    assert canonical_bytes(state) == canonical_bytes(restored)
