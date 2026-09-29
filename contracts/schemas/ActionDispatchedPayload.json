@@ -1,0 +1,49 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "$defs": {
+    "EntityRef": {
+      "additionalProperties": false,
+      "description": "Referencia exacta de runtime: `id@X.Y.Z`.",
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_/-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "version": {
+          "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version"
+      ],
+      "title": "EntityRef",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "action_id": {
+      "title": "Action Id",
+      "type": "string"
+    },
+    "args_hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Args Hash",
+      "type": "string"
+    },
+    "tool": {
+      "$ref": "#/$defs/EntityRef"
+    }
+  },
+  "required": [
+    "action_id",
+    "tool",
+    "args_hash"
+  ],
+  "title": "ActionDispatchedPayload",
+  "type": "object"
+}

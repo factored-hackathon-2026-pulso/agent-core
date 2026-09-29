@@ -1,0 +1,33 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "additionalProperties": false,
+  "properties": {
+    "inputs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Inputs",
+      "type": "array"
+    },
+    "kind": {
+      "enum": [
+        "tool",
+        "compute",
+        "identity",
+        "knowledge"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "ref": {
+      "title": "Ref",
+      "type": "string"
+    }
+  },
+  "required": [
+    "kind",
+    "ref"
+  ],
+  "title": "FactSource",
+  "type": "object"
+}

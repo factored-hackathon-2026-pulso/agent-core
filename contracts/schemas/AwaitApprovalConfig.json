@@ -1,0 +1,84 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "$defs": {
+    "Approver": {
+      "additionalProperties": false,
+      "properties": {
+        "principal_type": {
+          "$ref": "#/$defs/PrincipalType"
+        },
+        "roles": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Roles",
+          "type": "array"
+        }
+      },
+      "required": [
+        "principal_type"
+      ],
+      "title": "Approver",
+      "type": "object"
+    },
+    "PrincipalType": {
+      "enum": [
+        "customer",
+        "advisor",
+        "service",
+        "builder"
+      ],
+      "title": "PrincipalType",
+      "type": "string"
+    },
+    "RefSpec": {
+      "additionalProperties": false,
+      "description": "Referencia de autoría: exacta, rango (`^1`, `~1.2`, `1`) o sin versión.",
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_/-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "spec": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Spec"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "RefSpec",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "approver": {
+      "$ref": "#/$defs/Approver"
+    },
+    "summary_template": {
+      "$ref": "#/$defs/RefSpec"
+    },
+    "timeout": {
+      "format": "duration",
+      "title": "Timeout",
+      "type": "string"
+    }
+  },
+  "required": [
+    "approver",
+    "summary_template",
+    "timeout"
+  ],
+  "title": "AwaitApprovalConfig",
+  "type": "object"
+}

@@ -1,0 +1,109 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "$defs": {
+    "AuthLevel": {
+      "description": "Nivel de autenticación; se compara por rango (`anonymous < session < step_up`).",
+      "enum": [
+        "anonymous",
+        "session",
+        "step_up"
+      ],
+      "title": "AuthLevel",
+      "type": "string"
+    },
+    "RiskClass": {
+      "enum": [
+        "read",
+        "compute",
+        "write_reversible",
+        "write_irreversible",
+        "money_movement"
+      ],
+      "title": "RiskClass",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "confirmation_ttl": {
+      "default": "PT5M",
+      "format": "duration",
+      "title": "Confirmation Ttl",
+      "type": "string"
+    },
+    "id": {
+      "pattern": "^[a-z0-9][a-z0-9_/-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "idempotent": {
+      "title": "Idempotent",
+      "type": "boolean"
+    },
+    "max_auth_age": {
+      "anyOf": [
+        {
+          "format": "duration",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Max Auth Age"
+    },
+    "min_auth_level": {
+      "$ref": "#/$defs/AuthLevel"
+    },
+    "readback_by": {
+      "anyOf": [
+        {
+          "const": "idempotency_key",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Readback By"
+    },
+    "risk_class": {
+      "$ref": "#/$defs/RiskClass"
+    },
+    "source": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source"
+    },
+    "untrusted_fields": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Untrusted Fields",
+      "type": "array"
+    },
+    "version": {
+      "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "risk_class",
+    "min_auth_level",
+    "idempotent"
+  ],
+  "title": "ToolDef",
+  "type": "object"
+}

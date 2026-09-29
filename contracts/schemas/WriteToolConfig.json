@@ -1,0 +1,29 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "additionalProperties": false,
+  "description": "Escritura: sin `args` propios; usa la acción congelada del `confirm` (ADR 0007).",
+  "properties": {
+    "action_from": {
+      "pattern": "^[a-z0-9][a-z0-9_]*$",
+      "title": "Action From",
+      "type": "string"
+    },
+    "save_as": {
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "title": "Save As",
+      "type": "string"
+    },
+    "step_up_max_attempts": {
+      "default": 2,
+      "exclusiveMinimum": 0,
+      "title": "Step Up Max Attempts",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "action_from",
+    "save_as"
+  ],
+  "title": "WriteToolConfig",
+  "type": "object"
+}

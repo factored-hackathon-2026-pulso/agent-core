@@ -1,0 +1,86 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "$defs": {
+    "EntityRef": {
+      "additionalProperties": false,
+      "description": "Referencia exacta de runtime: `id@X.Y.Z`.",
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_/-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "version": {
+          "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version"
+      ],
+      "title": "EntityRef",
+      "type": "object"
+    },
+    "PrincipalType": {
+      "enum": [
+        "customer",
+        "advisor",
+        "service",
+        "builder"
+      ],
+      "title": "PrincipalType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "$ref": "#/$defs/EntityRef"
+    },
+    "locale": {
+      "pattern": "^[a-z]{2}$",
+      "title": "Locale",
+      "type": "string"
+    },
+    "mode": {
+      "enum": [
+        "conversational",
+        "task"
+      ],
+      "title": "Mode",
+      "type": "string"
+    },
+    "principal_type": {
+      "$ref": "#/$defs/PrincipalType"
+    },
+    "reportable_attrs": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Reportable Attrs",
+      "type": "object"
+    },
+    "subject_kind": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Subject Kind"
+    }
+  },
+  "required": [
+    "agent",
+    "mode",
+    "principal_type",
+    "locale"
+  ],
+  "title": "RunStartedPayload",
+  "type": "object"
+}

@@ -1,0 +1,34 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "$defs": {
+    "InvalidationReason": {
+      "enum": [
+        "cancel",
+        "abandoned",
+        "interrupt",
+        "escalated",
+        "token_expired",
+        "max_attempts",
+        "denied_by_user"
+      ],
+      "title": "InvalidationReason",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "action_id": {
+      "title": "Action Id",
+      "type": "string"
+    },
+    "reason": {
+      "$ref": "#/$defs/InvalidationReason"
+    }
+  },
+  "required": [
+    "action_id",
+    "reason"
+  ],
+  "title": "ActionCancelledPayload",
+  "type": "object"
+}

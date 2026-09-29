@@ -1,0 +1,12 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "enum": [
+    "read",
+    "compute",
+    "write_reversible",
+    "write_irreversible",
+    "money_movement"
+  ],
+  "title": "RiskClass",
+  "type": "string"
+}

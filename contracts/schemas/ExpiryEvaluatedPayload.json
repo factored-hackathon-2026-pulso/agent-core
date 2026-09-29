@@ -1,0 +1,33 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "additionalProperties": false,
+  "properties": {
+    "expired": {
+      "title": "Expired",
+      "type": "boolean"
+    },
+    "last_activity_at": {
+      "format": "date-time",
+      "title": "Last Activity At",
+      "type": "string"
+    },
+    "now": {
+      "format": "date-time",
+      "title": "Now",
+      "type": "string"
+    },
+    "ttl": {
+      "format": "duration",
+      "title": "Ttl",
+      "type": "string"
+    }
+  },
+  "required": [
+    "now",
+    "last_activity_at",
+    "ttl",
+    "expired"
+  ],
+  "title": "ExpiryEvaluatedPayload",
+  "type": "object"
+}

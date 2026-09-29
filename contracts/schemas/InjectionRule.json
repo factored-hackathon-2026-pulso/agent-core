@@ -1,0 +1,31 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "minLength": 1,
+      "title": "Id",
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "regex",
+        "phrase"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "pattern": {
+      "minLength": 1,
+      "title": "Pattern",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "pattern",
+    "kind"
+  ],
+  "title": "InjectionRule",
+  "type": "object"
+}

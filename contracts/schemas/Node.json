@@ -1,0 +1,1059 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "$defs": {
+    "ActionSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Args",
+          "type": "object"
+        },
+        "tool": {
+          "$ref": "#/$defs/RefSpec"
+        }
+      },
+      "required": [
+        "tool"
+      ],
+      "title": "ActionSpec",
+      "type": "object"
+    },
+    "AgentNode": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/AgentNodeConfig"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "next": {
+          "additionalProperties": {
+            "pattern": "^[a-z0-9][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Next",
+          "type": "object"
+        },
+        "type": {
+          "const": "agent",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "config"
+      ],
+      "title": "AgentNode",
+      "type": "object"
+    },
+    "AgentNodeConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "goal": {
+          "title": "Goal",
+          "type": "string"
+        },
+        "max_steps": {
+          "exclusiveMinimum": 0,
+          "title": "Max Steps",
+          "type": "integer"
+        },
+        "prompt_ref": {
+          "$ref": "#/$defs/RefSpec"
+        },
+        "tools_allowed": {
+          "items": {
+            "$ref": "#/$defs/RefSpec"
+          },
+          "title": "Tools Allowed",
+          "type": "array"
+        }
+      },
+      "required": [
+        "tools_allowed",
+        "max_steps",
+        "prompt_ref",
+        "goal"
+      ],
+      "title": "AgentNodeConfig",
+      "type": "object"
+    },
+    "Approver": {
+      "additionalProperties": false,
+      "properties": {
+        "principal_type": {
+          "$ref": "#/$defs/PrincipalType"
+        },
+        "roles": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Roles",
+          "type": "array"
+        }
+      },
+      "required": [
+        "principal_type"
+      ],
+      "title": "Approver",
+      "type": "object"
+    },
+    "AwaitApprovalConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "approver": {
+          "$ref": "#/$defs/Approver"
+        },
+        "summary_template": {
+          "$ref": "#/$defs/RefSpec"
+        },
+        "timeout": {
+          "format": "duration",
+          "title": "Timeout",
+          "type": "string"
+        }
+      },
+      "required": [
+        "approver",
+        "summary_template",
+        "timeout"
+      ],
+      "title": "AwaitApprovalConfig",
+      "type": "object"
+    },
+    "AwaitApprovalNode": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/AwaitApprovalConfig"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "next": {
+          "additionalProperties": {
+            "pattern": "^[a-z0-9][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Next",
+          "type": "object"
+        },
+        "type": {
+          "const": "await_approval",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "config"
+      ],
+      "title": "AwaitApprovalNode",
+      "type": "object"
+    },
+    "CollectConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "max_attempts": {
+          "default": 2,
+          "exclusiveMinimum": 0,
+          "title": "Max Attempts",
+          "type": "integer"
+        },
+        "prompt_ref": {
+          "$ref": "#/$defs/RefSpec"
+        },
+        "slot": {
+          "title": "Slot",
+          "type": "string"
+        },
+        "validator": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SlotValidator"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "slot",
+        "prompt_ref"
+      ],
+      "title": "CollectConfig",
+      "type": "object"
+    },
+    "CollectNode": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/CollectConfig"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "next": {
+          "additionalProperties": {
+            "pattern": "^[a-z0-9][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Next",
+          "type": "object"
+        },
+        "type": {
+          "const": "collect",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "config"
+      ],
+      "title": "CollectNode",
+      "type": "object"
+    },
+    "ConfirmConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/ActionSpec"
+        },
+        "max_attempts": {
+          "default": 2,
+          "exclusiveMinimum": 0,
+          "title": "Max Attempts",
+          "type": "integer"
+        },
+        "reprompt_template": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RefSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "summary_template": {
+          "$ref": "#/$defs/RefSpec"
+        }
+      },
+      "required": [
+        "action",
+        "summary_template"
+      ],
+      "title": "ConfirmConfig",
+      "type": "object"
+    },
+    "ConfirmNode": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/ConfirmConfig"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "next": {
+          "additionalProperties": {
+            "pattern": "^[a-z0-9][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Next",
+          "type": "object"
+        },
+        "type": {
+          "const": "confirm",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "config"
+      ],
+      "title": "ConfirmNode",
+      "type": "object"
+    },
+    "DecideConfig": {
+      "additionalProperties": false,
+      "description": "Resultados = valores del enum de `branch_on` + `low_confidence`, cableados en `next` (rev. 4).",
+      "properties": {
+        "branch_on": {
+          "title": "Branch On",
+          "type": "string"
+        },
+        "input_view": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input View"
+        },
+        "model": {
+          "$ref": "#/$defs/RefSpec"
+        },
+        "save_as": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Save As",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model",
+        "branch_on",
+        "save_as"
+      ],
+      "title": "DecideConfig",
+      "type": "object"
+    },
+    "DecideNode": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/DecideConfig"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "next": {
+          "additionalProperties": {
+            "pattern": "^[a-z0-9][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Next",
+          "type": "object"
+        },
+        "type": {
+          "const": "decide",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "config"
+      ],
+      "title": "DecideNode",
+      "type": "object"
+    },
+    "EndConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "outcome": {
+          "$ref": "#/$defs/Outcome"
+        },
+        "output_map": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Map"
+        }
+      },
+      "required": [
+        "outcome"
+      ],
+      "title": "EndConfig",
+      "type": "object"
+    },
+    "EndNode": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/EndConfig"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "next": {
+          "additionalProperties": {
+            "pattern": "^[a-z0-9][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Next",
+          "type": "object"
+        },
+        "type": {
+          "const": "end",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "config"
+      ],
+      "title": "EndNode",
+      "type": "object"
+    },
+    "EscalateConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "priority_expr": {
+          "$ref": "#/$defs/JsonValue",
+          "default": null
+        },
+        "reason_code": {
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "target_queue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Queue"
+        }
+      },
+      "required": [
+        "reason_code"
+      ],
+      "title": "EscalateConfig",
+      "type": "object"
+    },
+    "EscalateNode": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/EscalateConfig"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "next": {
+          "additionalProperties": {
+            "pattern": "^[a-z0-9][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Next",
+          "type": "object"
+        },
+        "type": {
+          "const": "escalate",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "config"
+      ],
+      "title": "EscalateNode",
+      "type": "object"
+    },
+    "GenerateConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_facts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Facts",
+          "type": "array"
+        },
+        "fallback_template_ref": {
+          "$ref": "#/$defs/RefSpec"
+        },
+        "knowledge_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Knowledge Refs",
+          "type": "array"
+        },
+        "prompt_ref": {
+          "$ref": "#/$defs/RefSpec"
+        }
+      },
+      "required": [
+        "prompt_ref",
+        "fallback_template_ref"
+      ],
+      "title": "GenerateConfig",
+      "type": "object"
+    },
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "Outcome": {
+      "enum": [
+        "resolved",
+        "abstained",
+        "cancelled",
+        "clarify_exhausted",
+        "completed",
+        "failed",
+        "abandoned",
+        "escalated"
+      ],
+      "title": "Outcome",
+      "type": "string"
+    },
+    "PrincipalType": {
+      "enum": [
+        "customer",
+        "advisor",
+        "service",
+        "builder"
+      ],
+      "title": "PrincipalType",
+      "type": "string"
+    },
+    "RefSpec": {
+      "additionalProperties": false,
+      "description": "Referencia de autoría: exacta, rango (`^1`, `~1.2`, `1`) o sin versión.",
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_/-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "spec": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Spec"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "RefSpec",
+      "type": "object"
+    },
+    "RespondConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "await": {
+          "default": false,
+          "title": "Await",
+          "type": "boolean"
+        },
+        "claims": {
+          "items": {
+            "pattern": "^[a-z0-9][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Claims",
+          "type": "array"
+        },
+        "generate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GenerateConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "template_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RefSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "RespondConfig",
+      "type": "object"
+    },
+    "RespondNode": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/RespondConfig"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "next": {
+          "additionalProperties": {
+            "pattern": "^[a-z0-9][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Next",
+          "type": "object"
+        },
+        "type": {
+          "const": "respond",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "config"
+      ],
+      "title": "RespondNode",
+      "type": "object"
+    },
+    "RuleConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "expr": {
+          "$ref": "#/$defs/JsonValue",
+          "default": null
+        },
+        "policy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RefSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "RuleConfig",
+      "type": "object"
+    },
+    "RuleNode": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/RuleConfig"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "next": {
+          "additionalProperties": {
+            "pattern": "^[a-z0-9][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Next",
+          "type": "object"
+        },
+        "type": {
+          "const": "rule",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "config"
+      ],
+      "title": "RuleNode",
+      "type": "object"
+    },
+    "SlotValidator": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "type",
+            "regex",
+            "enum",
+            "decide"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "title": "SlotValidator",
+      "type": "object"
+    },
+    "SubflowConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "flow": {
+          "$ref": "#/$defs/RefSpec"
+        },
+        "map_in": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Map In",
+          "type": "object"
+        },
+        "map_out": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Map Out",
+          "type": "object"
+        }
+      },
+      "required": [
+        "flow"
+      ],
+      "title": "SubflowConfig",
+      "type": "object"
+    },
+    "SubflowNode": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/SubflowConfig"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "next": {
+          "additionalProperties": {
+            "pattern": "^[a-z0-9][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Next",
+          "type": "object"
+        },
+        "type": {
+          "const": "subflow",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "config"
+      ],
+      "title": "SubflowNode",
+      "type": "object"
+    },
+    "ToolConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "args": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Args",
+          "type": "object"
+        },
+        "save_as": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Save As",
+          "type": "string"
+        },
+        "step_up_max_attempts": {
+          "default": 2,
+          "exclusiveMinimum": 0,
+          "title": "Step Up Max Attempts",
+          "type": "integer"
+        },
+        "tool": {
+          "$ref": "#/$defs/RefSpec"
+        }
+      },
+      "required": [
+        "tool",
+        "save_as"
+      ],
+      "title": "ToolConfig",
+      "type": "object"
+    },
+    "ToolNode": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/ToolConfig"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "next": {
+          "additionalProperties": {
+            "pattern": "^[a-z0-9][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Next",
+          "type": "object"
+        },
+        "type": {
+          "const": "tool",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "config"
+      ],
+      "title": "ToolNode",
+      "type": "object"
+    },
+    "VerifyConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "by": {
+          "pattern": "^(idempotency_key|fact:.+)$",
+          "title": "By",
+          "type": "string"
+        },
+        "predicate": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "readback": {
+          "$ref": "#/$defs/RefSpec"
+        },
+        "save_as": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Save As",
+          "type": "string"
+        }
+      },
+      "required": [
+        "readback",
+        "by",
+        "predicate",
+        "save_as"
+      ],
+      "title": "VerifyConfig",
+      "type": "object"
+    },
+    "VerifyNode": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/VerifyConfig"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "next": {
+          "additionalProperties": {
+            "pattern": "^[a-z0-9][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Next",
+          "type": "object"
+        },
+        "type": {
+          "const": "verify",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "config"
+      ],
+      "title": "VerifyNode",
+      "type": "object"
+    },
+    "WriteToolConfig": {
+      "additionalProperties": false,
+      "description": "Escritura: sin `args` propios; usa la acción congelada del `confirm` (ADR 0007).",
+      "properties": {
+        "action_from": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Action From",
+          "type": "string"
+        },
+        "save_as": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Save As",
+          "type": "string"
+        },
+        "step_up_max_attempts": {
+          "default": 2,
+          "exclusiveMinimum": 0,
+          "title": "Step Up Max Attempts",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "action_from",
+        "save_as"
+      ],
+      "title": "WriteToolConfig",
+      "type": "object"
+    },
+    "WriteToolNode": {
+      "additionalProperties": false,
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/WriteToolConfig"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "next": {
+          "additionalProperties": {
+            "pattern": "^[a-z0-9][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Next",
+          "type": "object"
+        },
+        "type": {
+          "const": "tool",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "config"
+      ],
+      "title": "WriteToolNode",
+      "type": "object"
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/DecideNode"
+    },
+    {
+      "$ref": "#/$defs/RuleNode"
+    },
+    {
+      "$ref": "#/$defs/CollectNode"
+    },
+    {
+      "$ref": "#/$defs/ToolNode"
+    },
+    {
+      "$ref": "#/$defs/WriteToolNode"
+    },
+    {
+      "$ref": "#/$defs/ConfirmNode"
+    },
+    {
+      "$ref": "#/$defs/VerifyNode"
+    },
+    {
+      "$ref": "#/$defs/RespondNode"
+    },
+    {
+      "$ref": "#/$defs/EscalateNode"
+    },
+    {
+      "$ref": "#/$defs/EndNode"
+    },
+    {
+      "$ref": "#/$defs/AgentNode"
+    },
+    {
+      "$ref": "#/$defs/SubflowNode"
+    },
+    {
+      "$ref": "#/$defs/AwaitApprovalNode"
+    }
+  ]
+}

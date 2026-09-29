@@ -1,0 +1,12 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "enum": [
+    "timeout",
+    "unavailable",
+    "rate_limited",
+    "invalid_output",
+    "refused"
+  ],
+  "title": "GatewayErrorKind",
+  "type": "string"
+}

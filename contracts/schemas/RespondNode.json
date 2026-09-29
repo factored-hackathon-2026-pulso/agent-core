@@ -1,0 +1,137 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "$defs": {
+    "GenerateConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_facts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Facts",
+          "type": "array"
+        },
+        "fallback_template_ref": {
+          "$ref": "#/$defs/RefSpec"
+        },
+        "knowledge_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Knowledge Refs",
+          "type": "array"
+        },
+        "prompt_ref": {
+          "$ref": "#/$defs/RefSpec"
+        }
+      },
+      "required": [
+        "prompt_ref",
+        "fallback_template_ref"
+      ],
+      "title": "GenerateConfig",
+      "type": "object"
+    },
+    "RefSpec": {
+      "additionalProperties": false,
+      "description": "Referencia de autoría: exacta, rango (`^1`, `~1.2`, `1`) o sin versión.",
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_/-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "spec": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Spec"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "RefSpec",
+      "type": "object"
+    },
+    "RespondConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "await": {
+          "default": false,
+          "title": "Await",
+          "type": "boolean"
+        },
+        "claims": {
+          "items": {
+            "pattern": "^[a-z0-9][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Claims",
+          "type": "array"
+        },
+        "generate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GenerateConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "template_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RefSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "RespondConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "config": {
+      "$ref": "#/$defs/RespondConfig"
+    },
+    "id": {
+      "pattern": "^[a-z0-9][a-z0-9_]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "next": {
+      "additionalProperties": {
+        "pattern": "^[a-z0-9][a-z0-9_]*$",
+        "type": "string"
+      },
+      "title": "Next",
+      "type": "object"
+    },
+    "type": {
+      "const": "respond",
+      "title": "Type",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "type",
+    "config"
+  ],
+  "title": "RespondNode",
+  "type": "object"
+}

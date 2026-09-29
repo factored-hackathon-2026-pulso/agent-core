@@ -1,0 +1,166 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "$defs": {
+    "ActionState": {
+      "enum": [
+        "proposed",
+        "confirmed",
+        "executing",
+        "executed",
+        "uncertain",
+        "denied",
+        "verified",
+        "failed",
+        "cancelled"
+      ],
+      "title": "ActionState",
+      "type": "string"
+    },
+    "EntityRef": {
+      "additionalProperties": false,
+      "description": "Referencia exacta de runtime: `id@X.Y.Z`.",
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_/-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "version": {
+          "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version"
+      ],
+      "title": "EntityRef",
+      "type": "object"
+    },
+    "InvalidationReason": {
+      "enum": [
+        "cancel",
+        "abandoned",
+        "interrupt",
+        "escalated",
+        "token_expired",
+        "max_attempts",
+        "denied_by_user"
+      ],
+      "title": "InvalidationReason",
+      "type": "string"
+    },
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "action_id": {
+      "title": "Action Id",
+      "type": "string"
+    },
+    "args": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Args",
+      "type": "object"
+    },
+    "args_hash": {
+      "title": "Args Hash",
+      "type": "string"
+    },
+    "cancel_reason": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/InvalidationReason"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "confirm_node_id": {
+      "pattern": "^[a-z0-9][a-z0-9_]*$",
+      "title": "Confirm Node Id",
+      "type": "string"
+    },
+    "confirmation_token_hash": {
+      "title": "Confirmation Token Hash",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "flow": {
+      "$ref": "#/$defs/EntityRef"
+    },
+    "idempotency_key": {
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "state": {
+      "$ref": "#/$defs/ActionState"
+    },
+    "token_exp": {
+      "format": "date-time",
+      "title": "Token Exp",
+      "type": "string"
+    },
+    "tool": {
+      "$ref": "#/$defs/EntityRef"
+    }
+  },
+  "required": [
+    "action_id",
+    "confirm_node_id",
+    "flow",
+    "tool",
+    "args",
+    "args_hash",
+    "state",
+    "confirmation_token_hash",
+    "token_exp",
+    "idempotency_key",
+    "created_at"
+  ],
+  "title": "Action",
+  "type": "object"
+}

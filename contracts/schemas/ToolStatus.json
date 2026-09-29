@@ -1,0 +1,13 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "enum": [
+    "ok",
+    "error",
+    "timeout",
+    "denied",
+    "uncertain",
+    "step_up_required"
+  ],
+  "title": "ToolStatus",
+  "type": "string"
+}

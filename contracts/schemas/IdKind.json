@@ -1,0 +1,17 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "enum": [
+    "run",
+    "session",
+    "turn",
+    "action",
+    "decision",
+    "fact",
+    "call",
+    "handoff",
+    "event",
+    "message"
+  ],
+  "title": "IdKind",
+  "type": "string"
+}

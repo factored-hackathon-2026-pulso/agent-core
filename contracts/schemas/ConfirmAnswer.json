@@ -1,0 +1,24 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "additionalProperties": false,
+  "properties": {
+    "answer": {
+      "enum": [
+        "yes",
+        "no"
+      ],
+      "title": "Answer",
+      "type": "string"
+    },
+    "token": {
+      "title": "Token",
+      "type": "string"
+    }
+  },
+  "required": [
+    "token",
+    "answer"
+  ],
+  "title": "ConfirmAnswer",
+  "type": "object"
+}

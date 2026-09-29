@@ -1,0 +1,9 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "enum": [
+    "fingerprint",
+    "token_map"
+  ],
+  "title": "KeyPurpose",
+  "type": "string"
+}

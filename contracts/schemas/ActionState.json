@@ -1,0 +1,16 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "enum": [
+    "proposed",
+    "confirmed",
+    "executing",
+    "executed",
+    "uncertain",
+    "denied",
+    "verified",
+    "failed",
+    "cancelled"
+  ],
+  "title": "ActionState",
+  "type": "string"
+}

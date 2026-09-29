@@ -1,0 +1,14 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "enum": [
+    "principal_expired",
+    "delegation_expired",
+    "delegation_mismatch",
+    "principal_mismatch",
+    "subject_forbidden",
+    "agent_forbidden",
+    "tool_denied"
+  ],
+  "title": "AccessDeniedReason",
+  "type": "string"
+}

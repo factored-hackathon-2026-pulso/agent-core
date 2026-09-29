@@ -1,0 +1,39 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "$defs": {
+    "PrincipalType": {
+      "enum": [
+        "customer",
+        "advisor",
+        "service",
+        "builder"
+      ],
+      "title": "PrincipalType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Id"
+    },
+    "type": {
+      "$ref": "#/$defs/PrincipalType"
+    }
+  },
+  "required": [
+    "type",
+    "id"
+  ],
+  "title": "PrincipalKey",
+  "type": "object"
+}

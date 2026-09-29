@@ -1,0 +1,3477 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "$defs": {
+    "AccessDenied": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/AccessDeniedPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "access_denied",
+          "default": "access_denied",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "AccessDenied",
+      "type": "object"
+    },
+    "AccessDeniedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "$ref": "#/$defs/AccessDeniedReason"
+        },
+        "tool": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EntityRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "title": "AccessDeniedPayload",
+      "type": "object"
+    },
+    "AccessDeniedReason": {
+      "enum": [
+        "principal_expired",
+        "delegation_expired",
+        "delegation_mismatch",
+        "principal_mismatch",
+        "subject_forbidden",
+        "agent_forbidden",
+        "tool_denied"
+      ],
+      "title": "AccessDeniedReason",
+      "type": "string"
+    },
+    "ActionCancelled": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/ActionCancelledPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "action_cancelled",
+          "default": "action_cancelled",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "ActionCancelled",
+      "type": "object"
+    },
+    "ActionCancelledPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "action_id": {
+          "title": "Action Id",
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/InvalidationReason"
+        }
+      },
+      "required": [
+        "action_id",
+        "reason"
+      ],
+      "title": "ActionCancelledPayload",
+      "type": "object"
+    },
+    "ActionConfirmed": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/ActionConfirmedPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "action_confirmed",
+          "default": "action_confirmed",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "ActionConfirmed",
+      "type": "object"
+    },
+    "ActionConfirmedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "action_id": {
+          "title": "Action Id",
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "understand",
+            "button"
+          ],
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action_id",
+        "source"
+      ],
+      "title": "ActionConfirmedPayload",
+      "type": "object"
+    },
+    "ActionDispatched": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/ActionDispatchedPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "action_dispatched",
+          "default": "action_dispatched",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "ActionDispatched",
+      "type": "object"
+    },
+    "ActionDispatchedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "action_id": {
+          "title": "Action Id",
+          "type": "string"
+        },
+        "args_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Args Hash",
+          "type": "string"
+        },
+        "tool": {
+          "$ref": "#/$defs/EntityRef"
+        }
+      },
+      "required": [
+        "action_id",
+        "tool",
+        "args_hash"
+      ],
+      "title": "ActionDispatchedPayload",
+      "type": "object"
+    },
+    "ActionVerified": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/ActionVerifiedPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "action_verified",
+          "default": "action_verified",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "ActionVerified",
+      "type": "object"
+    },
+    "ActionVerifiedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "action_id": {
+          "title": "Action Id",
+          "type": "string"
+        },
+        "readback_call_id": {
+          "title": "Readback Call Id",
+          "type": "string"
+        },
+        "result": {
+          "enum": [
+            "verified",
+            "failed"
+          ],
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action_id",
+        "result",
+        "readback_call_id"
+      ],
+      "title": "ActionVerifiedPayload",
+      "type": "object"
+    },
+    "AuthLevel": {
+      "description": "Nivel de autenticación; se compara por rango (`anonymous < session < step_up`).",
+      "enum": [
+        "anonymous",
+        "session",
+        "step_up"
+      ],
+      "title": "AuthLevel",
+      "type": "string"
+    },
+    "Awaiting": {
+      "enum": [
+        "none",
+        "slot",
+        "confirmation",
+        "step_up",
+        "input"
+      ],
+      "title": "Awaiting",
+      "type": "string"
+    },
+    "Command": {
+      "description": "Comandos de Understand (spec general §4.4).",
+      "enum": [
+        "start_flow",
+        "continue",
+        "affirm",
+        "deny",
+        "clarify",
+        "cancel",
+        "handoff",
+        "out_of_scope",
+        "interrupt"
+      ],
+      "title": "Command",
+      "type": "string"
+    },
+    "CommandEmitted": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/CommandEmittedPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "command_emitted",
+          "default": "command_emitted",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "CommandEmitted",
+      "type": "object"
+    },
+    "CommandEmittedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "above_threshold": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "title": "Above Threshold",
+          "type": "object"
+        },
+        "additional_flows": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Additional Flows",
+          "type": "array"
+        },
+        "command": {
+          "$ref": "#/$defs/Command"
+        },
+        "decision_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decision Id"
+        },
+        "flow": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Flow"
+        },
+        "interrupt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Interrupt"
+        },
+        "source": {
+          "enum": [
+            "understand",
+            "button"
+          ],
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "command",
+        "source"
+      ],
+      "title": "CommandEmittedPayload",
+      "type": "object"
+    },
+    "DecisionMade": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/DecisionMadePayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "decision_made",
+          "default": "decision_made",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "DecisionMade",
+      "type": "object"
+    },
+    "DecisionMadePayload": {
+      "additionalProperties": false,
+      "properties": {
+        "above_threshold": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "title": "Above Threshold",
+          "type": "object"
+        },
+        "cost_usd": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ],
+          "title": "Cost Usd"
+        },
+        "decision_id": {
+          "title": "Decision Id",
+          "type": "string"
+        },
+        "fallback_depth": {
+          "minimum": 0,
+          "title": "Fallback Depth",
+          "type": "integer"
+        },
+        "latency_ms": {
+          "minimum": 0,
+          "title": "Latency Ms",
+          "type": "integer"
+        },
+        "locale": {
+          "pattern": "^[a-z]{2}$",
+          "title": "Locale",
+          "type": "string"
+        },
+        "model": {
+          "$ref": "#/$defs/EntityRef"
+        },
+        "model_version": {
+          "title": "Model Version",
+          "type": "string"
+        },
+        "p_cal": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "P Cal",
+          "type": "object"
+        },
+        "p_raw": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "P Raw",
+          "type": "object"
+        },
+        "provider_used": {
+          "title": "Provider Used",
+          "type": "string"
+        },
+        "tokens": {
+          "minimum": 0,
+          "title": "Tokens",
+          "type": "integer"
+        },
+        "top_k": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/LabelScore"
+            },
+            "type": "array"
+          },
+          "title": "Top K",
+          "type": "object"
+        },
+        "value": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Value",
+          "type": "object"
+        }
+      },
+      "required": [
+        "decision_id",
+        "model",
+        "provider_used",
+        "model_version",
+        "fallback_depth",
+        "value",
+        "p_cal",
+        "p_raw",
+        "above_threshold",
+        "latency_ms",
+        "tokens",
+        "cost_usd",
+        "locale"
+      ],
+      "title": "DecisionMadePayload",
+      "type": "object"
+    },
+    "EntityRef": {
+      "additionalProperties": false,
+      "description": "Referencia exacta de runtime: `id@X.Y.Z`.",
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_/-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "version": {
+          "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version"
+      ],
+      "title": "EntityRef",
+      "type": "object"
+    },
+    "Escalated": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/EscalatedPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "escalated",
+          "default": "escalated",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "Escalated",
+      "type": "object"
+    },
+    "EscalatedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "handoff_ref": {
+          "title": "Handoff Ref",
+          "type": "string"
+        },
+        "priority": {
+          "title": "Priority",
+          "type": "string"
+        },
+        "reason_code": {
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "target_queue": {
+          "title": "Target Queue",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason_code",
+        "target_queue",
+        "priority",
+        "handoff_ref"
+      ],
+      "title": "EscalatedPayload",
+      "type": "object"
+    },
+    "ExpiryEvaluated": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/ExpiryEvaluatedPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "expiry_evaluated",
+          "default": "expiry_evaluated",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "ExpiryEvaluated",
+      "type": "object"
+    },
+    "ExpiryEvaluatedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "expired": {
+          "title": "Expired",
+          "type": "boolean"
+        },
+        "last_activity_at": {
+          "format": "date-time",
+          "title": "Last Activity At",
+          "type": "string"
+        },
+        "now": {
+          "format": "date-time",
+          "title": "Now",
+          "type": "string"
+        },
+        "ttl": {
+          "format": "duration",
+          "title": "Ttl",
+          "type": "string"
+        }
+      },
+      "required": [
+        "now",
+        "last_activity_at",
+        "ttl",
+        "expired"
+      ],
+      "title": "ExpiryEvaluatedPayload",
+      "type": "object"
+    },
+    "Fingerprint": {
+      "additionalProperties": false,
+      "description": "Huella con clave (ADR 0008): `value = HMAC-SHA256(k[kid], JCS(dato))`.",
+      "properties": {
+        "alg": {
+          "const": "HMAC-SHA256",
+          "title": "Alg",
+          "type": "string"
+        },
+        "kid": {
+          "title": "Kid",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "alg",
+        "kid",
+        "value"
+      ],
+      "title": "Fingerprint",
+      "type": "object"
+    },
+    "GuardsOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "injection": {
+          "$ref": "#/$defs/InjectionGuard"
+        },
+        "lang": {
+          "$ref": "#/$defs/LangGuard"
+        },
+        "size_ok": {
+          "title": "Size Ok",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "lang",
+        "injection",
+        "size_ok"
+      ],
+      "title": "GuardsOutput",
+      "type": "object"
+    },
+    "HandoffResolved": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/HandoffResolvedPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "handoff_resolved",
+          "default": "handoff_resolved",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "HandoffResolved",
+      "type": "object"
+    },
+    "HandoffResolvedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "handoff_quality": {
+          "enum": [
+            "useful",
+            "incomplete",
+            "unnecessary"
+          ],
+          "title": "Handoff Quality",
+          "type": "string"
+        },
+        "handoff_ref": {
+          "title": "Handoff Ref",
+          "type": "string"
+        },
+        "reader_type": {
+          "$ref": "#/$defs/PrincipalType"
+        },
+        "resolution_code": {
+          "title": "Resolution Code",
+          "type": "string"
+        }
+      },
+      "required": [
+        "handoff_ref",
+        "resolution_code",
+        "handoff_quality",
+        "reader_type"
+      ],
+      "title": "HandoffResolvedPayload",
+      "type": "object"
+    },
+    "InjectionFlagged": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/InjectionFlaggedPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "injection_flagged",
+          "default": "injection_flagged",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "InjectionFlagged",
+      "type": "object"
+    },
+    "InjectionFlaggedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "ruleset": {
+          "title": "Ruleset",
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "user_text",
+            "untrusted_field"
+          ],
+          "title": "Scope",
+          "type": "string"
+        },
+        "signals": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Signals",
+          "type": "array"
+        }
+      },
+      "required": [
+        "signals",
+        "ruleset",
+        "scope"
+      ],
+      "title": "InjectionFlaggedPayload",
+      "type": "object"
+    },
+    "InjectionGuard": {
+      "additionalProperties": false,
+      "properties": {
+        "flagged": {
+          "title": "Flagged",
+          "type": "boolean"
+        },
+        "ruleset": {
+          "title": "Ruleset",
+          "type": "string"
+        },
+        "signals": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Signals",
+          "type": "array"
+        }
+      },
+      "required": [
+        "flagged",
+        "ruleset"
+      ],
+      "title": "InjectionGuard",
+      "type": "object"
+    },
+    "InvalidationReason": {
+      "enum": [
+        "cancel",
+        "abandoned",
+        "interrupt",
+        "escalated",
+        "token_expired",
+        "max_attempts",
+        "denied_by_user"
+      ],
+      "title": "InvalidationReason",
+      "type": "string"
+    },
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "LabelScore": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "p": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "P",
+          "type": "number"
+        }
+      },
+      "required": [
+        "label",
+        "p"
+      ],
+      "title": "LabelScore",
+      "type": "object"
+    },
+    "LangGuard": {
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "enum": [
+            "kept",
+            "switched",
+            "short",
+            "undetermined",
+            "unsupported"
+          ],
+          "title": "Decision",
+          "type": "string"
+        },
+        "detector": {
+          "title": "Detector",
+          "type": "string"
+        },
+        "letters": {
+          "minimum": 0,
+          "title": "Letters",
+          "type": "integer"
+        },
+        "locale": {
+          "pattern": "^[a-z]{2}$",
+          "title": "Locale",
+          "type": "string"
+        },
+        "locale_prior": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z]{2}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Locale Prior"
+        },
+        "top2": {
+          "items": {
+            "$ref": "#/$defs/LangScore"
+          },
+          "title": "Top2",
+          "type": "array"
+        }
+      },
+      "required": [
+        "detector",
+        "letters",
+        "top2",
+        "decision",
+        "locale"
+      ],
+      "title": "LangGuard",
+      "type": "object"
+    },
+    "LangScore": {
+      "additionalProperties": false,
+      "properties": {
+        "lang": {
+          "title": "Lang",
+          "type": "string"
+        },
+        "score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "lang",
+        "score"
+      ],
+      "title": "LangScore",
+      "type": "object"
+    },
+    "LlmUsage": {
+      "additionalProperties": false,
+      "properties": {
+        "calls": {
+          "minimum": 0,
+          "title": "Calls",
+          "type": "integer"
+        },
+        "cost_known": {
+          "title": "Cost Known",
+          "type": "boolean"
+        },
+        "cost_usd": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ],
+          "title": "Cost Usd"
+        },
+        "latency_ms": {
+          "minimum": 0,
+          "title": "Latency Ms",
+          "type": "integer"
+        },
+        "models": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Models",
+          "type": "array"
+        },
+        "tokens_in": {
+          "minimum": 0,
+          "title": "Tokens In",
+          "type": "integer"
+        },
+        "tokens_out": {
+          "minimum": 0,
+          "title": "Tokens Out",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "calls",
+        "latency_ms",
+        "tokens_in",
+        "tokens_out",
+        "cost_usd",
+        "cost_known"
+      ],
+      "title": "LlmUsage",
+      "type": "object"
+    },
+    "NodeEntered": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/NodeEnteredPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "node_entered",
+          "default": "node_entered",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "NodeEntered",
+      "type": "object"
+    },
+    "NodeEnteredPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "flow": {
+          "$ref": "#/$defs/EntityRef"
+        },
+        "node_id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "node_type": {
+          "title": "Node Type",
+          "type": "string"
+        },
+        "resume_kind": {
+          "enum": [
+            "slot_answer",
+            "confirm_answer",
+            "step_up_retry",
+            "none"
+          ],
+          "title": "Resume Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "flow",
+        "node_id",
+        "node_type",
+        "resume_kind"
+      ],
+      "title": "NodeEnteredPayload",
+      "type": "object"
+    },
+    "Outcome": {
+      "enum": [
+        "resolved",
+        "abstained",
+        "cancelled",
+        "clarify_exhausted",
+        "completed",
+        "failed",
+        "abandoned",
+        "escalated"
+      ],
+      "title": "Outcome",
+      "type": "string"
+    },
+    "PrincipalType": {
+      "enum": [
+        "customer",
+        "advisor",
+        "service",
+        "builder"
+      ],
+      "title": "PrincipalType",
+      "type": "string"
+    },
+    "ResponseEmitted": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/ResponseEmittedPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "response_emitted",
+          "default": "response_emitted",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "ResponseEmitted",
+      "type": "object"
+    },
+    "ResponseEmittedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "claims": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Claims",
+          "type": "array"
+        },
+        "fallback_used": {
+          "title": "Fallback Used",
+          "type": "boolean"
+        },
+        "kind": {
+          "enum": [
+            "template",
+            "generated"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "llm": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LlmUsage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "node_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Node Id"
+        },
+        "transcript_fp": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Fingerprint"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "validator": {
+          "$ref": "#/$defs/ValidatorOutcome"
+        }
+      },
+      "required": [
+        "kind",
+        "validator",
+        "fallback_used"
+      ],
+      "title": "ResponseEmittedPayload",
+      "type": "object"
+    },
+    "RuleEvaluated": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/RuleEvaluatedPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "rule_evaluated",
+          "default": "rule_evaluated",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "RuleEvaluated",
+      "type": "object"
+    },
+    "RuleEvaluatedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "inputs": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Inputs",
+          "type": "object"
+        },
+        "node_id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "policy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EntityRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "result": {
+          "title": "Result",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "node_id",
+        "inputs",
+        "result"
+      ],
+      "title": "RuleEvaluatedPayload",
+      "type": "object"
+    },
+    "RunClosed": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/RunClosedPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "run_closed",
+          "default": "run_closed",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "RunClosed",
+      "type": "object"
+    },
+    "RunClosedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "closed_by": {
+          "enum": [
+            "flow",
+            "abandonment",
+            "escalation",
+            "revocation"
+          ],
+          "title": "Closed By",
+          "type": "string"
+        },
+        "outcome": {
+          "$ref": "#/$defs/Outcome"
+        }
+      },
+      "required": [
+        "outcome",
+        "closed_by"
+      ],
+      "title": "RunClosedPayload",
+      "type": "object"
+    },
+    "RunStarted": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/RunStartedPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "run_started",
+          "default": "run_started",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "RunStarted",
+      "type": "object"
+    },
+    "RunStartedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "$ref": "#/$defs/EntityRef"
+        },
+        "locale": {
+          "pattern": "^[a-z]{2}$",
+          "title": "Locale",
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "conversational",
+            "task"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "principal_type": {
+          "$ref": "#/$defs/PrincipalType"
+        },
+        "reportable_attrs": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Reportable Attrs",
+          "type": "object"
+        },
+        "subject_kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Subject Kind"
+        }
+      },
+      "required": [
+        "agent",
+        "mode",
+        "principal_type",
+        "locale"
+      ],
+      "title": "RunStartedPayload",
+      "type": "object"
+    },
+    "StepUpRequested": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/StepUpRequestedPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "step_up_requested",
+          "default": "step_up_requested",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "StepUpRequested",
+      "type": "object"
+    },
+    "StepUpRequestedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt": {
+          "exclusiveMinimum": 0,
+          "title": "Attempt",
+          "type": "integer"
+        },
+        "node_id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "required_level": {
+          "$ref": "#/$defs/AuthLevel"
+        }
+      },
+      "required": [
+        "node_id",
+        "required_level",
+        "attempt"
+      ],
+      "title": "StepUpRequestedPayload",
+      "type": "object"
+    },
+    "ToolCalled": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/ToolCalledPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "tool_called",
+          "default": "tool_called",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "ToolCalled",
+      "type": "object"
+    },
+    "ToolCalledPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "action_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Action Id"
+        },
+        "args": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Args",
+          "type": "object"
+        },
+        "attempt": {
+          "default": 1,
+          "exclusiveMinimum": 0,
+          "title": "Attempt",
+          "type": "integer"
+        },
+        "call_id": {
+          "title": "Call Id",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        },
+        "latency_ms": {
+          "minimum": 0,
+          "title": "Latency Ms",
+          "type": "integer"
+        },
+        "node_id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "result": {
+          "$ref": "#/$defs/JsonValue",
+          "default": null
+        },
+        "result_fp": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Fingerprint"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "status": {
+          "$ref": "#/$defs/ToolStatus"
+        },
+        "tool": {
+          "$ref": "#/$defs/EntityRef"
+        }
+      },
+      "required": [
+        "node_id",
+        "tool",
+        "call_id",
+        "status",
+        "args",
+        "latency_ms"
+      ],
+      "title": "ToolCalledPayload",
+      "type": "object"
+    },
+    "ToolStatus": {
+      "enum": [
+        "ok",
+        "error",
+        "timeout",
+        "denied",
+        "uncertain",
+        "step_up_required"
+      ],
+      "title": "ToolStatus",
+      "type": "string"
+    },
+    "TurnCompleted": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/TurnCompletedPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "turn_completed",
+          "default": "turn_completed",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "TurnCompleted",
+      "type": "object"
+    },
+    "TurnCompletedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "awaiting": {
+          "$ref": "#/$defs/Awaiting"
+        },
+        "client_turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Client Turn Id"
+        },
+        "degraded": {
+          "title": "Degraded",
+          "type": "boolean"
+        },
+        "duration_ms": {
+          "minimum": 0,
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "entry": {
+          "enum": [
+            "start_run",
+            "turn"
+          ],
+          "title": "Entry",
+          "type": "string"
+        },
+        "stages": {
+          "$ref": "#/$defs/TurnStages"
+        }
+      },
+      "required": [
+        "entry",
+        "duration_ms",
+        "stages",
+        "degraded",
+        "awaiting"
+      ],
+      "title": "TurnCompletedPayload",
+      "type": "object"
+    },
+    "TurnStages": {
+      "additionalProperties": false,
+      "properties": {
+        "flow_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Flow Ms"
+        },
+        "guards_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Guards Ms"
+        },
+        "response_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Response Ms"
+        },
+        "understand_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Understand Ms"
+        }
+      },
+      "title": "TurnStages",
+      "type": "object"
+    },
+    "TurnStarted": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/TurnStartedPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "turn_started",
+          "default": "turn_started",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "TurnStarted",
+      "type": "object"
+    },
+    "TurnStartedPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "client_turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Client Turn Id"
+        },
+        "guards": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GuardsOutput"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "TurnStartedPayload",
+      "type": "object"
+    },
+    "ValidatorOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "failures": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Failures",
+          "type": "array"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "regenerations": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Regenerations",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "title": "ValidatorOutcome",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "access_denied": "#/$defs/AccessDenied",
+      "action_cancelled": "#/$defs/ActionCancelled",
+      "action_confirmed": "#/$defs/ActionConfirmed",
+      "action_dispatched": "#/$defs/ActionDispatched",
+      "action_verified": "#/$defs/ActionVerified",
+      "command_emitted": "#/$defs/CommandEmitted",
+      "decision_made": "#/$defs/DecisionMade",
+      "escalated": "#/$defs/Escalated",
+      "expiry_evaluated": "#/$defs/ExpiryEvaluated",
+      "handoff_resolved": "#/$defs/HandoffResolved",
+      "injection_flagged": "#/$defs/InjectionFlagged",
+      "node_entered": "#/$defs/NodeEntered",
+      "response_emitted": "#/$defs/ResponseEmitted",
+      "rule_evaluated": "#/$defs/RuleEvaluated",
+      "run_closed": "#/$defs/RunClosed",
+      "run_started": "#/$defs/RunStarted",
+      "step_up_requested": "#/$defs/StepUpRequested",
+      "tool_called": "#/$defs/ToolCalled",
+      "turn_completed": "#/$defs/TurnCompleted",
+      "turn_started": "#/$defs/TurnStarted"
+    },
+    "propertyName": "type"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/RunStarted"
+    },
+    {
+      "$ref": "#/$defs/TurnStarted"
+    },
+    {
+      "$ref": "#/$defs/CommandEmitted"
+    },
+    {
+      "$ref": "#/$defs/NodeEntered"
+    },
+    {
+      "$ref": "#/$defs/DecisionMade"
+    },
+    {
+      "$ref": "#/$defs/RuleEvaluated"
+    },
+    {
+      "$ref": "#/$defs/ToolCalled"
+    },
+    {
+      "$ref": "#/$defs/StepUpRequested"
+    },
+    {
+      "$ref": "#/$defs/ActionConfirmed"
+    },
+    {
+      "$ref": "#/$defs/ActionCancelled"
+    },
+    {
+      "$ref": "#/$defs/ActionDispatched"
+    },
+    {
+      "$ref": "#/$defs/ActionVerified"
+    },
+    {
+      "$ref": "#/$defs/ExpiryEvaluated"
+    },
+    {
+      "$ref": "#/$defs/ResponseEmitted"
+    },
+    {
+      "$ref": "#/$defs/TurnCompleted"
+    },
+    {
+      "$ref": "#/$defs/InjectionFlagged"
+    },
+    {
+      "$ref": "#/$defs/AccessDenied"
+    },
+    {
+      "$ref": "#/$defs/Escalated"
+    },
+    {
+      "$ref": "#/$defs/HandoffResolved"
+    },
+    {
+      "$ref": "#/$defs/RunClosed"
+    }
+  ]
+}

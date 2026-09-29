@@ -1,0 +1,266 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "$defs": {
+    "AuthLevel": {
+      "description": "Nivel de autenticación; se compara por rango (`anonymous < session < step_up`).",
+      "enum": [
+        "anonymous",
+        "session",
+        "step_up"
+      ],
+      "title": "AuthLevel",
+      "type": "string"
+    },
+    "Budgets": {
+      "additionalProperties": false,
+      "properties": {
+        "max_cost_per_run": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ],
+          "title": "Max Cost Per Run"
+        },
+        "max_model_calls_per_turn": {
+          "exclusiveMinimum": 0,
+          "title": "Max Model Calls Per Turn",
+          "type": "integer"
+        },
+        "max_nodes_per_turn": {
+          "exclusiveMinimum": 0,
+          "title": "Max Nodes Per Turn",
+          "type": "integer"
+        },
+        "max_tokens_per_run": {
+          "exclusiveMinimum": 0,
+          "title": "Max Tokens Per Run",
+          "type": "integer"
+        },
+        "max_wall_ms_per_turn": {
+          "exclusiveMinimum": 0,
+          "title": "Max Wall Ms Per Turn",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_nodes_per_turn",
+        "max_model_calls_per_turn",
+        "max_tokens_per_run",
+        "max_cost_per_run",
+        "max_wall_ms_per_turn"
+      ],
+      "title": "Budgets",
+      "type": "object"
+    },
+    "EngineTemplates": {
+      "additionalProperties": false,
+      "description": "Plantillas que usa el motor fuera de los flows (M4, M6, M10).",
+      "properties": {
+        "abstain": {
+          "$ref": "#/$defs/RefSpec"
+        },
+        "clarify": {
+          "$ref": "#/$defs/RefSpec"
+        },
+        "handoff": {
+          "$ref": "#/$defs/RefSpec"
+        },
+        "input_too_large": {
+          "$ref": "#/$defs/RefSpec"
+        },
+        "pending_ack": {
+          "$ref": "#/$defs/RefSpec"
+        },
+        "pending_offer": {
+          "$ref": "#/$defs/RefSpec"
+        },
+        "unsupported_language": {
+          "$ref": "#/$defs/RefSpec"
+        }
+      },
+      "required": [
+        "clarify",
+        "abstain",
+        "handoff",
+        "pending_ack",
+        "pending_offer",
+        "unsupported_language",
+        "input_too_large"
+      ],
+      "title": "EngineTemplates",
+      "type": "object"
+    },
+    "PrincipalType": {
+      "enum": [
+        "customer",
+        "advisor",
+        "service",
+        "builder"
+      ],
+      "title": "PrincipalType",
+      "type": "string"
+    },
+    "RefSpec": {
+      "additionalProperties": false,
+      "description": "Referencia de autoría: exacta, rango (`^1`, `~1.2`, `1`) o sin versión.",
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_/-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "spec": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Spec"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "RefSpec",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "budgets": {
+      "$ref": "#/$defs/Budgets"
+    },
+    "default_locale": {
+      "pattern": "^[a-z]{2}$",
+      "title": "Default Locale",
+      "type": "string"
+    },
+    "default_target_queue": {
+      "minLength": 1,
+      "title": "Default Target Queue",
+      "type": "string"
+    },
+    "entry_flow": {
+      "$ref": "#/$defs/RefSpec"
+    },
+    "id": {
+      "pattern": "^[a-z0-9][a-z0-9_/-]*$",
+      "title": "Id",
+      "type": "string"
+    },
+    "inactivity_ttl": {
+      "default": "PT30M",
+      "format": "duration",
+      "title": "Inactivity Ttl",
+      "type": "string"
+    },
+    "invocable_by": {
+      "items": {
+        "$ref": "#/$defs/PrincipalType"
+      },
+      "minItems": 1,
+      "title": "Invocable By",
+      "type": "array"
+    },
+    "max_clarifications": {
+      "minimum": 0,
+      "title": "Max Clarifications",
+      "type": "integer"
+    },
+    "max_repair_turns_per_run": {
+      "default": 8,
+      "exclusiveMinimum": 0,
+      "title": "Max Repair Turns Per Run",
+      "type": "integer"
+    },
+    "min_auth_level": {
+      "$ref": "#/$defs/AuthLevel"
+    },
+    "mode": {
+      "enum": [
+        "conversational",
+        "task"
+      ],
+      "title": "Mode",
+      "type": "string"
+    },
+    "on_clarify_exhausted": {
+      "enum": [
+        "end",
+        "escalate"
+      ],
+      "title": "On Clarify Exhausted",
+      "type": "string"
+    },
+    "subject_kinds": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Subject Kinds",
+      "type": "array"
+    },
+    "supported_locales": {
+      "items": {
+        "pattern": "^[a-z]{2}$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Supported Locales",
+      "type": "array"
+    },
+    "templates": {
+      "$ref": "#/$defs/EngineTemplates"
+    },
+    "tools_allowed": {
+      "items": {
+        "$ref": "#/$defs/RefSpec"
+      },
+      "title": "Tools Allowed",
+      "type": "array"
+    },
+    "understand": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RefSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "version": {
+      "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "mode",
+    "entry_flow",
+    "invocable_by",
+    "min_auth_level",
+    "subject_kinds",
+    "supported_locales",
+    "default_locale",
+    "budgets",
+    "templates",
+    "max_clarifications",
+    "on_clarify_exhausted",
+    "default_target_queue"
+  ],
+  "title": "Agent",
+  "type": "object"
+}

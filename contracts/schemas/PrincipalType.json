@@ -1,0 +1,11 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "enum": [
+    "customer",
+    "advisor",
+    "service",
+    "builder"
+  ],
+  "title": "PrincipalType",
+  "type": "string"
+}

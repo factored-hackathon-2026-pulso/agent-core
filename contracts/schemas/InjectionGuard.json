@@ -1,0 +1,27 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "additionalProperties": false,
+  "properties": {
+    "flagged": {
+      "title": "Flagged",
+      "type": "boolean"
+    },
+    "ruleset": {
+      "title": "Ruleset",
+      "type": "string"
+    },
+    "signals": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Signals",
+      "type": "array"
+    }
+  },
+  "required": [
+    "flagged",
+    "ruleset"
+  ],
+  "title": "InjectionGuard",
+  "type": "object"
+}

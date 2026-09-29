@@ -1,0 +1,12 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "enum": [
+    "none",
+    "slot",
+    "confirmation",
+    "step_up",
+    "input"
+  ],
+  "title": "Awaiting",
+  "type": "string"
+}

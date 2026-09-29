@@ -1,0 +1,63 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "$defs": {
+    "RefSpec": {
+      "additionalProperties": false,
+      "description": "Referencia de autoría: exacta, rango (`^1`, `~1.2`, `1`) o sin versión.",
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_/-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "spec": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Spec"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "RefSpec",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "goal": {
+      "title": "Goal",
+      "type": "string"
+    },
+    "max_steps": {
+      "exclusiveMinimum": 0,
+      "title": "Max Steps",
+      "type": "integer"
+    },
+    "prompt_ref": {
+      "$ref": "#/$defs/RefSpec"
+    },
+    "tools_allowed": {
+      "items": {
+        "$ref": "#/$defs/RefSpec"
+      },
+      "title": "Tools Allowed",
+      "type": "array"
+    }
+  },
+  "required": [
+    "tools_allowed",
+    "max_steps",
+    "prompt_ref",
+    "goal"
+  ],
+  "title": "AgentNodeConfig",
+  "type": "object"
+}

@@ -1,0 +1,14 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "enum": [
+    "cancel",
+    "abandoned",
+    "interrupt",
+    "escalated",
+    "token_expired",
+    "max_attempts",
+    "denied_by_user"
+  ],
+  "title": "InvalidationReason",
+  "type": "string"
+}

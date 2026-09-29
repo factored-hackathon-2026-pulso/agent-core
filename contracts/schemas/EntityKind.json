@@ -1,0 +1,17 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "enum": [
+    "agent",
+    "flow",
+    "decision_model",
+    "policy",
+    "template",
+    "prompt",
+    "tool",
+    "language_detection",
+    "injection_ruleset",
+    "model_profile"
+  ],
+  "title": "EntityKind",
+  "type": "string"
+}

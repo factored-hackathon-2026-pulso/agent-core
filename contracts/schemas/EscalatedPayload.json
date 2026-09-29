@@ -1,0 +1,30 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "additionalProperties": false,
+  "properties": {
+    "handoff_ref": {
+      "title": "Handoff Ref",
+      "type": "string"
+    },
+    "priority": {
+      "title": "Priority",
+      "type": "string"
+    },
+    "reason_code": {
+      "title": "Reason Code",
+      "type": "string"
+    },
+    "target_queue": {
+      "title": "Target Queue",
+      "type": "string"
+    }
+  },
+  "required": [
+    "reason_code",
+    "target_queue",
+    "priority",
+    "handoff_ref"
+  ],
+  "title": "EscalatedPayload",
+  "type": "object"
+}
