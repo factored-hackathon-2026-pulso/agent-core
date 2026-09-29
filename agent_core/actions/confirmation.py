@@ -4,11 +4,13 @@ Solo se guarda el hash del token. Por eso la reentrada con el token vigente cons
 `token_exp`, pero rota el token (M3 rev. 2): el anterior deja de confirmar.
 """
 
+import hmac
 from copy import deepcopy
 
 from agent_core.actions.context import ActionContext
-from agent_core.actions.events import EventFactory
+from agent_core.actions.events import ConfirmSource, EventFactory
 from agent_core.actions.machine import Trigger
+from agent_core.actions.results import Answer, AnswerResult
 from agent_core.actions.store import add_action, move, proposed_for, replace_action
 from agent_core.domain import (
     Action,
@@ -87,6 +89,49 @@ class Confirmations:
         )
         state = add_action(state, action)
         return state, _prompt(action, token, ctx.render(node.config.summary_template, state)), events
+
+    def answer(self, state: RunState, node: ConfirmNode, reply: Answer, token: str | None,
+               ctx: ActionContext) -> tuple[RunState, AnswerResult, list[EngineEvent]]:
+        current = proposed_for(state, node.id)
+        if current is None:
+            raise IllegalTransition(f"confirm {node.id}: no hay acción proposed")
+        if reply == "yes":
+            if self._clock.now() >= current.token_exp:  # un token vencido nunca confirma
+                state, event = self._cancel(state, current, InvalidationReason.token_expired, ctx.turn_id)
+                return state, "unclear", [event]
+            matches = token is None or hmac.compare_digest(token_hash(token), current.confirmation_token_hash)
+            if not matches:
+                return state, "unclear", []  # token de otra propuesta (p. ej. rotado): no confirma ni suma
+            state = replace_action(state, move(current, Trigger.confirm))
+            source: ConfirmSource = "button" if token is not None else "understand"
+            return state, "yes", [self._events.confirmed(state, ctx.turn_id, current.action_id, source)]
+        if reply == "no":
+            state, event = self._cancel(state, current, InvalidationReason.denied_by_user, ctx.turn_id)
+            return state, "no", [event]
+        attempts = state.node_attempts.get(node.id, 0) + 1  # repair_turns_used lo suma M4
+        state = state.model_copy(update={"node_attempts": {**state.node_attempts, node.id: attempts}})
+        if attempts >= node.config.max_attempts:
+            state, event = self._cancel(state, current, InvalidationReason.max_attempts, ctx.turn_id)
+            return state, "max_attempts", [event]
+        return state, "unclear", []
+
+    def expire_tokens(self, state: RunState, turn_id: str | None) -> tuple[RunState, list[EngineEvent]]:
+        now = self._clock.now()
+        expired = [a for a in state.actions if a.state is ActionState.proposed and now >= a.token_exp]
+        return self._cancel_all(state, expired, InvalidationReason.token_expired, turn_id)
+
+    def invalidate(self, state: RunState, reason: InvalidationReason,
+                   turn_id: str | None) -> tuple[RunState, list[EngineEvent]]:
+        pending = [a for a in state.actions if a.state in (ActionState.proposed, ActionState.confirmed)]
+        return self._cancel_all(state, pending, reason, turn_id)
+
+    def _cancel_all(self, state: RunState, actions: list[Action], reason: InvalidationReason,
+                    turn_id: str | None) -> tuple[RunState, list[EngineEvent]]:
+        events: list[EngineEvent] = []
+        for action in actions:
+            state, event = self._cancel(state, action, reason, turn_id)
+            events.append(event)
+        return state, events
 
     def _cancel(self, state: RunState, action: Action, reason: InvalidationReason,
                 turn_id: str | None) -> tuple[RunState, ActionCancelled]:
