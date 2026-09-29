@@ -6,7 +6,7 @@ import yaml
 from agent_core.cli import main
 from agent_core.domain import EntityKind
 from agent_core.flows.agent import release_flows, validate_agent, validate_flow_for_agent
-from agent_core.flows.registry import AuthoringRegistry, ReleaseDecl
+from agent_core.flows.registry import AuthoringRegistry, ReleaseDecl, load_registry
 from agent_core.flows.validate import validate_registry
 from tests.m01.cases import agent, base, flow, node, registry, task_base
 
@@ -87,3 +87,30 @@ def test_registry_flags_flow_used_by_release_agent_in_wrong_mode() -> None:
         [*registry().all(EntityKind.template), agent(mode="task"), flow(base())], [_decl()]
     )
     assert "AG-01" in {v.rule for v in validate_registry(reg)}
+
+
+def test_missing_entry_flow_is_reported_once_not_once_per_release() -> None:
+    entities = [*registry().all(EntityKind.template), agent(entry_flow="fantasma@1")]
+    releases = [_decl(id="rel-a"), _decl(id="rel-b"), _decl(id="rel-c", flows=["fantasma@1"])]
+    found = validate_registry(AuthoringRegistry.from_entities(entities, releases))
+    mentions = [v for v in found if "fantasma@1" in v.message]
+    entry = [v for v in mentions if not (v.path or "").startswith("releases/")]
+    assert [(v.rule, v.path) for v in entry] == [("G0-02", "agents/atencion@1.0.0.yaml#/entry_flow")]
+    # una release que además lista el flow en `flows` sí lo reporta, en su propio sitio
+    assert [v.path for v in mentions if (v.path or "").startswith("releases/")] == ["releases/rel-c.yaml"]
+    lonely = AuthoringRegistry.from_entities(entities)
+    flows, missing = release_flows(lonely, _decl(), agent(entry_flow="fantasma@1"))
+    assert flows == [] and missing == []
+
+
+def test_agent_violation_path_uses_the_loaded_file(tmp_path: Path) -> None:
+    root = tmp_path / "reg"
+    shutil.copytree(FIXTURE, root)
+    path = root / "agents" / "atencion@1.0.0.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["entry_flow"] = "fantasma@1"
+    path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    reg, loaded = load_registry(root)
+    assert loaded == []
+    found = [v for v in validate_registry(reg) if "fantasma@1" in v.message]
+    assert [(v.rule, v.path) for v in found] == [("G0-02", "agents/atencion@1.0.0.yaml#/entry_flow")]

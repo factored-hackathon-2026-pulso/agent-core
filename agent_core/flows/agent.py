@@ -45,7 +45,10 @@ def validate_flow_for_agent(flow: Flow, agent: Agent, reg: RegistryView) -> list
 def validate_agent(agent: Agent, reg: RegistryView) -> list[Violation]:
     """G0-02 sobre las referencias del agente y G0-12 sobre sus plantillas del motor."""
     found: list[Violation] = []
-    where = f"agents/{_agent_label(agent)}"
+    source = None
+    if isinstance(reg, AuthoringRegistry):
+        source = reg.source(EntityKind.agent, agent.id, agent.version)
+    where = clip(source or f"agents/{agent.id}@{agent.version}.yaml", 200)
     for site in agent_ref_sites(agent):
         path = f"{where}#{pointer_str(site.pointer)}"
         entity = reg.resolve(site.kind, site.ref)
@@ -61,9 +64,13 @@ def validate_agent(agent: Agent, reg: RegistryView) -> list[Violation]:
 def release_flows(reg: AuthoringRegistry, decl: ReleaseDecl, agent: Agent) -> tuple[list[Flow], list[str]]:
     """Flows que usa el agente en la release: entry_flow ∪ release.flows ∪ interrupciones start_flow.
 
+    Un `entry_flow` que no resuelve se omite (no aparece en `missing`): lo reporta `validate_agent`.
+
     No sigue flows dentro de flows: el conjunto es finito y el costo lineal en las referencias de la release.
     """
-    refs = [agent.entry_flow, *decl.flows,
+    # Un entry_flow sin resolver ya lo reporta `validate_agent`: no se repite por cada release.
+    entry = [agent.entry_flow] if isinstance(reg.resolve(EntityKind.flow, agent.entry_flow), Flow) else []
+    refs = [*entry, *decl.flows,
             *(i.action.flow for i in decl.interrupts if isinstance(i.action, StartFlowAction))]
     flows: dict[tuple[str, str], Flow] = {}
     missing: set[str] = set()
