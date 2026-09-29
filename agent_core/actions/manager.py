@@ -3,7 +3,8 @@
 from agent_core.actions.confirmation import Confirmations
 from agent_core.actions.context import ActionContext
 from agent_core.actions.events import EventFactory
-from agent_core.actions.results import Answer, AnswerResult
+from agent_core.actions.execution import Executions
+from agent_core.actions.results import Answer, AnswerResult, WriteResult
 from agent_core.domain import (
     ConfirmationPrompt,
     ConfirmNode,
@@ -12,6 +13,7 @@ from agent_core.domain import (
     JsonValue,
     RunState,
     ToolDef,
+    WriteToolNode,
 )
 from agent_core.ports import Clock, IdSource
 
@@ -27,6 +29,7 @@ class ActionManager:
     def __init__(self, ids: IdSource, clock: Clock) -> None:
         events = EventFactory(ids, clock)
         self._confirmations = Confirmations(ids, clock, events)
+        self._executions = Executions(ids, clock, events)
 
     def propose(
         self, state: RunState, confirm_node: ConfirmNode, resolved_args: dict[str, JsonValue],
@@ -42,6 +45,13 @@ class ActionManager:
         `unclear` suma intento; al tope, `max_attempts` (M3 §3.3)."""
         _same_run(state, ctx)
         return self._confirmations.answer(state, confirm_node, answer, token, ctx)
+
+    def execute_write(self, state: RunState, write_node: WriteToolNode,
+                      ctx: ActionContext) -> tuple[RunState, WriteResult, list[EngineEvent]]:
+        """Commit 1 (`executing` + `action_dispatched`) → tool con `idempotency_key = action_id` → commit 2.
+        Los eventos devueltos ya están persistidos (M3 §3.4)."""
+        _same_run(state, ctx)
+        return self._executions.execute_write(state, write_node, ctx)
 
     def expire_tokens(self, state: RunState, *,
                       turn_id: str | None = None) -> tuple[RunState, list[EngineEvent]]:
