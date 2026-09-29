@@ -175,12 +175,14 @@ class RunState(MutableModel):
         """Vía documentada de actualización (índice §5): revalida el estado resultante, falla cerrado.
 
         `model_copy` de pydantic no valida; aquí el estado fusionado pasa de nuevo por todos los validadores.
+        Se reconstruye desde un volcado, así que el resultado nunca comparte objetos mutables (`deep` es
+        siempre efectivo) y no se emiten avisos del serializador con dicts o enums en `str`.
         """
         if update:
             unknown = set(update) - set(type(self).model_fields)
             if unknown:
                 raise ValueError(f"campos desconocidos en update: {sorted(unknown)}")
-        merged = super().model_copy(update=update, deep=deep)
-        if not update:
-            return merged
-        return type(self).model_validate(merged.model_dump(mode="python"))
+        data = self.model_dump(mode="python")
+        if update:
+            data.update(update)
+        return type(self).model_validate(data)

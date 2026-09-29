@@ -11,7 +11,7 @@ from agent_core.domain.outcomes import Outcome
 from agent_core.domain.shared import Fingerprint, OutboxMessage, ToolStatus, TranscriptEntry
 from agent_core.domain.state import Action, RunState
 from agent_core.domain.turn import RunResult, TurnInput, TurnResult
-from testing.builders import NOW, action, advisor_with_delegation, full_run_state, run_state
+from testing.builders import NOW, action, advisor_with_delegation, full_run_state, principal, run_state
 
 
 # T-M0-03
@@ -241,3 +241,37 @@ def test_run_state_canonical_hash_survives_persist_reload() -> None:
     )
     restored = RunState.model_validate(loads(dumps(state)))
     assert canonical_bytes(state) == canonical_bytes(restored)
+
+
+def test_assignment_cannot_bypass_coherence() -> None:
+    state = run_state()
+    with pytest.raises(ValidationError):
+        state.status = "closed"  # closed sin outcome
+    assert state.status == "open"
+    state.turn_count = 3  # asignación coherente sigue funcionando
+    assert state.turn_count == 3
+
+
+def test_model_copy_update_emits_no_pydantic_warning() -> None:
+    import warnings
+
+    state = run_state()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        copied = state.model_copy(
+            update={
+                "status": "closed",
+                "outcome": "resolved",
+                "closed_at": NOW,
+                "inactive_after": None,
+                "principal": principal(id="cust-002").model_dump(),
+                "budgets_used": {"run_tokens": 5},
+                "slots": {"a": {"value": 1, "status": "claimed", "source_turn": 0}},
+            }
+        )
+    assert copied.status == "closed"
+    assert copied.outcome is Outcome.resolved
+    assert copied.budgets_used.run_tokens == 5
+    assert copied.model_copy(update={"turn_count": 2}, deep=True).turn_count == 2
+    with pytest.raises(ValueError):
+        state.model_copy(update={"nope": 1})

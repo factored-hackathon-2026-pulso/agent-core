@@ -1,9 +1,11 @@
 """Bases y tipos anotados comunes de M0 (convenciones transversales de §2)."""
 
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints
+
+_MISSING: Any = object()
 
 
 class Model(BaseModel):
@@ -13,9 +15,24 @@ class Model(BaseModel):
 
 
 class MutableModel(BaseModel):
-    """Solo para `RunState`: se actualiza con `model_copy(update=...)` (índice §5)."""
+    """Solo para `RunState`: se actualiza con `model_copy(update=...)` (índice §5).
 
-    model_config = ConfigDict(extra="forbid", frozen=False, populate_by_name=True)
+    `validate_assignment` hace que una asignación directa pase por los mismos validadores (falla cerrado).
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=False, populate_by_name=True, validate_assignment=True)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        # Pydantic aplica el valor antes de correr los validadores "after": si fallan, se restaura el previo.
+        previous = self.__dict__.get(name, _MISSING)
+        try:
+            super().__setattr__(name, value)
+        except ValueError:
+            if previous is _MISSING:
+                self.__dict__.pop(name, None)
+            else:
+                self.__dict__[name] = previous
+            raise
 
 
 def _to_utc(value: datetime) -> datetime:

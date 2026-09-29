@@ -15,6 +15,7 @@ from pydantic import TypeAdapter
 from agent_core.domain import (
     AnyEvent,
     OutboxMessage,
+    Outcome,
     PrincipalKey,
     RunResult,
     TurnInProgress,
@@ -179,7 +180,7 @@ def check_find_run_by_session(b: Backend) -> None:
 
 def check_save_run_revalidates_state(b: Backend) -> None:
     broken = run_state()
-    broken.outcome = "resolved"  # type: ignore[assignment]  # la asignación no valida: la UoW sí
+    broken.__dict__["outcome"] = Outcome.resolved  # salta la validación de asignación: la UoW revalida
     with b.factory() as uow, pytest.raises(ValueError, match="outcome"):
         uow.save_run(broken, expected_version=0)
 
@@ -349,7 +350,7 @@ def check_list_inactive_skips_closed_runs(b: Backend) -> None:
     with b.factory() as uow:
         run = uow.load_run("run-0001")
         assert run is not None
-        closed = run.model_copy(update={"status": "closed", "outcome": "resolved", "closed_at": NOW,
+        closed = run.model_copy(update={"status": "closed", "outcome": Outcome.resolved, "closed_at": NOW,
                                                 "inactive_after": None})
         uow.save_run(closed, expected_version=1)
         uow.commit()

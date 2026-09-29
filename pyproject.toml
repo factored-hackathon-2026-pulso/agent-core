@@ -31,6 +31,7 @@ packages = ["agent_core"]
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-q --strict-markers"
+filterwarnings = ["error::UserWarning:pydantic.*"]
 
 [tool.mypy]
 python_version = "3.12"
