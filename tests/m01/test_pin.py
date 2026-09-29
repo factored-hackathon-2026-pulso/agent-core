@@ -18,7 +18,7 @@ from agent_core.flows import pin as pin_module
 from agent_core.flows.claims import derive_claims
 from agent_core.flows.pin import pin_release
 from agent_core.flows.refs import entity_ref_sites
-from agent_core.flows.registry import AuthoringRegistry, ReleaseDecl, kind_of, load_registry
+from agent_core.flows.registry import AuthoringRegistry, ReleaseAgent, ReleaseDecl, kind_of, load_registry
 from agent_core.flows.view import release_view
 from testing.fakes.registry import InMemoryRegistry
 from testing.fakes.registry_dir import registry_from_directory
@@ -193,7 +193,8 @@ def test_pin_fails_closed_on_unknown_ref_sites(
 
 @pytest.mark.parametrize("alias", ["PROD !", "a b", ""])
 def test_pin_rejects_invalid_alias(alias: str) -> None:
-    decl = _decl(agents=[{"agent": "atencion@1", "aliases": [alias]}])
+    entry = ReleaseAgent.model_construct(agent=RefSpec.parse("atencion@1"), aliases=[alias])  # sin validar
+    decl = _decl().model_copy(update={"agents": [entry]})
     reg = AuthoringRegistry.from_entities([*ENTITIES, LANG, _flow_version("1.0.0"), agent()], [decl])
     with pytest.raises(SchemaError, match="alias"):
         pin_release(reg, "r")

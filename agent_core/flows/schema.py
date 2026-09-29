@@ -42,7 +42,11 @@ except ImportError:  # pragma: no cover
 VALIDATOR_TYPES = frozenset({"string", "integer", "decimal", "date", "boolean"})
 MAX_REGEX = 200
 MAX_ERRORS = 200
-_MESSAGES = {"missing": "campo obligatorio", "extra_forbidden": "campo no permitido"}
+_MESSAGES = {
+    "missing": "campo obligatorio",
+    "extra_forbidden": "campo no permitido",
+    "alias_invalid": "alias de agente inválido (formato del selector de agente)",
+}
 _UNKNOWN_TAG = ("union_tag_invalid", "union_tag_not_found")
 
 

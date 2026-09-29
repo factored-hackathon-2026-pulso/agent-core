@@ -8,9 +8,10 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from types import MappingProxyType
 
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, PositiveInt, ValidationError, field_validator
+from pydantic_core import PydanticCustomError
 
-from agent_core.domain import EntityKind, Interrupt, RefSpec, RegistryEntity, Template
+from agent_core.domain import AgentSelector, EntityKind, Interrupt, RefSpec, RegistryEntity, Template
 from agent_core.flows.paths import template_vars
 from agent_core.flows.schema import MAX_ERRORS, error_message, parse_flow
 from agent_core.flows.view import ENTITY_TYPES, best_version, parse_version
@@ -23,6 +24,16 @@ class ReleaseAgent(BaseModel):
 
     agent: RefSpec
     aliases: list[str] = Field(default_factory=lambda: ["prod"], min_length=1)
+
+    @field_validator("aliases")
+    @classmethod
+    def _aliases_have_selector_format(cls, aliases: list[str]) -> list[str]:
+        for alias in aliases:
+            try:  # mismo formato de alias que el selector de agente del request (M0)
+                AgentSelector.model_validate({"id": "x", "alias": alias})
+            except ValidationError:
+                raise PydanticCustomError("alias_invalid", "alias inválido") from None
+        return aliases
 
 
 class ReleaseDecl(BaseModel):

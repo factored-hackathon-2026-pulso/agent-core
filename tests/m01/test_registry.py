@@ -275,3 +275,17 @@ def test_violations_are_deterministic_and_use_forward_slashes(tmp_path: Path) ->
     assert first == second
     assert all("\\" not in (v.path or "") for v in first)
     assert [v.path for v in first] == sorted(v.path or "" for v in first)
+
+
+def test_invalid_release_alias_is_a_spanish_g0_01_at_load_time(tmp_path: Path) -> None:
+    root = _copy(tmp_path)
+    _write(root, "releases/demo.yaml",
+           "id: demo\nagents:\n  - {agent: 'atencion@^1', aliases: [prod, 'PROD X']}\n"
+           "flows: ['disputa-cargo@^1']\nlanguage_detection: 'lang-es-pt@1'\n")
+    reg, violations = load_registry(root)
+    assert [(v.rule, v.path, v.message) for v in violations] == [
+        ("G0-01", "releases/demo.yaml#/agents/0/aliases",
+         "alias de agente inválido (formato del selector de agente)"),
+    ]
+    assert reg.release("demo") is None
+    assert "PROD X" not in violations[0].message
