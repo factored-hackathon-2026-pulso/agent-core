@@ -1,4 +1,285 @@
-"""Motor del ciclo del turno (reemplazado en Task 7/8)."""
+"""`TurnEngine`: orquesta un turno (m04 §3.1). Una sola UoW por turno; los dos commits por escritura los
+hace M3 con `uow_factory`."""
+
+from dataclasses import replace
+from decimal import Decimal
+from typing import Any
+
+from agent_core.actions import ActionManager
+from agent_core.domain import (
+    Agent,
+    EngineError,
+    EngineEvent,
+    EntityKind,
+    EntityRef,
+    Flow,
+    OnBehalfOf,
+    Principal,
+    ProblemCode,
+    RefSpec,
+    ResponseEmitted,
+    RunInput,
+    RunResult,
+    RunState,
+    Slot,
+    TranscriptRef,
+    TurnResult,
+)
+from agent_core.handoff import HandoffService
+from agent_core.interpreter import StepContext, advance, begin_turn, start_flow
+from agent_core.ports import (
+    AuditSink,
+    AuthzPort,
+    Clock,
+    IdKind,
+    IdSource,
+    RegistryPort,
+    UnitOfWork,
+    UnitOfWorkFactory,
+)
+from agent_core.turn.buffer import EventBuffer, TurnEventSink
+from agent_core.turn.closing import Closer
+from agent_core.turn.config import TurnConfig
+from agent_core.turn.events import TurnEvents
+from agent_core.turn.frame import TurnFrame
+from agent_core.turn.metering import StageMeter
+from agent_core.turn.ports import (
+    EventChain,
+    GuardsPort,
+    RuntimeFactory,
+    TraceIds,
+    TurnRecorderPort,
+    TurnRuntime,
+    UnderstandPort,
+)
+from agent_core.turn.refs import pinned_ref
+from agent_core.turn.results import awaiting_for, build_turn_result
 
 
-class TurnEngine: ...
+class TurnEngine:
+    def __init__(
+        self,
+        *,
+        uow_factory: UnitOfWorkFactory,
+        registry: RegistryPort,
+        clock: Clock,
+        ids: IdSource,
+        guards: GuardsPort,
+        understand: UnderstandPort,
+        actions: ActionManager,
+        handoff: HandoffService,
+        recorder: TurnRecorderPort,
+        chain: EventChain,
+        audit: AuditSink,
+        runtimes: RuntimeFactory,
+        trace: TraceIds,
+        config: TurnConfig | None = None,
+        authz: AuthzPort | Any | None = None,
+    ) -> None:
+        self._uow_factory = uow_factory
+        self._registry = registry
+        self._clock = clock
+        self._ids = ids
+        self._guards = guards
+        self._understand = understand
+        self._actions = actions
+        self._handoff = handoff
+        self._recorder = recorder
+        self._chain = chain
+        self._audit = audit
+        self._runtimes = runtimes
+        self._trace = trace
+        self._config = config or TurnConfig()
+        self._authz = authz
+        self._events = TurnEvents(ids, clock)
+        self._closer = Closer(actions=actions, handoff=handoff, audit=audit, clock=clock, registry=registry)
+
+    # --- piezas comunes -----------------------------------------------------------------------------
+
+    def _new_frame(
+        self,
+        uow: UnitOfWork,
+        state: RunState,
+        turn_id: str,
+        entry: str,
+        client_turn_id: str | None,
+        agent: Agent,
+        runtime: TurnRuntime,
+        meter: StageMeter,
+        release: Any,
+    ) -> TurnFrame:
+        buffer = EventBuffer()
+        frame = TurnFrame(
+            uow=uow,
+            state=state,
+            turn_id=turn_id,
+            entry="start_run" if entry == "start_run" else "turn",
+            client_turn_id=client_turn_id,
+            agent=agent,
+            release=release,
+            runtime=runtime,
+            meter=meter,
+            buffer=buffer,
+            events=self._events,
+            initial_run_cost=state.budgets_used.run_cost,
+        )
+        frame.sink = TurnEventSink(buffer, self._chain, lambda: self._ensure_started(frame))
+        return frame
+
+    def _ensure_started(self, frame: TurnFrame) -> None:
+        """Materializa `turn_started` sin salida de M6 si alguien vuelca antes de las guardas."""
+        if frame.buffer.turn_started_reserved and not frame.buffer.turn_started_filled:
+            frame.buffer.fill(
+                self._events.turn_started(frame.state, frame.turn_id, frame.client_turn_id, guards=None)
+            )
+
+    def _step_ctx(self, frame: TurnFrame) -> StepContext:
+        assert frame.sink is not None
+        return replace(
+            frame.runtime.step,
+            release=frame.release,
+            agent=frame.agent,
+            locale=frame.state.locale,
+            degraded=frame.degraded,
+            record=frame.sink.record,
+            turn_id=frame.turn_id,
+        )
+
+    def _flow(self, release: Any, ref: RefSpec) -> Flow:
+        return self._registry.get(pinned_ref(release, EntityKind.flow, ref), Flow)
+
+    def _advance(self, frame: TurnFrame) -> None:
+        """Paso 11: `advance` y su traducción (paso 12)."""
+        with frame.meter.stage("flow"):
+            outcome = advance(frame.state, self._step_ctx(frame), frame.resume)
+            self._closer.apply_outcome(frame, outcome)
+
+    def _record(self, frame: TurnFrame) -> None:
+        """Paso 13: transcript en vista `model` y `transcript_fp` en los `response_emitted` del turno."""
+        final_model = "\n\n".join(m.text for m in frame.messages)
+        refs = self._recorder.record_turn(
+            frame.state.run_id, frame.turn_id, frame.text_model, final_model, frame.rejected
+        )
+        self._fill_transcript_fp(frame, refs)
+
+    @staticmethod
+    def _fill_transcript_fp(frame: TurnFrame, refs: list[TranscriptRef]) -> None:
+        if len(refs) < 2:
+            return
+        fingerprint = refs[1].fingerprint
+
+        def fill(event: EngineEvent) -> EngineEvent:
+            if isinstance(event, ResponseEmitted) and event.payload.transcript_fp is None:
+                payload = event.payload.model_copy(update={"transcript_fp": fingerprint})
+                return event.model_copy(update={"payload": payload})
+            return event
+
+        frame.buffer.transform(fill)
+
+    def _finish(self, frame: TurnFrame, *, record: bool) -> TurnResult:
+        """Pasos 13, 13b y 14: registrar, medir y persistir. El `commit()` lo hace quien llama."""
+        self._ensure_started(frame)
+        if record:
+            with frame.meter.stage("response"):
+                self._record(frame)
+        state = frame.state
+        now = self._clock.now()
+        stop = frame.stop if state.active_flow is not None else None
+        awaiting, node = awaiting_for(stop, state)
+        update: dict[str, Any] = {
+            "awaiting": awaiting,
+            "awaiting_node_id": node,
+            "token_map": frame.runtime.sealed_token_map() or state.token_map,
+        }
+        if state.status == "open":
+            update["last_activity_at"] = now
+            update["inactive_after"] = now + frame.agent.inactivity_ttl
+        state = state.model_copy(update=update)
+        completed = self._events.turn_completed(
+            state,
+            frame.turn_id,
+            frame.entry,
+            frame.client_turn_id,
+            duration_ms=frame.meter.duration_ms(),
+            stages=frame.meter.stages(),
+            degraded=frame.degraded,
+            awaiting=awaiting,
+        )
+        saved = frame.uow.save_run(state, expected_version=state.state_version)
+        self._chain.append(frame.uow, saved.run_id, [*frame.buffer.drain(), completed])
+        cost = max(saved.budgets_used.run_cost - frame.initial_run_cost, Decimal("0")) + frame.cost_usd
+        frame.uow.add_usage(saved.principal.key, cost, now)
+        result = build_turn_result(frame, saved, self._trace.current(frame.turn_id))
+        if frame.client_turn_id is not None:
+            frame.uow.put_turn_result(saved.run_id, frame.client_turn_id, result)
+        if frame.entry == "turn":
+            frame.uow.release_turn(saved.run_id, frame.turn_id)
+        frame.state = saved
+        return result
+
+    # --- start_run ----------------------------------------------------------------------------------
+
+    def start_run(
+        self, principal: Principal, on_behalf_of: OnBehalfOf | None, run_input: RunInput
+    ) -> RunResult:
+        """Crea el run (release fijada), emite `run_started` y arranca `entry_flow`. En modo task avanza
+        hasta un terminal. No toma lease (el `run_id` es nuevo) ni guarda `client_turn_id` (M9)."""
+        meter = StageMeter(self._clock)
+        release = self._registry.resolve_release(run_input.agent, principal)
+        version = release.entities.get(EntityKind.agent, {}).get(run_input.agent.id)
+        if version is None:
+            raise EngineError(ProblemCode.not_found, "agente")
+        agent_ref = EntityRef(id=run_input.agent.id, version=version)
+        agent = self._registry.get(agent_ref, Agent)
+        now = self._clock.now()
+        conversational = agent.mode == "conversational"
+        locale = run_input.lang if run_input.lang in agent.supported_locales else agent.default_locale
+        slots = {
+            name: Slot(value=value, status="claimed", source_turn=1)
+            for name, value in (run_input.input or {}).items()
+        }
+        state = RunState(
+            run_id=self._ids.new_id(IdKind.run),
+            session_id=self._ids.new_id(IdKind.session) if conversational else None,
+            release=release.id,
+            agent=agent_ref,
+            principal=principal,
+            on_behalf_of=on_behalf_of,
+            subject=run_input.subject,
+            mode=agent.mode,
+            locale=locale,
+            created_at=now,
+            last_activity_at=now,
+            inactive_after=now + agent.inactivity_ttl if conversational else None,
+            turn_count=1,
+            slots=slots,
+        )
+        turn_id = self._ids.new_id(IdKind.turn)
+        state = begin_turn(state, self._clock)
+        runtime = self._runtimes.open(state, principal, on_behalf_of)
+        with self._uow_factory() as uow:
+            frame = self._new_frame(uow, state, turn_id, "start_run", None, agent, runtime, meter, release)
+            reportable: frozenset[str] = (
+                self._authz.reportable_attrs() if self._authz is not None else frozenset()
+            )
+            attrs = {k: v for k, v in sorted(principal.attrs.items()) if k in reportable}
+            frame.buffer.add(
+                self._events.run_started(state, agent_ref, attrs),
+                self._events.turn_started(state, turn_id, None, guards=None),
+            )
+            frame.state = start_flow(state, self._flow(release, agent.entry_flow))
+            self._advance(frame)
+            result = self._finish(frame, record=conversational)
+            uow.commit()
+        saved = frame.state
+        return RunResult(
+            run_id=saved.run_id,
+            session_id=saved.session_id,
+            release=saved.release,
+            output=frame.output if not conversational else None,
+            status=saved.status,
+            outcome=saved.outcome,
+            handoff_ref=saved.handoff_ref,
+            first_turn=result if conversational else None,
+            trace_id=result.trace_id,
+        )

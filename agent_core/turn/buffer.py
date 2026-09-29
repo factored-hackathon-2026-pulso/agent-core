@@ -37,6 +37,10 @@ class EventBuffer:
             raise RuntimeError("turn_started ya fue llenado")
         self._turn_started = event
 
+    def transform(self, fn: Callable[[EngineEvent], EngineEvent]) -> None:
+        """Reemplaza cada evento pendiente por `fn(evento)` (p. ej. rellenar `transcript_fp`)."""
+        self._events = [fn(e) for e in self._events]
+
     def peek(self) -> list[EngineEvent]:
         head = [self._turn_started] if self._turn_started is not None else []
         return [*head, *self._events]

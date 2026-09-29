@@ -4,30 +4,13 @@
 con `registry.get`. La versión sale de los pines de la release; si la referencia ya es exacta y la release
 no la fija, se usa tal cual."""
 
-from agent_core.domain import (
-    EntityKind,
-    EntityRef,
-    Locale,
-    Message,
-    RefSpec,
-    Release,
-    SchemaError,
-    Template,
-)
+from agent_core.domain import EntityKind, Locale, Message, RefSpec, Release, SchemaError, Template
 from agent_core.ports import RegistryPort
-
-
-def _resolve(release: Release, ref: RefSpec) -> EntityRef:
-    pinned = release.entities.get(EntityKind.template, {}).get(ref.id)
-    if pinned is not None:
-        return EntityRef(id=ref.id, version=pinned)
-    if ref.is_exact:
-        return ref.require_exact()
-    raise SchemaError(f"la plantilla {ref} no está fijada en la release {release.id}")
+from agent_core.turn.refs import pinned_ref
 
 
 def render_engine(registry: RegistryPort, release: Release, ref: RefSpec, locale: Locale) -> Message:
-    template = registry.get(_resolve(release, ref), Template)
+    template = registry.get(pinned_ref(release, EntityKind.template, ref), Template)
     if template.reads:
         raise SchemaError(f"plantilla del motor con variables: {template.id}")
     text = template.locales.get(locale)

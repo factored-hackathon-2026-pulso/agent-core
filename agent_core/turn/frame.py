@@ -17,7 +17,7 @@ from agent_core.domain import (
 )
 from agent_core.interpreter import NO_RESUME, Resume, Stop
 from agent_core.ports import UnitOfWork
-from agent_core.turn.buffer import EventBuffer
+from agent_core.turn.buffer import EventBuffer, TurnEventSink
 from agent_core.turn.events import TurnEvents
 from agent_core.turn.metering import StageMeter
 from agent_core.turn.ports import TurnRuntime
@@ -36,6 +36,7 @@ class TurnFrame:
     meter: StageMeter
     buffer: EventBuffer
     events: TurnEvents
+    sink: TurnEventSink | None = None
     turn: TurnInput | None = None
     text_model: str = ""
     messages: list[Message] = field(default_factory=list)
