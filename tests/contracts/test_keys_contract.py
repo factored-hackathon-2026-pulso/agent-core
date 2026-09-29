@@ -113,7 +113,13 @@ def test_contract_detects_shared_or_short_keys() -> None:
 
 
 def test_contract_detects_key_material_in_repr() -> None:
-    leaky = _LeakyRepr(FakeKeyProvider.default()._keys, FakeKeyProvider.default()._current)
+    leaky = _LeakyRepr(
+        keys={
+            KeyPurpose.fingerprint: {"fp-1": synthetic_key("fp-1")},
+            KeyPurpose.token_map: {"tm-1": synthetic_key("tm-1")},
+        },
+        current={KeyPurpose.fingerprint: "fp-1", KeyPurpose.token_map: "tm-1"},
+    )
     with pytest.raises(AssertionError):
         check_no_key_material_in_repr(leaky)
 
