@@ -10,13 +10,13 @@ from datetime import datetime
 from agent_core.actions import ActionManager
 from agent_core.domain import (
     Agent,
-    Awaiting,
     EngineEvent,
     InvalidationReason,
     Outcome,
     TurnInProgress,
 )
 from agent_core.ports import Clock, IdKind, IdSource, RegistryPort, UnitOfWorkFactory
+from agent_core.turn.closing import closed_state
 from agent_core.turn.config import TurnConfig
 from agent_core.turn.events import TurnEvents
 from agent_core.turn.ports import EventChain
@@ -103,17 +103,7 @@ class Sweeper:
                     state, InvalidationReason.abandoned, turn_id=None
                 )
                 events.extend(invalidated)
-                state = state.model_copy(
-                    update={
-                        "status": "closed",
-                        "outcome": Outcome.abandoned,
-                        "closed_at": now,
-                        "inactive_after": None,
-                        "awaiting": Awaiting.none,
-                        "awaiting_node_id": None,
-                        "pending_offer": None,
-                    }
-                )
+                state = closed_state(state, Outcome.abandoned, "abandonment", now)
                 events.append(self._events.run_closed(state, None, Outcome.abandoned, "abandonment"))
                 saved = uow.save_run(state, expected_version=state.state_version)
             else:
