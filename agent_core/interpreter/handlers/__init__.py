@@ -5,10 +5,12 @@ from types import MappingProxyType
 
 from agent_core.interpreter.handlers.base import NodeHandler, NodeResult
 from agent_core.interpreter.handlers.respond import handle_respond
+from agent_core.interpreter.handlers.rule import handle_rule
 from agent_core.interpreter.handlers.terminal import handle_end, handle_escalate
 
 HANDLERS: Mapping[str, NodeHandler] = MappingProxyType({
     "respond": handle_respond,
+    "rule": handle_rule,
     "escalate": handle_escalate,
     "end": handle_end,
 })
