@@ -1,6 +1,6 @@
 # M2 — Intérprete de nodos
 
-- Estado: borrador · Fase 1
+- Estado: implementado (rev. 2) · Fase 1
 - Paquete: `agent_core.interpreter`
 - Origen: spec general §4.7, §5, §8 (slots, hechos, decisiones), §10 (fallas de tools y presupuesto)
 - ADRs: 0004 (flows deterministas), 0010 (step-up), 0011 (`compute`), 0009 (`rule` con `policy`)
@@ -15,17 +15,23 @@ Dado un `RunState` con un flow activo, ejecuta nodos hasta llegar a uno que **es
 ## 2. Interfaz pública
 
 ```python
-class StepContext:
+class StepContext:                    # dataclass congelada
     release: Release; agent: Agent; locale: str; clock: Clock; degraded: bool
-    registry: RegistryPort; tools: ToolExecutor; decisions: DecisionService   # M5
-    actions: ActionManager                                                     # M3
-    responder: Responder                                                       # M8
-    views: ViewService                                                         # M7
-    bound_params: dict
+    registry: RegistryPort; tools: ToolExecutor
+    decisions: DecisionPort           # puerto local de M2; M5 lo adapta (D1)
+    actions: ActionManager            # M3
+    responder: ResponderPort          # puerto local de M2; M8 lo adapta (D1)
+    views: ViewService; vault: TokenVault                                       # M7
+    ids: IdSource; uow_factory: UnitOfWorkFactory                               # D2
+    bound_params: Mapping[str, str] = {}
+    record: EventRecorder = append_events                                       # M3; M4 lo reemplaza
+    turn_id: str | None = None
+    breaker: CircuitBreaker = CircuitBreaker()                                  # D10
 
 class Resume:                         # por qué se reanuda el nodo actual
     kind: Literal["slot_answer", "confirm_answer", "step_up_retry", "none"]
-    value: Any = None                 # texto del slot, o "yes"|"no"|"unclear" para confirm
+    value: JsonValue = None           # texto del slot, o "yes"|"no"|"unclear" para confirm
+    token: str | None = None          # token del botón de confirmación (M3 `answer`) (D3)
 
 class Stop(StrEnum): awaiting_slot, awaiting_confirmation, awaiting_step_up, awaiting_user, terminal
 # M4 traduce Stop → RunState.awaiting: slot, confirmation, step_up, input (awaiting_user), none (terminal)
@@ -34,10 +40,15 @@ class StepOutcome:
     state: RunState; stop: Stop; messages: list[Message]; events: list[EngineEvent]
     end_outcome: Outcome | None; escalation: EscalationRequest | None
     confirmation: ConfirmationPrompt | None; step_up: StepUpPrompt | None
+    output: dict | None               # `end.output_map` en modo task (D3)
+    rejected_drafts: list[RejectedDraft]   # borradores que M8 rechazó en `respond(generate)` (D3)
 
+def begin_turn(state: RunState, clock: Clock) -> RunState             # reinicia contadores por turno (D4)
 def advance(state: RunState, ctx: StepContext, resume: Resume) -> StepOutcome
-def start_flow(state: RunState, flow_ref: EntityRef) -> RunState      # fija active_flow en el primer nodo
+def start_flow(state: RunState, flow: Flow) -> RunState               # primer nodo = flow.nodes[0]; reinicia node_attempts (D5)
 ```
+
+`DecisionPort` y `ResponderPort` (con `DecisionResult`, `GenerateRequest`, `GenerateResult`) viven en `interpreter/ports.py`: M5 y M8 aún no existen y sus adaptadores los implementarán (D1). Exporta además `CircuitBreaker`, `evaluate`, `truthy` y `NO_RESUME`.
 
 Internamente, un registro `HANDLERS: dict[str, NodeHandler]`; cada handler es `(node, state, ctx, resume) -> NodeResult{result_key | stop, state, messages, events}`. Agregar un tipo de nodo es agregar un handler y su esquema en M1.
 
@@ -58,7 +69,7 @@ loop:
 
 ### 3.2 Resolución de variables
 
-Rutas permitidas en `args`, plantillas y `rule`: `slots.<x>`, `facts.<x>.value[.campo…]`, `decisions.<x>.<campo>` (solo como argumento de tool `compute`, ya validado por G0-10) y literales. La gramática, la distinción ruta/literal y el recorrido recursivo de `args` son los de M1 §3.2 (`parse_path`, `value_paths`); las plantillas usan `{{ ruta }}` (M1 §3.3, `template_vars`). Una ruta inexistente en runtime → resultado `error` del nodo (nunca excepción).
+Rutas permitidas en `args`, plantillas y `rule`: `slots.<x>`, `facts.<x>.value[.campo…]`, `decisions.<x>.<campo>` (solo como argumento de tool `compute`, ya validado por G0-10) y literales. La gramática, la distinción ruta/literal y el recorrido recursivo de `args` son los de M1 §3.2 (`parse_path`, `value_paths`); las plantillas usan `{{ ruta }}` (M1 §3.3, `template_vars`). Una ruta inexistente en runtime → resultado `error` del nodo (nunca excepción). En **toda** resolución un slot `claimed` cuenta como ausente (D7). Para `decide`, un slot se proyecta como `untrusted_text` envuelto; para plantillas, vista `model` normal (D8). Nodos sin rama `error` (`confirm`, `respond`, `verify`, `end`) → `escalate(validation_failed)`; `decide` → `low_confidence`; `rule` → `null` (D12).
 
 ### 3.3 Handlers
 
@@ -66,18 +77,18 @@ Rutas permitidas en `args`, plantillas y `rule`: `slots.<x>`, `facts.<x>.value[.
 |---|---|
 | `decide` | `ctx.decisions.decide(model, input_view ⊆ vista model, locale)`. Guarda en `decisions[save_as]`. Resultado = `branch_on` si supera su umbral, si no `low_confidence` (la decisión de umbral la toma M5) |
 | `rule` | Evalúa `policy@v.expr` o `expr` con el evaluador JSON Logic sobre `facts.*.value` (vista `full`) y `slots` con `status: validated`. Un slot `claimed` se trata como ausente (`null`). Emite `rule_evaluated {policy@v?, inputs (audit), result}` |
-| `collect` | Sin `resume`: emite la plantilla `prompt_ref` y para en `awaiting_slot`. Con `slot_answer`: aplica `validator` (tipo, regex, enum o `decide`); si pasa, `slots[slot] = {value, validated}` → `ok`; si no, `node_attempts += 1` y repregunta; al llegar a `max_attempts` → `max_attempts`. Cada reintento suma a `repair_turns_used` (M4 lo lee) |
-| `tool` lectura/`compute` | `ctx.tools.execute(...)` con `bound_params`. `ok` → `facts[save_as] = {value: result_full, source: {tool|compute, ref, inputs}}`. `inputs` = `fact_id`/`decision_id` leídos en `args`. Retries: ≤2 solo si `tool_def.idempotent` y el estado fue `timeout`/`error`. Circuit breaker simple por tool en el proceso (N fallas en ventana → `error` inmediato). Emite `tool_called` por intento, con `latency_ms` medido con `Clock.monotonic_ns()` alrededor de `execute` (un corte por circuit breaker da `0`) |
-| `tool` escritura | Delega en `ctx.actions.execute_write(state, node, action_ctx)` (M3), con el `ActionContext` que arma desde `StepContext`: sus ganchos de plantillas, JSON Logic, `release_view`, el `EventRecorder` de M4 y la vista `audit` de M7. Resultado `ok`/`denied`/`uncertain`, o `step_up_required` (la acción vuelve a `confirmed` y aplica §3.4) |
+| `collect` | Sin `resume`: emite la plantilla `prompt_ref` y para en `awaiting_slot`. Con `slot_answer`: aplica `validator` (tipo, regex, enum o `decide`); si pasa, `slots[slot] = {value, validated}` → `ok`; si no, `node_attempts += 1` y repregunta; al llegar a `max_attempts` → `max_attempts`. Cada reintento suma a `repair_turns_used` (M4 lo lee) (D15). Validadores (D14): `type` (`string` no vacío, `integer`, `decimal`), `regex` (`re.fullmatch`), `enum` (sin distinguir mayúsculas); `decide` no está soportado y levanta `NotImplementedError` (Abierto) |
+| `tool` lectura/`compute` | `ctx.tools.execute(...)` con `bound_params`. `ok` → `facts[save_as] = {value: result_full, source: {tool|compute, ref, inputs}}`. `inputs` = `fact_id`/`decision_id` leídos en `args`. Retries: ≤2 solo si `tool_def.idempotent` y el estado fue `timeout`/`error`. Circuit breaker simple por `tool@v` en el proceso: se abre con 5 fallas en 60 s, se cierra al envejecer y un `ok` las borra; el corte emite `tool_called` con `error="circuit_open"` y `latency_ms=0` (D10). Emite `tool_called` por intento, con `latency_ms` medido con `Clock.monotonic_ns()` alrededor de `execute` (un corte por circuit breaker da `0`) |
+| `tool` escritura | Delega en `ctx.actions.execute_write(state, node, action_ctx)` (M3), con el `ActionContext` que arma desde `StepContext`: sus ganchos de plantillas, JSON Logic, `release_view`, el `EventRecorder` de M4 y la vista `audit` de M7 (los eventos los persiste M3; M2 no los duplica). Resultado `ok`/`denied`/`uncertain`, o `step_up_required` (la acción vuelve a `confirmed` y aplica §3.4) |
 | `confirm` | Sin `resume`: `ctx.actions.propose(...)` → para en `awaiting_confirmation` con el `ConfirmationPrompt`. Con `confirm_answer`: `ctx.actions.answer(...)` → `yes`/`no`/`unclear`/`max_attempts` |
 | `verify` | `ctx.actions.verify(...)` → `verified`/`failed`; guarda el readback en `facts[save_as]` |
-| `respond` | `template_ref`: renderiza la plantilla del `locale` con los hechos (vista `model`) y la entrega a M8 para el render final. `generate`: `ctx.responder.generate(...)`; en modo degradado usa `fallback_template_ref` sin llamar al modelo. Si `await: true`, para en `awaiting_user`; si no, sigue por `next` |
-| `escalate` | Devuelve `EscalationRequest{reason_code, target_queue, priority_expr evaluada}`; `stop = terminal` |
+| `respond` | `template_ref`: M2 renderiza la plantilla del `locale` con los hechos (vista `model`); en la fase 1 no emite `response_emitted` (D6). `generate`: `ctx.responder.generate(...)`; en modo degradado usa `fallback_template_ref` sin llamar al modelo. Si `await: true`, avanza el puntero a `next` y para en `awaiting_user` (D16); si no, sigue por `next` |
+| `escalate` | Devuelve `EscalationRequest{reason_code, target_queue = agent.default_target_queue, priority: priority_expr evaluada o "normal"}` (D13); `stop = terminal` |
 | `end` | `end_outcome = config.outcome`; aplica `output_map` en modo task; `stop = terminal` |
 
 ### 3.4 Step-up (ADR 0010)
 
-Si `ToolExecutor` devuelve `step_up_required`, el nodo **no avanza**: emite `step_up_requested`, suma `node_attempts[node]` y para en `awaiting_step_up` con `{required_level, reason}`. El siguiente turno llega con `Resume(step_up_retry)` y reintenta el mismo nodo. Al pasar `max_attempts` del nodo (o 2 por defecto) → `EscalationRequest(auth_insufficient)`.
+Si `ToolExecutor` devuelve `step_up_required`, el nodo **no avanza**: emite `step_up_requested`, suma `node_attempts[node]` y para en `awaiting_step_up` con `{required_level, reason}`. El siguiente turno llega con `Resume(step_up_retry)` y reintenta el mismo nodo. Cada `step_up_required` suma un intento y al **superar** `step_up_max_attempts` (2 por defecto; la 3.ª solicitud) → `EscalationRequest(auth_insufficient)` (D9). El contador se limpia al terminar bien el nodo.
 
 ### 3.5 Presupuestos
 
@@ -85,7 +96,7 @@ Antes de cada nodo y de cada llamada a modelo se descuenta de `budgets_used`: `m
 
 ### 3.6 Evaluador JSON Logic
 
-Subconjunto cerrado: `JSONLOGIC_OPS` de M1 (`var`, `==`, `!=`, `>`, `>=`, `<`, `<=`, `and`, `or`, `!`, `in`, `if`, `missing`, con su aridad). Un operador fuera de la lista es error de esquema (G0-01), no de runtime. Aritmética con `Decimal`, nunca `float`.
+Subconjunto cerrado: `JSONLOGIC_OPS` de M1 (`var`, `==`, `!=`, `>`, `>=`, `<`, `<=`, `and`, `or`, `!`, `in`, `if`, `missing`, con su aridad). Un operador fuera de la lista es error de esquema (G0-01), no de runtime. Aritmética con `Decimal`, nunca `float`. `evaluate(expr, data, reads=None)` registra las rutas `var`/`missing` que lee, para `rule_evaluated.inputs` (D11).
 
 ## 4. Invariantes
 
@@ -128,6 +139,14 @@ Tabla por tipo de nodo con `FakeToolExecutor`, `ScriptedProvider` y `FakeClock`.
 | T-M2-10 | Modo degradado: `respond(generate)` usa la plantilla sin llamar al gateway | — |
 | T-M2-11 | Determinismo: dos ejecuciones con los mismos dobles producen eventos idénticos | 2 |
 | T-M2-12 | Aritmética de `rule` con `Decimal` (`500.00 > 500` es falso) | — |
+| T-M2-13 | Circuit breaker: se abre al umbral, se cierra al envejecer las fallas y un `ok` las borra; el corte no reintenta (`test_breaker`, `test_tool`) | — |
+| T-M2-14 | Tool `denied` toma la rama `denied` y emite `access_denied` (`test_tool`, `test_write`) | — |
+| T-M2-15 | Una excepción de la tool se convierte en rama `error` (`test_tool`) | — |
+| T-M2-16 | `respond(generate)`: entrega, cobra presupuestos, respeta `max_model_calls`, reclamos por `derive_claims` y escalamiento del responder (`test_respond_generate`) | — |
+| T-M2-17 | `disputa-cargo` con monto alto escala por `policy:escalamiento-disputa-monto` sin escribir nada (`test_disputa_cargo`) | — |
+| T-M2-18 | Interfaz pública exacta e importar `agent_core.interpreter` no arrastra guards/handoff/audit/turn/api/registry/adapters (`test_public_api`) | — |
+
+Mapeo de archivos: 01 y 11 → `test_disputa_cargo`; 02/03/12 → `test_rule`; 04/09 → `test_tool` y `test_write`; 05 → `test_collect`; 06/07 → `test_tool` y `test_write`; 08 → `test_loop`, `test_budgets`, `test_decide`, `test_respond_generate`; 10 → `test_respond_generate`.
 
 ## 8. Evaluación
 
@@ -143,12 +162,16 @@ Vía `tool_called` (lectura y `compute`), por `tool@v`: latencia p50/p95, tasa p
 
 ## 10. Definición de terminado
 
-- Handlers MVP completos; `disputa-cargo` corre en task con dobles.
-- T-M2-01…12 en verde; LOC del paquete registradas (estimación total del intérprete: 1.500–2.000 con pruebas).
+- [x] Handlers MVP completos (`decide`, `rule`, `collect`, `tool` lectura/compute y escritura, `confirm`, `verify`, `respond`, `escalate`, `end`); `disputa-cargo` corre en el arnés con dobles (T-M2-01).
+- [x] T-M2-01…12 en verde (más T-M2-13…18).
+- [x] Interfaz pública exportada y tipada; `import-linter`, `mypy` y `ruff` en verde; los eventos se construyen con los modelos de M0 (`Events`); `agentcore contracts --check` sin cambios (M2 no toca M0).
+- [x] LOC registradas: `agent_core/interpreter` 1.356; `tests/m02` + `testing/fakes/decision.py` + `testing/fakes/responder.py` 1.524; total 2.880 (sobre la estimación de 1.500–2.000 con pruebas; el paquete solo queda dentro).
+- [x] Sin TODO sin issue.
 
 ## 11. Abiertos
 
-- `max_attempts` del step-up: M0 rev. 2 lo declara como `step_up_max_attempts = 2` en `ToolConfig` y `WriteToolConfig`; confirmar al implementar M2.
-- Todo ID (`fact_id`, `call_id`) sale de `ctx.ids` (`IdSource`, M0) para que el replay sea determinista; `StepContext` gana `ids: IdSource`.
+- Validador `decide` de `collect`: no se sabe qué campo de la decisión valida (hoy `NotImplementedError`, D14).
 - Quién llena `open_questions` (índice §10).
-- Reclamos en runtime: `response_emitted.claims` sale de `derive_claims(flow, release_view(registry, release))` de M1, calculado una vez por `flow@v` (M1 §3.6).
+- Quién emite `response_emitted` de las plantillas que renderiza M2 (M8 o M4 al cablearse, D6).
+- Parámetros del circuit breaker por `tool_def` (hoy por constructor, D10).
+- Reinicio de `node_attempts` al terminar un flow (hoy solo lo reinicia `start_flow`).

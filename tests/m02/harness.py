@@ -56,7 +56,7 @@ AGENT = Agent.model_validate({
 })
 
 
-class _Authz:
+class AllowAllAuthz:
     """Solo `can_read_field`: es lo único que llama `ViewService`."""
 
     def can_read_field(self, *_: Any) -> bool:
@@ -116,7 +116,7 @@ class World:
         self.tools = FakeToolExecutor(self.ids)
         self.decisions = ScriptedDecision()
         self.responder = ScriptedResponder()
-        self.views = ViewService(keys, _Authz(), self.clock, FieldClassifier(CATALOG))  # type: ignore[arg-type]
+        self.views = ViewService(keys, AllowAllAuthz(), self.clock, FieldClassifier(CATALOG))  # type: ignore[arg-type]
         self.vault = TokenVault(RUN_ID, keys, self.ids)
         self.manager = ActionManager(self.ids, self.clock)
         self.breaker = CircuitBreaker()

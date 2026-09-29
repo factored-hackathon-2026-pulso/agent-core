@@ -99,7 +99,8 @@ Todo JSON que entra al núcleo se lee con `agent_core.domain.loads` (números co
 | `status`, `outcome`, `created_at`, `last_activity_at`, `closed_at`, `turn_count`, `handoff_ref` | M4 (M10 prepara el cierre por escalamiento; M4 lo aplica) |
 | `awaiting`, `awaiting_node_id`, `pending_offer` | M4 (con el `Stop` de M2) |
 | `state_version` | `UnitOfWork` (`save_run`) |
-| `pending_intents`, `clarifications_used`, `repair_turns_used`, `degraded_turns` | M4 |
+| `pending_intents`, `clarifications_used`, `degraded_turns` | M4 |
+| `repair_turns_used` | M2 (suma en `collect`) / M4 (lee) |
 | `active_flow`, `slots`, `facts`, `decisions`, `node_attempts`, `budgets_used`, `open_questions` | M2 |
 | `actions` | M3 |
 | `token_map` | M7 |
