@@ -196,9 +196,26 @@ class TurnEngine:
 
         frame.buffer.transform(fill)
 
+    def _cap_repairs(self, frame: TurnFrame) -> None:
+        """Tope global (m04 §3.2): aclaraciones + reintentos de `collect` + `unclear` de `confirm`. Superar
+        `max_repair_turns_per_run` escala `low_confidence`; es lo único que escala por reparación."""
+        state = frame.state
+        if frame.closed or state.status != "open":
+            return
+        if state.repair_turns_used > frame.agent.max_repair_turns_per_run:
+            request = EscalationRequest(
+                reason_code="low_confidence",
+                target_queue=frame.agent.default_target_queue,
+                priority="normal",
+            )
+            with frame.meter.stage("flow"):
+                self._closer.escalate(frame, request)
+
     def _finish(self, frame: TurnFrame, *, record: bool, store_result: bool = True) -> TurnResult:
-        """Pasos 13, 13b y 14: registrar, medir y persistir. El `commit()` lo hace quien llama."""
+        """Pasos 12 (tope de reparación), 13, 13b y 14: registrar, medir y persistir. El `commit()` lo hace
+        quien llama."""
         self._ensure_started(frame)
+        self._cap_repairs(frame)
         if record:
             with frame.meter.stage("response"):
                 self._record(frame)

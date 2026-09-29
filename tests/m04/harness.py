@@ -116,56 +116,67 @@ def flow(id: str, priority: int, *nodes: dict[str, Any]) -> Flow:
     return Flow.model_validate({"id": id, "version": "1.0.0", "priority": priority, "nodes": list(nodes)})
 
 
-DISPUTA = flow(
-    "disputa",
-    50,
-    node(
-        "pedir",
-        "collect",
-        {"slot": "descripcion", "prompt_ref": "t-pedir@1.0.0", "max_attempts": 3},
-        ok="confirmar",
-        max_attempts="esc",
-    ),
-    node(
-        "confirmar",
-        "confirm",
-        {
-            "action": {"tool": "radicar_pqr@1.0.0", "args": {"descripcion": "slots.descripcion"}},
-            "summary_template": "t-resumen@1.0.0",
-            "reprompt_template": "t-reprompt@1.0.0",
-            "max_attempts": 5,
-        },
-        yes="radicar",
-        no="fin_cancelado",
-        unclear="confirmar",
-        max_attempts="fin_cancelado",
-    ),
-    node(
-        "radicar",
-        "tool",
-        {"action_from": "confirmar", "save_as": "pqr"},
-        ok="verificar",
-        uncertain="verificar",
-        denied="esc",
-    ),
-    node(
-        "verificar",
-        "verify",
-        {
-            "readback": "obtener_pqr@1.0.0",
-            "by": "idempotency_key",
-            "predicate": {"==": [{"var": "readback.status"}, "Open"]},
-            "save_as": "pqr_verificada",
-        },
-        verified="listo",
-        failed="esc",
-    ),
-    node("listo", "respond", {"template_ref": "t-listo@1.0.0"}, next="fin"),
-    node("fin", "end", {"outcome": "resolved"}),
-    node("fin_cancelado", "respond", {"template_ref": "t-cancelado@1.0.0"}, next="fin_c"),
-    node("fin_c", "end", {"outcome": "cancelled"}),
-    node("esc", "escalate", {"reason_code": "verification_failed"}),
+def disputa_nodes(verified_to: str = "listo") -> list[dict[str, Any]]:
+    return [
+        node(
+            "pedir",
+            "collect",
+            {"slot": "descripcion", "prompt_ref": "t-pedir@1.0.0", "max_attempts": 3},
+            ok="confirmar",
+            max_attempts="esc",
+        ),
+        node(
+            "confirmar",
+            "confirm",
+            {
+                "action": {"tool": "radicar_pqr@1.0.0", "args": {"descripcion": "slots.descripcion"}},
+                "summary_template": "t-resumen@1.0.0",
+                "reprompt_template": "t-reprompt@1.0.0",
+                "max_attempts": 5,
+            },
+            yes="radicar",
+            no="fin_cancelado",
+            unclear="confirmar",
+            max_attempts="fin_cancelado",
+        ),
+        node(
+            "radicar",
+            "tool",
+            {"action_from": "confirmar", "save_as": "pqr"},
+            ok="verificar",
+            uncertain="verificar",
+            denied="esc",
+        ),
+        node(
+            "verificar",
+            "verify",
+            {
+                "readback": "obtener_pqr@1.0.0",
+                "by": "idempotency_key",
+                "predicate": {"==": [{"var": "readback.status"}, "Open"]},
+                "save_as": "pqr_verificada",
+            },
+            verified=verified_to,
+            failed="esc",
+        ),
+        node("listo", "respond", {"template_ref": "t-listo@1.0.0"}, next="fin"),
+        node("fin", "end", {"outcome": "resolved"}),
+        node("fin_cancelado", "respond", {"template_ref": "t-cancelado@1.0.0"}, next="fin_c"),
+        node("fin_c", "end", {"outcome": "cancelled"}),
+        node("esc", "escalate", {"reason_code": "verification_failed"}),
+    ]
+
+
+DISPUTA = flow("disputa", 50, *disputa_nodes())
+# Variante cuyo `verify` deja al usuario esperando (pregunta con `await`) antes de terminar.
+DISPUTA_LARGA = flow(
+    "disputa-larga",
+    40,
+    *disputa_nodes("pregunta"),
+    node("pregunta", "respond", {"template_ref": "t-listo@1.0.0", "await": True}, next="fin"),
 )
+
+
 BLOQUEAR = flow(
     "bloquear-tarjeta",
     80,
@@ -297,6 +308,7 @@ class World:
                 agent_data("tarea-bug", mode="task", entry_flow="tarea-bug@1.0.0", subject_kinds=[])
             ),
             DISPUTA,
+            DISPUTA_LARGA,
             BLOQUEAR,
             PROCESAR,
             TAREA_BUG,

@@ -7,6 +7,7 @@ import pytest
 from agent_core.domain import EngineError, InvalidationReason, Outcome, ProblemCode
 from testing.builders import action
 from tests.m04.harness import RUN_ID, World
+from tests.m04.helpers import cmd
 
 
 def proposed_run(w: World) -> None:
@@ -83,8 +84,24 @@ def test_el_turno_siguiente_al_abandono_tambien_da_410() -> None:
 
 
 def test_expiry_evaluated_expired_false_en_un_turno_normal() -> None:
-    pytest.skip("Task 11: necesita el turno completo")
+    w = World()
+    w.open_run(active=True)
+    w.clock.advance(timedelta(minutes=5))
+    w.understand.push(cmd("continue"))
+    w.turn("cargo desconocido")
+    (event,) = [e for e in w.events() if e.type == "expiry_evaluated"]
+    assert event.payload.expired is False and event.payload.now == w.clock.now()
+    assert event.payload.ttl == timedelta(minutes=30) and event.turn_id == "turn-0001"
 
 
 def test_ttl_exacto_no_vence() -> None:
-    pytest.skip("Task 11: necesita el turno completo")
+    w = World()
+    w.open_run(active=True)
+    w.clock.advance(timedelta(minutes=30))  # now − last_activity == ttl: estricto, no vence
+    w.understand.push(cmd("continue"))
+    w.turn("cargo desconocido")
+    assert w.saved().status == "open"
+    w.clock.advance(timedelta(minutes=30, microseconds=1))
+    with pytest.raises(EngineError):
+        w.turn("hola otra vez")
+    assert w.saved().outcome is Outcome.abandoned

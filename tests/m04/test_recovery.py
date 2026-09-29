@@ -57,13 +57,52 @@ def test_recuperacion_que_termina_el_flow_acaba_el_turno() -> None:
     assert w.saved().pending_offer is None and RUN_ID in w.store.runs
 
 
+@pytest.mark.skip(
+    reason="AMBIGUO (reportado): tras expire_tokens el confirm queda sin acción proposed y M3 lanza "
+    "IllegalTransition ante cualquier confirm_answer; el spec no dice qué hace el turno. Ver informe."
+)
 def test_token_vencido_cancela_la_propuesta_y_emite_action_cancelled() -> None:
-    pytest.skip("Task 11: necesita el turno completo")
+    from datetime import timedelta
+
+    from tests.m04.helpers import cmd
+
+    w = World()
+    prompt = w.seed_at_confirm()
+    w.clock.advance(timedelta(minutes=20))  # el token vence (M3) sin llegar al TTL de inactividad
+    w.understand.push(cmd("affirm"))
+    w.turn("sí")
+    types = w.event_types()
+    assert "action_cancelled" in types and w.write_calls() == []  # un token vencido nunca confirma
+    cancelled = [e for e in w.events() if e.type == "action_cancelled"]
+    assert cancelled[0].payload.reason.value == "token_expired"
+    assert types.index("expiry_evaluated") < types.index("action_cancelled") < types.index("command_emitted")
+    assert prompt.token
 
 
 def test_sin_acciones_pendientes_no_hay_recuperacion() -> None:
-    pytest.skip("Task 11: necesita el turno completo")
+    from tests.m04.helpers import cmd
+
+    w = World()
+    w.open_run(active=True)
+    w.understand.push(cmd("continue"))
+    w.turn("cargo desconocido")
+    assert "action_verified" not in w.event_types() and w.write_calls() == []
 
 
 def test_recuperacion_que_deja_al_usuario_esperando_procesa_el_mensaje() -> None:
-    pytest.skip("Task 12: necesita Understand y manejadores")
+    from tests.m04.helpers import cmd
+
+    w = World()
+    w.open_run(
+        active_flow={"flow": "disputa-larga@1.0.0", "node_id": "radicar"},
+        actions=[action(flow="disputa-larga@1.0.0", state="executing", idempotency_key="action-0001")],
+    )
+    w.tools.effects[WRITE_REF] = {"action-0001": {"status": "Open", "pqr_id": "pqr-demo-1"}}
+    w.understand.push(cmd("continue"))
+    result = w.turn("¿ya quedó?")
+    assert w.write_calls() == [] and w.saved().actions[0].state.value == "verified"
+    assert w.guards.calls == ["[model]¿ya quedó?"] and len(w.understand.calls) == 1  # el mensaje se procesó
+    types = w.event_types()
+    assert types.index("action_verified") < types.index("command_emitted")
+    assert [m.text for m in result.messages] == [w.text("t-listo")]  # el de la recuperación
+    assert result.status == "closed"

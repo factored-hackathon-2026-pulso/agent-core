@@ -127,4 +127,12 @@ def test_una_caida_simulada_no_libera_el_lease() -> None:
 
 
 def test_el_texto_crudo_nunca_llega_a_guardas_ni_a_understand() -> None:
-    pytest.skip("Task 11")
+    from tests.m04.helpers import cmd
+
+    w = World()
+    w.open_run(active=True)
+    w.understand.push(cmd("out_of_scope"))
+    w.turn("mi correo es user@example.test")
+    assert w.guards.calls == ["[model]mi correo es user@example.test"]
+    assert [c.text_model for c in w.understand.calls] == w.guards.calls
+    assert w.recorder.calls[0][2] == w.guards.calls[0]
