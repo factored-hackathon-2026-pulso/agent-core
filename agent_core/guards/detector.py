@@ -41,11 +41,16 @@ def build_detector(detector_id: str, languages: tuple[str, ...]) -> Any:
         raise GuardsConfigError("lingua necesita al menos dos idiomas candidatos")
     try:
         from lingua import IsoCode639_1, LanguageDetectorBuilder
-
+    except ImportError:
+        raise GuardsConfigError("lingua no se pudo importar") from None
+    try:
         codes = [getattr(IsoCode639_1, code.upper()) for code in languages]
     except AttributeError:
         raise GuardsConfigError("código de idioma desconocido para lingua") from None
-    return LanguageDetectorBuilder.from_iso_codes_639_1(*codes).with_preloaded_language_models().build()
+    try:
+        return LanguageDetectorBuilder.from_iso_codes_639_1(*codes).with_preloaded_language_models().build()
+    except Exception:  # cualquier falla al cargar modelos es de arranque (M6 §5)
+        raise GuardsConfigError("lingua no pudo construir el detector") from None
 
 
 def top2_scores(cleaned: str, detector_id: str, languages: tuple[str, ...]) -> list[tuple[str, float]]:

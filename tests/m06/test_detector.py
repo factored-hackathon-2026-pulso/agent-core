@@ -51,3 +51,31 @@ def test_top2_orders_and_restricts_candidates() -> None:
     assert len(scores) == 2 and {lang for lang, _ in scores} <= set(LANGS)
     assert scores[0][1] >= scores[1][1]
     assert scores == top2_scores(text, DETECTOR, LANGS)
+
+
+def test_missing_lingua_is_startup_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys
+
+    monkeypatch.setitem(sys.modules, "lingua", None)  # `import lingua` lanza ImportError
+    build_detector.cache_clear()
+    try:
+        with pytest.raises(GuardsConfigError):
+            build_detector(DETECTOR, LANGS)
+    finally:
+        build_detector.cache_clear()
+
+
+def test_model_build_failure_is_startup_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    import lingua
+
+    def boom(*_codes: object) -> object:
+        raise RuntimeError("modelo corrupto")
+
+    monkeypatch.setattr(lingua.LanguageDetectorBuilder, "from_iso_codes_639_1", boom)
+    build_detector.cache_clear()
+    try:
+        with pytest.raises(GuardsConfigError) as info:
+            build_detector(DETECTOR, LANGS)
+    finally:
+        build_detector.cache_clear()
+    assert "corrupto" not in str(info.value)
