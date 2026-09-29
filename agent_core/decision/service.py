@@ -1,5 +1,6 @@
 """`DecisionService`: cadena de proveedores, calibración, umbrales y evento `decision_made` (spec §3.1)."""
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -16,7 +17,7 @@ from agent_core.decision.types import (
 )
 from agent_core.domain import DecisionModelDef, EntityRef, JsonValue, Locale, ProviderSpec, dumps
 from agent_core.ports import Clock, IdKind, IdSource, RegistryPort
-from agent_core.views import TokenVault
+from agent_core.views import TOKEN_PATTERN, TokenVault
 
 _NS_PER_MS = 1_000_000
 _ATTEMPTS_PER_PROVIDER = 2  # la llamada inicial y 1 reintento por salida fuera de esquema
@@ -27,6 +28,21 @@ class _Usage:
     calls: int = 0
     tokens: int = 0
     cost_usd: Decimal = field(default_factory=lambda: Decimal("0"))
+
+
+_TOKEN = re.compile(TOKEN_PATTERN)
+
+
+def _has_unknown_token(node: JsonValue, vault: TokenVault) -> bool:
+    """Busca tokens en todos los strings de `node` (valores y claves) y verifica cada uno con el vault."""
+    if isinstance(node, str):
+        return any(not vault.exists(match.group(0)) for match in _TOKEN.finditer(node))
+    if isinstance(node, list):
+        return any(_has_unknown_token(item, vault) for item in node)
+    if isinstance(node, dict):
+        return any(_has_unknown_token(key, vault) or _has_unknown_token(item, vault)
+                   for key, item in node.items())
+    return False
 
 
 class DecisionService:
@@ -75,6 +91,8 @@ class DecisionService:
         p_raw = {name: raw.p_raw.get(name) for name in fields}
         top_k = {name: list(raw.top_k[name]) for name in fields if name in raw.top_k}
         p_cal, above = self._calibrate(definition, provider_used, locale, raw.value, p_raw)
+        if _has_unknown_token(raw.value, token_vault):
+            above = dict.fromkeys(fields, False)  # salida inválida; `p_cal` se conserva para diagnóstico
         return DecisionOutput(
             value=raw.value, p_cal=p_cal, p_raw=p_raw, top_k=top_k,
             above_threshold=above, provider_used=provider_used,
