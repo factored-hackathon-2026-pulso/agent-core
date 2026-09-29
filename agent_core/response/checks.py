@@ -12,3 +12,14 @@ def check_format(draft: Draft, ctx: ValidationContext) -> list[Failure]:
     if not draft.text.strip():
         return [Failure(check="format", detail="texto vacío")]
     return []
+
+
+def check_citations(draft: Draft, ctx: ValidationContext) -> list[Failure]:
+    """Comprobación 2: cada cita existe (hechos o páginas) y está en `allowed`. Una falla por cita."""
+    failures: list[Failure] = []
+    for citation in draft.citations:
+        if citation not in ctx.facts_model_view and citation not in ctx.pages_model_view:
+            failures.append(Failure(check="citations", detail=f"{citation} cita_inexistente"))
+        elif citation not in ctx.allowed:
+            failures.append(Failure(check="citations", detail=f"{citation} cita_no_permitida"))
+    return failures
