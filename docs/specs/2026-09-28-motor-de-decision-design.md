@@ -15,6 +15,7 @@
   - rev. 12: outcomes declarables por modo, `abandoned`/`escalated` solo del motor; renumeración del ADR de conocimiento a 0015 (auto-revisión #7, #8, #9).
   - rev. 14: métricas de eficiencia y tiempos en el log de auditoría: `latency_ms` en `tool_called`, `llm` en `response_emitted`, evento `turn_completed`, `Clock.monotonic_ns()` y campos de medición excluidos del replay (M0 rev. 3; §11, §12).
   - rev. 13: revisión de M0 (`specs/motor/m00-dominio-y-contratos.md` rev. 2): `ActionState` con `uncertain`/`denied`; `Awaiting.input`; `on_behalf_of.grantee` y `403 delegation_mismatch`/`agent_forbidden`; `execute` devuelve solo `result_full` (las vistas las calcula el núcleo); IDs por `IdSource` inyectado; `Decimal` y JCS en M0; referencias de autoría (`RefSpec`) frente a runtime (exactas). El detalle de tipos manda en M0.
+  - rev. 15: M3 rev. 2: el token de confirmación se rota en la reentrada; M3 recibe un `ActionContext` con ganchos y `execute_write` devuelve también `step_up_required`.
 - Repo: `agent-core`
 - Autor: Juan Zapata, con Claude
 - ADRs:
@@ -463,7 +464,7 @@ Un `sha256` sin clave de datos con PII de baja entropía (documento, teléfono, 
 ### 8.2 Protocolo de escritura (ADR 0007)
 
 1. `confirm` congela `{tool, args}`, crea `action_id`, guarda `proposed` y emite el token con `expires_at`.
-   - **Reentrada:** si el `confirm` ya tiene una acción `proposed` con el token vigente, no se crea otra: se repite la misma acción (mismo `action_id`, mismo token) con `reprompt_template` o, si no hay, `summary_template`. Si el token venció, esa acción pasa a `cancelled` y se congela una nueva. Un `confirm` nunca tiene más de una acción `proposed`.
+   - **Reentrada:** si el `confirm` ya tiene una acción `proposed` con el token vigente, no se crea otra: se repite la misma acción (mismo `action_id` y `token_exp`; el token se rota porque solo se guarda su hash) con `reprompt_template` o, si no hay, `summary_template`. Si el token venció, esa acción pasa a `cancelled` y se congela una nueva. Un `confirm` nunca tiene más de una acción `proposed`.
    - **Agotamiento:** al llegar a `max_attempts`, la acción pasa a `cancelled` y el nodo sale por `max_attempts`.
 2. Una respuesta afirmativa, sea `affirm` en Understand o `confirm.answer = yes` con el token, y con el token vigente, pasa la acción a `confirmed`.
 3. El nodo con `action_from` **commitea en una transacción propia** `executing` + `action_dispatched`.

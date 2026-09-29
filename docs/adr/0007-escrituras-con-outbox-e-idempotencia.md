@@ -2,7 +2,7 @@
 
 - Estado: aceptado (2026-09-28)
 - Unidad: 1 · Motor de decisión
-- Origen: hallazgo C2 de la revisión externa. Enmendado el 2026-09-28 por los hallazgos C3 y C4, y por los temas #1 (reclamos de éxito) y #6 (bucle de `unclear` en `confirm`) de la auto-revisión.
+- Origen: hallazgo C2 de la revisión externa. Enmendado el 2026-09-28 por los hallazgos C3 y C4, y por los temas #1 (reclamos de éxito) y #6 (bucle de `unclear` en `confirm`) de la auto-revisión. Enmendado el 2026-09-29: rotación del token en la reentrada (M3 rev. 2).
 
 ## Contexto
 - El turno commiteaba estado y eventos al final, pero la tool `write_*` ya se había ejecutado antes.
@@ -36,7 +36,7 @@
    - `verify` gana `save_as` para exponer el readback como hecho.
 8. **Confirmación acotada e idempotente (auto-revisión #6).**
    - `confirm` tiene `max_attempts` (2 por defecto) y un resultado `max_attempts`. Cada `unclear` suma al contador del nodo y al tope global de reparación. Al agotarse, la acción pasa a `cancelled`.
-   - **Reentrada:** con una acción `proposed` y el token vigente, el `confirm` repite la misma acción (mismo `action_id` y token) con `reprompt_template` o `summary_template`. Con el token vencido, cancela la acción y congela una nueva. Nunca hay dos acciones `proposed` del mismo `confirm`.
+   - **Reentrada:** con una acción `proposed` y el token vigente, el `confirm` repite la misma acción (mismo `action_id` y `token_exp`; el token se rota porque solo se guarda su hash, M3 rev. 2) con `reprompt_template` o `summary_template`. Con el token vencido, cancela la acción y congela una nueva. Nunca hay dos acciones `proposed` del mismo `confirm`.
    - **Precedencia:** con un `confirm` pendiente, solo aplican las interrupciones, `cancel` y `handoff`. `out_of_scope`, `clarify` y los comandos bajo umbral dan `unclear`; una intención nueva va a `pending_intents` y también da `unclear`.
    - Una respuesta por botón (token en el request) no pasa por Understand y nunca da `unclear`.
 

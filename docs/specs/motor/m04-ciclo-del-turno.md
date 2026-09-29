@@ -32,7 +32,7 @@ Dependencias por constructor: `UnitOfWork`, `RegistryPort`, `Clock`, `GuardServi
 3. **Release:** si está `revoked` → `escalate(release_revoked)` sin ejecutar nodos.
 4. **Abandono:** si `now − last_activity_at > inactivity_ttl` → cerrar con `abandoned` (ver 3.6) y responder `run_closed`.
 5. **Recuperación:** `actions.pending_recovery(state)` no vacío → posicionar el flow en el `verify` correspondiente y avanzar desde ahí antes de procesar el mensaje.
-6. **Tokens vencidos:** `actions.expire_tokens(state, now)`.
+6. **Tokens vencidos:** `actions.expire_tokens(state, turn_id=…)` (devuelve el estado y los eventos `action_cancelled`).
 7. **Guardas (M6):** idioma, tamaño, injection. `unsupported` → plantilla en `default_locale`, sin Understand ni flow. Actualiza `state.locale`. `injection_flagged` → `degraded = true` para este turno.
 8. **Understand:**
    - Si el request trae `confirm: {token, answer}` → no se llama a Understand; `resume = confirm_answer(answer)`.
