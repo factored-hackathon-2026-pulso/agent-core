@@ -7,8 +7,8 @@ from types import MappingProxyType
 
 from agent_core.actions.context import ActionContext
 from agent_core.actions.events import EventFactory
-from agent_core.actions.machine import Trigger
-from agent_core.actions.results import WriteResult
+from agent_core.actions.machine import VERIFIABLE, Trigger
+from agent_core.actions.results import VerifyResult, WriteResult
 from agent_core.actions.store import move, replace_action, single_action
 from agent_core.domain import (
     ActionState,
@@ -21,6 +21,7 @@ from agent_core.domain import (
     ToolCalled,
     ToolCalledPayload,
     ToolDef,
+    VerifyNode,
     WriteToolNode,
 )
 from agent_core.ports import Clock, IdKind, IdSource, ToolResult, ToolStatus
@@ -88,6 +89,38 @@ class Executions:
                                    action.action_id)
         state = commit_point(ctx, state, [called])  # commit 2: resultado + tool_called
         return state, _WRITE_RESULT[trigger], [dispatched, called]
+
+    def verify(self, state: RunState, node: VerifyNode,
+               ctx: ActionContext) -> tuple[RunState, VerifyResult, list[EngineEvent]]:
+        """Readback por `idempotency_key`; nunca re-ejecuta la escritura. Los eventos los persiste M4."""
+        if node.config.by != "idempotency_key":
+            raise ValueError(f"{node.id}: verify solo consulta por idempotency_key (ADR 0007 §5)")
+        action = single_action(state, VERIFIABLE)
+        readback = ctx.resolve(node.config.readback)
+        readback_def = ctx.tools.definition(readback)
+        args: dict[str, JsonValue] = {"idempotency_key": action.idempotency_key}
+        call = self._call(ctx, readback, deepcopy(args), None, failure=ToolStatus.error)
+        found = call.result.status is ToolStatus.ok and call.result.result_full is not None
+        holds = found and self._holds(ctx, node.config.predicate, call.result.result_full)
+        result: VerifyResult = "verified" if holds else "failed"
+        state = replace_action(state, move(action, Trigger.verified if holds else Trigger.failed))
+        if found:
+            state = self._save_fact(state, node.config.save_as, call.result.result_full, action.action_id)
+        called = self._tool_called(state, ctx, node.id, readback, readback_def, args, call,
+                                   action.action_id)
+        verified = self._events.verified(state, ctx.turn_id, action.action_id, result, call.result.call_id)
+        return state, result, [called, verified]
+
+    @staticmethod
+    def pending_recovery(state: RunState) -> list[str]:
+        return [a.action_id for a in state.actions if a.state is ActionState.executing]
+
+    @staticmethod
+    def _holds(ctx: ActionContext, predicate: JsonValue, readback: JsonValue) -> bool:
+        try:
+            return ctx.predicate(predicate, {"readback": readback}) is True
+        except Exception:  # un predicado que falla no prueba el efecto
+            return False
 
     def _call(self, ctx: ActionContext, tool: EntityRef, args: dict[str, JsonValue],
               idempotency_key: str | None, *, failure: ToolStatus) -> _Call:

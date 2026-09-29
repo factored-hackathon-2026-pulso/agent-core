@@ -4,7 +4,7 @@ from agent_core.actions.confirmation import Confirmations
 from agent_core.actions.context import ActionContext
 from agent_core.actions.events import EventFactory
 from agent_core.actions.execution import Executions
-from agent_core.actions.results import Answer, AnswerResult, WriteResult
+from agent_core.actions.results import Answer, AnswerResult, VerifyResult, WriteResult
 from agent_core.domain import (
     ConfirmationPrompt,
     ConfirmNode,
@@ -13,6 +13,7 @@ from agent_core.domain import (
     JsonValue,
     RunState,
     ToolDef,
+    VerifyNode,
     WriteToolNode,
 )
 from agent_core.ports import Clock, IdSource
@@ -52,6 +53,16 @@ class ActionManager:
         Los eventos devueltos ya están persistidos (M3 §3.4)."""
         _same_run(state, ctx)
         return self._executions.execute_write(state, write_node, ctx)
+
+    def verify(self, state: RunState, verify_node: VerifyNode,
+               ctx: ActionContext) -> tuple[RunState, VerifyResult, list[EngineEvent]]:
+        """Readback por clave y `predicate` sobre `{"readback": ...}` en vista `full` (M3 §3.5)."""
+        _same_run(state, ctx)
+        return self._executions.verify(state, verify_node, ctx)
+
+    def pending_recovery(self, state: RunState) -> list[str]:
+        """`action_id` de las acciones en `executing` al cargar: van a `verify` sin re-ejecutar (M3 §3.6)."""
+        return self._executions.pending_recovery(state)
 
     def expire_tokens(self, state: RunState, *,
                       turn_id: str | None = None) -> tuple[RunState, list[EngineEvent]]:
