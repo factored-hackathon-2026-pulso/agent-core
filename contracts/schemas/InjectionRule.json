@@ -17,6 +17,7 @@
       "type": "string"
     },
     "pattern": {
+      "maxLength": 2048,
       "minLength": 1,
       "title": "Pattern",
       "type": "string"

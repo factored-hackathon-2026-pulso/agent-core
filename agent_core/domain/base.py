@@ -43,9 +43,13 @@ def _to_utc(value: datetime) -> datetime:
 # (Rust) no hace backtracking, y ahí `$` no admite un salto de línea final.
 UtcDatetime = Annotated[AwareDatetime, AfterValidator(_to_utc)]
 Locale = Annotated[str, StringConstraints(pattern=r"^[a-z]{2}$")]
-EntityId = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9_/-]*$")]
+ID_PATTERN = r"[a-z0-9][a-z0-9_/-]*"
+EntityId = Annotated[str, StringConstraints(pattern=rf"^{ID_PATTERN}$")]
 # semver 2.0 sin prerelease ni build: sin ceros a la izquierda.
-_NUM = r"(?:0|[1-9][0-9]*)"
-ExactVersion = Annotated[str, StringConstraints(pattern=rf"^{_NUM}\.{_NUM}\.{_NUM}$")]
+NUM_PATTERN = r"(?:0|[1-9][0-9]*)"
+EXACT_VERSION_PATTERN = rf"{NUM_PATTERN}\.{NUM_PATTERN}\.{NUM_PATTERN}"
+ExactVersion = Annotated[str, StringConstraints(pattern=rf"^{EXACT_VERSION_PATTERN}$")]
 NodeId = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9_]*$")]
+# sha256 en hexadecimal minúscula (ASCII)
+Sha256Hex = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 Probability = Annotated[float, Field(ge=0.0, le=1.0, allow_inf_nan=False)]

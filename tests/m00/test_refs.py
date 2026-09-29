@@ -136,3 +136,14 @@ def test_iter_refspecs_survives_cycles_and_deep_nesting() -> None:
     for _ in range(50_000):
         deep = [deep]
     assert [str(r) for r in iter_refspecs(deep)] == ["z@1.0.0"]
+
+
+def test_refspec_pattern_is_in_the_json_schema_and_behaviour_is_unchanged() -> None:
+    schema = RefSpec.model_json_schema()
+    spec = schema["properties"]["spec"]
+    assert any("pattern" in option for option in spec["anyOf"])
+    for good in ("1.2.3", "^1", "~1.2", "1", "1.2"):
+        assert RefSpec.parse(f"x@{good}").spec == good
+    for bad in ("1.2.3.4", "01.2.3", "latest", "^", "1.2.3\n"):
+        with pytest.raises(ValueError):
+            RefSpec(id="x", spec=bad)

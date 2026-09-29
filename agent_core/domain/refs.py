@@ -12,14 +12,21 @@ from collections.abc import Iterator, Mapping
 from enum import StrEnum
 from typing import Annotated, Any
 
-from pydantic import BaseModel, StringConstraints, field_validator, model_validator
+from pydantic import BaseModel, StringConstraints, model_validator
 
-from agent_core.domain.base import EntityId, ExactVersion, Model
+from agent_core.domain.base import (
+    EXACT_VERSION_PATTERN,
+    ID_PATTERN,
+    NUM_PATTERN,
+    EntityId,
+    ExactVersion,
+    Model,
+)
 from agent_core.domain.errors import InvalidRuntimeRef
 
-_ID = r"[a-z0-9][a-z0-9_/-]*"
-_NUM = r"(?:0|[1-9][0-9]*)"
-_EXACT = rf"{_NUM}\.{_NUM}\.{_NUM}"
+_ID = ID_PATTERN
+_NUM = NUM_PATTERN
+_EXACT = EXACT_VERSION_PATTERN
 _SPEC = rf"(?:{_EXACT}|[\^~]{_NUM}(?:\.{_NUM}){{0,2}}|{_NUM}(?:\.{_NUM})?)"
 _ALIAS = r"[a-z][a-z0-9_-]*"
 _REF_RE = re.compile(rf"(?P<id>{_ID})(?:@(?P<spec>[^@]+))?")
@@ -28,6 +35,8 @@ _EXACT_RE = re.compile(_EXACT)
 _ALIAS_RE = re.compile(_ALIAS)
 
 Alias = Annotated[str, StringConstraints(pattern=rf"^{_ALIAS}$")]
+# El patrón queda en el JSON Schema; la validación es la misma que con `fullmatch`.
+VersionSpec = Annotated[str, StringConstraints(pattern=rf"^{_SPEC}$")]
 
 
 class EntityKind(StrEnum):
@@ -82,7 +91,7 @@ class RefSpec(Model):
     """Referencia de autoría: exacta, rango (`^1`, `~1.2`, `1`) o sin versión."""
 
     id: EntityId
-    spec: str | None = None
+    spec: VersionSpec | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -91,13 +100,6 @@ class RefSpec(Model):
             ident, spec = _split(data)
             return {"id": ident, "spec": spec}
         return data
-
-    @field_validator("spec")
-    @classmethod
-    def _check_spec(cls, value: str | None) -> str | None:
-        if value is not None and _SPEC_RE.fullmatch(value) is None:
-            raise ValueError(f"versión o rango inválido: {value!r}")
-        return value
 
     @classmethod
     def parse(cls, text: str) -> "RefSpec":

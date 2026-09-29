@@ -104,6 +104,7 @@
       "type": "object"
     },
     "args_hash": {
+      "pattern": "^[0-9a-f]{64}$",
       "title": "Args Hash",
       "type": "string"
     },
@@ -124,6 +125,7 @@
       "type": "string"
     },
     "confirmation_token_hash": {
+      "pattern": "^[0-9a-f]{64}$",
       "title": "Confirmation Token Hash",
       "type": "string"
     },

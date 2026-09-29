@@ -7,9 +7,9 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import Annotated, Literal
 
-from pydantic import Field, NonNegativeInt, PositiveInt, StringConstraints
+from pydantic import Field, NonNegativeInt, PositiveInt
 
-from agent_core.domain.base import Locale, Model, NodeId, Probability, UtcDatetime
+from agent_core.domain.base import Locale, Model, NodeId, Probability, Sha256Hex, UtcDatetime
 from agent_core.domain.identity import AuthLevel, PrincipalType
 from agent_core.domain.json import JsonValue
 from agent_core.domain.outcomes import Awaiting, Command, Mode, Outcome, ReasonCodeStr
@@ -17,8 +17,6 @@ from agent_core.domain.refs import EntityRef
 from agent_core.domain.shared import Fingerprint, ToolStatus
 from agent_core.domain.state import InvalidationReason
 
-# sha256 en hex minúscula (ASCII, fullmatch implícito de pydantic con ^…$ sin salto final)
-Sha256Hex = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 Cost = Annotated[Decimal, Field(ge=0, allow_inf_nan=False)]
 
 

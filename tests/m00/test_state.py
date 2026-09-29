@@ -275,3 +275,12 @@ def test_model_copy_update_emits_no_pydantic_warning() -> None:
     assert copied.model_copy(update={"turn_count": 2}, deep=True).turn_count == 2
     with pytest.raises(ValueError):
         state.model_copy(update={"nope": 1})
+
+
+def test_action_hashes_must_be_sha256_hex() -> None:
+    good = action()
+    for field in ("args_hash", "confirmation_token_hash"):
+        with pytest.raises(ValidationError):
+            Action.model_validate(good.model_dump() | {field: "not-a-hash"})
+        with pytest.raises(ValidationError):
+            Action.model_validate(good.model_dump() | {field: "A" * 64})
