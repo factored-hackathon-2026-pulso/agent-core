@@ -21,3 +21,14 @@ def test_no_unlisted_public_name_leaks() -> None:
                   "yaml_loader"}
     leaked = [n for n in vars(flows) if not n.startswith("_") and n not in PUBLIC and n not in submodules]
     assert leaked == []
+
+
+def test_fakes_package_does_not_eagerly_import_flows() -> None:
+    import subprocess
+    import sys
+
+    code = ("import sys, testing.fakes; "
+            "assert 'agent_core.flows' not in sys.modules; "
+            "from testing.fakes import registry_from_directory; "
+            "assert 'agent_core.flows' in sys.modules and callable(registry_from_directory)")
+    subprocess.run([sys.executable, "-c", code], check=True)

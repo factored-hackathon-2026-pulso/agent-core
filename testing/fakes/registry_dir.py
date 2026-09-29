@@ -3,9 +3,7 @@
 from pathlib import Path
 
 from agent_core.domain import SchemaError
-from agent_core.flows.pin import pin_release
-from agent_core.flows.registry import load_registry
-from agent_core.flows.validate import validate_registry
+from agent_core.flows import load_registry, pin_release, validate_registry
 from testing.fakes.registry import InMemoryRegistry
 
 
