@@ -149,7 +149,7 @@ def _required_paths(node: Node) -> Iterator[tuple[str, str]]:
             yield (f"/config/generate/allowed_facts/{i}", text)
     if isinstance(node, EndNode) and node.config.output_map:
         for key, text in sorted(node.config.output_map.items()):
-            yield (f"/config/output_map/{key}", text)
+            yield (f"/config/output_map/{pointer_segment(key)}", text)
     if isinstance(node, DecideNode) and node.config.input_view:
         for i, text in enumerate(node.config.input_view):
             yield (f"/config/input_view/{i}", text)

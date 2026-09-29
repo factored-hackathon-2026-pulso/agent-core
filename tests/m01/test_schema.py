@@ -345,3 +345,13 @@ def test_parse_flow_raises_with_the_capped_list() -> None:
     assert len(violations) == schema.MAX_ERRORS + 1
     assert sum("omitieron" in v.message for v in violations) == 1
     assert all((v.path or "").startswith("flows/malo@1.0.0.yaml#") for v in violations)
+
+
+def test_output_map_key_is_escaped_and_clipped_in_the_pointer() -> None:
+    d = base()
+    node(d, "fin")["config"]["output_map"] = {"a/b~c": "literal", "k" * 500: "otro literal"}
+    found = schema_violations(flow(d))
+    paths = sorted(v.path or "" for v in found)
+    assert paths[1] == "/nodes/6/config/output_map/" + "k" * schema.MAX_ECHO + "..."
+    assert paths[0] == "/nodes/6/config/output_map/a~1b~0c"
+    assert len(found) == 2 and all("se esperaba una ruta" in v.message for v in found)
