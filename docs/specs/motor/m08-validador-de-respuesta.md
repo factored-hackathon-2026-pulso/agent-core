@@ -134,8 +134,16 @@ M8 **no** se acopla a teléfono, canal ni `principal.attrs.country`, y no contie
 
 ## 10. Definición de terminado
 
-- `validate` con las cinco comprobaciones y la cadena de `generate` con T-M8-01…11 en verde.
-- Conjunto de 30+ respuestas etiquetadas (ES y PT) para medir falsos rechazos.
+- [x] `validate` con las cinco comprobaciones y la cadena de `generate` con T-M8-01…11 en verde (`uv run pytest tests/m08`).
+- [x] Conjunto de 30+ respuestas etiquetadas (ES y PT) para medir falsos rechazos: `tests/m08/labeled_set.py` (34 casos sintéticos). Falso rechazo del conjunto principal: 0/26 (ES 0, PT 0). Sondeo de números que no son cifras de negocio (P2): 8/8 rechazados por la comprobación `numbers` (ES 4/4, PT 4/4); se mide y no se relaja la regla.
+- [x] `ScriptedGateway` y su suite de contrato en `tests/contracts/test_gateway_contract.py`; `RequestCapture` conectado.
+- [x] `pages_model_view` vacío hasta M12 y sin importar `agent_core.knowledge`.
+- [x] Interfaz pública exportada y tipada (`mypy` strict), `import-linter` y `ruff` en verde.
+- [x] Reglas duras: sin hora, aleatoriedad, `float()` ni `json.loads` en `agent_core/response`; sin PII en `Failure.detail`, `RejectedDraft.reason` ni eventos.
+- [x] Abiertos de M8 resueltos (§11); quedan fuera de M8 los de M2 y M12.
+- [x] Spec en rev. 2 en el mismo cambio.
+
+Notas de la implementación (rev. 2): si `generate` termina en `EscalationRequest` no se emite `response_emitted`, así que el uso del LLM de esa cadena no sale en ningún evento (ver §11). En modo degradado el evento lleva `validator.ok = true` (no hubo borrador rechazado); tras rechazos o gateway caído, `ok = false` con los ids de la última falla.
 
 ## 11. Abiertos
 
@@ -147,3 +155,4 @@ M8 **no** se acopla a teléfono, canal ni `principal.attrs.country`, y no contie
 - ~~**`allowed_facts` frente a `fact_id`**~~ **Resuelto 2026-09-29:** `Responder` traduce (§3.1.2).
 - ~~**Renderizado de plantillas**~~ **Resuelto 2026-09-29:** renderizador mínimo propio (§3.2).
 - **Abiertos que siguen fuera de M8:** quién emite `response_emitted` para `respond(template_ref)` directo (M2); `PageView`, `knowledge_from` y su comprobación de citas de páginas (M12, tema #10).
+- **Nuevo:** cuando `generate` escala (`validation_failed`) no hay `response_emitted` y por tanto el uso del LLM (`llm`) de esa cadena no llega a M2 para cobrar presupuestos. Requiere decidir si se emite un evento con `kind` de fallo o si `generate` devuelve el uso aparte; toca M0 o el adaptador de M2.
