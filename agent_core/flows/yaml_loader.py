@@ -103,7 +103,10 @@ def _precheck(text: str) -> None:
 
 
 def load_yaml(data: str | bytes) -> JsonValue:
-    raw = data.encode("utf-8") if isinstance(data, str) else data
+    try:
+        raw = data.encode("utf-8") if isinstance(data, str) else data
+    except UnicodeEncodeError as exc:
+        raise YamlError("el texto contiene caracteres no codificables en UTF-8") from exc
     if len(raw) > MAX_BYTES:
         raise YamlError("archivo mayor a 1 MiB")
     try:

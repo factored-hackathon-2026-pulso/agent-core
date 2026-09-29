@@ -134,3 +134,8 @@ def test_empty_and_non_mapping_documents_are_returned_as_is() -> None:
 
 def test_merge_key_is_a_plain_key() -> None:
     assert load_yaml("base: {x: 1}\nb: {<<: {x: 1}}\n") == {"base": {"x": 1}, "b": {"<<": {"x": 1}}}
+
+
+def test_lone_surrogate_str_is_yaml_error() -> None:
+    with pytest.raises(YamlError):
+        load_yaml("a: " + chr(0xD800))
