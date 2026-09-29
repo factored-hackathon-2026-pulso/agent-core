@@ -1,0 +1,145 @@
+# M3 — Protocolo de escritura (acciones)
+
+- Estado: borrador · Fase 1
+- Paquete: `agent_core.actions`
+- Origen: spec general §8.2, §4 (invalidación de acciones), §5 (`confirm`, escritura, `verify`), §10
+- ADRs: 0007 (acción congelada, outbox de intención, idempotencia, readback, `claims`, confirmación acotada)
+- Usa: M0 · Lo usan: M2 (nodos), M4 (recuperación e invalidación)
+
+## 1. Propósito y límites
+
+Es el dueño de `RunState.actions` y del invariante **confirm → act → verify**. Congela la acción, maneja el token de confirmación, ejecuta la escritura con dos commits propios, la verifica por clave y recupera tras una caída.
+
+**No hace:** decidir cuándo se confirma (lo decide M4 con Understand o el botón y se lo pasa a M2), validar estáticamente los flows (M1), ni la tool en sí (unidad 3).
+
+## 2. Interfaz pública
+
+```python
+class ActionManager:
+    def propose(self, state, confirm_node, resolved_args, tool_def, now) -> tuple[RunState, ConfirmationPrompt]
+    def answer(self, state, confirm_node, answer: Literal["yes", "no", "unclear"],
+               token: str | None, now) -> tuple[RunState, Literal["yes", "no", "unclear", "max_attempts"]]
+    def execute_write(self, state, write_node, ctx) -> tuple[RunState, Literal["ok", "denied", "uncertain"], list[EngineEvent]]
+    def verify(self, state, verify_node, ctx) -> tuple[RunState, Literal["verified", "failed"], list[EngineEvent]]
+    def pending_recovery(self, state) -> list[str]           # action_ids en `executing`
+    def invalidate(self, state, reason: InvalidationReason) -> tuple[RunState, list[EngineEvent]]
+    def expire_tokens(self, state, now) -> RunState
+
+# InvalidationReason, ConfirmationPrompt, Action y ActionState son tipos de M0 (§2.6, §2.8).
+# "no" del usuario cancela con reason = denied_by_user.
+```
+
+`action_id` sale de `IdSource.new_id("action")` y el token de `IdSource.secret_token()` (M0 §2.9); `args_hash = sha256_hex(canonical_bytes(args))` con la utilidad JCS de M0.
+
+`execute_write` recibe en `ctx` el `UnitOfWork` y el `ToolExecutor`.
+
+## 3. Comportamiento
+
+### 3.1 Máquina de estados
+
+| Desde | Evento | Hacia |
+|---|---|---|
+| — | `propose` | `proposed` |
+| `proposed` | `answer(yes)` con token vigente | `confirmed` |
+| `proposed` | `answer(no)` | `cancelled` |
+| `proposed` | `max_attempts` / token vencido / invalidación | `cancelled` |
+| `confirmed` | `execute_write` (commit 1) | `executing` |
+| `confirmed` | invalidación antes de ejecutar | `cancelled` |
+| `executing` | resultado de la tool (commit 2) | `executed` · `uncertain` · `denied` |
+| `executed` · `uncertain` | `verify` | `verified` · `failed` |
+| `executing` (al cargar) | recuperación | → `verify` |
+
+Cualquier otra transición lanza `IllegalTransition` (bug, no error de usuario).
+
+### 3.2 `propose` y reentrada
+
+- Si el `confirm` **no** tiene acción `proposed`: congela `{tool, args}`, calcula `args_hash = sha256(JCS(args))`, crea `action_id` (UUIDv7), token aleatorio de 128 bits (se guarda solo su hash), `token_exp = now + tool_def.confirmation_ttl` (5 min por defecto). Emite el prompt con `summary_template`.
+- Si ya tiene una `proposed` con token vigente: **no crea otra**; devuelve el mismo `action_id` y token con `reprompt_template` o, si no hay, `summary_template`.
+- Si la `proposed` tiene el token vencido: la pasa a `cancelled` y congela una nueva.
+- Invariante: nunca hay dos acciones `proposed` del mismo `confirm`.
+
+### 3.3 `answer`
+
+- `yes`: exige token vigente. Por botón, el token del request debe coincidir con el hash; por texto (`affirm`), se usa el token de la acción `proposed` del nodo. Token vencido → `cancelled` y el resultado es `unclear` para reentrar y congelar de nuevo. Emite `action_confirmed`.
+- `no` → `cancelled`.
+- `unclear` → `node_attempts[confirm] += 1`; si llega a `max_attempts` → `cancelled` y resultado `max_attempts`. Cada `unclear` también cuenta en `repair_turns_used` (lo suma M4).
+
+### 3.4 `execute_write` (dos transacciones propias)
+
+1. **Commit 1:** `state = executing` + `action_dispatched{action_id, tool@v, args_hash}`.
+2. `tools.execute(tool, frozen_args, bound_params, run_ctx, idempotency_key=action_id)`. Los `args` **siempre** salen de la acción congelada, nunca del nodo.
+3. **Commit 2:** mapea el estado de la tool:
+   - `ok` → `executed`;
+   - `denied` (bloqueo de política antes de llamar) → `denied`;
+   - cualquier otra cosa (error, 5xx, reset, timeout, excepción) → `uncertain`, con el error original en `tool_called`.
+   - `step_up_required` en una escritura: la acción vuelve a `confirmed` y M2 aplica §3.4 de M2. (La unidad 3 debe devolverlo **antes** de cualquier efecto.)
+4. Guarda el resultado en `facts[save_as]` con `source.ref = action_id`.
+
+### 3.5 `verify`
+
+Llama `tools.execute(readback_tool, {idempotency_key: action_id})`, evalúa `predicate` (JSON Logic de M2) sobre el readback en vista `full` y guarda el readback en `facts[save_as]`. `true` → `verified`; `false`, no encontrado o error → `failed`. Emite `action_verified{action_id, result}`.
+
+### 3.6 Recuperación e invalidación
+
+- `pending_recovery`: al cargar un run (M4), toda acción en `executing` se lleva a su `verify` **sin re-ejecutar**. M4 posiciona el flow en el `verify` que sigue al nodo de escritura (lo resuelve con `write_node.next.uncertain`).
+- `invalidate`: toda acción `proposed` o `confirmed` pasa a `cancelled`. Las `executing` o posteriores **no** se tocan.
+
+## 4. Invariantes
+
+- `idempotency_key == action_id` en todo reintento.
+- Nunca se invoca una escritura sin un commit previo de `executing`.
+- Una acción en `executing` nunca se re-ejecuta.
+- A lo sumo una acción `proposed` por `confirm`.
+- Un token vencido nunca confirma.
+
+## 5. Fallas
+
+| Falla | Comportamiento |
+|---|---|
+| Caída entre commit 1 y la llamada | al cargar: `executing` → `verify`; el readback dice si hubo efecto |
+| Caída entre la llamada y commit 2 | igual que la anterior |
+| Falla del commit 2 | igual; el efecto queda probado por el readback |
+| Reintento del turno completo | mismo `action_id` → la tool devuelve el recurso existente |
+| Token vencido | `cancelled`; nuevo `confirm` |
+
+## 6. Eventos que emite
+
+`action_confirmed`, `action_cancelled{action_id, reason}` (invalidación, `no`, token vencido, `max_attempts`), `action_dispatched`, `tool_called` (escritura), `action_verified`.
+
+## 7. Pruebas
+
+Con `FakeToolExecutor` guionable e `InMemoryUoW` con inyección de fallas por punto (`after_commit_1`, `after_call`, `on_commit_2`).
+
+| ID | Caso | §13 |
+|---|---|---|
+| T-M3-01 | Camino feliz: `proposed → confirmed → executing → executed → verified` | 3 |
+| T-M3-02 | 5xx o timeout → `uncertain` → `verify` por clave | 3 |
+| T-M3-03 | Caída después de `action_dispatched` → al recargar va a `verify`, la tool se llamó una sola vez | 3 |
+| T-M3-04 | El reintento del turno usa el mismo `idempotency_key` | 3 |
+| T-M3-05 | Dos `unclear` con `max_attempts: 2` → `max_attempts`, acción `cancelled` | 11 |
+| T-M3-06 | Reentrada con token vigente reutiliza `action_id` y token; nunca hay dos `proposed` | 11 |
+| T-M3-07 | Reentrada con token vencido cancela y crea otra; `yes` con el token viejo no confirma | 11 |
+| T-M3-08 | `invalidate` cancela `proposed`/`confirmed` y no toca `executing` | 10 |
+| T-M3-09 | Los `args` ejecutados son los congelados aunque cambien los slots | — |
+| T-M3-10 | Transición ilegal lanza `IllegalTransition` | — |
+| T-M3-11 | `denied` no pasa por `verify` y no se reintenta | — |
+
+## 8. Evaluación
+
+Escrituras duplicadas (objetivo 0), tasa `uncertain`, tasa `uncertain → verified` frente a `failed`, tasa de confirmaciones rechazadas o vencidas, latencia de escritura + readback (`tool_called.latency_ms` de ambas llamadas, que M3 mide con `Clock.monotonic_ns()` alrededor de `execute`).
+
+## 9. Puntos de iteración
+
+- Worker asíncrono de producción: reemplaza `execute_write` detrás de la misma interfaz (el resultado `uncertain` ya modela la espera).
+- TTL del token: por `tool_def`.
+- Formato del token: interno; el cliente solo lo reenvía.
+
+## 10. Definición de terminado
+
+- Máquina de estados con tabla de transiciones como dato y T-M3-01…11 en verde.
+- Prueba de integración con Postgres para la caída entre commits.
+
+## 11. Abiertos
+
+- Ninguno. Resueltos en M0 rev. 2: `uncertain` y `denied` son estados explícitos (`denied` es terminal, sin `verify`), y la invalidación emite `action_cancelled`.
+- Commits propios: cada uno es una `UnitOfWork` nueva con `save_run(expected_version)`; el lease del turno (M4) sigue tomado durante ellos.

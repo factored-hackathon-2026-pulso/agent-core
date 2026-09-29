@@ -1,0 +1,218 @@
+# Fronteras entre módulos (docs/specs/motor/00-indice.md §3).
+# Si un módulo necesita importar otro que no está permitido aquí, es un cambio de interfaz: se decide primero en el spec.
+[importlinter]
+root_package = agent_core
+
+[importlinter:contract:m0]
+name = M0 (domain, ports) no importa ningún módulo
+type = forbidden
+source_modules =
+    agent_core.domain
+    agent_core.ports
+forbidden_modules =
+    agent_core.flows
+    agent_core.views
+    agent_core.guards
+    agent_core.actions
+    agent_core.decision
+    agent_core.response
+    agent_core.interpreter
+    agent_core.handoff
+    agent_core.audit
+    agent_core.knowledge
+    agent_core.turn
+    agent_core.api
+
+[importlinter:contract:flows]
+name = M1 (flows) solo usa domain, ports
+type = forbidden
+source_modules =
+    agent_core.flows
+forbidden_modules =
+    agent_core.views
+    agent_core.guards
+    agent_core.actions
+    agent_core.decision
+    agent_core.response
+    agent_core.interpreter
+    agent_core.handoff
+    agent_core.audit
+    agent_core.knowledge
+    agent_core.turn
+    agent_core.api
+
+[importlinter:contract:views]
+name = M7 (views) solo usa domain, ports
+type = forbidden
+source_modules =
+    agent_core.views
+forbidden_modules =
+    agent_core.flows
+    agent_core.guards
+    agent_core.actions
+    agent_core.decision
+    agent_core.response
+    agent_core.interpreter
+    agent_core.handoff
+    agent_core.audit
+    agent_core.knowledge
+    agent_core.turn
+    agent_core.api
+
+[importlinter:contract:guards]
+name = M6 (guards) solo usa domain, ports
+type = forbidden
+source_modules =
+    agent_core.guards
+forbidden_modules =
+    agent_core.flows
+    agent_core.views
+    agent_core.actions
+    agent_core.decision
+    agent_core.response
+    agent_core.interpreter
+    agent_core.handoff
+    agent_core.audit
+    agent_core.knowledge
+    agent_core.turn
+    agent_core.api
+
+[importlinter:contract:actions]
+name = M3 (actions) solo usa domain, ports
+type = forbidden
+source_modules =
+    agent_core.actions
+forbidden_modules =
+    agent_core.flows
+    agent_core.views
+    agent_core.guards
+    agent_core.decision
+    agent_core.response
+    agent_core.interpreter
+    agent_core.handoff
+    agent_core.audit
+    agent_core.knowledge
+    agent_core.turn
+    agent_core.api
+
+[importlinter:contract:decision]
+name = M5 (decision) solo usa domain, ports y views
+type = forbidden
+source_modules =
+    agent_core.decision
+forbidden_modules =
+    agent_core.flows
+    agent_core.guards
+    agent_core.actions
+    agent_core.response
+    agent_core.interpreter
+    agent_core.handoff
+    agent_core.audit
+    agent_core.knowledge
+    agent_core.turn
+    agent_core.api
+
+[importlinter:contract:response]
+name = M8 (response) solo usa domain, ports y guards, views, knowledge
+type = forbidden
+source_modules =
+    agent_core.response
+forbidden_modules =
+    agent_core.flows
+    agent_core.actions
+    agent_core.decision
+    agent_core.interpreter
+    agent_core.handoff
+    agent_core.audit
+    agent_core.turn
+    agent_core.api
+
+[importlinter:contract:interpreter]
+name = M2 (interpreter) solo usa domain, ports y flows, actions, decision, views, response, knowledge
+type = forbidden
+source_modules =
+    agent_core.interpreter
+forbidden_modules =
+    agent_core.guards
+    agent_core.handoff
+    agent_core.audit
+    agent_core.turn
+    agent_core.api
+
+[importlinter:contract:handoff]
+name = M10 (handoff) solo usa domain, ports y views
+type = forbidden
+source_modules =
+    agent_core.handoff
+forbidden_modules =
+    agent_core.flows
+    agent_core.guards
+    agent_core.actions
+    agent_core.decision
+    agent_core.response
+    agent_core.interpreter
+    agent_core.audit
+    agent_core.knowledge
+    agent_core.turn
+    agent_core.api
+
+[importlinter:contract:audit]
+name = M11 (audit) solo usa domain, ports y views
+type = forbidden
+source_modules =
+    agent_core.audit
+forbidden_modules =
+    agent_core.flows
+    agent_core.guards
+    agent_core.actions
+    agent_core.decision
+    agent_core.response
+    agent_core.interpreter
+    agent_core.handoff
+    agent_core.knowledge
+    agent_core.turn
+    agent_core.api
+
+[importlinter:contract:knowledge]
+name = M12 (knowledge) solo usa domain, ports y views
+type = forbidden
+source_modules =
+    agent_core.knowledge
+forbidden_modules =
+    agent_core.flows
+    agent_core.guards
+    agent_core.actions
+    agent_core.decision
+    agent_core.response
+    agent_core.interpreter
+    agent_core.handoff
+    agent_core.audit
+    agent_core.turn
+    agent_core.api
+
+[importlinter:contract:turn]
+name = M4 (turn) solo usa domain, ports y interpreter, actions, decision, guards, handoff, audit
+type = forbidden
+source_modules =
+    agent_core.turn
+forbidden_modules =
+    agent_core.flows
+    agent_core.views
+    agent_core.response
+    agent_core.knowledge
+    agent_core.api
+
+[importlinter:contract:api]
+name = M9 (api) solo usa domain, ports y turn, handoff, audit
+type = forbidden
+source_modules =
+    agent_core.api
+forbidden_modules =
+    agent_core.flows
+    agent_core.views
+    agent_core.guards
+    agent_core.actions
+    agent_core.decision
+    agent_core.response
+    agent_core.interpreter
+    agent_core.knowledge

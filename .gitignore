@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Entorno y secretos (clave de huellas, API keys de JEV y del LLM)
+.env
+.env.*
+!.env.example
+
+# Datos: nunca datos reales del reto ni el diccionario con credenciales
+data/
+*.parquet
+*.csv
+*.pdf
+
+# Editores y SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
