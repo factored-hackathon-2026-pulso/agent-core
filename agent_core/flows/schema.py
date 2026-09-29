@@ -1,0 +1,276 @@
+"""`parse_flow` y las comprobaciones de G0-01 que Pydantic no hace (M1 §3.4, §3.4.1)."""
+
+import re
+from collections.abc import Iterator
+from typing import Any
+
+from pydantic import ValidationError
+
+from agent_core.domain import (
+    PRODUCTION_NODE_KINDS,
+    CollectNode,
+    ConfirmNode,
+    DecideNode,
+    EndNode,
+    EscalateNode,
+    Flow,
+    JsonValue,
+    Node,
+    RefSpec,
+    RespondNode,
+    RuleNode,
+    SlotValidator,
+    ToolNode,
+    VerifyNode,
+    node_kind,
+)
+from agent_core.flows.jsonlogic import jsonlogic_problems
+from agent_core.flows.paths import bad_paths, parse_path
+from agent_core.flows.violations import FlowSchemaError, Violation
+
+try:  # parser interno de `re` (Python 3.11+); sin él la heurística se omite
+    from re import _constants as _C  # type: ignore[attr-defined]
+    from re import _parser as _PARSER  # type: ignore[attr-defined]
+
+    _REPEATS = (_C.MAX_REPEAT, _C.MIN_REPEAT)
+    _MAXREPEAT = int(_C.MAXREPEAT)
+except ImportError:  # pragma: no cover
+    _PARSER = None
+    _REPEATS = (None, None)
+    _MAXREPEAT = 0
+
+VALIDATOR_TYPES = frozenset({"string", "integer", "decimal", "date", "boolean"})
+MAX_REGEX = 200
+MAX_ERRORS = 200
+MAX_ECHO = 80
+_MESSAGES = {"missing": "campo obligatorio", "extra_forbidden": "campo no permitido"}
+_UNKNOWN_TAG = ("union_tag_invalid", "union_tag_not_found")
+
+
+def _clip(value: object, limit: int = MAX_ECHO) -> str:
+    """Texto acotado para eco en mensajes: nunca más de `limit` caracteres del original."""
+    text = value if isinstance(value, str) else repr(value)
+    return text if len(text) <= limit else text[:limit] + "..."
+
+
+def _pointer(loc: tuple[int | str, ...]) -> str:
+    parts = (_clip(str(p).replace("~", "~0").replace("/", "~1")) for p in loc)
+    return "/" + "/".join(parts)
+
+
+def _label(raw: JsonValue) -> str | None:
+    if isinstance(raw, dict) and isinstance(raw.get("id"), str) and isinstance(raw.get("version"), str):
+        return _clip(f"{raw['id']}@{raw['version']}", 2 * MAX_ECHO)
+    return None
+
+
+def _raw_node_id(raw: JsonValue, loc: tuple[int | str, ...]) -> str | None:
+    if len(loc) < 2 or loc[0] != "nodes" or not isinstance(loc[1], int) or not isinstance(raw, dict):
+        return None
+    nodes = raw.get("nodes")
+    if isinstance(nodes, list) and 0 <= loc[1] < len(nodes):
+        entry = nodes[loc[1]]
+        ident = entry.get("id") if isinstance(entry, dict) else None
+        return _clip(ident) if isinstance(ident, str) else None
+    return None
+
+
+def _located(source: str | None, pointer: str) -> str:
+    return f"{source}#{pointer}" if source else pointer
+
+
+def parse_flow(raw: JsonValue, *, source: str | None = None) -> Flow:
+    """Construye el `Flow` o lanza `FlowSchemaError` con todas las violaciones G0-01/G0-09."""
+    label = _label(raw)
+    try:
+        flow = Flow.model_validate(raw)
+    except ValidationError as exc:
+        violations = []
+        for err in exc.errors(include_url=False, include_context=False, include_input=False)[:MAX_ERRORS]:
+            loc = tuple(err["loc"])
+            rule = (
+                "G0-09"
+                if err["type"] == "missing" and loc[-2:] == ("generate", "fallback_template_ref")
+                else "G0-01"
+            )
+            if err["type"] in _UNKNOWN_TAG:
+                message = "nodo fuera del catálogo"
+            else:
+                message = _MESSAGES.get(err["type"], f"valor inválido ({_clip(err['type'])})")
+            violations.append(
+                Violation(
+                    rule=rule,
+                    flow=label,
+                    node_id=_raw_node_id(raw, loc),
+                    path=_located(source, _pointer(loc)),
+                    message=message,
+                )
+            )
+        raise FlowSchemaError(violations) from exc
+    except (RecursionError, ValueError, TypeError) as exc:
+        # Entrada hostil (anidamiento extremo, tipos que Pydantic no logra recorrer): nunca escapa otro error.
+        raise FlowSchemaError(
+            [
+                Violation(
+                    rule="G0-01",
+                    flow=label,
+                    path=_located(source, ""),
+                    message=f"el flow no se pudo procesar ({type(exc).__name__})",
+                )
+            ]
+        ) from exc
+    problems = schema_violations(flow)
+    if problems:
+        raise FlowSchemaError(
+            [v.model_copy(update={"flow": label, "path": _located(source, v.path or "")}) for v in problems]
+        )
+    return flow
+
+
+def _jsonlogic_fields(node: Node) -> Iterator[tuple[str, JsonValue]]:
+    if isinstance(node, RuleNode) and node.config.expr is not None:
+        yield ("/config/expr", node.config.expr)
+    if isinstance(node, VerifyNode):
+        yield ("/config/predicate", node.config.predicate)
+    if isinstance(node, EscalateNode) and node.config.priority_expr is not None:
+        yield ("/config/priority_expr", node.config.priority_expr)
+
+
+def _required_paths(node: Node) -> Iterator[tuple[str, str]]:
+    """Campos que solo admiten rutas (nunca literales)."""
+    if isinstance(node, RespondNode) and node.config.generate is not None:
+        for i, text in enumerate(node.config.generate.allowed_facts):
+            yield (f"/config/generate/allowed_facts/{i}", text)
+    if isinstance(node, EndNode) and node.config.output_map:
+        for key, text in sorted(node.config.output_map.items()):
+            yield (f"/config/output_map/{key}", text)
+    if isinstance(node, DecideNode) and node.config.input_view:
+        for i, text in enumerate(node.config.input_view):
+            yield (f"/config/input_view/{i}", text)
+    if isinstance(node, VerifyNode) and node.config.by.startswith("fact:"):
+        yield ("/config/by", node.config.by.removeprefix("fact:"))
+
+
+def _args_fields(node: Node) -> Iterator[tuple[str, JsonValue]]:
+    if isinstance(node, ToolNode):
+        yield ("/config/args", dict(node.config.args))
+    if isinstance(node, ConfirmNode):
+        yield ("/config/action/args", dict(node.config.action.args))
+
+
+def _has_repeat(pattern: Any) -> bool:
+    """True si el subpatrón contiene, a cualquier profundidad, un cuantificador ilimitado."""
+    stack = [pattern]
+    while stack:
+        current = stack.pop()
+        for op, av in current:
+            if op in _REPEATS and av[1] >= _MAXREPEAT:
+                return True
+            stack.extend(_children(op, av))
+    return False
+
+
+def _children(op: Any, av: Any) -> list[Any]:
+    if op in _REPEATS:
+        return [av[2]]
+    if _PARSER is not None and op == _PARSER.SUBPATTERN:
+        return [av[3]]
+    if _PARSER is not None and op == _PARSER.BRANCH:
+        return list(av[1])
+    if _PARSER is not None and op in (_PARSER.ASSERT, _PARSER.ASSERT_NOT):
+        return [av[1]]
+    return []
+
+
+def _nested_unbounded(pattern: str) -> bool:
+    """Heurística: cuantificador ilimitado cuyo cuerpo contiene otro ilimitado (`(a+)+`, `(.*)*`)."""
+    if _PARSER is None:
+        return False
+    try:
+        parsed = _PARSER.parse(pattern)
+    except (re.error, RecursionError, OverflowError):
+        return False
+    stack: list[Any] = [parsed]
+    while stack:
+        current = stack.pop()
+        for op, av in current:
+            if op in _REPEATS and av[1] >= _MAXREPEAT and _has_repeat(av[2]):
+                return True
+            stack.extend(_children(op, av))
+    return False
+
+
+def validator_problems(validator: SlotValidator) -> list[str]:
+    value = validator.value
+    if validator.kind == "type":
+        return (
+            []
+            if isinstance(value, str) and value in VALIDATOR_TYPES
+            else [f"tipo de validador desconocido: {_clip(value)!r}"]
+        )
+    if validator.kind == "regex":
+        if not isinstance(value, str) or len(value) > MAX_REGEX:
+            return [f"la regex debe ser un string de hasta {MAX_REGEX} caracteres"]
+        try:
+            re.compile(value)
+        except re.error as exc:
+            return [f"regex inválida: {_clip(str(exc))}"]
+        if _nested_unbounded(value):
+            return ["la regex tiene cuantificadores ilimitados anidados (retroceso catastrófico)"]
+        return []
+    if validator.kind == "enum":
+        items = value if isinstance(value, list) else []
+        strings = [v for v in items if isinstance(v, str)]
+        ok = bool(strings) and len(strings) == len(items) and len(set(strings)) == len(strings)
+        return [] if ok else ["el enum debe ser una lista no vacía de strings sin repetidos"]
+    if isinstance(value, str):
+        try:
+            RefSpec.parse(value)
+            return []
+        except ValueError:
+            pass
+    return [f"el validador decide necesita una referencia a un decision_model: {_clip(value)!r}"]
+
+
+def schema_violations(flow: Flow) -> list[Violation]:
+    """G0-01 más allá del esquema Pydantic. `path` es un JSON Pointer dentro del flow."""
+    found: list[Violation] = []
+    if not flow.nodes:
+        found.append(Violation(rule="G0-01", path="/nodes", message="el flow no tiene nodos"))
+    seen: set[str] = set()
+    for index, node in enumerate(flow.nodes):
+        where = f"/nodes/{index}"
+
+        def add(message: str, sub: str = "", _node: Node = node, _where: str = where) -> None:
+            found.append(Violation(rule="G0-01", node_id=_node.id, path=_where + sub, message=message))
+
+        if node.id in seen:
+            add(f"id de nodo duplicado: {_clip(node.id)}")
+        seen.add(node.id)
+        if node_kind(node) in PRODUCTION_NODE_KINDS:
+            add("tipo de producción no habilitado")
+            continue
+        if (
+            isinstance(node, RespondNode)
+            and node.config.generate is not None
+            and node.config.generate.knowledge_refs
+        ):
+            add("conocimiento no habilitado (tema #10)", "/config/generate/knowledge_refs")
+        for sub, expr in _jsonlogic_fields(node):
+            for problem in jsonlogic_problems(expr):
+                add(f"JSON Logic {problem}", sub)
+        for sub, text in _required_paths(node):
+            try:
+                path = parse_path(text)
+            except ValueError:
+                add(f"ruta mal formada: {_clip(text)!r}", sub)
+                continue
+            if path is None:
+                add(f"se esperaba una ruta y llegó un literal: {_clip(text)!r}", sub)
+        for sub, value in _args_fields(node):
+            for text in bad_paths(value):
+                add(f"ruta mal formada: {_clip(text)!r}", sub)
+        if isinstance(node, CollectNode) and node.config.validator is not None:
+            for problem in validator_problems(node.config.validator):
+                add(problem, "/config/validator")
+    return found

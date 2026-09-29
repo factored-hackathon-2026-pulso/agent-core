@@ -1,0 +1,221 @@
+from collections.abc import Callable
+from typing import Any
+
+import pytest
+
+from agent_core.flows.schema import parse_flow, schema_violations
+from agent_core.flows.violations import FlowSchemaError
+from tests.m01.cases import base, flow, node
+
+
+def _rules(d: dict[str, Any], source: str | None = None) -> set[str]:
+    with pytest.raises(FlowSchemaError) as info:
+        parse_flow(d, source=source)
+    return {v.rule for v in info.value.violations}
+
+
+def test_base_parses() -> None:
+    assert parse_flow(base()).id == "base"
+
+
+# T-M1-01
+def test_unknown_type_is_g0_01_with_location() -> None:
+    d = base()
+    d["nodes"].append({"id": "k", "type": "knowledge", "config": {}})
+    with pytest.raises(FlowSchemaError) as info:
+        parse_flow(d, source="flows/base@1.0.0.yaml")
+    (violation,) = info.value.violations
+    assert violation.rule == "G0-01"
+    assert violation.flow == "base@1.0.0"
+    assert violation.node_id == "k"
+    assert violation.path is not None and violation.path.startswith("flows/base@1.0.0.yaml#/nodes/9")
+
+
+# T-M1-07 (en el MVP un nodo agent es G0-01)
+def test_production_type_rejected() -> None:
+    d = base()
+    d["nodes"].append(
+        {
+            "id": "ag",
+            "type": "agent",
+            "config": {"tools_allowed": ["leer@1"], "max_steps": 3, "prompt_ref": "p/gen", "goal": "x"},
+        }
+    )
+    with pytest.raises(FlowSchemaError) as info:
+        parse_flow(d)
+    assert [(v.rule, v.message) for v in info.value.violations] == [
+        ("G0-01", "tipo de producción no habilitado")
+    ]
+
+
+# T-M1-09
+def test_generate_without_fallback_is_g0_09() -> None:
+    d = base()
+    node(d, "ok_msg")["config"] = {"generate": {"prompt_ref": "p/gen", "allowed_facts": ["facts.verif"]}}
+    assert _rules(d) == {"G0-09"}
+
+
+def _dup(d: dict[str, Any]) -> None:
+    d["nodes"].append({"id": "fin", "type": "end", "config": {"outcome": "resolved"}})
+
+
+def _knowledge(d: dict[str, Any]) -> None:
+    node(d, "ok_msg")["config"] = {
+        "generate": {"prompt_ref": "p/gen", "fallback_template_ref": "t/hecho", "knowledge_refs": ["faq#x"]}
+    }
+
+
+def _rule_op(d: dict[str, Any]) -> None:
+    d["nodes"].append({"id": "r", "type": "rule", "config": {"expr": {"+": [1, 2]}}, "next": {}})
+
+
+def _predicate_arity(d: dict[str, Any]) -> None:
+    node(d, "verificar")["config"]["predicate"] = {"==": [{"var": "readback.status"}]}
+
+
+def _priority_expr(d: dict[str, Any]) -> None:
+    node(d, "esc")["config"]["priority_expr"] = {"merge": [1]}
+
+
+def _bad_arg(d: dict[str, Any]) -> None:
+    node(d, "buscar")["config"]["args"] = {"q": "slots.a.b"}
+
+
+def _bad_confirm_arg(d: dict[str, Any]) -> None:
+    node(d, "confirmar")["config"]["action"]["args"] = {"q": "facts.X.value"}
+
+
+def _allowed_not_path(d: dict[str, Any]) -> None:
+    node(d, "ok_msg")["config"] = {
+        "generate": {"prompt_ref": "p/gen", "allowed_facts": ["datos"], "fallback_template_ref": "t/hecho"}
+    }
+
+
+def _output_map_literal(d: dict[str, Any]) -> None:
+    node(d, "fin")["config"]["output_map"] = {"x": "USD"}
+
+
+def _verify_by_fact(d: dict[str, Any]) -> None:
+    node(d, "verificar")["config"]["by"] = "fact:slots.a.b"
+
+
+def _regex(d: dict[str, Any]) -> None:
+    node(d, "pedir")["config"]["validator"] = {"kind": "regex", "value": "("}
+
+
+def _enum(d: dict[str, Any]) -> None:
+    node(d, "pedir")["config"]["validator"] = {"kind": "enum", "value": []}
+
+
+def _type(d: dict[str, Any]) -> None:
+    node(d, "pedir")["config"]["validator"] = {"kind": "type", "value": "fecha_rara"}
+
+
+def _decide_validator(d: dict[str, Any]) -> None:
+    node(d, "pedir")["config"]["validator"] = {"kind": "decide", "value": "no valido@@"}
+
+
+# T-M1-38, T-M1-37 (id duplicado)
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        _dup,
+        _knowledge,
+        _rule_op,
+        _predicate_arity,
+        _priority_expr,
+        _bad_arg,
+        _bad_confirm_arg,
+        _allowed_not_path,
+        _output_map_literal,
+        _verify_by_fact,
+        _regex,
+        _enum,
+        _type,
+        _decide_validator,
+    ],
+)
+def test_schema_checks_are_g0_01(mutate: Callable[[dict[str, Any]], None]) -> None:
+    d = base()
+    mutate(d)
+    assert _rules(d) == {"G0-01"}
+    assert {v.rule for v in schema_violations(flow(d))} == {"G0-01"}
+
+
+def test_schema_violations_empty_for_base() -> None:
+    assert schema_violations(flow(base())) == []
+
+
+def _hostile_cases() -> list[Any]:
+    deep: Any = "x"
+    for _ in range(50_000):
+        deep = [deep]
+    long_id = "n" * 5000
+    return [
+        None,
+        5,
+        "flow",
+        [],
+        [1, 2],
+        {},
+        {"nodes": []},
+        {"id": "a", "version": "1", "nodes": "x"},
+        {"id": 1, "version": 2, "nodes": [1, None, "s", []]},
+        {
+            "id": "a",
+            "version": "1.0.0",
+            "priority": 1.5,
+            "nodes": [{"id": "e", "type": "end", "config": {"outcome": 1.5}}],
+        },
+        {"id": "a", "version": "1.0.0", "nodes": [{"id": 3, "type": ["x"], "config": 1.5}]},
+        {"id": "a", "version": "1.0.0", "nodes": [{"id": long_id, "type": "nope"}]},
+        {"id": "a", "version": "1.0.0", "nodes": deep},
+        {"id": "a", "version": "1.0.0", "nodes": [{"id": "e", "type": "end", "config": {"outcome": deep}}]},
+        deep,
+    ]
+
+
+@pytest.mark.parametrize("raw", _hostile_cases())
+def test_parse_flow_is_total_for_hostile_input(raw: Any) -> None:
+    with pytest.raises(FlowSchemaError) as info:
+        parse_flow(raw, source="f.yaml")
+    assert info.value.violations
+    for v in info.value.violations:
+        assert v.rule in {"G0-01", "G0-09"}
+        assert len(v.message) < 400 and len(v.path or "") < 400
+
+
+def test_messages_do_not_echo_raw_values() -> None:
+    d = base()
+    d["priority"] = "SECRETO-" + "z" * 300
+    with pytest.raises(FlowSchemaError) as info:
+        parse_flow(d)
+    assert "SECRETO" not in str(info.value)
+
+
+def test_long_offending_strings_are_truncated() -> None:
+    d = base()
+    node(d, "buscar")["config"]["args"] = {"q": "slots." + "!" * 1000}
+    with pytest.raises(FlowSchemaError) as info:
+        parse_flow(d)
+    assert all(len(v.message) < 200 for v in info.value.violations)
+
+
+def test_empty_nodes_is_g0_01() -> None:
+    d = base()
+    d["nodes"] = []
+    assert _rules(d) == {"G0-01"}
+
+
+@pytest.mark.parametrize("pattern", ["(a+)+", "(.*)*", "(a*)*b", "(a+){2,}", "(?:x+)*"])
+def test_catastrophic_regex_is_g0_01(pattern: str) -> None:
+    d = base()
+    node(d, "pedir")["config"]["validator"] = {"kind": "regex", "value": pattern}
+    assert _rules(d) == {"G0-01"}
+
+
+@pytest.mark.parametrize("pattern", [r"^\d{3}-\d{4}$", "[a-z]+@[a-z]+", "(ab)+", "a+b*"])
+def test_ordinary_regex_is_accepted(pattern: str) -> None:
+    d = base()
+    node(d, "pedir")["config"]["validator"] = {"kind": "regex", "value": pattern}
+    assert parse_flow(d).id == "base"
