@@ -15,8 +15,11 @@ class RequestCapture:
     def record(self, payload: object) -> None:
         self.requests.append(payload if isinstance(payload, str) else dumps(payload))
 
-    def leaks(self, clear_values: Iterable[str]) -> list[tuple[int, str]]:
-        """`(índice del request, valor)` por cada valor en claro encontrado; vacío = sin fugas."""
-        values = sorted(set(clear_values))
-        return [(index, value) for index, request in enumerate(self.requests) for value in values
-                if value in request]
+    def leaks(self, clear_values: Iterable[str]) -> list[tuple[int, int]]:
+        """`(índice del request, posición del valor en clear_values)` por cada valor en claro encontrado.
+
+        Nunca devuelve el valor (evita filtrarlo por repr o diffs de aserción). Se omiten los valores vacíos
+        o solo espacios, que coincidirían con todo. Ordenado y sin duplicados; vacío = sin fugas."""
+        values = [(position, value) for position, value in enumerate(clear_values) if value.strip()]
+        return sorted({(index, position) for index, request in enumerate(self.requests)
+                       for position, value in values if value in request})

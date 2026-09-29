@@ -26,7 +26,21 @@ def test_capture_reports_leaks() -> None:
     capture = RequestCapture()
     capture.record({"inputs": {"document_number": "1023456789"}})
     capture.record("sin datos")
-    assert capture.leaks(["1023456789", "nada"]) == [(0, "1023456789")]
+    assert capture.leaks(["nada", "1023456789"]) == [(0, 1)]
+
+
+def test_capture_skips_empty_values() -> None:
+    capture = RequestCapture()
+    capture.record("cualquier request")
+    assert capture.leaks(["", "   ", "\t "]) == []
+
+
+def test_capture_leaks_never_return_the_value() -> None:
+    capture = RequestCapture()
+    capture.record("secreto-sintetico-123")
+    found = capture.leaks(["secreto-sintetico-123", "secreto-sintetico-123"])
+    assert found == [(0, 0), (0, 1)]
+    assert "secreto" not in repr(found)
 
 
 @settings(max_examples=60, deadline=None)
@@ -45,7 +59,7 @@ def test_t_m7_01_no_clear_pii_in_captured_requests(
     outbound.record({"gateway": "llm", "inputs": {"transacciones": transactions.model, "pqr": pqr.model}})
     outbound.record({"provider": "jev", "inputs": transactions.model})
     clear = [str(row[field]) for row in batch for field in PII_FIELDS] + [complaint_doc, complaint_email]
-    assert outbound.leaks(clear) == []
+    assert outbound.leaks(clear) == []  # posiciones, nunca valores
 
     audit = RequestCapture()
     audit.record(transactions.audit)
