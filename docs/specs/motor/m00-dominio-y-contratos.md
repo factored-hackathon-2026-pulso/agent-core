@@ -1,6 +1,6 @@
 # M0 — Dominio y contratos
 
-- Estado: **rev. 5 · implementado** (fase 1) · Fase 1
+- Estado: **rev. 6 · implementado** (fase 1) · Fase 1
 - Paquetes: `agent_core.domain`, `agent_core.ports`, `testing/fakes`
 - Origen: spec general §2, §5 (esquemas de nodos), §8 (estado), §10 (códigos), §14 (dependencias)
 - ADRs: 0001 (stack), 0002 (contratos), 0006 (principal y delegación), 0007 (acciones), 0008 (vistas y claves)
@@ -41,6 +41,11 @@
   - `GenerationResult` con `tokens_in`/`tokens_out`; error `GatewayError(kind)`;
   - `LlmUsage` con `tokens_in`/`tokens_out` y `cost_known`;
   - `UnitOfWork.add_usage` (M4 acumula costo y hits en la transacción del turno); `CostCounters` pasa a M4.
+- rev. 6 (2026-09-29), registry (unidad 2, ADR 0017 y 0018; spec `../2026-09-29-registry-design.md` §15). Cambios aditivos:
+  - `EntityKind.knowledge_snapshot` y entidad `KnowledgeSnapshot` (manifiesto de páginas, `KnowledgePage`); entra en `RegistryEntity` y en `ENTITY_KIND`;
+  - `Release.knowledge_snapshot: EntityRef | None = None` (exacta; `None` = sin conocimiento);
+  - `SCHEMA_VERSION` 0.1.0 → 0.2.0 (menor: no rompe a los consumidores de 0.1.0) y `contracts/` regenerado;
+  - `RegistryPort` no cambia; `eval_suite`, la documentación por versión y los errores de la API del registry viven en `agent_core.registry`, no aquí.
 - implementación de M0 (2026-09-29), decisiones que el spec no cubría:
   - `loads` rechaza claves duplicadas; `to_jsonable` rechaza claves que colisionan tras `str()`; `RecursionError` se convierte en `ValueError`; se rechaza un `Decimal` con |exponente| > 1000;
   - `dumps` escribe `Decimal` con `format(d, "f")` (no `str(d)`, que puede emitir `1E+3`);
@@ -95,7 +100,8 @@ def sha256_hex(data: bytes) -> str
 
 ```python
 class EntityKind(StrEnum): agent, flow, decision_model, policy, template, prompt, tool,
-                           language_detection, injection_ruleset, model_profile
+                           language_detection, injection_ruleset, model_profile,
+                           knowledge_snapshot                                   # rev. 6
 class EntityRef:     id: str; version: str          # exacta "X.Y.Z" (semver 2.0 sin prerelease ni build)
                      @classmethod parse(s: str) -> EntityRef      # "id@1.2.0"; rango o sin versión → InvalidRuntimeRef
                      __str__ -> "id@1.2.0"
@@ -163,6 +169,7 @@ class Release:        id: str; status: Literal["active", "revoked"]
                       entities: dict[EntityKind, dict[str, str]]           # kind → id → versión exacta
                       interrupts: list[Interrupt]
                       language_detection: EntityRef; injection_ruleset: EntityRef | None
+                      knowledge_snapshot: EntityRef | None = None            # rev. 6
                       max_input_chars: int = 4000
 class Policy:         id: str; version: str; owner: str; expr: JsonValue; rationale: str
 class Template:       id: str; version: str; locales: dict[Locale, str]; reads: frozenset[str]
@@ -186,8 +193,17 @@ class CalibrationRef: method: Literal["none", "isotonic", "platt", "temperature"
 class DecisionModelDef: id: str; version: str; output_schema: dict[str, JsonValue]
                       calibrated_fields: list[str]; input_view: list[str]
                       providers: list[ProviderSpec]; calibration: CalibrationRef; thresholds_from: str | None
+class KnowledgePage:  path: str; hash: Sha256Hex                            # rev. 6; el texto vive en el BlobStore del registry
+                      audience: Literal["public", "internal", "agent_only"]
+                      status: Literal["draft", "approved"]; approved_by: str | None
+                      lang: Locale; translation_of: str | None
+                      valid_from: date | None; valid_to: date | None; source_refs: list[str]
+                      # path: relativa y ASCII (sin "..", "//" ni "/" inicial o final);
+                      # aprobada si y solo si tiene approved_by; valid_from <= valid_to; source_refs <= 50 de <= 500 caracteres
+class KnowledgeSnapshot: id: str; version: str; pages: list[KnowledgePage]  # <= 10 000 páginas
+                      # rutas únicas; translation_of apunta a otra página del mismo snapshot
 RegistryEntity = Agent | Flow | Policy | Template | Prompt | ToolDef | DecisionModelDef
-                 | LanguageDetection | InjectionRuleset | ModelProfile
+                 | LanguageDetection | InjectionRuleset | ModelProfile | KnowledgeSnapshot
 ```
 
 Validadores: `default_locale ∈ supported_locales`; `ToolDef` de escritura exige `readback_by`; `Budgets` con valores positivos.
@@ -608,7 +624,7 @@ No tiene métricas propias. Los esquemas de eventos son la entrada de la unidad 
   - `InMemoryOutbox`;
   - `FakeKeyProvider`; y `EnvKeyProvider` en `agent_core/adapters/` (etiquetado como secreto de demo).
 - Los demás dobles los entrega el primer módulo que los usa (índice §4, columna "Lo entrega").
-- `contracts/` generado, `contracts/VERSION = 0.1.0` y `--check` en CI.
+- `contracts/` generado, `contracts/VERSION = 0.2.0` y `--check` en CI.
 - T-M0-01…15 y T-M0-C-* en verde; `lint-imports`, `mypy --strict agent_core/domain agent_core/ports` y `ruff` en verde.
 
 ## 11. Abiertos

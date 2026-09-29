@@ -26,7 +26,7 @@ La spec general describe el motor completo en un solo documento. Aquí se parte 
 | # | Módulo | Archivo | Paquete | Fase | Secciones de origen | ADRs |
 |---|---|---|---|---|---|---|
 | M0 | Dominio y contratos | `m00-dominio-y-contratos.md` | `agent_core.domain`, `agent_core.ports` | 1 | §2, §5 (esquemas de nodos), §8 (estado), §10 (códigos) | 0001, 0002, 0006, 0007, 0008 |
-| M1 | Esquema de flows y validación estática | `m01-validacion-estatica.md` | `agent_core.flows` | 1 y 5 | §5, §6.1, §6.2 (chequeos por agente) | 0004, 0007, 0009 |
+| M1 | Esquema de flows y validación estática | `m01-validacion-estatica.md` | `agent_core.flows` | 1 y 5 | §5, §6.1, §6.2 (chequeos por agente) | 0004, 0007, 0009, 0011, 0016 |
 | M2 | Intérprete de nodos | `m02-interprete.md` | `agent_core.interpreter` | 1 | §4.7, §5 | 0004, 0010, 0011 |
 | M3 | Protocolo de escritura | `m03-acciones.md` | `agent_core.actions` | 1 | §8.2, §4 (invalidación) | 0007 |
 | M4 | Ciclo del turno | `m04-ciclo-del-turno.md` | `agent_core.turn` | 2 | §4.1, §4.4–4.6, §4.8–4.10 | 0004, 0007 |
@@ -39,6 +39,8 @@ La spec general describe el motor completo en un solo documento. Aquí se parte 
 | M11 | Auditoría, transcript y replay | `m11-auditoria-transcript-replay.md` | `agent_core.audit` | 2 y 5 | §8.4, §11 | 0003, 0008 |
 | M12 | Conocimiento | `m12-conocimiento.md` | `agent_core.knowledge` | por decidir | ADR 0015 | 0015 |
 
+**Fuera de esta tabla:** el registry (unidad 2) tiene su propia spec, `../2026-09-29-registry-design.md`. Añade `EntityKind.knowledge_snapshot` y `Release.knowledge_snapshot` a M0, y M1 le aporta las funciones puras de validación y `pin_release` (ver §15 de esa spec).
+
 ## 3. Dependencias
 
 Un módulo solo importa `agent_core.domain`, `agent_core.ports` y la **interfaz pública** (`__init__.py`) de los módulos de su columna "usa". Se hace cumplir en CI con `import-linter`.
@@ -46,13 +48,13 @@ Un módulo solo importa `agent_core.domain`, `agent_core.ports` y la **interfaz 
 | Módulo | Usa | Lo usan |
 |---|---|---|
 | M0 | — | todos |
-| M1 | M0 | M2 (esquemas de nodos), unidad 2 (gate), CI de `agent-registry` |
+| M1 | M0 | M2 (`derive_claims`, `release_view`, `JSONLOGIC_OPS`, rutas y plantillas), unidad 2 (gate), CI de `agent-registry` |
 | M7 | M0 | M2, M5, M8, M10, M11 |
 | M6 | M0 | M4, M8 |
 | M5 | M0, M7 | M2 (`decide`), M4 (Understand) |
 | M3 | M0 | M2, M4 |
 | M8 | M0, M6, M7 | M2 (`respond`), M10 (resumen) |
-| M2 | M0, M1 (esquemas), M3, M5, M7, M8 | M4 |
+| M2 | M0, M1 (análisis compartido), M3, M5, M7, M8 | M4 |
 | M10 | M0, M7 | M4, M9 |
 | M11 | M0, M7 | M4, M9 |
 | M4 | M0, M2, M3, M5, M6, M10, M11 | M9 |
@@ -126,11 +128,11 @@ M0 define el esquema de cada evento; M11 los encadena y persiste. El módulo emi
 
 | Fase | Fecha | Módulos | Resultado demostrable |
 |---|---|---|---|
-| 1 · Esqueleto | 30/09 | M0, M1 (reglas G0-01 a G0-06), M2, M3 | `disputa-cargo` corre en modo `task` con dobles, incluido `uncertain → verify` y la recuperación tras una caída |
+| 1 · Esqueleto | 30/09 | M0, M1 (carga y reglas G0-01 a G0-06), M2, M3 | `disputa-cargo` (flow conversacional) corre con un arnés que maneja M2 con `Resume` guionados, sin M4 y con dobles, incluido `uncertain → verify` y la recuperación tras una caída |
 | 2 · Conversación | 01/10 | M4, M10, M11 (cadena y transcript) | turnos, `confirm` por botón y por texto, interrupción de fraude, escalamiento con `410` |
 | 3 · Seguridad | 01–02/10 | M9, M7 | IDOR, credenciales, vistas, renderer y huellas |
 | 4 · Inteligencia | 02/10 | M5 (classifier primero, JEV después), M6, M8 | Understand calibrado, idioma ES/PT, validador numérico |
-| 5 · Cierre | 02/10 | M1 (reglas G0-07 a G0-14), M11 (replay) | replay `fixture` en CI; replay `audit` si alcanza |
+| 5 · Cierre | 02/10 | M1 (reglas G0-07 a G0-16), M11 (replay) | replay `fixture` en CI; replay `audit` si alcanza |
 | — | por decidir | M12 | depende del tema #10 |
 
 **Recortes en orden** si falta tiempo (no tocan los invariantes del reto):
@@ -221,3 +223,6 @@ M0 define el esquema de cada evento; M11 los encadena y persiste. El módulo emi
 | Revisión de M0 (rev. 2): nodos en M0, `IdSource`, `Decimal`/JCS, `RefSpec`, vistas en M7, `grantee`, lease de turno, `action_cancelled`, `Awaiting.input` | M0, M1, M2, M3, M4, M5, M9, M10 | **resuelto** en M0 rev. 2 (2026-09-28) |
 | Quién llena `open_questions` del `RunState` | M2, M10 | **nuevo**, detectado en la revisión de M0 |
 | Formato de la credencial (`raw_credential`) | M9 | **nuevo**; no cambia el puerto |
+| G0-15 reclamada por el gateway (ADR 0016) y por M12 | M1, M12 | **resuelto** en M1 rev. 2: G0-15 = `model_profile` de prompts, G0-16 = flows task sin nodos que esperan; M12 propone G0-17…G0-21 |
+| Fase 1 "en modo task" con un flow conversacional | M1, M2, M4 | **resuelto** en M1 rev. 2: arnés sobre M2 en la fase 1; G0-16 impide nodos que esperan en flows task |
+| Sintaxis de plantilla y `Template.reads` sin definir | M1, M2, M8 | **resuelto** en M1 rev. 2: `{{ ruta }}` y `reads` derivado al cargar |

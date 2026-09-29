@@ -60,15 +60,15 @@ Divulgación progresiva desde `index.md` del scope: el `selector` (un `DecisionM
 
 ### 3.3 Reglas estáticas nuevas (propuesta de numeración)
 
-Continúan la numeración de M1 para no chocar con las existentes:
+Continúan la numeración de M1 para no chocar con las existentes (G0-15 y G0-16 ya las usa M1 rev. 2):
 
 | ID | Regla |
 |---|---|
-| G0-15 | Toda página de `knowledge.read` existe en el snapshot de la release (se verifica en el gate de release) |
-| G0-16 | Un `respond` con `purpose: customer_answer` solo lee `knowledge_from` de nodos con `purpose: customer_answer` |
-| G0-17 | Las páginas fijas de un nodo `customer_answer` son `public` + `approved` en el snapshot |
-| G0-18 | `navigate`: el enum de salida del `selector` es exactamente el conjunto de rutas del scope |
-| G0-19 | Todo `knowledge_from` de un `respond` apunta a un nodo `knowledge` que lo domina |
+| G0-17 | Toda página de `knowledge.read` existe en el snapshot de la release (se verifica en el gate de release) |
+| G0-18 | Un `respond` con `purpose: customer_answer` solo lee `knowledge_from` de nodos con `purpose: customer_answer` |
+| G0-19 | Las páginas fijas de un nodo `customer_answer` son `public` + `approved` en el snapshot |
+| G0-20 | `navigate`: el enum de salida del `selector` es exactamente el conjunto de rutas del scope |
+| G0-21 | Todo `knowledge_from` de un `respond` apunta a un nodo `knowledge` que lo domina |
 
 ### 3.4 Comprobaciones nuevas del validador (M8)
 
@@ -108,7 +108,7 @@ Propuesta: `knowledge_read {node_id, purpose, refs, filtered_out: [ref, motivo]}
 | T-M12-01 | `customer_answer` descarta páginas `internal` y `draft` aunque el servicio las devuelva |
 | T-M12-02 | Respuesta que cita una página no `approved` se rechaza (comprobación 7) |
 | T-M12-03 | Cita a una página de un `save_as` no listado se rechaza (comprobación 6) |
-| T-M12-04 | Un flow con G0-15…G0-19 violadas no se publica (un fixture por regla) |
+| T-M12-04 | Un flow con G0-17…G0-21 violadas no se publica (un fixture por regla) |
 | T-M12-05 | `derive_claims` ignora páginas |
 | T-M12-06 | `FileKnowledgeSource` sobre `agent-registry/knowledge/` pasa la suite de contrato |
 
@@ -124,11 +124,11 @@ Respuestas con citas a páginas no aprobadas que escapan (objetivo 0), tasa de `
 ## 10. Definición de terminado
 
 - Decisiones de la sección 11 aprobadas y la spec general actualizada (cierra el tema #10).
-- `read` + filtros + comprobaciones 6 y 7 + G0-15…G0-19 con T-M12-01…06 en verde.
+- `read` + filtros + comprobaciones 6 y 7 + G0-17…G0-21 con T-M12-01…06 en verde.
 
 ## 11. Abiertos (decisiones para cerrar el tema #10)
 
 1. ¿Entra `read` en el MVP de construcción (30/09–02/10)? ADR 0015 dice que sí; el calendario está apretado.
-2. Numeración propuesta: G0-15…G0-19 y comprobaciones 6–7.
+2. Numeración propuesta: G0-17…G0-21 y comprobaciones 6–7.
 3. Hechos de conocimiento fuera de los reclamos (3.5).
 4. Resultado ante caída del `KnowledgeSource`: `not_found` o un `error` propio.

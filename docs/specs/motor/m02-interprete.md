@@ -4,7 +4,7 @@
 - Paquete: `agent_core.interpreter`
 - Origen: spec general §4.7, §5, §8 (slots, hechos, decisiones), §10 (fallas de tools y presupuesto)
 - ADRs: 0004 (flows deterministas), 0010 (step-up), 0011 (`compute`), 0009 (`rule` con `policy`)
-- Usa: M0, M1 (esquemas), M3, M5, M7, M8 · Lo usa: M4
+- Usa: M0, M1 (`derive_claims`, `release_view`, `JSONLOGIC_OPS`, rutas y plantillas), M3, M5, M7, M8 · Lo usa: M4
 
 ## 1. Propósito y límites
 
@@ -58,7 +58,7 @@ loop:
 
 ### 3.2 Resolución de variables
 
-Rutas permitidas en `args`, plantillas y `rule`: `slots.<x>`, `facts.<x>.value[.campo…]`, `decisions.<x>.<campo>` (solo como argumento de tool `compute`, ya validado por G0-10) y literales. Una ruta inexistente en runtime → resultado `error` del nodo (nunca excepción).
+Rutas permitidas en `args`, plantillas y `rule`: `slots.<x>`, `facts.<x>.value[.campo…]`, `decisions.<x>.<campo>` (solo como argumento de tool `compute`, ya validado por G0-10) y literales. La gramática, la distinción ruta/literal y el recorrido recursivo de `args` son los de M1 §3.2 (`parse_path`, `value_paths`); las plantillas usan `{{ ruta }}` (M1 §3.3, `template_vars`). Una ruta inexistente en runtime → resultado `error` del nodo (nunca excepción).
 
 ### 3.3 Handlers
 
@@ -85,7 +85,7 @@ Antes de cada nodo y de cada llamada a modelo se descuenta de `budgets_used`: `m
 
 ### 3.6 Evaluador JSON Logic
 
-Subconjunto cerrado: `var`, `==`, `!=`, `>`, `>=`, `<`, `<=`, `and`, `or`, `!`, `in`, `if`, `missing`. Un operador fuera de la lista es error de esquema (G0-01), no de runtime. Aritmética con `Decimal`, nunca `float`.
+Subconjunto cerrado: `JSONLOGIC_OPS` de M1 (`var`, `==`, `!=`, `>`, `>=`, `<`, `<=`, `and`, `or`, `!`, `in`, `if`, `missing`, con su aridad). Un operador fuera de la lista es error de esquema (G0-01), no de runtime. Aritmética con `Decimal`, nunca `float`.
 
 ## 4. Invariantes
 
@@ -116,7 +116,7 @@ Tabla por tipo de nodo con `FakeToolExecutor`, `ScriptedProvider` y `FakeClock`.
 
 | ID | Caso | §13 |
 |---|---|---|
-| T-M2-01 | `disputa-cargo` modo task, camino feliz, termina en `end(resolved)` | 2 (fixture) |
+| T-M2-01 | `disputa-cargo` (conversacional) manejado por el arnés de fase 1 con `Resume` guionados, camino feliz, termina en `end(resolved)` | 2 (fixture) |
 | T-M2-02 | `rule` con slot `claimed` lo trata como `null` | — |
 | T-M2-03 | `rule` con `policy` emite `rule_evaluated` con `policy@v`, entradas en vista `audit` y resultado | — |
 | T-M2-04 | `compute` guarda procedencia con los `fact_id`/`decision_id` de entrada | — |
@@ -151,3 +151,4 @@ Vía `tool_called` (lectura y `compute`), por `tool@v`: latencia p50/p95, tasa p
 - `max_attempts` del step-up: M0 rev. 2 lo declara como `step_up_max_attempts = 2` en `ToolConfig` y `WriteToolConfig`; confirmar al implementar M2.
 - Todo ID (`fact_id`, `call_id`) sale de `ctx.ids` (`IdSource`, M0) para que el replay sea determinista; `StepContext` gana `ids: IdSource`.
 - Quién llena `open_questions` (índice §10).
+- Reclamos en runtime: `response_emitted.claims` sale de `derive_claims(flow, release_view(registry, release))` de M1, calculado una vez por `flow@v` (M1 §3.6).

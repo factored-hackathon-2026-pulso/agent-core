@@ -29,6 +29,8 @@ El constructor para personas no técnicas es un cliente del registro y queda fue
   - Se valida en CI contra los esquemas de `agent-core`.
   - Es el repo donde la auto-mejora abre sus PRs.
 
+> **Enmienda 2026-09-29 (ADR 0017, ADR 0018):** `agent-registry` deja de ser un repo git con CI propio. El registry es el módulo `agent_core.registry`, con Postgres como única fuente de verdad, propuestas de cambio aprobadas en la plataforma y un gate de evaluación al publicar. El YAML queda como formato de importación y exportación. Detalle en `docs/specs/2026-09-29-registry-design.md`.
+
 ## Interfaces externas (solo contrato)
 - **Datos/ETL:** read-models por cliente y un catálogo de clasificación de campos.
 - **Identidad:** sesión de prueba con claims firmados.
