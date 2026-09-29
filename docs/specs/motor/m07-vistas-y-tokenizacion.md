@@ -57,7 +57,7 @@ def verify_fingerprint(data: Any, fp: Fingerprint, keys: KeyProvider) -> bool
 - Los campos se identifican por ruta `tabla.campo`; los resultados de tools declaran su tabla de origen (`source`). Para un dict anidado la ruta es `tabla.padre.campo`; los elementos de una lista conservan la ruta de la lista. La búsqueda prueba la ruta exacta y después el último segmento.
 - Precedencia al proyectar: `pii_direct`/`pii_quasi` explícitos > `untrusted_fields` de la tool > resto del catálogo > sin clasificar (`pii_direct`).
 - Un contenedor (dict o lista) sin clasificar se recorre; uno clasificado se trata entero (`pii_direct` → un token de su JSON; `pii_quasi` → se elimina; `financial`/`public` → pasa). `null` pasa en todas las vistas.
-- Un contenedor `untrusted_text` (por `untrusted_fields` o catálogo) también se recorre: cada hijo con regla `pii_direct`/`pii_quasi` explícita toma su clase (la explícita gana) y todo otro string se trata como `untrusted_text` (envuelto); los valores no string pasan. Un `.` dentro de una clave se trata como `_` al clasificar (cae a sin clasificar → `pii_direct`); la clave de salida conserva su texto.
+- Un contenedor `untrusted_text` (por `untrusted_fields` o catálogo) también se recorre: cada hijo con regla `pii_direct`/`pii_quasi` explícita toma su clase (la explícita gana) y todo otro string se trata como `untrusted_text` (envuelto); los valores no string (números, booleanos) se resuelven con su propia clase (catálogo; sin clasificar → `pii_direct`) y `null` pasa. Un `.` dentro de una clave se trata como `_` al clasificar (cae a sin clasificar → `pii_direct`); la clave de salida conserva su texto.
 
 ### 3.2 Vista `model`
 

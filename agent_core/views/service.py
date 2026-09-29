@@ -17,7 +17,6 @@ from agent_core.views.untrusted import wrap_untrusted
 from agent_core.views.vault import TokenVault
 
 _STRICT = ("pii_direct", "pii_quasi")
-_PASS = FieldRule(field_class="public")
 
 
 class ViewsConfigError(RuntimeError):
@@ -89,12 +88,14 @@ class ViewService:
     def _rule(self, path: str, value: JsonValue, untrusted: frozenset[str], inside: bool) -> FieldRule | None:
         """Precedencia: pii explícita > `untrusted_fields` > resto del catálogo > sin clasificar.
 
-        Dentro de un contenedor `untrusted_text`, todo string sin regla pii propia es `untrusted_text`."""
+        Dentro de un contenedor `untrusted_text`, todo string sin regla pii propia es `untrusted_text`;
+        los valores no string se resuelven con su clase (sin clasificar → `pii_direct`)."""
         rule = self._classifier.lookup(path)
         if rule is not None and rule.field_class in _STRICT:
             return rule
         if inside:
-            return UNTRUSTED if isinstance(value, str) else _PASS
+            # Solo strings y contenedores heredan `untrusted_text`; el resto se resuelve con su propia clase.
+            return UNTRUSTED if isinstance(value, str | dict | list) else rule
         if path in untrusted or field_name(path) in untrusted:
             return UNTRUSTED
         return rule
@@ -105,7 +106,7 @@ class ViewService:
             return None
         rule = self._rule(path, value, ctx.untrusted, inside)
         container = isinstance(value, dict | list)
-        if container and (rule is None or (rule.field_class == "untrusted_text") or rule is _PASS):
+        if container and (rule is None or rule.field_class == "untrusted_text"):
             # Un contenedor sin clasificar o `untrusted_text` se recorre: cada hijo toma su propia clase.
             nested = inside or rule is not None
             if isinstance(value, dict):

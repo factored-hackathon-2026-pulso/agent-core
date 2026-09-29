@@ -164,20 +164,20 @@ def test_missing_key_is_a_startup_error() -> None:
 
 
 def test_declared_untrusted_container_is_walked_and_pii_child_is_tokenized() -> None:
-    data = {"customer": {"first_name": "Ana", "note": "hola", "visits": 3}}
+    data = {"customer": {"first_name": "Ana", "note": "hola", "amount": 3}}
     vault = make_vault()
     views = make_service().project(data, "t", ["customer"], vault)
     assert views.model == {"customer": {
         "first_name": "⟦name:1⟧",
         "note": '<datos_no_confiables fuente="t.customer.note">hola</datos_no_confiables>',
-        "visits": 3,
+        "amount": 3,
     }}
     assert "Ana" not in str(views.model)
     assert "Ana" not in str(views.audit)
     audit = views.audit["customer"]  # type: ignore[index]
     assert audit["first_name"] == "***"
     assert audit["note"]["untrusted_text"]["length"] == 4
-    assert audit["visits"] == 3
+    assert audit["amount"] == 3
 
 
 def test_catalog_untrusted_container_is_walked() -> None:
@@ -233,3 +233,25 @@ def test_container_under_quasi_rule_is_dropped() -> None:
                                    "t", [], make_vault())
     assert views.model == {"status": "ok"}
     assert views.audit == {"status": "ok"}
+
+
+def test_unclassified_number_under_untrusted_container_is_tokenized() -> None:
+    views = make_service().project({"customer": {"phone": 3001234567}}, "t", ["customer"], make_vault())
+    assert views.model == {"customer": {"phone": "⟦pii:1⟧"}}
+    assert views.audit == {"customer": {"phone": "***"}}
+
+
+def test_null_under_untrusted_container_stays_null() -> None:
+    views = make_service().project({"customer": {"phone": None, "note": None}}, "t", ["customer"],
+                                   make_vault())
+    assert views.model == {"customer": {"phone": None, "note": None}}
+    assert views.audit == {"customer": {"phone": None, "note": None}}
+
+
+def test_untrusted_nested_in_untrusted_still_wraps_strings() -> None:
+    catalog = {**CATALOG, "inner": FieldRule(field_class="untrusted_text")}
+    data = {"outer": {"inner": {"text": "hola", "first_name": "Ana"}}}
+    views = make_service(catalog=catalog).project(data, "t", ["outer"], make_vault())
+    inner = views.model["outer"]["inner"]  # type: ignore[index]
+    assert inner["text"].startswith("<datos_no_confiables")
+    assert inner["first_name"] == "⟦name:1⟧"
