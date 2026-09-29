@@ -15,6 +15,8 @@ from agent_core.domain import (
     ToolDef,
 )
 from agent_core.flows.registry import AuthoringRegistry
+from agent_core.flows.validate import validate_flow
+from agent_core.flows.violations import Violation
 
 _TEXTS = {
     "t/pedir": "¿Qué necesitas?",
@@ -174,3 +176,11 @@ AGENT: dict[str, Any] = {
 
 def agent(**over: Any) -> Agent:
     return Agent.model_validate(deepcopy(AGENT) | over)
+
+
+def check(d: dict[str, Any], reg: AuthoringRegistry | None = None) -> list[Violation]:
+    return validate_flow(flow(d), reg or registry())
+
+
+def rules(violations: list[Violation]) -> set[str]:
+    return {v.rule for v in violations}
