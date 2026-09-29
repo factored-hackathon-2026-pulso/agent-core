@@ -185,3 +185,7 @@ Los dos abiertos originales quedaron resueltos el 2026-09-29 por el usuario (las
 
 - **P1 (`deny` ante la oferta de una intención pendiente):** ver 3.3.
 - **P2 (turno que encuentra el run vencido):** ver paso 4 de 3.1.
+
+## 12. Fronteras (nota de la rev. 2)
+
+- El contrato `turn` de `.importlinter` usa `allow_indirect_imports = True` (aprobado el 2026-09-29): M4 importa `agent_core.interpreter`, que internamente usa `flows` y `views`. Siguen prohibidos los imports **directos** de M4 a `flows`, `views`, `response`, `knowledge`, `api`, `adapters`, `cli`, `contracts` y `registry`. Todo lo que M4 necesita de M7 entra por `RuntimeFactory`/`TurnRuntime` (`agent_core/turn/ports.py`).
