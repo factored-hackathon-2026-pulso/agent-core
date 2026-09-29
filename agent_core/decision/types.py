@@ -15,7 +15,14 @@ class ProviderTimeout(Exception):
 
 
 class ProviderError(Exception):
-    """El proveedor falló; el mensaje nunca lleva la entrada, la salida ni claves."""
+    """El proveedor falló; el mensaje nunca lleva la entrada, la salida ni claves.
+
+    `tokens` y `cost_usd` son el uso parcial que el proveedor informó (una llamada fallida también cuesta)."""
+
+    def __init__(self, message: str = "", *, tokens: int = 0, cost_usd: Decimal = Decimal("0")) -> None:
+        super().__init__(message)
+        self.tokens = tokens
+        self.cost_usd = cost_usd
 
 
 class DecisionConfigError(Exception):
