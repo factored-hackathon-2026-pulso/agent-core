@@ -1,6 +1,6 @@
 # M8 — Validador de respuesta y `respond(generate)`
 
-- Estado: borrador · rev. 2 parcial (2026-09-29: decisiones P1 y P2; el resto de los abiertos de interfaz sigue pendiente) · Fase 4
+- Estado: borrador · rev. 2 (2026-09-29: decisiones P1–P7 aprobadas) · Fase 4
 - Paquete: `agent_core.response`
 - Origen: spec general §8.3, §5 (`respond`), §4.8, §10 (fallas del validador), §13.7
 - ADRs: 0011 (validación numérica por locale, hechos `compute`), 0012 (idioma del texto), 0008 (validador sobre vista `model`)
@@ -16,31 +16,43 @@ Decide, de forma determinista, si un texto que va a ver una persona está respal
 
 ```python
 class Draft:            text: str; citations: list[str]            # fact_id | page_ref
-class ValidationContext:
-    facts_model_view: dict[str, Any]      # por fact_id
-    fact_sources: dict[str, FactSource]   # para saber si una cifra viene de compute
-    allowed: set[str]                     # fact_ids/page_refs que el nodo permite citar
-    pages_model_view: dict[str, PageView] # vacío hasta M12
-    vault: TokenVault; locale: str; lang_cfg: LanguageDetection
-    number_format: NumberFormat | None    # dato opcional; lo produce quien construye el contexto (ver 3.3)
 class NumberFormat:     thousands: str; decimal: str               # p. ej. (".", ",") o (",", ".")
+@dataclass(frozen=True, repr=False)   # el repr no muestra hechos, vault ni cierres
+class ValidationContext:
+    facts_model_view: Mapping[str, JsonValue]    # por fact_id, ya en vista model
+    fact_sources: Mapping[str, FactSource]       # por fact_id
+    allowed: frozenset[str]                      # fact_ids/page_refs que el nodo permite citar
+    pages_model_view: Mapping[str, JsonValue]    # vacío hasta M12 (PageView no existe aún)
+    vault: TokenVault
+    locale: str
+    lang_cfg: LanguageDetection
+    lang_thresholds: LangThresholds              # M6
+    supported_locales: tuple[str, ...]
+    find_clear_pii: Callable[[str], list[str]]   # cierre ViewService + hechos full; devuelve rutas, nunca valores
+    number_format: NumberFormat | None = None    # dato opcional producido fuera de M8 (3.3)
 class Failure:          check: Literal["format", "citations", "numbers", "tokens_pii", "language"]; detail: str
 class ValidationResult: ok: bool; failures: list[Failure]
 
+def parse_draft(output: JsonValue) -> Draft | Failure                            # comprobación 1
 def validate(draft: Draft, ctx: ValidationContext) -> ValidationResult          # función pura
 
 class Responder:
     def template(self, template_ref, locale, facts_model_view) -> Message
-    def generate(self, node_config, state, ctx) -> tuple[Message | EscalationRequest, list[RejectedDraft], list[EngineEvent]]
+    def generate(self, node_config, state, ctx: ResponderContext) -> tuple[Message | EscalationRequest, list[RejectedDraft], list[EngineEvent]]
 # EscalationRequest y RejectedDraft son tipos de M0 (los consumen M10 y M11, que no pueden importar M8)
 ```
+
+- `LlmUsage` es el de M0: `calls, latency_ms, tokens_in, tokens_out, cost_usd, cost_known, models`. `cost_known = false` si alguna llamada falló con `GatewayError` sin costo.
+- M8 no importa `agent_core.interpreter`: el adaptador hacia el `ResponderPort`/`GenerateResult` de M2 (que toma `model_calls`, `tokens` y `cost_usd` de `response_emitted.llm`) vive fuera de M8 (M2 o el cableado de M4).
+- `ResponderContext` (puertos `LLMGateway`, `Clock`, `IdSource`, `RegistryPort`, `resolve_ref` inyectado por M2, `ValidationContext` armado por quien llama, `claims`, `max_regenerations`) lo construye quien cablea; M8 no lee hora ni aleatoriedad.
+- `M8` emite `response_emitted` solo desde `generate`; quién lo emite para `respond(template_ref)` directo sigue abierto en M2.
 
 ## 3. Comportamiento
 
 ### 3.1 Comprobaciones (en orden; se reportan todas las que fallan)
 
 1. **Formato:** la salida del gateway parsea como `{text, citations}`.
-2. **Citas:** cada cita existe en `facts` o en páginas recuperadas en el run **y** está en `allowed` (de `generate.allowed_facts` o `knowledge_from` de M12).
+2. **Citas:** cada cita existe en `facts` o en páginas recuperadas en el run **y** está en `allowed`. Las citas y `allowed` van por `fact_id`; `Responder` traduce `generate.allowed_facts` (rutas de autoría `facts.<nombre>[.value…]`) a `{state.facts[nombre].fact_id}`. Las páginas de M12 no existen aún: toda `page_ref` falla hasta entonces.
 3. **Cifras:**
    - Se extraen del texto números, montos, porcentajes y fechas con el parser del `number_format` del contexto (`1.234,56` o `1,234.56`); sin `number_format`, ver 3.3.
    - Cada cifra debe ser **numéricamente igual** a un valor de un hecho o página citados, con la precisión de la moneda (`Decimal`, sin tolerancia relativa).
@@ -48,7 +60,7 @@ class Responder:
    - Se ignoran los dígitos dentro de tokens de M7.
    - Todo número del texto cuenta igual ("paso 2", "24 horas"): debe estar en un hecho citado. Una cifra ambigua sin `number_format` se rechaza aunque un hecho la respalde. Las fechas se comparan con valores ISO (`aaaa-mm-dd`) de los hechos; los valores de hecho numéricos son `int`, `Decimal` o cadenas `-?dígitos(.dígitos)?`.
 4. **Tokens y PII:** todo token del texto existe en el `token_map`; `ViewService.find_clear_pii` no encuentra identificadores `pii_direct` en claro.
-5. **Idioma:** `detect_language(text)` con los mismos candidatos que M6 debe dar el `locale` del turno. `short` o `undetermined` no rechazan.
+5. **Idioma:** `detect_language(text)` con la configuración, los umbrales y los idiomas soportados de M6 (`prior = locale`). Si la decisión es `short` o `undetermined` no rechaza; en otro caso rechaza si el idioma de mayor puntaje (`top2[0]`) difiere del `locale` del turno. No depende de los umbrales de cambio (con `UNCALIBRATED` igual compara `top2[0]`). Un idioma no soportado también rechaza.
 
 ### 3.2 Cadena de `respond(generate)`
 
@@ -62,6 +74,7 @@ si la plantilla no puede renderizarse → EscalationRequest(validation_failed)
 - Modo degradado: salta directo a `fallback_template_ref`.
 - **Uso del LLM:** M8 acumula en `LlmUsage` cada llamada a `gateway.generate` del nodo (generación y regeneración): `calls`, `tokens` y `cost_usd` de `GenerationResult`, `latency_ms` medido con `Clock.monotonic_ns()` alrededor de cada llamada, y `models`. Va en `response_emitted.llm`, también si al final se usó la plantilla. Si no se llamó al gateway, `llm = None`.
 - Cada borrador rechazado y su motivo se devuelve como `RejectedDraft` para que M11 lo mande al transcript.
+- `Responder.template` trae un renderizador mínimo propio de `{{ facts.<nombre>.value(.campo)* }}` (M8 no importa `flows`); una ruta ausente, un locale ausente o una ruta que no sea de hechos lanza `TemplateUnavailable`, que la cadena traduce a `validation_failed`.
 - Las plantillas (`respond.template_ref`) no pasan por las comprobaciones 2 y 3 (son texto fijo con variables de hechos), pero sí por la 4.
 
 ### 3.3 Formato numérico (decidido 2026-09-29, Abierto resuelto)
@@ -128,4 +141,9 @@ M8 **no** se acopla a teléfono, canal ni `principal.attrs.country`, y no contie
 
 - ~~**Formato numérico por país**~~ **Resuelto 2026-09-29:** `number_format` es un dato opcional del `ValidationContext` que produce un nodo/tool fuera de M8; sin él solo se aceptan lecturas inequívocas y `1.234` se rechaza (3.3). Queda sin aprobar, y sin implementar, aceptar una cifra ambigua cuando alguna lectura coincida exactamente con un hecho citado.
 - ~~**Números que no son cifras de negocio** ("paso 2", "24 horas")~~ **Resuelto 2026-09-29:** cuentan igual que cualquier cifra y deben venir de un hecho o de la plantilla. No se añade `allowed_literals` (tocaría M0). El falso rechazo se mide con el conjunto etiquetado (10) antes de considerar cualquier relajación.
-- **Pendientes de decisión (plan de implementación, Task 1, P3–P7):** campos de `ValidationContext` para PII en claro e idioma (`find_clear_pii`, umbrales, idiomas soportados); firma de `Responder.generate` frente a `ResponderPort` de M2; semántica de la comprobación de idioma frente a `LangDecision` con `UNCALIBRATED`; `allowed_facts` (`facts.<nombre>`) frente a citas por `fact_id`; renderizado de plantillas dentro de M8.
+- ~~**Campos de `ValidationContext` para PII e idioma**~~ **Resuelto 2026-09-29:** `find_clear_pii`, `lang_thresholds`, `supported_locales` (§2).
+- ~~**Firma de `Responder.generate` frente a `ResponderPort` de M2**~~ **Resuelto 2026-09-29:** M8 implementa la firma del §2; el adaptador vive fuera de M8.
+- ~~**Semántica de idioma**~~ **Resuelto 2026-09-29:** compara `top2[0]` con `locale` (§3.1.5).
+- ~~**`allowed_facts` frente a `fact_id`**~~ **Resuelto 2026-09-29:** `Responder` traduce (§3.1.2).
+- ~~**Renderizado de plantillas**~~ **Resuelto 2026-09-29:** renderizador mínimo propio (§3.2).
+- **Abiertos que siguen fuera de M8:** quién emite `response_emitted` para `respond(template_ref)` directo (M2); `PageView`, `knowledge_from` y su comprobación de citas de páginas (M12, tema #10).
