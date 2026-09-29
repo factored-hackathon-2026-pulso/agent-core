@@ -208,6 +208,14 @@ def check_lease_is_immediate_and_expires(b: Backend) -> None:
             other.acquire_turn("run-0001", "turn-b", NOW + TTL + timedelta(seconds=1), TTL)
 
 
+def check_lease_expires_exactly_at_the_boundary(b: Backend) -> None:
+    """Frontera: con `now == expires_at` el lease ya venció y otro turno puede tomarlo."""
+    with b.factory() as first:
+        first.acquire_turn("run-0001", "turn-a", NOW, TTL)
+        with b.factory() as other:
+            other.acquire_turn("run-0001", "turn-b", NOW + TTL, TTL)
+
+
 def check_lease_is_per_run_and_reentrant_for_same_turn(b: Backend) -> None:
     with b.factory() as uow:
         uow.acquire_turn("run-0001", "turn-a", NOW, TTL)
@@ -507,7 +515,7 @@ def test_faults_fire_in_order_and_only_at_their_point(store: InMemoryStore) -> N
 def test_concurrent_writers_with_same_base_version_have_one_winner(store: InMemoryStore) -> None:
     _seed(store.uow)
     outcomes: list[str] = []
-    barrier = threading.Barrier(8)
+    barrier = threading.Barrier(8, timeout=10)
 
     def writer() -> None:
         with store.uow() as uow:

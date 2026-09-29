@@ -3,7 +3,8 @@
 Semántica que replica la del adaptador Postgres futuro: aislamiento por copia profunda (quien llama no puede
 mutar lo persistido), versión optimista revalidada bajo lock al commitear (sin lost update), lease
 inmediato con vencimiento según el `now` que llega por parámetro (este módulo nunca lee la hora),
-auditoría solo-append y outbox at-least-once con entrega idempotente. M3 usa las fallas inyectables.
+auditoría solo-append y outbox at-least-once con entrega idempotente. Toda lectura y escritura del estado
+compartido (incluidas las fallas inyectables) se hace bajo `store.lock`. M3 usa las fallas inyectables.
 
 Escalabilidad del doble: `load_run`/`find_run_by_session` son O(1); `list_inactive` usa un índice ordenado
 (`bisect`) en vez de recorrer todos los runs; `Outbox.pending` recorre solo `limit` mensajes. `read` de
@@ -67,10 +68,11 @@ class InMemoryStore:
         self.faults.extend([point] * times)
 
     def take_fault(self, point: FaultPoint) -> bool:
-        if self.faults and self.faults[0] == point:
-            self.faults.popleft()
-            return True
-        return False
+        with self.lock:
+            if self.faults and self.faults[0] == point:
+                self.faults.popleft()
+                return True
+            return False
 
     def uow(self) -> "InMemoryUoW":
         return InMemoryUoW(self)
@@ -134,23 +136,26 @@ class InMemoryUoW:
         self._released.append((run_id, turn_id))
 
     def load_run(self, run_id: str) -> RunState | None:
-        state = self._runs.get(run_id) or self._store.runs.get(run_id)
-        return state.model_copy(deep=True) if state is not None else None
+        with self._store.lock:
+            state = self._runs.get(run_id) or self._store.runs.get(run_id)
+            return state.model_copy(deep=True) if state is not None else None
 
     def find_run_by_session(self, session_id: str) -> RunState | None:
         for state in self._runs.values():
             if state.session_id == session_id:
                 return state.model_copy(deep=True)
-        run_id = self._store.sessions.get(session_id)
+        with self._store.lock:
+            run_id = self._store.sessions.get(session_id)
         return self.load_run(run_id) if run_id is not None else None
 
     def save_run(self, state: RunState, expected_version: int) -> RunState:
         self._check_open()
         local = self._runs.get(state.run_id)
-        current_version = local.state_version if local else self._store.version_of(state.run_id)
+        with self._store.lock:
+            current_version = local.state_version if local else self._store.version_of(state.run_id)
         if expected_version != current_version:
             raise VersionConflict(f"{state.run_id}: esperada {expected_version}, vigente {current_version}")
-        # Revalida los invariantes (la asignación en RunState no valida) y corta todo alias con el llamador.
+        # Revalida los invariantes y corta todo alias con el llamador.
         validated = RunState.model_validate(state.model_dump())
         saved = validated.model_copy(update={"state_version": expected_version + 1})
         if state.run_id not in self._base_versions:
@@ -160,8 +165,10 @@ class InMemoryUoW:
 
     def get_turn_result(self, run_id: str, client_turn_id: str) -> TurnResult | None:
         key = (run_id, client_turn_id)
-        result = self._turn_results[key] if key in self._turn_results else self._store.turn_results.get(key)
-        return deepcopy(result)
+        with self._store.lock:
+            local = self._turn_results.get(key)
+            result = local if local is not None else self._store.turn_results.get(key)
+            return deepcopy(result)
 
     def put_turn_result(self, run_id: str, client_turn_id: str, result: TurnResult) -> None:
         self._check_open()
@@ -169,8 +176,9 @@ class InMemoryUoW:
 
     def get_run_idempotency(self, principal: PrincipalKey, key: str) -> tuple[str, RunResult] | None:
         scoped = (principal, key)  # el principal es parte de la clave: nadie repite ni lee runs ajenos
-        found = self._idempotency.get(scoped) or self._store.idempotency.get(scoped)
-        return deepcopy(found)
+        with self._store.lock:
+            found = self._idempotency.get(scoped) or self._store.idempotency.get(scoped)
+            return deepcopy(found)
 
     def put_run_idempotency(self, principal: PrincipalKey, key: str, body_hash: str,
                             result: RunResult) -> None:
@@ -182,10 +190,11 @@ class InMemoryUoW:
         self._handoffs[handoff_ref] = deepcopy(packet)
 
     def get_handoff(self, handoff_ref: str) -> dict[str, JsonValue] | None:
-        found = self._handoffs.get(handoff_ref)
-        if found is None:
-            found = self._store.handoffs.get(handoff_ref)
-        return deepcopy(found)
+        with self._store.lock:
+            found = self._handoffs.get(handoff_ref)
+            if found is None:
+                found = self._store.handoffs.get(handoff_ref)
+            return deepcopy(found)
 
     def append_events(self, run_id: str, events: list[EngineEvent]) -> None:
         self._check_open()
@@ -195,8 +204,9 @@ class InMemoryUoW:
         pending = self._events.get(run_id)
         if pending:
             return deepcopy(pending[-1])
-        committed = self._store.events.get(run_id)
-        return deepcopy(committed[-1]) if committed else None
+        with self._store.lock:
+            committed = self._store.events.get(run_id)
+            return deepcopy(committed[-1]) if committed else None
 
     def enqueue_outbox(self, message: OutboxMessage) -> None:
         self._check_open()
@@ -213,9 +223,10 @@ class InMemoryUoW:
             return []
         store = self._store
         # Del índice ordenado basta el prefijo vencido, más margen por los runs que esta UoW reescribió.
-        end = bisect_left(store.inactive_index, (now, ""))
-        committed = [(ts, rid) for ts, rid in islice(store.inactive_index, min(end, limit + len(self._runs)))
-                     if rid not in self._runs]
+        with store.lock:
+            end = bisect_left(store.inactive_index, (now, ""))
+            window = list(islice(store.inactive_index, min(end, limit + len(self._runs))))
+        committed = [(ts, rid) for ts, rid in window if rid not in self._runs]
         local = [key for s in self._runs.values() if (key := _inactive_key(s)) is not None and key[0] < now]
         return [rid for _, rid in sorted(committed + local)[:limit]]
 
