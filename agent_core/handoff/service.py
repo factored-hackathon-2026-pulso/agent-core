@@ -4,17 +4,23 @@ construye `handoff_created`."""
 from collections.abc import Sequence
 
 from agent_core.domain import (
+    Action,
     ActionState,
     Agent,
     Awaiting,
+    EngineError,
     EngineEvent,
     Escalated,
     EscalatedPayload,
     EscalationRequest,
     HandoffCreatedPayload,
+    JsonValue,
     Message,
+    OnBehalfOf,
     OutboxMessage,
     Outcome,
+    Principal,
+    ProblemCode,
     RunState,
     Template,
     to_jsonable,
@@ -87,6 +93,70 @@ class HandoffService:
             created_at=now,
         )
         return closed, [event], outbox, self._closing_message(state)
+
+    # --- get -------------------------------------------------------------------------------------------
+
+    def get(self, handoff_ref: str, reader: Principal,
+            on_behalf_of: OnBehalfOf | None = None) -> dict[str, JsonValue]:
+        """Paquete renderizado para `reader`: lo que la política le permite en claro, el resto enmascarado."""
+        with self._uow_factory() as uow:
+            record = self._load_record(uow, handoff_ref)
+            run = self._load_run(uow, record.packet.run_id)
+        self._authorize(reader, on_behalf_of, run)
+        packet = record.packet
+        if not packet.degraded_packet:
+            run_id = run.run_id
+            facts = [
+                view.model_copy(update={"value": self._projector.for_reader(
+                    run_id, run.facts[view.name].value, view.name, reader, on_behalf_of)})
+                if view.name in run.facts else view
+                for view in packet.verified_facts
+            ]
+            slots = [
+                view.model_copy(update={"value": self._projector.for_reader(
+                    run_id, run.slots[view.name].value, view.name, reader, on_behalf_of)})
+                if view.name in run.slots else view
+                for view in packet.claimed_not_verified
+            ]
+            by_id = {a.action_id: a for a in run.actions}
+            actions = [
+                view.model_copy(update={"args": self._args_for(run_id, by_id[view.action_id], reader,
+                                                               on_behalf_of)})
+                if view.action_id in by_id else view
+                for view in packet.actions_taken
+            ]
+            packet = packet.model_copy(update={"verified_facts": facts, "claimed_not_verified": slots,
+                                               "actions_taken": actions})
+        packet = packet.model_copy(update={"subject": run.subject})  # autorizado sobre ese subject
+        out: dict[str, JsonValue] = to_jsonable(packet)
+        out["resolution"] = to_jsonable(record.resolution)
+        return out
+
+    def _args_for(self, run_id: str, action: Action, reader: Principal,
+                  obo: OnBehalfOf | None) -> dict[str, JsonValue]:
+        value = self._projector.for_reader(run_id, action.args, action.tool.id, reader, obo)
+        return value if isinstance(value, dict) else {}
+
+    # --- utilidades compartidas con record_resolution --------------------------------------------------
+
+    @staticmethod
+    def _load_record(uow: UnitOfWork, handoff_ref: str) -> HandoffRecord:
+        raw = uow.get_handoff(handoff_ref)
+        if raw is None:
+            raise EngineError(ProblemCode.not_found, handoff_ref)
+        return HandoffRecord.model_validate(raw)
+
+    @staticmethod
+    def _load_run(uow: UnitOfWork, run_id: str) -> RunState:
+        run = uow.load_run(run_id)
+        if run is None:
+            raise EngineError(ProblemCode.not_found, run_id)
+        return run
+
+    def _authorize(self, reader: Principal, obo: OnBehalfOf | None, run: RunState) -> None:
+        decision = self._authz.authorize_subject(reader, obo, run.subject)
+        if not decision.allowed:
+            raise EngineError(ProblemCode.subject_forbidden, decision.reason or "")
 
     @staticmethod
     def _check_can_escalate(state: RunState) -> None:
