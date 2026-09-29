@@ -1,6 +1,6 @@
 # M10 — Escalamiento y handoff
 
-- Estado: borrador · Fase 2
+- Estado: rev. 2 (2026-09-29) · Fase 2
 - Paquete: `agent_core.handoff`
 - Origen: spec general §9, escalamiento de §4, §8.4 (transcript para el asesor), §12 (calidad del handoff), §13.10
 - ADRs: 0013 (evento saliente, cierre del run, transcript renderizado), 0006 (delegación al asignar)
@@ -27,10 +27,20 @@ class HandoffPacket:
     transcript_ref: str                       # → GET /v1/runs/{run_id}/transcript
 
 class HandoffService:
-    def escalate(self, state, request: EscalationRequest, events_so_far) -> tuple[RunState, list[EngineEvent], OutboxMessage, Message]
-    def get(self, handoff_ref, reader: Principal, on_behalf_of) -> dict          # renderizado para el lector
-    def record_resolution(self, handoff_ref, reader, resolution_code, handoff_quality, notes) -> EngineEvent
+    def __init__(self, *, uow_factory: UnitOfWorkFactory, registry: RegistryPort, views: ViewService,
+                 authz: AuthzPort, keys: KeyProvider, clock: Clock, ids: IdSource,
+                 record: EventRecorder = append_events)
+    def escalate(self, state: RunState, request: EscalationRequest, events_so_far: list[EngineEvent], *,
+                 uow: UnitOfWork, turn_id: str | None = None
+                 ) -> tuple[RunState, list[EngineEvent], OutboxMessage, Message]
+    def get(self, handoff_ref: str, reader: Principal, on_behalf_of: OnBehalfOf | None = None
+            ) -> dict[str, JsonValue]                                            # renderizado para el lector
+    def record_resolution(self, handoff_ref: str, reader: Principal, resolution_code: str,
+                          handoff_quality: Literal["useful", "incomplete", "unnecessary"],
+                          notes: str | None = None, *, on_behalf_of: OnBehalfOf | None = None) -> EngineEvent
 ```
+
+`HandoffRecord = {packet: HandoffPacket, resolution: Resolution | None}` es lo que se guarda con `UnitOfWork.put_handoff`.
 
 ## 3. Comportamiento
 
@@ -104,8 +114,25 @@ Precisión/recall de escalamiento (contra referencias de la unidad 6), `handoff_
 ## 10. Definición de terminado
 
 - `escalate`, `get` y `record_resolution` con T-M10-01…08 en verde.
-- Plantillas de traspaso y de resumen en ES y PT en `agent-registry`.
+- Plantillas de traspaso en ES y PT en `agent-registry` (mensaje) y por defecto en `agent_core/handoff/texts.py` (resumen y respaldo).
 
-## 11. Abiertos
+## 11. Decisiones de la rev. 2 (2026-09-29)
 
-- `request_summary`: ¿plantilla o generado? La spec dice "validado con §8.3", lo que sugiere generado. Propuesta: plantilla en el MVP (sin costo de LLM ni riesgo de validación) y generado como mejora.
+1. `request_summary`: **plantilla determinista** por clave de `reason_code` y `locale`, solo con conteos e id del flow; `citations` = nombres de hechos verificados. Sobrescribirla desde `agent-registry` requiere un campo nuevo en `EngineTemplates` (M0): abierto para producción.
+2. `escalate` recibe `uow` y `turn_id` (solo nombre). M10 solo llama `uow.put_handoff`; M4 guarda el run, agrega los eventos devueltos y encola el outbox. `events_so_far` son todos los eventos del run, incluidos los del turno en curso.
+3. `evidence_refs`: `call:<id>`, `policy:<id>@<v>`, `decision:<id>`, `page:<ref>`.
+4. El registro persistido es `{packet, resolution}`; el paquete lleva vista `audit` y `subject.ref` enmascarado. `get` reconstruye los valores desde `RunState` con M7 según el lector.
+5. Autorización: `AuthzPort.authorize_subject` (tabla de M9). `403 subject_forbidden`; handoff o run inexistente, `404 not_found`.
+6. `record_resolution` recibe `on_behalf_of`; una sola resolución por handoff, serializada con un lease corto; `notes` solo en el registro, nunca en el evento.
+7. Precondiciones de `escalate`: run `open` y sin acciones `proposed`/`confirmed` (`HandoffPreconditionError` si no).
+8. `claimed_not_verified` = slots `claimed`; los `validated` no van.
+9. Paquete degradado si la construcción falla; falla de `put_handoff` no se degrada.
+10. `open_questions` con guarda de PII en claro (`find_clear_pii`).
+11. Textos: `state.locale` con caída a `es`; mensaje de traspaso desde `agent.templates.handoff` con respaldo por defecto.
+
+## 12. Abiertos
+
+- Quién llena `open_questions` (M2/M10, índice §10).
+- `request_summary` generado por LLM (pasaría por M8 `validate`) y plantillas de resumen en `agent-registry`.
+- Un handoff con muchos hechos: no hay tope de tamaño del paquete; decidir con datos reales.
+- Devolución del caso al bot (producción): fuera de este módulo (ADR 0013).
