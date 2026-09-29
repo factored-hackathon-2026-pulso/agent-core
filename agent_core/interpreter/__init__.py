@@ -2,6 +2,7 @@
 
 from agent_core.interpreter.breaker import CircuitBreaker
 from agent_core.interpreter.context import NO_RESUME, Resume, StepContext, StepOutcome, Stop
+from agent_core.interpreter.jsonlogic import evaluate, truthy
 from agent_core.interpreter.ports import (
     DecisionPort,
     DecisionResult,
@@ -12,5 +13,5 @@ from agent_core.interpreter.ports import (
 
 __all__ = [
     "NO_RESUME", "CircuitBreaker", "DecisionPort", "DecisionResult", "GenerateRequest", "GenerateResult",
-    "ResponderPort", "Resume", "StepContext", "StepOutcome", "Stop",
+    "ResponderPort", "Resume", "StepContext", "StepOutcome", "Stop", "evaluate", "truthy",
 ]
