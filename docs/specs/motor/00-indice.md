@@ -215,12 +215,15 @@ M0 define el esquema de cada evento; M11 los encadena y persiste. El módulo emi
 | Tema | Módulo | Estado |
 |---|---|---|
 | #10 Integración de ADR 0015 (conocimiento) | M12 (propuesta de integración), M1, M8 | abierto; M12 trae una propuesta |
-| Formato numérico por país: el `locale` del run es `es`/`pt`, pero ADR 0011 parsea por `es-CO`/`es-MX`/`es-AR`/`pt` | M8 | **nuevo**, detectado al partir la spec |
+| Formato numérico por país: el `locale` del run es `es`/`pt`, pero ADR 0011 parsea por `es-CO`/`es-MX`/`es-AR`/`pt` | M8 | **resuelto** en M8 rev. 2 (parcial): `number_format` es dato opcional del contexto producido fuera de M8; sin él, solo lecturas inequívocas |
 | Detector de injection: la spec dice "marca y cuenta" pero no define el método | M6 | **resuelto** en M6 rev. 2: reglas regex/frase versionadas en la release, texto normalizado; reemplazable por un clasificador detrás de `scan_injection` |
 | Generalización de `pii_quasi` sin definir (qué hace con la fecha de nacimiento o el código postal) | M7 | **resuelto** en M7 rev. 2: regla como dato (`QuasiRule`: `drop`, `age_bucket`), por defecto `drop` |
 | Formato del token de PII sin definir | M7 | **resuelto** en M7 rev. 2: `⟦tag:n⟧`, contador por tag dentro del run |
 | `request_summary` del handoff: generado o por plantilla | M10 | **resuelto** en M10 rev. 2: plantilla determinista en el MVP; generado (vía M8) queda para producción |
-| Prueba de humo de JEV (bloqueante antes del miércoles 30/09) | M5 | pendiente |
+| Prueba de humo de JEV (bloqueante antes del miércoles 30/09) | M5 | pendiente; adaptador listo contra transporte inyectable, faltan la API key (`JEV_API_KEY`) y el contrato real |
+| Mínimo de muestra PT para calibrar | M5 | pendiente (lo fija la unidad 6); `calibrate` lo exige como `min_samples` sin defecto |
+| Regla de umbral por recall, formato del clasificador, `rule.config`, comando del informe, `EventScope`, `UnderstandContext` | M5 | **resuelto** en M5 rev. 2 (2026-09-29) |
+| Adaptador `DecisionOutput → DecisionResult` (`DecisionPort` de M2) | M2, M4 | **nuevo**, fuera de M5 |
 | Revisión de M0 (rev. 2): nodos en M0, `IdSource`, `Decimal`/JCS, `RefSpec`, vistas en M7, `grantee`, lease de turno, `action_cancelled`, `Awaiting.input` | M0, M1, M2, M3, M4, M5, M9, M10 | **resuelto** en M0 rev. 2 (2026-09-28) |
 | Quién llena `open_questions` del `RunState` | M2, M10 | **nuevo**, detectado en la revisión de M0 |
 | Formato de la credencial (`raw_credential`) | M9 | **nuevo**; no cambia el puerto |
