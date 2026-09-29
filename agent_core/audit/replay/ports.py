@@ -103,9 +103,11 @@ class RecordedIds:
     @classmethod
     def from_events(cls, events: list[EngineEvent]) -> "RecordedIds":
         out: dict[IdKind, list[str]] = defaultdict(list)
+        seen: dict[IdKind, set[str]] = defaultdict(set)
 
         def add(kind: IdKind, value: str | None) -> None:
-            if value is not None and value not in out[kind]:
+            if value is not None and value not in seen[kind]:
+                seen[kind].add(value)
                 out[kind].append(value)
 
         for e in events:

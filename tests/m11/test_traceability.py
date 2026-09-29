@@ -6,8 +6,9 @@ el motor integrado (M4/M2/M5/M6/M8) y los fixtures por camino. Se cubre allí, n
 
 from pathlib import Path
 
+import pytest
+
 REQUIRED = {f"T-M11-{n:02d}" for n in range(2, 11)}
-PENDING_TASK_14 = {"T-M11-01"}
 
 
 def test_every_spec_test_id_is_referenced_by_a_test() -> None:
@@ -17,5 +18,6 @@ def test_every_spec_test_id_is_referenced_by_a_test() -> None:
     assert found == REQUIRED, sorted(REQUIRED - found)
 
 
-def test_t_m11_01_is_explicitly_pending_task_14() -> None:
-    assert PENDING_TASK_14 == {"T-M11-01"}
+@pytest.mark.skip(reason="Task 14: T-M11-01 necesita el motor integrado y los fixtures por camino")
+def test_t_m11_01_replay_fixture_of_the_six_demo_paths() -> None:
+    raise NotImplementedError

@@ -50,7 +50,10 @@ def check_fixture(
     classifier = classifier or FieldClassifier()
     scanned: dict[str, JsonValue] = {
         "inputs": to_jsonable(fixture.inputs),
-        "full": {k: to_jsonable(v.result_full) for k, v in fixture.full.items()},
+        "full": {
+            k: {"result_full": to_jsonable(v.result_full), "error": v.error, "source": v.source}
+            for k, v in fixture.full.items()
+        },
         "drafts": to_jsonable(fixture.drafts),
     }
     bad: list[str] = []

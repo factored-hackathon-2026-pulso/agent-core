@@ -16,6 +16,7 @@ from agent_core.audit.replay.ports import (
     build_ports,
 )
 from agent_core.audit.replay.report import Divergence, ReplayMode, ReplayReport
+from agent_core.audit.transcript import RunNotFound
 from agent_core.domain import EngineEvent, EntityRef, JsonValue, ToolDef
 from agent_core.ports import AuditSink, Clock, TranscriptStore
 
@@ -78,11 +79,23 @@ class Replayer:
         if self._audit is None:
             raise ValueError("replay por run_id necesita un AuditSink")
         events = self._audit.read(source)
-        release = events[0].release if events else ""
+        if not events:
+            raise RunNotFound(source)  # ni eventos ni release: no hay nada que reproducir
+        release = events[0].release
         entries = self._transcript.read(source) if self._transcript is not None else []
         inputs: list[dict[str, JsonValue]] = [
             {"turn_id": e.turn_id, "text_model": e.text_model} for e in entries if e.role == "user"]
-        drafts: list[JsonValue] = [e.text_model for e in entries if e.role != "user"]
+        # Solo el texto final de un turno con `response_emitted` generado y sin respaldo sale del LLM;
+        # las plantillas y los textos de respaldo no. Los borradores rechazados siempre salieron del LLM.
+        emitted: dict[str | None, bool] = {}
+        for e in events:
+            if getattr(e, "type", None) == "response_emitted":  # gana el último de cada turno
+                payload = e.payload  # type: ignore[attr-defined]
+                emitted[e.turn_id] = payload.kind == "generated" and not payload.fallback_used
+        llm_final = {turn for turn, from_llm in emitted.items() if from_llm}
+        drafts: list[JsonValue] = [
+            e.text_model for e in entries
+            if e.role == "rejected_draft" or (e.role == "assistant" and e.turn_id in llm_final)]
         return events, inputs, ForbiddenFullSource(), drafts, source, release
 
     def _report(self, mode: ReplayMode, run_id: str, release: str, start: int,

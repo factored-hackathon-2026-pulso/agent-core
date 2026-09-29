@@ -27,6 +27,9 @@ def _decode(text: str) -> EngineEvent:
 
 
 class PgAuditEvents:
+    """Persistencia del log encadenado. No es un `AuditSink` (no tiene `append_outside_turn`): un
+    `AuditSink` Postgres para M9 debe encadenar los eventos (`AuditLog.append_standalone`) o negarse."""
+
     def __init__(self, conn: "psycopg.Connection[Any]") -> None:
         self._conn = conn
 

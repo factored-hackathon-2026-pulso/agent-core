@@ -92,3 +92,21 @@ def test_json_logs_carry_run_id_and_trace_id(exporter: InMemorySpanExporter) -> 
 
 def test_semconv_version_is_pinned_to_an_installed_schema() -> None:
     assert f"https://opentelemetry.io/schemas/{tel.SEMCONV_VERSION}" in {s.value for s in Schemas}
+
+
+def test_endpoint_uses_batch_processor_and_reconfiguring_shuts_down_the_previous_provider() -> None:
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+    first = InMemorySpanExporter()
+    setup_tracing(exporter=first)
+    provider = setup_tracing(endpoint="http://127.0.0.1:9/v1/traces")
+    assert first._stopped  # type: ignore[attr-defined]  # el provider anterior se cerró
+    processors = provider._active_span_processor._span_processors  # type: ignore[attr-defined]
+    assert any(isinstance(p, BatchSpanProcessor) for p in processors)
+    setup_tracing(exporter=InMemorySpanExporter())  # cierra el de lotes sin colgar
+
+
+def test_bound_context_wins_over_span_kwargs(exporter: InMemorySpanExporter) -> None:
+    with tel.bind(run_id="run-0001", release="rel-1"), tel.span(tel.CHAT, run_id="run-otro"):
+        pass
+    assert dict(exporter.get_finished_spans()[0].attributes or {})["run_id"] == "run-0001"

@@ -46,7 +46,8 @@ def _key(name: str) -> str:
 
 @contextmanager
 def span(name: str, **attrs: Any) -> Iterator[Span]:
-    merged: dict[str, Any] = {**current(), **{_key(k): v for k, v in attrs.items() if v is not None}}
+    # el contexto enlazado (`bind`) manda sobre los kwargs: un span no puede cambiar su run_id ni su release
+    merged: dict[str, Any] = {**{_key(k): v for k, v in attrs.items() if v is not None}, **current()}
     missing = [k for k in _REQUIRED if k not in merged]
     if missing:
         raise MissingTelemetryContext(f"span {name!r} sin {', '.join(missing)}; usa bind(...)")

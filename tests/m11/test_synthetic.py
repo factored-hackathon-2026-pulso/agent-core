@@ -42,3 +42,18 @@ def test_non_synthetic_text_in_inputs_and_drafts_is_rejected() -> None:
     fx = sample().model_copy(update={"drafts": ["mi cédula es 80123456"]})
     with pytest.raises(FixtureRejected):
         check_fixture(fx, CATALOG)
+
+
+@pytest.mark.parametrize("field", ["error", "source"])
+def test_error_and_source_of_full_results_are_scanned(field: str) -> None:
+    full = FullToolResult(status="error", **{field: "falló para real@banco.com"})  # type: ignore[arg-type]
+    fx = sample().model_copy(update={"full": {"call-0001": full}})
+    with pytest.raises(FixtureRejected):
+        check_fixture(fx, CATALOG)
+
+
+def test_fixture_repr_never_shows_full_values_or_drafts() -> None:
+    full = FullToolResult(status="ok", result_full={"first_name": "Ana Prueba"}, source="tx")
+    fx = sample().model_copy(update={"full": {"call-0001": full}, "drafts": ["BORRADOR-SECRETO"]})
+    text = repr(fx) + repr(full)
+    assert "Ana Prueba" not in text and "BORRADOR-SECRETO" not in text

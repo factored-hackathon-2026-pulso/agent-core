@@ -91,3 +91,10 @@ def test_build_ports_wires_everything_for_the_mode() -> None:
                         definitions=lambda r: None)  # type: ignore[arg-type, return-value]
     assert ports.mode == "audit" and len(ports.readings.events_of("tool_called")) == 1
     assert ports.readings.events_of("turn_started", "turn-0001")
+
+
+def test_recorded_ids_from_events_dedups_and_keeps_chain_order() -> None:
+    events = run_events()
+    ids = RecordedIds.from_events(events + events)  # duplicados: cada ID se reparte una sola vez
+    first = [ids.new_id(IdKind.event) for _ in range(len(events))]
+    assert first == [e.event_id for e in events]

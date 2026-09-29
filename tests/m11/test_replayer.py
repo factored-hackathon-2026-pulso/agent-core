@@ -133,3 +133,68 @@ def test_replay_never_receives_real_ports() -> None:
     from agent_core.audit.replay.ports import RecordedPorts
 
     assert isinstance(seen[0], RecordedPorts)
+
+
+def _stored_run(store: InMemoryStore, events: list) -> None:  # type: ignore[type-arg]
+    log = AuditLog(InMemoryAuditSink(store), store.uow)
+    with store.uow() as uow:
+        log.append(uow, "run-0001", [e.model_copy(update={"seq": None, "prev_hash": None, "hash": None})
+                                     for e in events])
+        uow.commit()
+
+
+def test_audit_by_run_id_unknown_run_raises_run_not_found() -> None:
+    from agent_core.audit import RunNotFound
+
+    with pytest.raises(RunNotFound):
+        replayer(StubEngine(), InMemoryStore()).replay("run-inexistente", "audit")
+
+
+def test_audit_by_run_id_reports_chain_broken_from_the_store() -> None:
+    store = InMemoryStore()
+    _stored_run(store, recorded())
+    store.events["run-0001"][2] = store.events["run-0001"][2].model_copy(update={"release": "rel-alterada"})
+    engine = StubEngine()
+    report = replayer(engine, store).replay("run-0001", "audit")
+    assert report.verdict == "chain_broken" and report.chain_broken_at == 2 and engine.calls == []
+
+
+def test_audit_drafts_skip_template_and_fallback_texts_but_keep_rejected() -> None:
+    from agent_core.audit.replay.ports import ReplayDesync
+    from agent_core.domain import TranscriptEntry
+    from testing.fakes.transcript import InMemoryTranscript
+
+    def emitted(turn: str, n: int, **payload: object):  # type: ignore[no-untyped-def]
+        base = event("response_emitted", turn_id=turn, n=n)
+        return base.model_copy(update={"payload": base.payload.model_copy(update=payload)})
+
+    events = [event("run_started", turn_id=None, n=1),
+              event("turn_started", turn_id="turn-0001", n=2),
+              emitted("turn-0001", 3, kind="generated", fallback_used=True),   # respaldo tras rechazo
+              event("turn_started", turn_id="turn-0002", n=4),
+              emitted("turn-0002", 5, kind="template", fallback_used=False),   # plantilla
+              event("turn_started", turn_id="turn-0003", n=6),
+              emitted("turn-0003", 7, kind="generated", fallback_used=False),  # salida del LLM
+              event("run_closed", n=8)]
+    store, transcript = InMemoryStore(), InMemoryTranscript()
+    _stored_run(store, events)
+    rows = [("turn-0001", "user", "hola"), ("turn-0001", "rejected_draft", "RECHAZADO"),
+            ("turn-0001", "assistant", "RESPALDO"), ("turn-0002", "user", "mas"),
+            ("turn-0002", "assistant", "PLANTILLA"), ("turn-0003", "user", "otra"),
+            ("turn-0003", "assistant", "GENERADO")]
+    for turn, role, text in rows:
+        transcript.append(TranscriptEntry(run_id="run-0001", turn_id=turn, role=role,  # type: ignore[arg-type]
+                                          text_model=text))
+    seen: list[object] = []
+
+    class Spy(StubEngine):
+        def run(self, case, ports):  # type: ignore[no-untyped-def]
+            try:
+                while True:
+                    seen.append(ports.llm.generate(None, {}, "es").output)  # type: ignore[arg-type]
+            except ReplayDesync:
+                return list(case.recorded)
+
+    Replayer(Spy(), FakeClock(), audit=InMemoryAuditSink(store), transcript=transcript,
+             definitions=lambda r: None).replay("run-0001", "audit")  # type: ignore[arg-type, return-value]
+    assert seen == ["RECHAZADO", "GENERADO"]

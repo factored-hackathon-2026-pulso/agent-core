@@ -34,7 +34,12 @@ class AuditLog:
         return check_chain(run_id, self._sink.read(run_id))
 
     def recorder(self) -> Callable[[UnitOfWork, RunState, list[EngineEvent]], None]:
-        """Con la firma del `EventRecorder` de M3; M4 lo cablea como `ActionContext.record`."""
+        """Con la firma del `EventRecorder` de M3; M4 lo cablea como `ActionContext.record`.
+
+        Solo agrega los eventos de M3. M3 (`actions/context.py`) y M4 (spec §14) exigen volcar primero los
+        eventos pendientes del turno y después los de M3: M4 debe envolver este callable (vuelca lo pendiente
+        con `append` y luego estos eventos) o si no el orden de la cadena difiere del orden causal y el
+        replay diverge en falso (spec M11, "Riesgos / abiertos para Task 14")."""
 
         def record(uow: UnitOfWork, state: RunState, events: list[EngineEvent]) -> None:
             self.append(uow, state.run_id, events)

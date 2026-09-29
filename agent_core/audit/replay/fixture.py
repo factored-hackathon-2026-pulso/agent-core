@@ -1,10 +1,11 @@
 """Fixture de replay (M11 §3.5, decisión 14): eventos + entradas en vista `full`, solo datos sintéticos."""
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import Field
 
 from agent_core.domain import AnyEvent, AuthLevel, JsonValue, ToolStatus, to_jsonable
 from agent_core.domain.base import Model
@@ -14,7 +15,7 @@ _MAX_BYTES = 4 * 1024 * 1024
 
 class FullToolResult(Model):
     status: ToolStatus
-    result_full: JsonValue = None
+    result_full: JsonValue = Field(default=None, repr=False)
     source: str | None = None
     error: str | None = None
     required_level: AuthLevel | None = None
@@ -26,8 +27,8 @@ class Fixture(Model):
     release: str
     inputs: list[dict[str, JsonValue]]
     events: list[AnyEvent]
-    full: dict[str, FullToolResult]
-    drafts: list[JsonValue]
+    full: dict[str, FullToolResult] = Field(repr=False)
+    drafts: list[JsonValue] = Field(repr=False)
 
 
 class _Loader(yaml.SafeLoader):
@@ -42,7 +43,10 @@ class _Loader(yaml.SafeLoader):
 
 
 def _float_as_decimal(loader: yaml.SafeLoader, node: yaml.Node) -> Decimal:
-    return Decimal(str(loader.construct_scalar(node)))  # type: ignore[arg-type]
+    try:
+        return Decimal(str(loader.construct_scalar(node)))  # type: ignore[arg-type]
+    except InvalidOperation:
+        raise ValueError("número no válido en el fixture") from None
 
 
 _Loader.add_constructor("tag:yaml.org,2002:float", _float_as_decimal)
@@ -66,7 +70,10 @@ def dump_fixture(fixture: Fixture) -> str:
 def load_fixture(text: str) -> Fixture:
     if len(text.encode()) > _MAX_BYTES:
         raise ValueError("fixture demasiado grande")
-    data = yaml.load(text, Loader=_Loader)  # Loader derivado de SafeLoader
+    try:
+        data = yaml.load(text, Loader=_Loader)  # Loader derivado de SafeLoader
+    except yaml.YAMLError:
+        raise ValueError("YAML no válido") from None
     if not isinstance(data, dict):
         raise ValueError("el fixture debe ser un mapa YAML")
     return Fixture.model_validate(data)

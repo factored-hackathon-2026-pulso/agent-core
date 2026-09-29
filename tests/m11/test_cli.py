@@ -46,3 +46,49 @@ def test_replay_rejects_unsynthetic_fixture_with_catalog(
 
 def test_record_without_engine_exits_3(tmp_path: Path) -> None:
     assert main(["record", "resuelto", "--out", str(tmp_path / "x.yaml")]) == 3
+
+
+def test_replay_malformed_yaml_exits_3_without_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "roto.yaml"
+    path.write_text("name: [sin cerrar\n  x: : :", encoding="utf-8")
+    assert main(["replay", str(path), "--mode", "fixture"]) == 3
+    assert "ilegible" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("bad", [".inf", ".nan"])
+def test_replay_non_finite_number_exits_3(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], bad: str
+) -> None:
+    path = write_fixture(tmp_path)
+    path.write_text(path.read_text(encoding="utf-8").replace("inputs: []", f"inputs:\n- monto: {bad}"),
+                    encoding="utf-8")
+    assert main(["replay", str(path), "--mode", "fixture"]) == 3
+    assert "ilegible" in capsys.readouterr().err
+
+
+def test_replay_engine_exception_exits_3_and_prints_only_the_type(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Boom:
+        def run(self, case: object, ports: object) -> list[object]:
+            raise KeyError("valor-secreto-full")
+
+    monkeypatch.setattr("agent_core.cli.load_engine", lambda: Boom())
+    code = main(["replay", str(write_fixture(tmp_path)), "--mode", "fixture"])
+    err = capsys.readouterr().err
+    assert code == 3 and "KeyError" in err and "valor-secreto-full" not in err
+
+
+def test_load_engine_only_swallows_missing_agent_core_turn(monkeypatch: pytest.MonkeyPatch) -> None:
+    import importlib
+
+    from agent_core.cli import load_engine
+
+    def broken(name: str) -> object:
+        raise ModuleNotFoundError("otro", name="otro_modulo")
+
+    monkeypatch.setattr(importlib, "import_module", broken)
+    with pytest.raises(ModuleNotFoundError):
+        load_engine()
