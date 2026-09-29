@@ -8,6 +8,7 @@ from agent_core.interpreter.handlers.collect import handle_collect
 from agent_core.interpreter.handlers.respond import handle_respond
 from agent_core.interpreter.handlers.rule import handle_rule
 from agent_core.interpreter.handlers.terminal import handle_end, handle_escalate
+from agent_core.interpreter.handlers.tool import handle_tool
 
 HANDLERS: Mapping[str, NodeHandler] = MappingProxyType({
     "collect": handle_collect,
@@ -15,6 +16,7 @@ HANDLERS: Mapping[str, NodeHandler] = MappingProxyType({
     "rule": handle_rule,
     "escalate": handle_escalate,
     "end": handle_end,
+    "tool": handle_tool,
 })
 
 __all__ = ["HANDLERS", "NodeHandler", "NodeResult"]
