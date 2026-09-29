@@ -13,4 +13,5 @@ jobs:
       - run: uv run mypy
       - run: uv run lint-imports
       - run: uv run agentcore contracts --check
+      - run: uv run agentcore validate tests/m01/fixtures/registry
       - run: uv run pytest
