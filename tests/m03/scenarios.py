@@ -6,6 +6,7 @@ from typing import Literal
 
 import pytest
 
+from agent_core.actions import VerifyResult
 from agent_core.domain import RunState
 from testing.fakes.storage import SimulatedCrash
 from tests.m03.harness import (
@@ -29,7 +30,7 @@ class CrashOutcome:
     writes_before_recovery: int
     loaded: RunState
     recovered: RunState
-    result: str
+    result: VerifyResult
 
 
 def crash_then_recover(w: World, at: CrashAt) -> CrashOutcome:

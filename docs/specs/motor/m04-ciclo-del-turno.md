@@ -43,7 +43,7 @@ Dependencias por constructor: `UnitOfWork`, `RegistryPort`, `Clock`, `GuardServi
 12. **Cierre:** si `StepOutcome.escalation` → `handoff.escalate(...)`; si `end_outcome` → cerrar el run (3.6). Al terminar un flow con pendientes, ofrecer la primera (3.3).
 13. **Responder y registrar:** `recorder.record_turn(...)` (transcript + `response_emitted`, M11).
 13b. **Medir:** emitir `turn_completed` (3.7) como último evento del turno.
-14. **Persistir:** una transacción con `state` (`state_version + 1`), eventos del turno, outbox y resultado por `client_turn_id`.
+14. **Persistir:** una transacción con `state` (`state_version + 1`), eventos del turno (los que devuelve `execute_write` ya los persistió el `EventRecorder` dentro de los commits de M3 y no se vuelven a agregar; el recorder de M4 vuelca primero los eventos pendientes del turno), outbox y resultado por `client_turn_id`.
 
 `start_run` hace: crear `RunState` (release fijada, principal sin secretos, `locale` inicial = `lang` del request si es soportado, si no `default_locale`), emitir `run_started` con `reportable_attrs`, arrancar `entry_flow` y, en modo task, avanzar hasta un terminal.
 
@@ -86,7 +86,7 @@ Entrada: `UnderstandResult` con `command`, `p_cal` y la marca `below_threshold` 
 
 ### 3.4 Invalidación de acciones
 
-M4 llama `actions.invalidate(state, reason)` ante: `cancel`, abandono, interrupción y escalamiento. El vencimiento de tokens lo resuelve `expire_tokens`.
+M4 llama `actions.invalidate(state, reason, turn_id=…)` ante: `cancel`, abandono, interrupción y escalamiento. El vencimiento de tokens lo resuelve `expire_tokens`.
 
 ### 3.5 Escalamiento
 

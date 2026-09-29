@@ -469,7 +469,7 @@ Un `sha256` sin clave de datos con PII de baja entropía (documento, teléfono, 
 2. Una respuesta afirmativa, sea `affirm` en Understand o `confirm.answer = yes` con el token, y con el token vigente, pasa la acción a `confirmed`.
 3. El nodo con `action_from` **commitea en una transacción propia** `executing` + `action_dispatched`.
 4. Se invoca la tool con `idempotency_key = action_id`. El backend garantiza la unicidad de la clave.
-5. **Commitea en una transacción propia** el resultado (`executed`, `uncertain` o `denied`) con `tool_called`.
+5. **Commitea en una transacción propia** el resultado (`executed`, `uncertain` o `denied`, o `step_up_required → confirmed` sin efecto) con `tool_called`.
 6. `verify` hace el readback por `idempotency_key` y lleva la acción a `verified` o `failed`.
 7. Solo después de `verified` un `respond` puede afirmar el éxito de la acción (§5, §6.1.5).
 
@@ -676,7 +676,7 @@ transcript_ref                             # → GET /v1/runs/{run_id}/transcrip
     - al superar `max_repair_turns_per_run`, el caso escala;
     - dos `unclear` seguidos en un `confirm` con `max_attempts: 2` salen por `max_attempts` y la acción queda `cancelled`;
     - los `unclear` de `confirm` suman al tope global;
-    - al reentrar a un `confirm` con el token vigente se reutilizan `action_id` y token, y nunca hay dos acciones `proposed` del mismo `confirm`;
+    - al reentrar a un `confirm` con el token vigente se conservan `action_id` y `token_exp` y se rota el token, y nunca hay dos acciones `proposed` del mismo `confirm`;
     - con el token vencido, la reentrada cancela la acción anterior y crea una nueva; un `yes` con el token viejo no confirma nada;
     - con un `confirm` pendiente, un mensaje fuera de tema da `unclear` y no cierra el run; `cancel`, `handoff` y la interrupción de fraude sí aplican;
     - una respuesta por botón nunca da `unclear`;

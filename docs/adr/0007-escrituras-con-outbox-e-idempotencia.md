@@ -22,10 +22,11 @@
    - Su definición declara `readback_by: idempotency_key`, y `verify` consulta por esa clave.
    - Una tool puede usar la clave como ID propio si su backend lo permite.
    - Patrón de referencia: el header `Idempotency-Key` de las APIs de pagos.
-6. **Resultados de escritura (C4).** Una escritura solo tiene tres resultados:
+6. **Resultados de escritura (C4).** Una escritura solo tiene tres resultados (más `step_up_required`, ver abajo):
    - `ok`;
    - `denied`: la política bloqueó **antes** de llamar, así que no hubo efecto posible;
    - `uncertain`: cualquier fallo del backend (error, 5xx, reset, timeout).
+   - `step_up_required` es un cuarto resultado: la acción vuelve a `confirmed` sin efecto (no se llamó a la tool) hasta que el step-up se complete.
 
    `ok` y `uncertain` van siempre a `verify`, y el error original queda en el evento `tool_called`.
 7. **Reclamos de éxito (auto-revisión #1).**

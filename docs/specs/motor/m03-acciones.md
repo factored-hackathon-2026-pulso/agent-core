@@ -81,6 +81,7 @@ Cualquier otra transición lanza `IllegalTransition` (bug, no error de usuario).
 - `yes`: exige token vigente. Por botón, el token del request debe coincidir con el hash; por texto (`affirm`), se usa el token de la acción `proposed` del nodo. Token vencido → `cancelled` y el resultado es `unclear` para reentrar y congelar de nuevo. Emite `action_confirmed`. Un token de botón cuyo hash no coincide (p. ej. el anterior a una rotación) da `unclear`: no cambia el estado, no suma intento y no emite evento. La vigencia es `now < token_exp`.
 - `no` → `cancelled`.
 - `unclear` → `node_attempts[confirm] += 1`; si llega a `max_attempts` → `cancelled` y resultado `max_attempts`. Cada `unclear` también cuenta en `repair_turns_used` (lo suma M4).
+- Caveat (ADR 0007 §8, T-M4-05 "botón nunca `unclear`"): un `yes` por botón con token rotado o vencido devuelve `unclear` sin contar intento, así que M4 debe sumar `repair_turns_used` solo cuando `node_attempts` creció.
 
 ### 3.4 `execute_write` (dos transacciones propias)
 
@@ -135,7 +136,7 @@ Con `FakeToolExecutor` guionable. Las fallas se inyectan por punto: `after_commi
 | T-M3-03 | Caída después de `action_dispatched` → al recargar va a `verify`, la tool se llamó una sola vez | 3 |
 | T-M3-04 | El reintento del turno usa el mismo `idempotency_key` | 3 |
 | T-M3-05 | Dos `unclear` con `max_attempts: 2` → `max_attempts`, acción `cancelled` | 11 |
-| T-M3-06 | Reentrada con token vigente reutiliza `action_id` y token; nunca hay dos `proposed` | 11 |
+| T-M3-06 | Reentrada con token vigente conserva `action_id` y `token_exp` y rota el token; nunca hay dos `proposed` | 11 |
 | T-M3-07 | Reentrada con token vencido cancela y crea otra; `yes` con el token viejo no confirma | 11 |
 | T-M3-08 | `invalidate` cancela `proposed`/`confirmed` y no toca `executing` | 10 |
 | T-M3-09 | Los `args` ejecutados son los congelados aunque cambien los slots | — |
@@ -159,6 +160,12 @@ Escrituras duplicadas (objetivo 0), tasa `uncertain`, tasa `uncertain → verifi
 
 ## 11. Abiertos
 
-- Ninguno. Resueltos en M0 rev. 2: `uncertain` y `denied` son estados explícitos (`denied` es terminal, sin `verify`), y la invalidación emite `action_cancelled`.
+- Resueltos en M0 rev. 2: `uncertain` y `denied` son estados explícitos (`denied` es terminal, sin `verify`), y la invalidación emite `action_cancelled`.
+- **(a) Reentrada ignora `resolved_args` cambiados.** Con token vigente, `propose` no compara `args_hash` ni la versión de la tool. Arreglo propuesto: cancelar y congelar una nueva con un `InvalidationReason` nuevo (`args_changed`); es cambio de contrato M0, decisión pendiente. `tests/m03/test_reentry_args.py` fija el comportamiento actual.
+- **(b) `unclear` de botón con token rotado o vencido** contradice ADR 0007 §8, spec general §13.11 y T-M4-05. Decidir entre dejar el caveat de §3.3 o un resultado `stale_token`.
+- **(c) `args_hash` sin clave en `action_dispatched`** frente a spec general §8.1.1 (huellas con HMAC con clave). Decidir hash con clave o retirarlo del evento.
+- **(d) `attempt=1` fijo en `tool_called`:** el reintento tras step-up emite otro `attempt=1`. Las métricas de escrituras duplicadas deben contar `action_id` distintos.
+- **(e) `verify` mapea error o excepción del readback a `failed`,** lo que confunde "efecto probado ausente" con "readback no disponible".
+- **(f) `propose` compara solo `tool.id`,** no la versión de la tool.
 - Commits propios: cada uno es una `UnitOfWork` nueva con `save_run(expected_version)`; el lease del turno (M4) sigue tomado durante ellos.
 - Rev. 2 (2026-09-29, con el usuario): token rotado en la reentrada; `EventRecorder` para los eventos de los commits propios; `ActionContext` con ganchos, porque M3 solo importa M0; `step_up_required` como resultado de `execute_write`; Postgres diferido a M4.

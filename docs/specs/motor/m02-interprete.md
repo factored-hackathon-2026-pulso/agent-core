@@ -108,7 +108,7 @@ Subconjunto cerrado: `var`, `==`, `!=`, `>`, `>=`, `<`, `<=`, `and`, `or`, `!`, 
 
 ## 6. Eventos que emite
 
-`node_entered`, `rule_evaluated`, `tool_called` (lectura y `compute`), `step_up_requested`, `access_denied` (`tool_denied`). `decision_made` lo emite M5 y los de acciones M3; M2 los agrega a la lista del `StepOutcome`.
+`node_entered`, `rule_evaluated`, `tool_called` (lectura y `compute`), `step_up_requested`, `access_denied` (`tool_denied`). `decision_made` lo emite M5 y los de acciones M3; M2 los agrega a la lista del `StepOutcome`. Los eventos que devuelve `execute_write` ya los persistió el `EventRecorder` dentro de los commits de M3: no deben volver a agregarse; el recorder de M4 vacía primero los eventos pendientes del turno.
 
 ## 7. Pruebas
 
