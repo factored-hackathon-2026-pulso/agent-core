@@ -43,6 +43,9 @@ forbidden_modules =
     agent_core.knowledge
     agent_core.turn
     agent_core.api
+    agent_core.adapters
+    agent_core.cli
+    agent_core.contracts
 
 [importlinter:contract:views]
 name = M7 (views) solo usa domain, ports
@@ -61,6 +64,9 @@ forbidden_modules =
     agent_core.knowledge
     agent_core.turn
     agent_core.api
+    agent_core.adapters
+    agent_core.cli
+    agent_core.contracts
 
 [importlinter:contract:guards]
 name = M6 (guards) solo usa domain, ports
@@ -79,6 +85,9 @@ forbidden_modules =
     agent_core.knowledge
     agent_core.turn
     agent_core.api
+    agent_core.adapters
+    agent_core.cli
+    agent_core.contracts
 
 [importlinter:contract:actions]
 name = M3 (actions) solo usa domain, ports
@@ -97,6 +106,9 @@ forbidden_modules =
     agent_core.knowledge
     agent_core.turn
     agent_core.api
+    agent_core.adapters
+    agent_core.cli
+    agent_core.contracts
 
 [importlinter:contract:decision]
 name = M5 (decision) solo usa domain, ports y views
@@ -114,6 +126,9 @@ forbidden_modules =
     agent_core.knowledge
     agent_core.turn
     agent_core.api
+    agent_core.adapters
+    agent_core.cli
+    agent_core.contracts
 
 [importlinter:contract:response]
 name = M8 (response) solo usa domain, ports y guards, views, knowledge
@@ -129,6 +144,9 @@ forbidden_modules =
     agent_core.audit
     agent_core.turn
     agent_core.api
+    agent_core.adapters
+    agent_core.cli
+    agent_core.contracts
 
 [importlinter:contract:interpreter]
 name = M2 (interpreter) solo usa domain, ports y flows, actions, decision, views, response, knowledge
@@ -141,6 +159,9 @@ forbidden_modules =
     agent_core.audit
     agent_core.turn
     agent_core.api
+    agent_core.adapters
+    agent_core.cli
+    agent_core.contracts
 
 [importlinter:contract:handoff]
 name = M10 (handoff) solo usa domain, ports y views
@@ -158,6 +179,9 @@ forbidden_modules =
     agent_core.knowledge
     agent_core.turn
     agent_core.api
+    agent_core.adapters
+    agent_core.cli
+    agent_core.contracts
 
 [importlinter:contract:audit]
 name = M11 (audit) solo usa domain, ports y views
@@ -175,6 +199,9 @@ forbidden_modules =
     agent_core.knowledge
     agent_core.turn
     agent_core.api
+    agent_core.adapters
+    agent_core.cli
+    agent_core.contracts
 
 [importlinter:contract:knowledge]
 name = M12 (knowledge) solo usa domain, ports y views
@@ -192,6 +219,9 @@ forbidden_modules =
     agent_core.audit
     agent_core.turn
     agent_core.api
+    agent_core.adapters
+    agent_core.cli
+    agent_core.contracts
 
 [importlinter:contract:turn]
 name = M4 (turn) solo usa domain, ports y interpreter, actions, decision, guards, handoff, audit
@@ -204,6 +234,9 @@ forbidden_modules =
     agent_core.response
     agent_core.knowledge
     agent_core.api
+    agent_core.adapters
+    agent_core.cli
+    agent_core.contracts
 
 [importlinter:contract:api]
 name = M9 (api) solo usa domain, ports y turn, handoff, audit
@@ -219,6 +252,9 @@ forbidden_modules =
     agent_core.response
     agent_core.interpreter
     agent_core.knowledge
+    agent_core.adapters
+    agent_core.cli
+    agent_core.contracts
 
 [importlinter:contract:adapters]
 name = adapters solo usa domain, ports
@@ -240,3 +276,11 @@ forbidden_modules =
     agent_core.api
     agent_core.cli
     agent_core.contracts
+
+[importlinter:contract:domain_sin_ports]
+name = domain no importa ports (los puertos dependen del dominio, no al revés)
+type = forbidden
+source_modules =
+    agent_core.domain
+forbidden_modules =
+    agent_core.ports

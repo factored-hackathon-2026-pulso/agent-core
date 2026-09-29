@@ -1,9 +1,13 @@
+import configparser
+import pkgutil
 import re
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+
+import agent_core
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -103,4 +107,72 @@ def test_m0_boundary_contract_fires_on_a_violation(tmp_path: Path) -> None:
     (pkg / "ports" / "bad.py").write_text("from fixpkg import adapters  # noqa: F401\n", encoding="utf-8")
     broken = run()
     assert broken.returncode != 0, broken.stdout + broken.stderr
+    assert "BROKEN" in broken.stdout
+
+
+def _contracts() -> dict[str, dict[str, list[str]]]:
+    parser = configparser.ConfigParser()
+    parser.read(ROOT / ".importlinter", encoding="utf-8")
+    result: dict[str, dict[str, list[str]]] = {}
+    for section in parser.sections():
+        if section.startswith("importlinter:contract:"):
+            result[section] = {
+                key: parser[section][key].split() for key in ("source_modules", "forbidden_modules")
+                if key in parser[section]
+            }
+    return result
+
+
+# `cli` y `contracts` son raíces de composición/herramienta: pueden importarlo todo.
+_UNCONTRACTED = {"cli", "contracts"}
+
+
+def test_every_subpackage_is_a_contract_source() -> None:
+    """Cierra el hueco de la lista negra: un paquete nuevo sin contrato hace fallar esta prueba."""
+    sources = {m for c in _contracts().values() for m in c.get("source_modules", [])}
+    for info in pkgutil.iter_modules(agent_core.__path__):
+        if info.name in _UNCONTRACTED:
+            continue
+        name = f"agent_core.{info.name}"
+        assert name in sources, f"{name} no tiene contrato en .importlinter"
+
+
+def test_every_module_contract_forbids_adapters_cli_and_contracts() -> None:
+    for name, contract in _contracts().items():
+        if name.endswith((":domain_sin_ports", ":adapters")):  # adapters ya forbids cli y contracts
+            continue
+        forbidden = set(contract["forbidden_modules"])
+        assert {"agent_core.adapters", "agent_core.cli", "agent_core.contracts"} <= forbidden, name
+
+
+def test_domain_must_not_import_ports() -> None:
+    contract = _contracts()["importlinter:contract:domain_sin_ports"]
+    assert contract["source_modules"] == ["agent_core.domain"]
+    assert contract["forbidden_modules"] == ["agent_core.ports"]
+
+
+def test_module_cannot_import_adapters_nor_domain_ports(tmp_path: Path) -> None:
+    config = (ROOT / ".importlinter").read_text(encoding="utf-8")
+    modules = set(re.findall(r"agent_core\.(\w+)", config))
+    pkg = tmp_path / "fixpkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    for name in modules:
+        (pkg / name).mkdir()
+        (pkg / name / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "fix.ini").write_text(config.replace("agent_core", "fixpkg"), encoding="utf-8")
+    cmd = (_LINT_IMPORTS.replace("lint_imports_command()", "")
+           + "sys.argv = ['lint-imports', '--config', 'fix.ini']; lint_imports_command()")
+
+    def run() -> subprocess.CompletedProcess[str]:
+        return subprocess.run([sys.executable, "-c", cmd], capture_output=True, text=True, cwd=tmp_path,
+                              check=False)
+
+    assert run().returncode == 0
+    (pkg / "flows" / "bad.py").write_text("from fixpkg import adapters  # noqa: F401\n", encoding="utf-8")
+    assert run().returncode != 0
+    (pkg / "flows" / "bad.py").unlink()
+    (pkg / "domain" / "bad.py").write_text("from fixpkg import ports  # noqa: F401\n", encoding="utf-8")
+    broken = run()
+    assert broken.returncode != 0
     assert "BROKEN" in broken.stdout
