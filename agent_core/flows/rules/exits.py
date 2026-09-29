@@ -9,9 +9,9 @@ from types import MappingProxyType
 
 from agent_core.domain import CollectNode, EndNode, EscalateNode, Outcome, RespondNode, node_kind
 from agent_core.flows.claims import derive_claims
-from agent_core.flows.context import Ctx, clip
+from agent_core.flows.context import Ctx
 from agent_core.flows.graph import FlowGraph, flow_mode
-from agent_core.flows.violations import Violation
+from agent_core.flows.violations import Violation, clip
 
 FAILURES: Mapping[str, frozenset[str]] = MappingProxyType(
     {

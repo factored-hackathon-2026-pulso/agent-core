@@ -11,9 +11,9 @@ from collections.abc import Iterator
 
 from agent_core.domain import ConfirmNode, RiskClass, ToolNode, VerifyNode, WriteToolNode
 from agent_core.flows.claims import derive_claims
-from agent_core.flows.context import Ctx, clip, pointer_segment
+from agent_core.flows.context import Ctx
 from agent_core.flows.graph import Edge, verify_of, writes_by_confirm
-from agent_core.flows.violations import Violation
+from agent_core.flows.violations import Violation, clip, pointer_segment
 
 RULE = "G0-05"
 

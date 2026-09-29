@@ -26,7 +26,7 @@ from agent_core.domain import (
 )
 from agent_core.flows.jsonlogic import jsonlogic_problems
 from agent_core.flows.paths import bad_paths, parse_path
-from agent_core.flows.violations import FlowSchemaError, Violation
+from agent_core.flows.violations import MAX_ECHO, FlowSchemaError, Violation, clip, pointer_segment
 
 try:  # parser interno de `re` (Python 3.11+); sin él la verificación de regex falla cerrada
     from re import _constants as _C  # type: ignore[attr-defined]
@@ -42,20 +42,13 @@ except ImportError:  # pragma: no cover
 VALIDATOR_TYPES = frozenset({"string", "integer", "decimal", "date", "boolean"})
 MAX_REGEX = 200
 MAX_ERRORS = 200
-MAX_ECHO = 80
 _MESSAGES = {"missing": "campo obligatorio", "extra_forbidden": "campo no permitido"}
 _UNKNOWN_TAG = ("union_tag_invalid", "union_tag_not_found")
 
 
 def error_message(error_type: str) -> str:
     """Mensaje fijo en español para un tipo de error de Pydantic (nunca su texto ni su valor de entrada)."""
-    return _MESSAGES.get(error_type, f"valor inválido ({_clip(error_type)})")
-
-
-def _clip(value: object, limit: int = MAX_ECHO) -> str:
-    """Texto acotado para eco en mensajes: nunca más de `limit` caracteres del original."""
-    text = value if isinstance(value, str) else repr(value)
-    return text if len(text) <= limit else text[:limit] + "..."
+    return _MESSAGES.get(error_type, f"valor inválido ({clip(error_type)})")
 
 
 def _pointer(loc: tuple[int | str, ...]) -> str:
@@ -63,13 +56,13 @@ def _pointer(loc: tuple[int | str, ...]) -> str:
     (`nodes/<i>/<tag>/…`); no existe en el documento, así que se descarta."""
     if len(loc) > 2 and loc[0] == "nodes" and isinstance(loc[1], int):
         loc = (*loc[:2], *loc[3:])
-    parts = (_clip(str(p).replace("~", "~0").replace("/", "~1")) for p in loc)
+    parts = (pointer_segment(str(p)) for p in loc)
     return "/" + "/".join(parts)
 
 
 def _label(raw: JsonValue) -> str | None:
     if isinstance(raw, dict) and isinstance(raw.get("id"), str) and isinstance(raw.get("version"), str):
-        return _clip(f"{raw['id']}@{raw['version']}", 2 * MAX_ECHO)
+        return clip(f"{raw['id']}@{raw['version']}", 2 * MAX_ECHO)
     return None
 
 
@@ -80,7 +73,7 @@ def _raw_node_id(raw: JsonValue, loc: tuple[int | str, ...]) -> str | None:
     if isinstance(nodes, list) and 0 <= loc[1] < len(nodes):
         entry = nodes[loc[1]]
         ident = entry.get("id") if isinstance(entry, dict) else None
-        return _clip(ident) if isinstance(ident, str) else None
+        return clip(ident) if isinstance(ident, str) else None
     return None
 
 
@@ -224,7 +217,7 @@ def validator_problems(validator: SlotValidator) -> list[str]:
         return (
             []
             if isinstance(value, str) and value in VALIDATOR_TYPES
-            else [f"tipo de validador desconocido: {_clip(value)!r}"]
+            else [f"tipo de validador desconocido: {clip(value)!r}"]
         )
     if validator.kind == "regex":
         if not isinstance(value, str) or len(value) > MAX_REGEX:
@@ -232,7 +225,7 @@ def validator_problems(validator: SlotValidator) -> list[str]:
         try:
             re.compile(value)
         except re.error as exc:
-            return [f"regex inválida: {_clip(str(exc))}"]
+            return [f"regex inválida: {clip(str(exc))}"]
         return _regex_safety(value)
     if validator.kind == "enum":
         items = value if isinstance(value, list) else []
@@ -245,7 +238,7 @@ def validator_problems(validator: SlotValidator) -> list[str]:
             return []
         except ValueError:
             pass
-    return [f"el validador decide necesita una referencia a un decision_model: {_clip(value)!r}"]
+    return [f"el validador decide necesita una referencia a un decision_model: {clip(value)!r}"]
 
 
 def schema_violations(flow: Flow) -> list[Violation]:
@@ -261,7 +254,7 @@ def schema_violations(flow: Flow) -> list[Violation]:
             found.append(Violation(rule="G0-01", node_id=_node.id, path=_where + sub, message=message))
 
         if node.id in seen:
-            add(f"id de nodo duplicado: {_clip(node.id)}")
+            add(f"id de nodo duplicado: {clip(node.id)}")
         seen.add(node.id)
         if node_kind(node) in PRODUCTION_NODE_KINDS:
             add("tipo de producción no habilitado")
@@ -274,18 +267,18 @@ def schema_violations(flow: Flow) -> list[Violation]:
             add("conocimiento no habilitado (tema #10)", "/config/generate/knowledge_refs")
         for sub, expr in _jsonlogic_fields(node):
             for problem in jsonlogic_problems(expr):
-                add(f"JSON Logic {_clip(problem, 2 * MAX_ECHO)}", sub)
+                add(f"JSON Logic {clip(problem, 2 * MAX_ECHO)}", sub)
         for sub, text in _required_paths(node):
             try:
                 path = parse_path(text)
             except ValueError:
-                add(f"ruta mal formada: {_clip(text)!r}", sub)
+                add(f"ruta mal formada: {clip(text)!r}", sub)
                 continue
             if path is None:
-                add(f"se esperaba una ruta y llegó un literal: {_clip(text)!r}", sub)
+                add(f"se esperaba una ruta y llegó un literal: {clip(text)!r}", sub)
         for sub, value in _args_fields(node):
             for text in bad_paths(value):
-                add(f"ruta mal formada: {_clip(text)!r}", sub)
+                add(f"ruta mal formada: {clip(text)!r}", sub)
         if isinstance(node, CollectNode) and node.config.validator is not None:
             for problem in validator_problems(node.config.validator):
                 add(problem, "/config/validator")

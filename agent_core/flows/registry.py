@@ -11,11 +11,10 @@ from types import MappingProxyType
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, ValidationError
 
 from agent_core.domain import EntityKind, Interrupt, RefSpec, RegistryEntity, Template
-from agent_core.flows.context import clip, pointer_segment
 from agent_core.flows.paths import template_vars
 from agent_core.flows.schema import MAX_ERRORS, error_message, parse_flow
 from agent_core.flows.view import ENTITY_TYPES, best_version, parse_version
-from agent_core.flows.violations import FlowSchemaError, Violation, sort_violations
+from agent_core.flows.violations import FlowSchemaError, Violation, clip, pointer_segment, sort_violations
 from agent_core.flows.yaml_loader import MAX_BYTES, YamlError, load_yaml
 
 

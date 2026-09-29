@@ -28,11 +28,11 @@ from agent_core.domain import (
     VerifyNode,
     is_declarable,
 )
-from agent_core.flows.context import Ctx, clip
+from agent_core.flows.context import Ctx
 from agent_core.flows.graph import end_modes, flow_mode, is_waiting
 from agent_core.flows.jsonlogic import MAX_DEPTH, exceeds_max_depth, expr_literals, expr_paths
 from agent_core.flows.paths import Path, parse_path, value_paths
-from agent_core.flows.violations import Violation
+from agent_core.flows.violations import Violation, clip
 
 READ_CLASSES = frozenset({RiskClass.read, RiskClass.compute})
 SLOTS_FACTS = frozenset({"slots", "facts"})

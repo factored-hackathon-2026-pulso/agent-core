@@ -1,12 +1,11 @@
 """Chequeos por agente: G0-12 (locales), AG-01 (modo) y referencias del agente (M1 §3.8)."""
 
 from agent_core.domain import Agent, EntityKind, Flow, Prompt, StartFlowAction, Template
-from agent_core.flows.context import clip
 from agent_core.flows.graph import flow_mode
 from agent_core.flows.refs import TEMPLATE_KINDS, agent_ref_sites, flow_ref_sites, pointer_str
 from agent_core.flows.registry import AuthoringRegistry, ReleaseDecl
 from agent_core.flows.view import RegistryView
-from agent_core.flows.violations import Violation, sort_violations
+from agent_core.flows.violations import Violation, clip, sort_violations
 
 
 def _agent_label(agent: Agent) -> str:

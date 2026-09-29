@@ -8,19 +8,6 @@ from agent_core.flows.graph import FlowGraph
 from agent_core.flows.view import RegistryView
 from agent_core.flows.violations import Violation
 
-MAX_ECHO = 80
-
-
-def clip(value: object, limit: int = MAX_ECHO) -> str:
-    """Texto acotado para eco en mensajes: nunca más de `limit` caracteres del original."""
-    text = value if isinstance(value, str) else repr(value)
-    return text if len(text) <= limit else text[:limit] + "..."
-
-
-def pointer_segment(key: str) -> str:
-    """Segmento de JSON Pointer (RFC 6901) acotado, para claves escritas por el autor."""
-    return clip(key.replace("~", "~0").replace("/", "~1"))
-
 
 @dataclass(frozen=True)
 class Ctx:

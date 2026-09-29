@@ -3,10 +3,10 @@
 from collections.abc import Iterator, Mapping, Sequence
 
 from agent_core.domain import RESULTS, DecideNode, DecisionModelDef, node_kind
-from agent_core.flows.context import Ctx, clip, pointer_segment
+from agent_core.flows.context import Ctx
 from agent_core.flows.graph import is_waiting
 from agent_core.flows.refs import flow_ref_sites, pointer_str
-from agent_core.flows.violations import Violation
+from agent_core.flows.violations import Violation, clip, pointer_segment
 
 MAX_LISTED_MEMBERS = 10
 

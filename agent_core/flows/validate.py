@@ -2,7 +2,7 @@
 
 from agent_core.domain import Agent, EntityKind, Flow
 from agent_core.flows.agent import release_flows, validate_agent, validate_flow_for_agent
-from agent_core.flows.context import Ctx, Rule, clip
+from agent_core.flows.context import Ctx, Rule
 from agent_core.flows.registry import AuthoringRegistry
 from agent_core.flows.rules.exits import g0_06
 from agent_core.flows.rules.phase5 import g0_07, g0_08, g0_10, g0_11, g0_13, g0_14, g0_15, g0_16
@@ -10,7 +10,7 @@ from agent_core.flows.rules.structure import g0_02, g0_03, g0_04
 from agent_core.flows.rules.writes import g0_05
 from agent_core.flows.schema import schema_violations
 from agent_core.flows.view import RegistryView
-from agent_core.flows.violations import Violation, sort_violations
+from agent_core.flows.violations import Violation, clip, sort_violations
 
 # Reglas que necesitan un esquema sin G0-01. Agregar una regla = agregarla aquí (M1 §9).
 FLOW_RULES: tuple[Rule, ...] = (

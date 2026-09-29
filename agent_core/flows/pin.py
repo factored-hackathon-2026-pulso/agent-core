@@ -26,12 +26,11 @@ from agent_core.domain import (
     iter_refspecs,
     require_exact_refs,
 )
-from agent_core.flows.context import clip
 from agent_core.flows.refs import Pointer, entity_ref_sites, pointer_str
 from agent_core.flows.registry import AuthoringRegistry
 from agent_core.flows.validate import validate_flow
 from agent_core.flows.view import best_version
-from agent_core.flows.violations import Violation
+from agent_core.flows.violations import Violation, clip
 
 Chosen = dict[tuple[EntityKind, str], str]
 MAX_REPORTED = 20  # errores que lleva el mensaje; el resto se resume en un conteo
