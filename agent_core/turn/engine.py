@@ -14,7 +14,9 @@ from agent_core.domain import (
     EntityRef,
     EscalationRequest,
     Flow,
+    InvalidationReason,
     OnBehalfOf,
+    Outcome,
     Principal,
     ProblemCode,
     RefSpec,
@@ -179,7 +181,7 @@ class TurnEngine:
 
         frame.buffer.transform(fill)
 
-    def _finish(self, frame: TurnFrame, *, record: bool) -> TurnResult:
+    def _finish(self, frame: TurnFrame, *, record: bool, store_result: bool = True) -> TurnResult:
         """Pasos 13, 13b y 14: registrar, medir y persistir. El `commit()` lo hace quien llama."""
         self._ensure_started(frame)
         if record:
@@ -213,7 +215,7 @@ class TurnEngine:
         cost = max(saved.budgets_used.run_cost - frame.initial_run_cost, Decimal("0")) + frame.cost_usd
         frame.uow.add_usage(saved.principal.key, cost, now)
         result = build_turn_result(frame, saved, self._trace.current(frame.turn_id))
-        if frame.client_turn_id is not None:
+        if store_result and frame.client_turn_id is not None:
             frame.uow.put_turn_result(saved.run_id, frame.client_turn_id, result)
         if frame.entry == "turn":
             frame.uow.release_turn(saved.run_id, frame.turn_id)
@@ -299,7 +301,23 @@ class TurnEngine:
             with frame.meter.stage("flow"):
                 self._closer.escalate(frame, request, "revocation")
             return self._finish(frame, record=True)
-        raise NotImplementedError("pasos 4-12: Tasks 9-16")
+        if self._expired(frame):  # paso 4 (P2): se cierra y el mensaje no se procesa
+            return EngineError(ProblemCode.run_closed, "run vencido por inactividad")
+        raise NotImplementedError("pasos 5-12: Tasks 10-16")
+
+    def _expired(self, frame: TurnFrame) -> bool:
+        """Evalúa `now − last_activity_at > inactivity_ttl` (estricto), emite `expiry_evaluated` en cada
+        turno (C12) y, si venció, abandona: invalida acciones, `abandoned`, `turn_completed` y persiste."""
+        now = self._clock.now()
+        ttl = frame.agent.inactivity_ttl
+        expired = now - frame.state.last_activity_at > ttl
+        frame.buffer.add(self._events.expiry_evaluated(frame.state, frame.turn_id, now, ttl, expired=expired))
+        if not expired:
+            return False
+        self._closer.invalidate(frame, InvalidationReason.abandoned)
+        self._closer.close_run(frame, Outcome.abandoned, "abandonment")
+        self._finish(frame, record=False, store_result=False)  # el reintento recibe 410
+        return True
 
     # --- start_run ----------------------------------------------------------------------------------
 
