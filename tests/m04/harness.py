@@ -14,6 +14,7 @@ from agent_core.domain import (
     Flow,
     OnBehalfOf,
     Principal,
+    Prompt,
     RegistryEntity,
     Release,
     RunState,
@@ -179,6 +180,31 @@ PROCESAR = flow(
     ),
     node("fin", "end", {"outcome": "completed", "output_map": {"dato": "facts.dato.value"}}),
 )
+GENERAR = flow(
+    "generar",
+    10,
+    node(
+        "g",
+        "respond",
+        {
+            "generate": {
+                "prompt_ref": "p-resumen@1.0.0",
+                "allowed_facts": [],
+                "fallback_template_ref": "t-listo@1.0.0",
+            }
+        },
+        next="fin",
+    ),
+    node("fin", "end", {"outcome": "resolved"}),
+)
+PROMPT = Prompt.model_validate(
+    {
+        "id": "p-resumen",
+        "version": "1.0.0",
+        "locales": {"es": "resume", "pt": "resume"},
+        "model_profile": "perfil@1.0.0",
+    }
+)
 TAREA_BUG = flow(
     "tarea-bug",
     10,
@@ -274,6 +300,8 @@ class World:
             BLOQUEAR,
             PROCESAR,
             TAREA_BUG,
+            GENERAR,
+            PROMPT,
             *(
                 Template(id=tid, version="1.0.0", locales={"es": es, "pt": pt})
                 for tid, (es, pt) in TEXTS.items()
