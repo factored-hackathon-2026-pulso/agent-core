@@ -46,6 +46,7 @@ class Responder:
    - Cada cifra debe ser **numéricamente igual** a un valor de un hecho o página citados, con la precisión de la moneda (`Decimal`, sin tolerancia relativa).
    - Si la cifra no aparece en ningún hecho de origen `tool`/`identity`, debe venir de un hecho `compute`. Una cifra calculada sin su `compute` falla.
    - Se ignoran los dígitos dentro de tokens de M7.
+   - Todo número del texto cuenta igual ("paso 2", "24 horas"): debe estar en un hecho citado. Una cifra ambigua sin `number_format` se rechaza aunque un hecho la respalde. Las fechas se comparan con valores ISO (`aaaa-mm-dd`) de los hechos; los valores de hecho numéricos son `int`, `Decimal` o cadenas `-?dígitos(.dígitos)?`.
 4. **Tokens y PII:** todo token del texto existe en el `token_map`; `ViewService.find_clear_pii` no encuentra identificadores `pii_direct` en claro.
 5. **Idioma:** `detect_language(text)` con los mismos candidatos que M6 debe dar el `locale` del turno. `short` o `undetermined` no rechazan.
 
