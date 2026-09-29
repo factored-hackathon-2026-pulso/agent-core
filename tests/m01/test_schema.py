@@ -1,8 +1,10 @@
 from collections.abc import Callable
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
+from agent_core.flows import schema
 from agent_core.flows.schema import parse_flow, schema_violations
 from agent_core.flows.violations import FlowSchemaError
 from tests.m01.cases import base, flow, node
@@ -28,7 +30,7 @@ def test_unknown_type_is_g0_01_with_location() -> None:
     assert violation.rule == "G0-01"
     assert violation.flow == "base@1.0.0"
     assert violation.node_id == "k"
-    assert violation.path is not None and violation.path.startswith("flows/base@1.0.0.yaml#/nodes/9")
+    assert violation.path == "flows/base@1.0.0.yaml#/nodes/9"
 
 
 # T-M1-07 (en el MVP un nodo agent es G0-01)
@@ -219,3 +221,56 @@ def test_ordinary_regex_is_accepted(pattern: str) -> None:
     d = base()
     node(d, "pedir")["config"]["validator"] = {"kind": "regex", "value": pattern}
     assert parse_flow(d).id == "base"
+
+
+def _paths(d: dict[str, Any]) -> list[tuple[str, str, str | None]]:
+    with pytest.raises(FlowSchemaError) as info:
+        parse_flow(d)
+    return [(v.rule, v.path or "", v.node_id) for v in info.value.violations]
+
+
+def test_pydantic_paths_are_document_pointers() -> None:
+    d = base()
+    del node(d, "pedir")["config"]["prompt_ref"]
+    assert _paths(d) == [("G0-01", "/nodes/0/config/prompt_ref", "pedir")]
+    d = base()
+    node(d, "ok_msg")["config"] = {"generate": {"prompt_ref": "p/gen", "allowed_facts": ["facts.verif"]}}
+    assert _paths(d) == [("G0-09", "/nodes/5/config/generate/fallback_template_ref", "ok_msg")]
+    d = base()
+    node(d, "fin")["config"]["nope"] = 1
+    assert _paths(d) == [("G0-01", "/nodes/6/config/nope", "fin")]
+
+
+def test_jsonlogic_messages_are_clipped() -> None:
+    d = base()
+    node(d, "verificar")["config"]["predicate"] = {"o" * 5000: [1]}
+    with pytest.raises(FlowSchemaError) as info:
+        parse_flow(d)
+    assert info.value.violations
+    assert all(len(v.message) < 250 for v in info.value.violations)
+
+
+def _regex_problems(pattern: str) -> list[str]:
+    return schema._regex_safety(pattern)
+
+
+def test_regex_parser_is_available_in_real_environment() -> None:
+    assert schema._PARSER is not None, "re._parser no disponible: la validación de regex fallaría cerrada"
+    assert _regex_problems("(a+)+") and _regex_problems("a+") == []
+
+
+def test_regex_fails_closed_without_parser(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(schema, "_PARSER", None)
+    assert "no se puede verificar la regex" in _regex_problems("a+")[0]
+    d = base()
+    node(d, "pedir")["config"]["validator"] = {"kind": "regex", "value": "a+"}
+    assert _rules(d) == {"G0-01"}
+
+
+def test_regex_fails_closed_on_unexpected_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = SimpleNamespace(parse=lambda _p: [(schema._REPEATS[0], "raro")])
+    monkeypatch.setattr(schema, "_PARSER", fake)
+    (problem,) = _regex_problems("a+")
+    assert "no se puede verificar la regex" in problem
+    monkeypatch.setattr(schema, "_PARSER", SimpleNamespace(parse=lambda _p: 5))
+    assert "no se puede verificar la regex" in _regex_problems("a+")[0]

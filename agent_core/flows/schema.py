@@ -28,7 +28,7 @@ from agent_core.flows.jsonlogic import jsonlogic_problems
 from agent_core.flows.paths import bad_paths, parse_path
 from agent_core.flows.violations import FlowSchemaError, Violation
 
-try:  # parser interno de `re` (Python 3.11+); sin él la heurística se omite
+try:  # parser interno de `re` (Python 3.11+); sin él la verificación de regex falla cerrada
     from re import _constants as _C  # type: ignore[attr-defined]
     from re import _parser as _PARSER  # type: ignore[attr-defined]
 
@@ -54,6 +54,10 @@ def _clip(value: object, limit: int = MAX_ECHO) -> str:
 
 
 def _pointer(loc: tuple[int | str, ...]) -> str:
+    """JSON Pointer del error. Pydantic inserta la etiqueta del discriminador tras el índice del nodo
+    (`nodes/<i>/<tag>/…`); no existe en el documento, así que se descarta."""
+    if len(loc) > 2 and loc[0] == "nodes" and isinstance(loc[1], int):
+        loc = (*loc[:2], *loc[3:])
     parts = (_clip(str(p).replace("~", "~0").replace("/", "~1")) for p in loc)
     return "/" + "/".join(parts)
 
@@ -182,22 +186,31 @@ def _children(op: Any, av: Any) -> list[Any]:
     return []
 
 
-def _nested_unbounded(pattern: str) -> bool:
-    """Heurística: cuantificador ilimitado cuyo cuerpo contiene otro ilimitado (`(a+)+`, `(.*)*`)."""
+_UNVERIFIABLE = "no se puede verificar la regex"
+
+
+def _regex_safety(pattern: str) -> list[str]:
+    """Rechaza cuantificadores ilimitados anidados (`(a+)+`, `(.*)*`). Falla cerrado.
+
+    Heurística de mejor esfuerzo: NO detecta alternancias ambiguas como `(a|aa)+` ni cuantificadores
+    adyacentes solapados. El runtime que compile la regex debe imponer igualmente un timeout y un tope
+    de longitud de entrada. Si el parser interno no está disponible o el árbol tiene una forma
+    inesperada, devuelve un problema (no se acepta lo que no se pudo verificar).
+    """
     if _PARSER is None:
-        return False
+        return [f"{_UNVERIFIABLE} (parser no disponible)"]
     try:
         parsed = _PARSER.parse(pattern)
-    except (re.error, RecursionError, OverflowError):
-        return False
-    stack: list[Any] = [parsed]
-    while stack:
-        current = stack.pop()
-        for op, av in current:
-            if op in _REPEATS and av[1] >= _MAXREPEAT and _has_repeat(av[2]):
-                return True
-            stack.extend(_children(op, av))
-    return False
+        stack: list[Any] = [parsed]
+        while stack:
+            current = stack.pop()
+            for op, av in current:
+                if op in _REPEATS and av[1] >= _MAXREPEAT and _has_repeat(av[2]):
+                    return ["la regex tiene cuantificadores ilimitados anidados (retroceso catastrófico)"]
+                stack.extend(_children(op, av))
+    except (AttributeError, IndexError, TypeError, ValueError, RecursionError, OverflowError, re.error):
+        return [f"{_UNVERIFIABLE} (forma inesperada)"]
+    return []
 
 
 def validator_problems(validator: SlotValidator) -> list[str]:
@@ -215,9 +228,7 @@ def validator_problems(validator: SlotValidator) -> list[str]:
             re.compile(value)
         except re.error as exc:
             return [f"regex inválida: {_clip(str(exc))}"]
-        if _nested_unbounded(value):
-            return ["la regex tiene cuantificadores ilimitados anidados (retroceso catastrófico)"]
-        return []
+        return _regex_safety(value)
     if validator.kind == "enum":
         items = value if isinstance(value, list) else []
         strings = [v for v in items if isinstance(v, str)]
@@ -258,7 +269,7 @@ def schema_violations(flow: Flow) -> list[Violation]:
             add("conocimiento no habilitado (tema #10)", "/config/generate/knowledge_refs")
         for sub, expr in _jsonlogic_fields(node):
             for problem in jsonlogic_problems(expr):
-                add(f"JSON Logic {problem}", sub)
+                add(f"JSON Logic {_clip(problem, 2 * MAX_ECHO)}", sub)
         for sub, text in _required_paths(node):
             try:
                 path = parse_path(text)
