@@ -6,14 +6,12 @@ ciclos (cada `(tipo, id)` se recorre una sola vez) y lineal en el tamaño de la 
 una clausura con violaciones G0 en sus flows: nunca hay release parcial ni sin validar.
 """
 
-from collections import deque
 from dataclasses import dataclass
 from typing import Any
 
 from pydantic import ValidationError
 
 from agent_core.domain import (
-    AgentSelector,
     DomainError,
     EntityKind,
     Flow,
@@ -26,13 +24,12 @@ from agent_core.domain import (
     iter_refspecs,
     require_exact_refs,
 )
-from agent_core.flows.refs import Pointer, entity_ref_sites, pointer_str
+from agent_core.flows.closure import Chosen, resolve_closure
+from agent_core.flows.refs import Pointer, entity_ref_sites
 from agent_core.flows.registry import AuthoringRegistry
 from agent_core.flows.validate import validate_flow
-from agent_core.flows.view import best_version
 from agent_core.flows.violations import Violation, clip
 
-Chosen = dict[tuple[EntityKind, str], str]
 MAX_REPORTED = 20  # errores que lleva el mensaje; el resto se resume en un conteo
 
 
@@ -98,46 +95,10 @@ def pin_release(reg: AuthoringRegistry, release_id: str) -> PinnedRelease:
     decl = reg.release(release_id)
     if decl is None:
         raise SchemaError(f"la release {clip(release_id, 80)!r} no existe en el registro")
-    chosen: Chosen = {}
-    errors: set[str] = set()
-    pending: deque[tuple[EntityKind, str, str]] = deque()
-
-    def want(kind: EntityKind, ref: RefSpec, where: str) -> None:
-        best = best_version(ref.spec, reg.versions(kind, ref.id))
-        if best is None:
-            errors.add(f"{where}: {kind.value} {ref} no resuelve")
-            return
-        previous = chosen.get((kind, ref.id))
-        if previous is None:
-            chosen[(kind, ref.id)] = best
-            pending.append((kind, ref.id, best))
-        elif previous != best:
-            low, high = sorted((best, previous), key=lambda v: tuple(int(p) for p in v.split(".")))
-            errors.add(f"{where}: {kind.value} {ref.id} resuelve a {low} y a {high}")
-
-    for i, entry in enumerate(decl.agents):
-        want(EntityKind.agent, entry.agent, f"agents/{i}")
-    for i, ref in enumerate(decl.flows):
-        want(EntityKind.flow, ref, f"flows/{i}")
-    for i, interrupt in enumerate(decl.interrupts):
-        if isinstance(interrupt.action, StartFlowAction):
-            want(EntityKind.flow, interrupt.action.flow, f"interrupts/{i}/action/flow")
-        if interrupt.signal_policy is not None:
-            want(EntityKind.policy, interrupt.signal_policy, f"interrupts/{i}/signal_policy")
-    for i, entry in enumerate(decl.agents):
-        for alias in entry.aliases:
-            try:  # mismo formato de alias que el selector de agente del request (M0)
-                AgentSelector.model_validate({"id": entry.agent.id, "alias": alias})
-            except ValidationError:
-                errors.add(f"agents/{i}/aliases: alias inválido {clip(alias, 40)!r}")
-    want(EntityKind.language_detection, decl.language_detection, "language_detection")
-    if decl.injection_ruleset is not None:
-        want(EntityKind.injection_ruleset, decl.injection_ruleset, "injection_ruleset")
-    while pending:
-        kind, ident, version = pending.popleft()
+    chosen, problems = resolve_closure(reg, decl)
+    errors = {f"{where}: {message}" for where, message in problems}
+    for (kind, ident), version in chosen.items():
         entity = reg.get_exact(kind, ident, version)
-        for site in entity_ref_sites(entity):
-            want(site.kind, site.ref, f"{kind.value} {ident}@{version} {pointer_str(site.pointer)}")
         if isinstance(entity, Flow):
             for v in validate_flow(entity, reg):
                 errors.add(_violation_line(f"{ident}@{version}", v))

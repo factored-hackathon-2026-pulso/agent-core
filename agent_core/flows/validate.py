@@ -2,6 +2,7 @@
 
 from agent_core.domain import Agent, EntityKind, Flow
 from agent_core.flows.agent import release_flows, validate_agent, validate_flow_for_agent
+from agent_core.flows.closure import closure_problems
 from agent_core.flows.context import Ctx, Rule
 from agent_core.flows.registry import AuthoringRegistry
 from agent_core.flows.rules.exits import g0_06
@@ -30,7 +31,7 @@ def validate_flow(flow: Flow, reg: RegistryView) -> list[Violation]:
 
 
 def validate_registry(reg: AuthoringRegistry) -> list[Violation]:
-    """Flows, agentes y, por release, cada agente con sus flows (M1 §3.12).
+    """Flows, agentes y, por release, su clausura y cada agente con sus flows (M1 §3.12).
 
     Total y determinista. Cada flow se valida una vez (`validate_flow`) y cada par (agente, flow) una vez,
     sin importar cuántas releases lo repitan: el costo es lineal en el tamaño del registro.
@@ -45,6 +46,8 @@ def validate_registry(reg: AuthoringRegistry) -> list[Violation]:
     checked: set[tuple[str, str, str, str]] = set()
     for decl in reg.releases():
         where = clip(f"releases/{decl.id}.yaml", 240)
+        for at, text in closure_problems(reg, decl, skip_covered=True):
+            found.append(Violation(rule="G0-02", path=clip(f"{where}#/{at}", 240), message=text))
         for entry in decl.agents:
             agent = reg.resolve(EntityKind.agent, entry.agent)
             if not isinstance(agent, Agent):
