@@ -2,6 +2,7 @@
 hace M3 con `uow_factory`."""
 
 from dataclasses import replace
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
@@ -72,6 +73,7 @@ from agent_core.turn.ports import (
 from agent_core.turn.recovery import position_at_verify
 from agent_core.turn.refs import pinned_ref
 from agent_core.turn.results import awaiting_for, build_turn_result
+from agent_core.turn.sweep import Sweeper, SweepReport
 from agent_core.turn.templates import render_engine
 
 
@@ -113,6 +115,15 @@ class TurnEngine:
         self._events = TurnEvents(ids, clock)
         self._closer = Closer(actions=actions, handoff=handoff, audit=audit, clock=clock, registry=registry)
         self._env = Env(closer=self._closer, registry=registry)
+        self._sweeper = Sweeper(
+            uow_factory=uow_factory,
+            registry=registry,
+            clock=clock,
+            ids=ids,
+            actions=actions,
+            chain=chain,
+            config=self._config,
+        )
 
     # --- piezas comunes -----------------------------------------------------------------------------
 
@@ -522,6 +533,10 @@ class TurnEngine:
         self._closer.close_run(frame, Outcome.abandoned, "abandonment")
         self._finish(frame, record=False, store_result=False)  # el reintento recibe 410
         return True
+
+    def sweep(self, now: datetime) -> SweepReport:
+        """Barrido periódico de inactividad (delega en `Sweeper`)."""
+        return self._sweeper.sweep(now)
 
     # --- start_run ----------------------------------------------------------------------------------
 
