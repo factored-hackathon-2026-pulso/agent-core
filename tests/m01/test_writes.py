@@ -60,16 +60,16 @@ def test_money_movement_and_irreversible_tools_are_valid_in_confirm() -> None:
         assert check(d, registry(*extra)) == []
 
 
-def test_write_denied_may_go_back_through_confirm() -> None:
+def test_write_denied_back_to_confirm_is_ok_for_g0_05_but_not_a_safe_exit() -> None:
     d = base()
     node(d, "escribir")["next"]["denied"] = "confirmar"
-    assert check(d) == []
+    assert rules(check(d)) == {"G0-06"}  # M1 §3.7: confirm no es una salida segura
 
 
-def test_verify_failed_may_go_back_through_confirm() -> None:
+def test_verify_failed_back_to_confirm_is_ok_for_g0_05_but_not_a_safe_exit() -> None:
     d = base()
     node(d, "verificar")["next"]["failed"] = "confirmar"
-    assert check(d) == []
+    assert rules(check(d)) == {"G0-06"}  # M1 §3.7: confirm no es una salida segura
 
 
 def test_loop_back_to_confirm_after_verified_is_valid() -> None:
@@ -81,9 +81,10 @@ def test_loop_back_to_confirm_after_verified_is_valid() -> None:
 
 def test_non_claiming_respond_on_unsafe_branches_is_valid() -> None:
     d = base()
-    node(d, "confirmar")["next"]["no"] = "aviso"
+    node(d, "confirmar")["next"]["no"] = "aviso_no"
     node(d, "buscar")["next"]["error"] = "aviso"
-    d["nodes"].append(_respond("aviso", "t/seguro", "fin_cancelado"))
+    d["nodes"].append(_respond("aviso_no", "t/seguro", "fin_cancelado"))
+    d["nodes"].append(_respond("aviso", "t/seguro", "esc"))
     assert check(d) == []
 
 
@@ -266,7 +267,7 @@ def test_bypass_through_every_non_yes_confirm_edge(edge: str) -> None:
 def test_bypass_from_a_read_tool_failure_edge() -> None:
     d = base()
     node(d, "buscar")["next"]["error"] = "escribir"
-    assert rules(check(d)) == {"G0-05"}
+    assert rules(check(d)) == {"G0-05", "G0-06"}
 
 
 def test_bypass_via_loop_after_verified() -> None:
@@ -351,14 +352,14 @@ def test_claim_reachable_from_write_denied() -> None:
     d = base()
     node(d, "escribir")["next"]["denied"] = "pronto"
     d["nodes"].append(_respond("pronto", "t/seguro", "fin", ["confirmar"]))
-    assert rules(check(d)) == {"G0-05"}
+    assert rules(check(d)) == {"G0-05", "G0-06"}
 
 
 def test_claim_reachable_from_verify_failed() -> None:
     d = base()
     node(d, "verificar")["next"]["failed"] = "pronto"
     d["nodes"].append(_respond("pronto", "t/lee_res", "fin"))
-    assert rules(check(d)) == {"G0-05"}
+    assert rules(check(d)) == {"G0-05", "G0-06"}
 
 
 def test_claim_via_uncertain_edge_skipping_verify() -> None:
@@ -372,7 +373,7 @@ def test_end_output_map_before_verify() -> None:
     node(d, "buscar")["next"]["error"] = "fin_x"
     d["nodes"].append({"id": "fin_x", "type": "end",
                        "config": {"outcome": "resolved", "output_map": {"id": "facts.verif.value.id"}}})
-    assert rules(check(d)) == {"G0-05"}
+    assert rules(check(d)) == {"G0-05", "G0-06"}
 
 
 def test_claim_of_unverifiable_write_is_reported() -> None:
