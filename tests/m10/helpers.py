@@ -1,10 +1,26 @@
 """Ayudantes de las pruebas de M10. Solo datos sintéticos."""
 
 from collections.abc import Mapping
+from decimal import Decimal
+from typing import Any
 
-from agent_core.domain import Agent, OnBehalfOf, Principal, PrincipalType, SubjectRef
+from agent_core.domain import (
+    Agent,
+    EngineEvent,
+    EntityRef,
+    OnBehalfOf,
+    Principal,
+    PrincipalType,
+    RuleEvaluated,
+    RuleEvaluatedPayload,
+    RunState,
+    SubjectRef,
+    ToolCalled,
+    ToolCalledPayload,
+)
 from agent_core.ports import AuthzDecision
 from agent_core.views import DEFAULT_CATALOG, FieldClassifier, FieldRule, ViewService
+from testing.builders import NOW, action, run_state
 from testing.fakes.clock import FakeClock
 from testing.fakes.keys import FakeKeyProvider
 
@@ -64,3 +80,70 @@ class HandoffAuthz:
 def make_views(authz: HandoffAuthz | None = None, keys: FakeKeyProvider | None = None) -> ViewService:
     return ViewService(keys or FakeKeyProvider.default(), authz or HandoffAuthz(), FakeClock(),
                        FieldClassifier(CATALOG))
+
+
+DOC = "1023456789"
+
+__all__ = ["DOC", "NOW"]
+
+
+def make_state(**over: Any) -> RunState:
+    """Run abierto con hechos, slots, decisiones y acciones ya invalidadas (como lo entrega M4)."""
+    base: dict[str, Any] = {
+        "active_flow": {"flow": "disputa-cargo@1.0.0", "node_id": "responder"},
+        "facts": {
+            "cliente": {
+                "fact_id": "fact-0001",
+                "value": {"document_number": DOC, "first_name": "Ana"},
+                "source": {"kind": "tool", "ref": "get_customer@1.0.0"},
+                "ts": NOW,
+            },
+            "cargo": {
+                "fact_id": "fact-0002",
+                "value": {"amount": Decimal("120.50"), "currency": "USD"},
+                "source": {"kind": "tool", "ref": "get_charge@1.0.0", "inputs": ["fact-0001"]},
+                "ts": NOW,
+            },
+            "politica_pagina": {
+                "fact_id": "fact-0003",
+                "value": {"status": "vigente"},
+                "source": {"kind": "knowledge", "ref": "disputas/plazos@snap-1.0.0"},
+                "ts": NOW,
+            },
+        },
+        "slots": {
+            "documento": {"value": DOC, "status": "claimed", "source_turn": 1},
+            "motivo": {"value": "no reconozco el cargo", "status": "validated", "source_turn": 2},
+        },
+        "decisions": {
+            "coincide": {
+                "decision_id": "decision-0001", "value": {"match": "unica"}, "p_cal": {"match": 0.93},
+                "provider_used": "classifier", "model_version": "clf-demo-1",
+            }
+        },
+        "actions": [
+            action(action_id="action-0001", confirm_node_id="c1", state="verified"),
+            action(action_id="action-0002", confirm_node_id="c2", state="uncertain"),
+            action(action_id="action-0003", confirm_node_id="c3", state="cancelled",
+                   cancel_reason="escalated"),
+        ],
+        "open_questions": ["¿fecha exacta del cargo?"],
+        "turn_count": 3,
+    }
+    return run_state(**(base | over))
+
+
+def tool_called(call_id: str, *, turn_id: str = "turn-0001") -> EngineEvent:
+    return ToolCalled(
+        event_id=f"event-{call_id}", run_id="run-0001", turn_id=turn_id, release="rel-2026-09-28", ts=NOW,
+        payload=ToolCalledPayload(node_id="n1", tool=EntityRef(id="get_charge", version="1.0.0"),
+                                  call_id=call_id, status="ok", args={}, latency_ms=3),
+    )
+
+
+def rule_evaluated(policy: str | None, *, turn_id: str = "turn-0001") -> EngineEvent:
+    return RuleEvaluated(
+        event_id=f"event-rule-{policy}", run_id="run-0001", turn_id=turn_id, release="rel-2026-09-28", ts=NOW,
+        payload=RuleEvaluatedPayload(node_id="n2", policy=EntityRef.parse(policy) if policy else None,
+                                     inputs={}, result=True),
+    )
