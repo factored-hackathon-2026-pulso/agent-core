@@ -1,18 +1,19 @@
 """Vistas `model`/`audit`, renderer y búsqueda de PII en claro (M7 §2, §3). Única salida de `full`."""
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 
 from pydantic import Field
 
-from agent_core.domain import Fingerprint, JsonValue, dumps
+from agent_core.domain import Fingerprint, JsonValue, OnBehalfOf, Principal, dumps
 from agent_core.domain.base import Model
 from agent_core.ports import AuthzPort, Clock, KeyProvider, KeyPurpose
 from agent_core.views.classification import UNCLASSIFIED, UNTRUSTED, FieldClassifier, FieldRule, field_name
 from agent_core.views.fingerprints import fingerprint
 from agent_core.views.quasi import Dropped, apply_quasi
-from agent_core.views.tokens import mask, neutralize
+from agent_core.views.tokens import MASK, TOKEN_RE, mask, neutralize
 from agent_core.views.untrusted import wrap_untrusted
 from agent_core.views.vault import TokenVault
 
@@ -30,6 +31,13 @@ class Views(Model):
     model: JsonValue
     audit: JsonValue
     fingerprint: Fingerprint
+
+
+class Rendered(Model):
+    """Texto para un lector concreto y los tokens desconocidos (anomalías que registra quien llama)."""
+
+    text: str = Field(repr=False)
+    unknown_tokens: list[str] = Field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +92,22 @@ class ViewService:
             audit=_present(self._walk(data_full, source, ctx, self._audit_leaf)),
             fingerprint=fingerprint(data_full, self._keys),
         )
+
+    def render(self, text_model_view: str, vault: TokenVault, reader: Principal, purpose: str,
+               on_behalf_of: OnBehalfOf | None = None) -> Rendered:
+        """Única vía por la que un valor `full` sale del núcleo: valor real solo si la política lo permite."""
+        unknown: list[str] = []
+
+        def replace(match: re.Match[str]) -> str:
+            entry = vault.lookup(match.group(0))
+            if entry is None:
+                unknown.append(match.group(0))
+                return MASK
+            if self._authz.can_read_field(reader, on_behalf_of, entry.field, purpose):
+                return entry.value
+            return mask(entry.value, entry.tag)
+
+        return Rendered(text=TOKEN_RE.sub(replace, text_model_view), unknown_tokens=unknown)
 
     def _rule(self, path: str, value: JsonValue, untrusted: frozenset[str], inside: bool) -> FieldRule | None:
         """Precedencia: pii explícita > `untrusted_fields` > resto del catálogo > sin clasificar.
