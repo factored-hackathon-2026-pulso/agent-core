@@ -56,7 +56,7 @@ def verify_fingerprint(data: Any, fp: Fingerprint, keys: KeyProvider) -> bool
 - La `FieldClassification` que publique el equipo de datos se pasa como mapeo a `FieldClassifier` y extiende o reemplaza el catálogo (`{**DEFAULT_CATALOG, **propio}`). Ahí viven las entradas `financial`/`public` y las reglas `age_bucket`.
 - Los campos se identifican por ruta `tabla.campo`; los resultados de tools declaran su tabla de origen (`source`). Para un dict anidado la ruta es `tabla.padre.campo`; los elementos de una lista conservan la ruta de la lista. La búsqueda prueba la ruta exacta y después el último segmento.
 - Precedencia al proyectar: `pii_direct`/`pii_quasi` explícitos > `untrusted_fields` de la tool > resto del catálogo > sin clasificar (`pii_direct`).
-- Un contenedor (dict o lista) sin clasificar se recorre; uno clasificado se trata entero (`pii_direct` → un token de su JSON; `pii_quasi` → se elimina; `financial`/`public` → pasa). `null` pasa en todas las vistas.
+- Un contenedor (dict o lista) sin clasificar se recorre; uno clasificado `pii_direct` se trata entero (un token de su JSON) y uno `pii_quasi` se elimina. Un contenedor `financial`/`public` también se recorre: cada hijo con regla `pii_direct`/`pii_quasi` explícita toma esa regla (la explícita gana) y toda otra hoja hereda la clase del contenedor (pasa, con `⟦`/`⟧` neutralizados). `null` pasa en todas las vistas.
 - Un contenedor `untrusted_text` (por `untrusted_fields` o catálogo) también se recorre: cada hijo con regla `pii_direct`/`pii_quasi` explícita toma su clase (la explícita gana) y todo otro string se trata como `untrusted_text` (envuelto); los valores no string (números, booleanos) se resuelven con su propia clase (catálogo; sin clasificar → `pii_direct`) y `null` pasa. Un `.` dentro de una clave se trata como `_` al clasificar (cae a sin clasificar → `pii_direct`); la clave de salida conserva su texto.
 
 ### 3.2 Vista `model`
@@ -70,9 +70,9 @@ def verify_fingerprint(data: Any, fp: Fingerprint, keys: KeyProvider) -> bool
 
 **Formato del token:** `⟦<tag>:<n>⟧`, p. ej. `⟦doc:1⟧`, `⟦tx:3⟧`; `n` es un contador por tag dentro del run. Regex: `⟦([a-z]{1,12}):([1-9][0-9]*)⟧`.
 
-**Detector:** email; secuencias de 6 o más dígitos con separadores sueltos (espacio, punto, guion), con límites solo contra otros dígitos (detecta `CC1023456789`). Con `+` o 10 dígitos separados por espacio o guion → `tel` (campo `mobile_phone`); 12 o más → `prod` (`product_number`); el resto → `doc` (`document_number`). Las fechas `AAAA-MM-DD` se ignoran. Es conservador a propósito: un monto de 6 o más dígitos en texto libre se tokeniza. Los nombres propios en texto libre no se detectan (límite conocido).
+**Detector:** email; secuencias de 6 o más dígitos con separadores sueltos (de 1 a 3 caracteres entre espacio, tab, punto, coma o guion ASCII/Unicode U+2010–U+2015, p. ej. `300  123  4567`, `1.023.456.789`, `1023 – 456789`), con límites solo contra otros dígitos (detecta `CC1023456789`). Con `+` o 10 dígitos separados por espacio, tab o guion → `tel` (campo `mobile_phone`); 12 o más → `prod` (`product_number`); el resto → `doc` (`document_number`). Las fechas `AAAA-MM-DD` se ignoran. Un número pegado a un email por un separador se recorta donde empieza el email (no se descarta); los dígitos dentro de la parte local de un email son parte del email. La coma como separador hace que listas como `1, 2, 3, 4, 5, 6` se tokenicen (falso positivo conservador). Es conservador a propósito: un monto de 6 o más dígitos en texto libre se tokeniza. Los nombres propios en texto libre no se detectan (límite conocido).
 
-**Claves de dict:** son nombres de esquema; solo se neutralizan `⟦`/`⟧`. Un identificador usado como clave no se tokeniza (límite conocido).
+**Claves de dict:** son nombres de esquema; solo se neutralizan `⟦`/`⟧`. Un identificador usado como clave no se tokeniza (límite conocido). Traspaso: la validación de resultados de tools aguas arriba (M5 / unidad 3) debe rechazar claves de dict con forma de dígitos o email; M7 solo neutraliza `⟦`/`⟧` en las claves.
 
 ### 3.3 Vista `audit`
 
@@ -83,11 +83,11 @@ Enmascarada, **sin tokens reversibles**:
 - `untrusted_text` → `{"untrusted_text": {"length": n, "fingerprint": {…}}}`;
 - `financial`, `public` → pasan.
 
-La huella con clave de `full` va aparte, en `Views.fingerprint` (→ `ToolCalledPayload.result_fp`).
+La huella con clave de `full` va aparte, en `Views.fingerprint` (→ `ToolCalledPayload.result_fp`). `Views.full` está excluido de `model_dump()`/`model_dump_json()` y de `repr`, y `Views`/`Rendered` ocultan el valor de entrada en los errores de validación (`hide_input_in_errors`).
 
 ### 3.4 `token_map`
 
-- Vive cifrado en `RunState.token_map` (`EncryptedBlob` de M0): AES-256-GCM con una clave derivada por HKDF-SHA256 de `KeyProvider.key(token_map, kid)`, nonce de 12 bytes tomado de `IdSource.secret_token()` y AAD `agentcore/token_map/v1|<run_id>` (un blob no abre en otro run). Las huellas usan `KeyProvider.key(fingerprint, kid)`: nunca la misma clave para cifrar y para HMAC. Nunca sale del núcleo ni va a eventos.
+- Vive cifrado en `RunState.token_map` (`EncryptedBlob` de M0): AES-256-GCM con una clave derivada por HKDF-SHA256 de `KeyProvider.key(token_map, kid)`, nonce de 12 bytes tomado de `IdSource.secret_token()` (por eso el replay nunca debe persistir blobs re-sellados y el `kid` debe rotar mucho antes de 2^32 sellados) y AAD `agentcore/token_map/v1|<run_id>` (un blob no abre en otro run). Las huellas usan `KeyProvider.key(fingerprint, kid)`: nunca la misma clave para cifrar y para HMAC. Nunca sale del núcleo ni va a eventos.
 - `seal` usa el `kid` vigente; `open` usa el `kid` del blob (tras rotar, los blobs anteriores siguen abriendo y el siguiente `seal` usa la clave nueva). Un blob que no abre (clave, run o contenido) → `TokenMapError`, sin valores en el mensaje.
 - **Origen de las vistas (M0 rev. 2):** `ToolResult` trae solo `result_full` y `source`; M7 calcula siempre las vistas `model` y `audit` dentro del núcleo. La unidad 3 aporta la clasificación y `ToolDef.untrusted_fields`, nunca el vault.
 - Canonización para huellas: `canonical_bytes` de M0.
@@ -106,6 +106,8 @@ Recorre los tokens del texto validado; para cada uno pregunta a la política (`c
 ### 3.7 PII en claro (`find_clear_pii`, para M8)
 
 Sobre el texto sin tokens (NFKC): cada hoja de `facts_full` cuya clase efectiva sea `pii_direct` (ruta `hecho.campo`) se busca en claro, sin distinguir mayúsculas y con límites de palabra; los identificadores numéricos (6 o más dígitos) se comparan sin separadores. Se añade `"pattern:email"` si aparece cualquier email. Devuelve rutas ordenadas, nunca valores. Las hojas sin clasificar cuentan como `pii_direct`: el catálogo debe clasificar los campos de hechos que se citan en claro.
+
+**Límites:** los valores de menos de 4 caracteres (p. ej. `"Ana"`) y las cadenas de 1 a 3 dígitos nunca se buscan; un needle de varias palabras solo coincide con un único espacio entre ellas; los booleanos o enteros cortos sin clasificar pueden buscar palabras como `"true"`/`"2026"` (falsos positivos conservadores). `find_clear_pii` ve solo `hecho.campo` (sin la tabla de origen), mientras `project` clasifica por `tabla.campo`: las reglas de ruta exacta del catálogo no deben contradecir las reglas por nombre de campo; es responsabilidad del dueño de `FieldClassification` (unidad 3).
 
 ## 4. Invariantes
 
