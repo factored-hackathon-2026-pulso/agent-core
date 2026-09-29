@@ -143,7 +143,8 @@ Es la **fuente de datos** de la unidad 6 y de la auto-mejora: exportación de ev
 - Fase 2: cadena, spans, transcript y T-M11-06…09.
 - T-M11-10 va con el replay (fase 5).
 - Fase 5: replay `fixture` en CI con los seis caminos y T-M11-01…05; `audit` si alcanza.
-- Comandos `agentcore record`, `agentcore replay --mode fixture|audit`.
+- Comandos `agentcore record`, `agentcore replay --mode fixture|audit`: implementados con códigos de salida 0/1/2/3; sin motor integrado salen con 3 ("motor no disponible").
+- **Pendiente (Task 14):** T-M11-01 (los seis caminos en `match`) y la implementación real de `record`, que necesitan el cableado de M4/M2/M5/M6/M8. T-M11-02…10 tienen prueba en `tests/m11`.
 
 ## 11. Abiertos
 
