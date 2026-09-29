@@ -9,7 +9,7 @@ from dataclasses import dataclass, replace
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
-from agent_core.decision.types import ProviderError, ProviderTimeout, RawPrediction
+from agent_core.decision import ProviderError, ProviderTimeout, RawPrediction
 from agent_core.domain import JsonValue, Locale, ProviderSpec
 from testing.fakes.clock import FakeClock
 
@@ -71,7 +71,7 @@ class ScriptedProvider:
 
 
 if TYPE_CHECKING:
-    from agent_core.decision.types import DecisionProvider
+    from agent_core.decision import DecisionProvider
 
     def _conforms(x: ScriptedProvider) -> DecisionProvider:
         return x

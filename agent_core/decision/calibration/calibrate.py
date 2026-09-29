@@ -20,8 +20,14 @@ from agent_core.decision.calibration.metrics import (
 )
 from agent_core.decision.calibration.thresholds import Prediction, choose_threshold
 from agent_core.decision.schema import check_schema_supported, validate_output
-from agent_core.decision.types import DecisionConfigError, DecisionProvider, ProviderError, ProviderTimeout
-from agent_core.domain import DecisionModelDef, JsonValue, Locale, canonical_bytes, sha256_hex
+from agent_core.decision.types import (
+    DecisionConfigError,
+    DecisionProvider,
+    ProviderError,
+    ProviderTimeout,
+    value_label,
+)
+from agent_core.domain import DecisionModelDef, JsonValue, Locale, ProviderSpec, canonical_bytes, sha256_hex
 
 BASE_LANG = "es"
 
@@ -156,15 +162,14 @@ def _metrics(artifact: CalibrationArtifact, all_rows: dict[tuple[str, str, str],
     return {"languages": languages}
 
 
-def _run(provider: DecisionProvider, spec: object, model_def: DecisionModelDef, batch: list[DevExample],
+def _run(provider: DecisionProvider, spec: ProviderSpec, model_def: DecisionModelDef, batch: list[DevExample],
          lang: Locale, fields: list[str]) -> dict[str, list[_Row]]:
     """Corre el proveedor sobre `batch`; una falla o una salida fuera de esquema no tiene predicción."""
     rows: dict[str, list[_Row]] = {name: [] for name in fields}
     for example in batch:
         raw = None
         try:
-            schema = model_def.output_schema
-            candidate = provider.predict(spec, example.inputs, schema, lang)  # type: ignore[arg-type]
+            candidate = provider.predict(spec, example.inputs, model_def.output_schema, lang)
             if not validate_output(candidate.value, model_def.output_schema):
                 raw = candidate
         except (ProviderTimeout, ProviderError):
@@ -172,15 +177,11 @@ def _run(provider: DecisionProvider, spec: object, model_def: DecisionModelDef, 
         for name in fields:
             if name not in example.labels:
                 continue
-            predicted = None if raw is None or name not in raw.value else _label(raw.value[name])
+            predicted = None if raw is None or name not in raw.value else value_label(raw.value[name])
             p = None if raw is None else raw.p_raw.get(name)
             valid = p is not None and math.isfinite(p) and 0.0 <= p <= 1.0
             rows[name].append(_Row(example.id, example.labels[name], p if valid else None, predicted))
     return rows
-
-
-def _label(value: JsonValue) -> str:
-    return value if isinstance(value, str) else canonical_bytes(value).decode("utf-8")
 
 
 def _fit_field(name: str, provider: str, lang: Locale, rows: list[_Row], method: str, target: Target,

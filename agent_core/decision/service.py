@@ -15,6 +15,7 @@ from agent_core.decision.types import (
     ProviderError,
     ProviderTimeout,
     RawPrediction,
+    value_label,
 )
 from agent_core.domain import (
     DecisionMade,
@@ -25,7 +26,6 @@ from agent_core.domain import (
     LabelScore,
     Locale,
     ProviderSpec,
-    dumps,
 )
 from agent_core.ports import Clock, IdKind, IdSource, RegistryPort
 from agent_core.views import TOKEN_PATTERN, TokenVault
@@ -170,7 +170,7 @@ class DecisionService:
         if p_cal is None or artifact is None or name not in value:
             return False
         item = value[name]
-        key = (name, item if isinstance(item, str) else dumps(item), provider, locale)
+        key = (name, value_label(item), provider, locale)
         if key not in artifact.thresholds:
             return False
         return p_cal >= artifact.thresholds[key]

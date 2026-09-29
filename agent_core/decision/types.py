@@ -7,7 +7,13 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Protocol
 
-from agent_core.domain import Decision, JsonValue, Locale, Probability, ProviderSpec
+from agent_core.domain import Decision, JsonValue, Locale, Probability, ProviderSpec, canonical_bytes
+
+
+def value_label(value: JsonValue) -> str:
+    """Etiqueta de un valor para las claves de umbral: el string tal cual; el resto en JCS (sin orden de
+    claves). Una sola función para `decide` y `calibrate`, para que la tabla y la consulta coincidan."""
+    return value if isinstance(value, str) else canonical_bytes(value).decode("utf-8")
 
 
 class ProviderTimeout(Exception):

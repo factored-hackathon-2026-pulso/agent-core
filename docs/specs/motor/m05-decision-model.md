@@ -78,7 +78,7 @@ def calibrate(model_def, dev_split: Sequence[DevExample], providers, *, targets:
 
 ### 3.1 `decide`
 
-1. Arma la entrada con `input_view` (siempre vista `model`; un path fuera de esa vista es error de configuración).
+1. Arma la entrada con `input_view` (siempre vista `model`; un path fuera de esa vista es error de configuración). Nota de implementación: `decide` no arma la entrada (la recibe ya proyectada por M2/M4 en vista `model`); solo verifica que las claves **de primer nivel** de `inputs_model_view` estén en `input_view` (si este no es vacío) y no valida rutas anidadas.
 2. Recorre `providers` en orden (un proveedor sin adaptador registrado es `DecisionConfigError`, revisado antes de llamar a ninguno):
    - timeout o error → siguiente proveedor (`fallback_depth += 1`);
    - salida fuera de `output_schema` → **1** reintento con el mismo proveedor; si vuelve a fallar, siguiente.
