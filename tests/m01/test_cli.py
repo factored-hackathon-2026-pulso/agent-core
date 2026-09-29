@@ -134,3 +134,37 @@ def test_cli_timing_only_on_stderr_in_text_mode(capsys: pytest.CaptureFixture[st
     assert "ms" in captured.err and "ms" not in captured.out
     assert main(["validate", str(FIXTURE), "--json"]) == 0
     assert capsys.readouterr().err == ""
+
+
+def test_cli_internal_error_is_code_2_without_traceback(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def boom(_reg: object) -> list[Violation]:
+        raise RecursionError(f"secreto en {FIXTURE}")
+
+    monkeypatch.setattr("agent_core.flows.cli_validate.validate_registry", boom)
+    assert main(["validate", str(FIXTURE)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out.strip() == "error interno al validar el registro"
+    assert "Traceback" not in captured.out + captured.err and "secreto" not in captured.out + captured.err
+
+
+def test_cli_keyboard_interrupt_propagates(monkeypatch: pytest.MonkeyPatch) -> None:
+    def stop(_reg: object) -> list[Violation]:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("agent_core.flows.cli_validate.validate_registry", stop)
+    with pytest.raises(KeyboardInterrupt):
+        main(["validate", str(FIXTURE)])
+
+
+def test_text_mode_escapes_control_characters() -> None:
+    v = Violation(
+        rule="G0-01", flow="f@1.0.0", node_id="a\nFAKE", path="/x\x1b[31m", message="m\r\n\x7f\x85fin"
+    )
+    lines = format_report([v], as_json=False).splitlines()
+    assert len(lines) == 2  # la violación y el total
+    assert r"a\nFAKE" in lines[0] and r"\x1b[31m" in lines[0] and r"\x7f\x85fin" in lines[0]
+    assert not any(ord(c) < 32 or 0x7F <= ord(c) <= 0x9F for c in "".join(lines))
+    data = json.loads(format_report([v], as_json=True))
+    assert data["violations"][0]["node_id"] == "a\nFAKE"
