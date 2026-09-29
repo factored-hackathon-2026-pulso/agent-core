@@ -39,4 +39,4 @@ def verify_fingerprint(data: Any, fp: Fingerprint, keys: KeyProvider) -> bool:
         key = keys.key(KeyPurpose.fingerprint, fp.kid)
     except KeyError:
         return False
-    return hmac.compare_digest(_mac(data, key), fp.value)
+    return hmac.compare_digest(_mac(data, key).encode(), fp.value.encode())

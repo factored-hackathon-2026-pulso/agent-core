@@ -93,3 +93,9 @@ def test_verify_rejects_altered_data_unknown_kid_and_wrong_value() -> None:
     assert not verify_fingerprint({**DATA, "amount": Decimal("500.01")}, fp, keys)
     assert not verify_fingerprint(DATA, fp.model_copy(update={"kid": "fp-9"}), keys)
     assert not verify_fingerprint(DATA, fp.model_copy(update={"value": "0" * 64}), keys)
+
+
+def test_verify_returns_false_for_non_ascii_value() -> None:
+    keys = FakeKeyProvider.default()
+    fp = fingerprint(DATA, keys)
+    assert not verify_fingerprint(DATA, fp.model_copy(update={"value": "é" * 64}), keys)
