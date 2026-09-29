@@ -237,6 +237,8 @@ forbidden_modules =
 [importlinter:contract:turn]
 name = M4 (turn) solo usa domain, ports y interpreter, actions, decision, guards, handoff, audit
 type = forbidden
+# M4 importa interpreter, que a su vez usa flows y views: solo se prohíben los imports directos de M4.
+allow_indirect_imports = True
 source_modules =
     agent_core.turn
 forbidden_modules =
