@@ -8,6 +8,8 @@ from typing import Any
 from agent_core.actions import ActionManager
 from agent_core.domain import (
     Agent,
+    Awaiting,
+    Command,
     EngineError,
     EngineEvent,
     EntityKind,
@@ -32,7 +34,7 @@ from agent_core.domain import (
     TurnResult,
 )
 from agent_core.handoff import HandoffService
-from agent_core.interpreter import NO_RESUME, StepContext, Stop, advance, begin_turn, start_flow
+from agent_core.interpreter import NO_RESUME, Resume, StepContext, Stop, advance, begin_turn, start_flow
 from agent_core.ports import (
     AuditSink,
     AuthzPort,
@@ -46,8 +48,9 @@ from agent_core.ports import (
 from agent_core.turn.buffer import EventBuffer, TurnEventSink
 from agent_core.turn.closing import Closer
 from agent_core.turn.config import TurnConfig
-from agent_core.turn.events import TurnEvents
+from agent_core.turn.events import CommandInfo, TurnEvents
 from agent_core.turn.frame import TurnFrame
+from agent_core.turn.handlers import Env, run_global_handlers
 from agent_core.turn.metering import StageMeter
 from agent_core.turn.ports import (
     EventChain,
@@ -56,7 +59,9 @@ from agent_core.turn.ports import (
     TraceIds,
     TurnRecorderPort,
     TurnRuntime,
+    UnderstandOutcome,
     UnderstandPort,
+    UnderstandRequest,
 )
 from agent_core.turn.recovery import position_at_verify
 from agent_core.turn.refs import pinned_ref
@@ -101,6 +106,7 @@ class TurnEngine:
         self._authz = authz
         self._events = TurnEvents(ids, clock)
         self._closer = Closer(actions=actions, handoff=handoff, audit=audit, clock=clock, registry=registry)
+        self._env = Env(closer=self._closer, registry=registry)
 
     # --- piezas comunes -----------------------------------------------------------------------------
 
@@ -312,7 +318,59 @@ class TurnEngine:
         frame.buffer.add(*events)
         if self._guard(frame):  # paso 7: unsupported / tamaño → plantilla, sin Understand ni flow
             return self._finish(frame, record=True)
-        raise NotImplementedError("pasos 8-12: Tasks 12-16")
+        understood = self._understand_step(frame)  # paso 8
+        if understood is not None:
+            with frame.meter.stage("flow"):  # paso 9
+                handled = run_global_handlers(
+                    self._env,
+                    frame,
+                    understood,
+                    confirm_pending=frame.state.awaiting is Awaiting.confirmation,
+                )
+                if handled is not None:
+                    if handled.advance:
+                        self._advance(frame)
+            if handled is not None:
+                return self._finish(frame, record=True)
+        raise NotImplementedError("pasos 10-12: Tasks 13-16")
+
+    def _understand_step(self, frame: TurnFrame) -> UnderstandOutcome | None:
+        """Paso 8. Un botón `confirm` no pasa por Understand: `resume = confirm_answer`, `source=button`."""
+        turn = frame.turn
+        assert turn is not None
+        state = frame.state
+        if turn.confirm is not None:
+            command = Command.affirm if turn.confirm.answer == "yes" else Command.deny
+            frame.buffer.add(
+                self._events.command_emitted(
+                    state, frame.turn_id, CommandInfo(command=command), source="button"
+                )
+            )
+            frame.resume = Resume("confirm_answer", turn.confirm.answer, token=turn.confirm.token)
+            return None
+        request = UnderstandRequest(
+            text_model=frame.text_model,
+            state=state,
+            release=frame.release,
+            agent=frame.agent,
+            locale=state.locale,
+            awaiting_confirmation=state.awaiting is Awaiting.confirmation,
+            current_node=state.awaiting_node_id,
+        )
+        with frame.meter.stage("understand"):
+            outcome = self._understand.run(request)
+        frame.cost_usd += outcome.cost_usd
+        frame.buffer.add(*outcome.events)  # `decision_made`, lo emite M5
+        info = CommandInfo(
+            command=outcome.command,
+            flow=outcome.flow,
+            interrupt=outcome.interrupt,
+            additional_flows=list(outcome.additional_flows),
+            above_threshold=dict(outcome.above_threshold),
+            decision_id=outcome.decision_id,
+        )
+        frame.buffer.add(self._events.command_emitted(state, frame.turn_id, info, source="understand"))
+        return outcome
 
     def _guard(self, frame: TurnFrame) -> bool:
         """Paso 7. Devuelve `True` si el turno termina aquí con una plantilla del motor."""
