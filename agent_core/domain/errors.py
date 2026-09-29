@@ -5,6 +5,7 @@
 """
 
 from collections.abc import Mapping
+from decimal import Decimal
 from enum import StrEnum
 from types import MappingProxyType
 
@@ -35,6 +36,37 @@ class TurnInProgress(DomainError):
 
 class CredentialsInvalid(DomainError):
     """`IdentityVerifier`: la firma de la credencial no valida."""
+
+
+class GatewayErrorKind(StrEnum):
+    timeout = "timeout"
+    unavailable = "unavailable"
+    rate_limited = "rate_limited"
+    invalid_output = "invalid_output"
+    refused = "refused"
+
+
+class GatewayError(DomainError):
+    """`LLMGateway.generate` falló. Lleva el uso parcial que el proveedor informó (si lo hizo).
+
+    El mensaje solo incluye `kind` y `model`: nunca contenido de prompts/salidas ni claves.
+    """
+
+    def __init__(
+        self,
+        kind: GatewayErrorKind,
+        *,
+        tokens_in: int | None = None,
+        tokens_out: int | None = None,
+        cost_usd: Decimal | None = None,
+        model: str | None = None,
+    ) -> None:
+        super().__init__(f"gateway {kind.value}" + (f" ({model})" if model else ""))
+        self.kind = kind
+        self.tokens_in = tokens_in
+        self.tokens_out = tokens_out
+        self.cost_usd = cost_usd
+        self.model = model
 
 
 class ProblemCode(StrEnum):

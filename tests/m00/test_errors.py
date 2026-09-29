@@ -27,3 +27,30 @@ def test_engine_error_carries_code_and_status() -> None:
 def test_domain_errors_are_not_engine_errors() -> None:
     assert issubclass(InvalidRuntimeRef, DomainError)
     assert not issubclass(InvalidRuntimeRef, EngineError)
+
+
+def test_gateway_error_carries_kind_and_partial_usage() -> None:
+    from decimal import Decimal
+
+    from agent_core.domain.errors import GatewayError, GatewayErrorKind
+
+    assert {k.value for k in GatewayErrorKind} == {
+        "timeout",
+        "unavailable",
+        "rate_limited",
+        "invalid_output",
+        "refused",
+    }
+    err = GatewayError(GatewayErrorKind.timeout, tokens_in=10, cost_usd=Decimal("0.01"), model="m1")
+    assert isinstance(err, DomainError)
+    assert (err.kind, err.tokens_in, err.tokens_out, err.cost_usd, err.model) == (
+        GatewayErrorKind.timeout,
+        10,
+        None,
+        Decimal("0.01"),
+        "m1",
+    )
+    bare = GatewayError(GatewayErrorKind.refused)
+    assert bare.tokens_in is None
+    assert bare.model is None
+    assert str(bare) == "gateway refused"

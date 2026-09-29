@@ -67,7 +67,7 @@ Todos los tipos son modelos Pydantic v2 con `extra="forbid"`. Todos son `frozen=
 ```python
 JsonValue = None | bool | int | Decimal | str | list["JsonValue"] | dict[str, "JsonValue"]
 def loads(raw: str | bytes) -> JsonValue           # json con parse_float=Decimal; rechaza NaN/Infinity
-def dumps(value: JsonValue | BaseModel) -> str      # Decimal como número JSON exacto (str(d)), sin pérdida
+def dumps(value: JsonValue | BaseModel) -> str      # Decimal como número JSON exacto (format(d, "f"), sin notación exponencial), sin pérdida
 def canonical_bytes(value: JsonValue | BaseModel) -> bytes   # JCS (RFC 8785)
 def sha256_hex(data: bytes) -> str
 ```

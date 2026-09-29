@@ -72,3 +72,51 @@ def test_dumps_round_trip_is_exact() -> None:
 
 def test_sha256_hex() -> None:
     assert sha256_hex(b"") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+
+def test_loads_rejects_duplicate_keys() -> None:
+    with pytest.raises(ValueError):
+        loads('{"a": 1, "a": 2}')
+    with pytest.raises(ValueError):
+        loads('{"x": {"a": 1, "a": 1}}')
+
+
+def test_to_jsonable_rejects_key_collision() -> None:
+    with pytest.raises(ValueError):
+        to_jsonable({1: "a", "1": "b"})
+    with pytest.raises(ValueError):
+        canonical_bytes({1: "a", "1": "b"})
+
+
+def _deep(n: int) -> list[object]:
+    root: list[object] = []
+    cur = root
+    for _ in range(n):
+        nxt: list[object] = []
+        cur.append(nxt)
+        cur = nxt
+    return root
+
+
+def test_deep_nesting_and_cycles_raise_value_error() -> None:
+    deep = _deep(10_000)
+    for fn in (to_jsonable, dumps, canonical_bytes):
+        with pytest.raises(ValueError):
+            fn(deep)
+    with pytest.raises(ValueError):
+        loads("[" * 10_000 + "]" * 10_000)
+    cyc: list[object] = []
+    cyc.append(cyc)
+    with pytest.raises(ValueError):
+        dumps(cyc)
+
+
+def test_huge_decimal_exponent_rejected() -> None:
+    for fn in (to_jsonable, dumps, canonical_bytes):
+        with pytest.raises(ValueError):
+            fn({"x": Decimal("1E999999999")})
+        with pytest.raises(ValueError):
+            fn({"x": Decimal("1E-1001")})
+    with pytest.raises(ValueError):
+        loads('{"x": 1E999999999}')
+    assert canonical_bytes({"x": Decimal("1E+1000")}) == b'{"x":"1' + b"0" * 1000 + b'"}'
