@@ -1,6 +1,6 @@
-from datetime import datetime
 from typing import Protocol
 
+from agent_core.domain.base import UtcDatetime
 from agent_core.domain.identity import OnBehalfOf, Principal
 
 
@@ -16,6 +16,6 @@ class IdentityVerifier(Protocol):
         """Ídem `verify`: firma inválida → `CredentialsInvalid`; no chequea `exp`."""
         ...
 
-    def grant_active(self, grant_ref: str, now: datetime) -> bool:
+    def grant_active(self, grant_ref: str, now: UtcDatetime) -> bool:
         """`False` si el permiso no existe, está revocado o no se puede consultar (falla cerrado)."""
         ...

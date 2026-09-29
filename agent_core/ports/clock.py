@@ -1,11 +1,12 @@
-from datetime import datetime
 from typing import Protocol
+
+from agent_core.domain.base import UtcDatetime
 
 
 class Clock(Protocol):
     """Única fuente de tiempo del motor (M0 §2.9)."""
 
-    def now(self) -> datetime:
+    def now(self) -> UtcDatetime:
         """Instante UTC con zona. Única fuente de tiempo para decidir."""
         ...
 
