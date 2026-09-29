@@ -1,6 +1,7 @@
 """Ayudantes de las pruebas de M10. Solo datos sintéticos."""
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
@@ -8,21 +9,29 @@ from agent_core.domain import (
     Agent,
     EngineEvent,
     EntityRef,
+    EscalationRequest,
+    Message,
     OnBehalfOf,
+    OutboxMessage,
     Principal,
     PrincipalType,
     RuleEvaluated,
     RuleEvaluatedPayload,
     RunState,
     SubjectRef,
+    Template,
     ToolCalled,
     ToolCalledPayload,
 )
+from agent_core.handoff.service import HandoffService
 from agent_core.ports import AuthzDecision
 from agent_core.views import DEFAULT_CATALOG, FieldClassifier, FieldRule, ViewService
 from testing.builders import NOW, action, run_state
 from testing.fakes.clock import FakeClock
+from testing.fakes.ids import FakeIds
 from testing.fakes.keys import FakeKeyProvider
+from testing.fakes.registry import InMemoryRegistry
+from testing.fakes.storage import InMemoryStore
 
 # Catálogo sintético: lo que en producción publica la unidad 3 como FieldClassification.
 CATALOG: Mapping[str, FieldRule] = {
@@ -147,3 +156,71 @@ def rule_evaluated(policy: str | None, *, turn_id: str = "turn-0001") -> EngineE
         payload=RuleEvaluatedPayload(node_id="n2", policy=EntityRef.parse(policy) if policy else None,
                                      inputs={}, result=True),
     )
+
+
+def make_agent(**over: Any) -> Agent:
+    refs = {name: f"{name}@1.0.0" for name in
+            ("clarify", "abstain", "handoff", "pending_ack", "pending_offer", "unsupported_language",
+             "input_too_large")}
+    base: dict[str, Any] = {
+        "id": "atencion", "version": "1.0.0", "mode": "conversational", "entry_flow": "disputa-cargo@1.0.0",
+        "invocable_by": ["customer"], "min_auth_level": "session", "subject_kinds": ["customer"],
+        "supported_locales": ["es", "pt"], "default_locale": "es", "budgets": {
+            "max_nodes_per_turn": 20, "max_model_calls_per_turn": 5, "max_tokens_per_run": 10000,
+            "max_cost_per_run": Decimal("1.00"), "max_wall_ms_per_turn": 20000},
+        "templates": refs, "max_clarifications": 2, "on_clarify_exhausted": "escalate",
+        "default_target_queue": "general",
+    }
+    return Agent.model_validate(base | over)
+
+
+HANDOFF_TEMPLATE = Template(id="handoff", version="1.0.0", locales={
+    "es": "Te paso con una persona del equipo de disputas.",
+    "pt": "Vou passar você para a equipe de disputas."})
+
+
+@dataclass
+class World:
+    store: InMemoryStore
+    registry: InMemoryRegistry
+    ids: FakeIds
+    clock: FakeClock
+    authz: HandoffAuthz
+    service: HandoffService
+
+
+def make_world(*, authz: HandoffAuthz | None = None, with_template: bool = True,
+               views: ViewService | None = None, record: Any = None) -> World:
+    store = InMemoryStore()
+    registry = InMemoryRegistry()
+    registry.add(make_agent(), *([HANDOFF_TEMPLATE] if with_template else []))
+    keys = FakeKeyProvider.default()
+    authz = authz or HandoffAuthz()
+    clock = FakeClock()
+    ids = FakeIds()
+    kwargs = {} if record is None else {"record": record}
+    service = HandoffService(uow_factory=store.uow, registry=registry, views=views or make_views(authz, keys),
+                             authz=authz, keys=keys, clock=clock, ids=ids, **kwargs)
+    return World(store, registry, ids, clock, authz, service)
+
+
+def seed_run(world: World, state: RunState) -> RunState:
+    """Deja el run guardado como M4 lo tendría antes del turno (versión 1)."""
+    with world.store.uow() as uow:
+        saved = uow.save_run(state, expected_version=0)
+        uow.commit()
+    return saved
+
+
+def escalate_and_commit(world: World, state: RunState, request: EscalationRequest,
+                        events: list[EngineEvent] | None = None
+                        ) -> tuple[RunState, list[EngineEvent], OutboxMessage, Message]:
+    """Lo que hará M4: una transacción con el paquete, el run cerrado, los eventos y el outbox."""
+    with world.store.uow() as uow:
+        result = world.service.escalate(state, request, events or [], uow=uow, turn_id="turn-0001")
+        closed, new_events, outbox, _message = result
+        uow.save_run(closed, expected_version=state.state_version)
+        uow.append_events(state.run_id, new_events)
+        uow.enqueue_outbox(outbox)
+        uow.commit()
+    return result
