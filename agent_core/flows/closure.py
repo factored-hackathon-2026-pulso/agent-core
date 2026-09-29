@@ -69,6 +69,8 @@ def resolve_closure(
     want(EntityKind.language_detection, decl.language_detection, "language_detection")
     if decl.injection_ruleset is not None:
         want(EntityKind.injection_ruleset, decl.injection_ruleset, "injection_ruleset")
+    if decl.knowledge is not None:
+        want(EntityKind.knowledge_snapshot, decl.knowledge, "knowledge")
     while pending:
         kind, ident, version = pending.popleft()
         label = f"{kind.value} {clip(ident, 80)}@{clip(version, 40)}"

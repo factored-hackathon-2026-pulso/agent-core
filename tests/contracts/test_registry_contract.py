@@ -3,7 +3,15 @@ doble: solo versiones exactas, entidades publicadas inmutables y sin aliasing co
 
 import pytest
 
-from agent_core.domain import AgentSelector, EntityRef, Flow, InvalidRuntimeRef, Release, Template
+from agent_core.domain import (
+    AgentSelector,
+    EntityRef,
+    Flow,
+    InvalidRuntimeRef,
+    KnowledgeSnapshot,
+    Release,
+    Template,
+)
 from agent_core.ports import RegistryPort
 from testing.builders import principal
 from testing.fakes.registry import InMemoryRegistry
@@ -14,6 +22,10 @@ EXACT_FLOW = {"id": "flujo", "version": "1.0.0", "priority": 1, "nodes": [
     {"id": "fin", "type": "end", "config": {"outcome": "resolved"}}]}
 RANGED_FLOW = {**EXACT_FLOW, "id": "flujo-rango", "nodes": [
     {**EXACT_FLOW["nodes"][0], "config": {"tool": "buscar@^1", "save_as": "x"}}, EXACT_FLOW["nodes"][1]]}
+
+KNOWLEDGE = KnowledgeSnapshot.model_validate({"id": "kb-base", "version": "1.0.0", "pages": [
+    {"path": "faq/disputas", "hash": "a" * 64, "audience": "public", "status": "approved",
+     "approved_by": "aprobador-1", "lang": "es"}]})
 
 
 def _release(release_id: str = "rel-1", **over: object) -> Release:
@@ -41,7 +53,7 @@ def check_resolve_release_by_alias_and_version(registry: RegistryPort) -> None:
 def registry(request: pytest.FixtureRequest) -> RegistryPort:
     reg = InMemoryRegistry()
     reg.add(Flow.model_validate(EXACT_FLOW), Flow.model_validate(RANGED_FLOW),
-            Template(id="t/saludo", version="1.0.0", locales={"es": "Hola"}))
+            Template(id="t/saludo", version="1.0.0", locales={"es": "Hola"}), KNOWLEDGE)
     reg.add_release(_release("rel-1"), agent_id="atencion")
     reg.add_release(_release("rel-2"), agent_id="atencion", alias=None, version="2.0.0")
     return reg
@@ -177,3 +189,32 @@ def test_source_object_mutation_after_add_does_not_alter_registry() -> None:
     reg.add(tpl)
     tpl.locales["es"] = "Hackeado"
     assert reg.get(EntityRef.parse("t/x@1.0.0"), Template).locales == {"es": "Hola"}
+
+
+# --- snapshot de conocimiento (registry, ADR 0017) ----------------------------------------------------------
+
+def check_get_knowledge_snapshot(registry: RegistryPort) -> None:
+    snapshot = registry.get(EntityRef.parse("kb-base@1.0.0"), KnowledgeSnapshot)
+    assert [page.path for page in snapshot.pages] == ["faq/disputas"]
+
+
+def test_get_knowledge_snapshot(registry: RegistryPort) -> None:
+    check_get_knowledge_snapshot(registry)
+
+
+def test_release_carries_its_exact_knowledge_snapshot() -> None:
+    reg = InMemoryRegistry()
+    reg.add(KNOWLEDGE)
+    reg.add_release(_release(knowledge_snapshot="kb-base@1.0.0"), agent_id="a")
+    release = reg.resolve_release(AgentSelector.parse("a"), principal())
+    assert release.knowledge_snapshot is not None
+    assert reg.get(release.knowledge_snapshot, KnowledgeSnapshot).id == "kb-base"
+
+
+def test_knowledge_snapshot_is_immutable_once_published() -> None:
+    reg = InMemoryRegistry()
+    reg.add(KNOWLEDGE)
+    reg.add(KNOWLEDGE)  # mismo contenido: idempotente
+    other = KnowledgeSnapshot.model_validate({"id": "kb-base", "version": "1.0.0", "pages": []})
+    with pytest.raises(ValueError):
+        reg.add(other)

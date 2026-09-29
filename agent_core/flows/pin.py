@@ -124,6 +124,10 @@ def pin_release(reg: AuthoringRegistry, release_id: str) -> PinnedRelease:
                     _exact(chosen, EntityKind.injection_ruleset, decl.injection_ruleset)
                     if decl.injection_ruleset is not None else None
                 ),
+                "knowledge_snapshot": (
+                    _exact(chosen, EntityKind.knowledge_snapshot, decl.knowledge)
+                    if decl.knowledge is not None else None
+                ),
                 "max_input_chars": decl.max_input_chars,
             }
         )

@@ -47,6 +47,7 @@ class ReleaseDecl(BaseModel):
     interrupts: list[Interrupt] = Field(default_factory=list)
     language_detection: RefSpec
     injection_ruleset: RefSpec | None = None
+    knowledge: RefSpec | None = None  # snapshot de conocimiento (ADR 0015, registry §15)
     max_input_chars: PositiveInt = 4000
 
 
@@ -133,6 +134,7 @@ DIRS: Mapping[EntityKind, str] = MappingProxyType(
         EntityKind.decision_model: "decision_models", EntityKind.model_profile: "model_profiles",
         EntityKind.language_detection: "language_detection",
         EntityKind.injection_ruleset: "injection_rulesets",
+        EntityKind.knowledge_snapshot: "knowledge_snapshots",
     }
 )
 
