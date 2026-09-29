@@ -1,0 +1,94 @@
+"""Confirmación acotada e idempotente (M3 §3.2, §3.3; ADR 0007 §8).
+
+Solo se guarda el hash del token. Por eso la reentrada con el token vigente conserva `action_id` y
+`token_exp`, pero rota el token (M3 rev. 2): el anterior deja de confirmar.
+"""
+
+from copy import deepcopy
+
+from agent_core.actions.context import ActionContext
+from agent_core.actions.events import EventFactory
+from agent_core.actions.machine import Trigger
+from agent_core.actions.store import add_action, move, proposed_for, replace_action
+from agent_core.domain import (
+    Action,
+    ActionCancelled,
+    ActionState,
+    ConfirmationPrompt,
+    ConfirmNode,
+    EngineEvent,
+    EntityRef,
+    IllegalTransition,
+    InvalidationReason,
+    JsonValue,
+    Message,
+    RunState,
+    ToolDef,
+    canonical_bytes,
+    sha256_hex,
+)
+from agent_core.ports import Clock, IdKind, IdSource
+
+
+def token_hash(token: str) -> str:
+    """Hash del token de confirmación: lo único que se guarda (M3 §3.2)."""
+    return sha256_hex(token.encode("utf-8"))
+
+
+def _prompt(action: Action, token: str, summary: Message) -> ConfirmationPrompt:
+    return ConfirmationPrompt(action_id=action.action_id, token=token, expires_at=action.token_exp,
+                              summary=summary)
+
+
+class Confirmations:
+    """`propose`, `answer`, `expire_tokens` e `invalidate`: funciones puras sobre `RunState` más eventos."""
+
+    def __init__(self, ids: IdSource, clock: Clock, events: EventFactory) -> None:
+        self._ids = ids
+        self._clock = clock
+        self._events = events
+
+    def propose(
+        self, state: RunState, node: ConfirmNode, resolved_args: dict[str, JsonValue], tool_def: ToolDef,
+        ctx: ActionContext,
+    ) -> tuple[RunState, ConfirmationPrompt, list[EngineEvent]]:
+        if state.active_flow is None:
+            raise IllegalTransition(f"confirm {node.id}: no hay flow activo")
+        if tool_def.id != node.config.action.tool.id or not tool_def.is_write:
+            raise ValueError(f"confirm {node.id}: tool_def no es la escritura que declara el nodo")
+        flow = state.active_flow.flow
+        now = self._clock.now()
+        events: list[EngineEvent] = []
+        current = proposed_for(state, node.id)
+        if current is not None and now < current.token_exp:
+            token = self._ids.secret_token()
+            rotated = current.model_copy(update={"confirmation_token_hash": token_hash(token)})
+            state = replace_action(state, rotated)
+            template = node.config.reprompt_template or node.config.summary_template
+            return state, _prompt(rotated, token, ctx.render(template, state)), events
+        if current is not None:
+            state, cancelled = self._cancel(state, current, InvalidationReason.token_expired, ctx.turn_id)
+            events.append(cancelled)
+        action_id = self._ids.new_id(IdKind.action)
+        token = self._ids.secret_token()
+        args = deepcopy(resolved_args)  # congelada: nadie comparte estado mutable con el llamador
+        action = Action(
+            action_id=action_id,
+            confirm_node_id=node.id,
+            flow=flow,
+            tool=EntityRef(id=tool_def.id, version=tool_def.version),
+            args=args,
+            args_hash=sha256_hex(canonical_bytes(args)),
+            state=ActionState.proposed,
+            confirmation_token_hash=token_hash(token),
+            token_exp=now + tool_def.confirmation_ttl,
+            idempotency_key=action_id,
+            created_at=now,
+        )
+        state = add_action(state, action)
+        return state, _prompt(action, token, ctx.render(node.config.summary_template, state)), events
+
+    def _cancel(self, state: RunState, action: Action, reason: InvalidationReason,
+                turn_id: str | None) -> tuple[RunState, ActionCancelled]:
+        state = replace_action(state, move(action, Trigger.cancel, cancel_reason=reason))
+        return state, self._events.cancelled(state, turn_id, action.action_id, reason)

@@ -30,7 +30,8 @@ def test_m0_symbols_exist() -> None:
     assert InvalidationReason.token_expired and InvalidationReason.denied_by_user
     assert IdKind.action and IdKind.event and IdKind.fact and IdKind.call
     assert ToolStatus.step_up_required and ToolStatus.uncertain
-    assert set(Action.model_fields) >= {"args_hash", "confirmation_token_hash", "token_exp", "idempotency_key"}
+    fields = {"args_hash", "confirmation_token_hash", "token_exp", "idempotency_key"}
+    assert set(Action.model_fields) >= fields
     for name in (ActionCancelled, ActionConfirmed, ActionDispatched, ActionVerified, ToolCalled,
                  ConfirmationPrompt, ConfirmNode, VerifyNode, WriteToolNode, IllegalTransition,
                  ToolCallContext, ToolResult, UnitOfWorkFactory, InMemoryStore, SimulatedCrash,
