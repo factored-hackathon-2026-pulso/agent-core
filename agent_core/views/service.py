@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date
 
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from agent_core.domain import Fingerprint, JsonValue, OnBehalfOf, Principal, dumps
 from agent_core.domain.base import Model
@@ -20,6 +20,7 @@ from agent_core.views.untrusted import wrap_untrusted
 from agent_core.views.vault import TokenVault
 
 _STRICT = ("pii_direct", "pii_quasi")
+_WALKED = ("untrusted_text", "financial", "public")
 
 
 class ViewsConfigError(RuntimeError):
@@ -29,7 +30,10 @@ class ViewsConfigError(RuntimeError):
 class Views(Model):
     """Las tres vistas de un dato de cliente y la huella de `full`. `full` nunca aparece en `repr`."""
 
-    full: JsonValue = Field(repr=False)
+    model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True, hide_input_in_errors=True)
+
+    # `exclude=True`: `full` no sale por `model_dump()` ni `model_dump_json()`.
+    full: JsonValue = Field(repr=False, exclude=True)
     model: JsonValue
     audit: JsonValue
     fingerprint: Fingerprint
@@ -37,6 +41,8 @@ class Views(Model):
 
 class Rendered(Model):
     """Texto para un lector concreto y los tokens desconocidos (anomalías que registra quien llama)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True, hide_input_in_errors=True)
 
     text: str = Field(repr=False)
     unknown_tokens: list[str] = Field(default_factory=list)
@@ -132,40 +138,42 @@ class ViewService:
 
         return Rendered(text=TOKEN_RE.sub(replace, text_model_view), unknown_tokens=unknown)
 
-    def _rule(self, path: str, value: JsonValue, untrusted: frozenset[str], inside: bool) -> FieldRule | None:
-        """Precedencia: pii explícita > `untrusted_fields` > resto del catálogo > sin clasificar.
+    def _rule(self, path: str, value: JsonValue, untrusted: frozenset[str],
+              parent: FieldRule | None) -> FieldRule | None:
+        """Precedencia: pii explícita > `untrusted_fields` > herencia del contenedor > resto del catálogo.
 
         Dentro de un contenedor `untrusted_text`, todo string sin regla pii propia es `untrusted_text`;
-        los valores no string se resuelven con su clase (sin clasificar → `pii_direct`)."""
+        los valores no string se resuelven con su clase (sin clasificar → `pii_direct`). Dentro de un
+        contenedor `financial`/`public`, toda hoja sin regla pii propia hereda esa clase (pasa)."""
         rule = self._classifier.lookup(path)
         if rule is not None and rule.field_class in _STRICT:
             return rule
-        if inside:
+        if parent is not None and parent.field_class == "untrusted_text":
             # Solo strings y contenedores heredan `untrusted_text`; el resto se resuelve con su propia clase.
             return UNTRUSTED if isinstance(value, str | dict | list) else rule
         if path in untrusted or field_name(path) in untrusted:
             return UNTRUSTED
-        return rule
+        return parent if parent is not None else rule
 
     def _walk(self, value: JsonValue, path: str, ctx: _Ctx, leaf: _Leaf,
-              inside: bool = False) -> JsonValue | Dropped:
+              parent: FieldRule | None = None) -> JsonValue | Dropped:
         if value is None:
             return None
-        rule = self._rule(path, value, ctx.untrusted, inside)
+        rule = self._rule(path, value, ctx.untrusted, parent)
         container = isinstance(value, dict | list)
-        if container and (rule is None or rule.field_class == "untrusted_text"):
-            # Un contenedor sin clasificar o `untrusted_text` se recorre: cada hijo toma su propia clase.
-            nested = inside or rule is not None
+        if container and (rule is None or rule.field_class in _WALKED):
+            # Un contenedor sin clasificar, `untrusted_text`, `financial` o `public` se recorre: cada hijo
+            # con regla pii explícita toma su clase y el resto hereda la del contenedor.
             if isinstance(value, dict):
                 out: dict[str, JsonValue] = {}
                 for key, item in value.items():
                     child = f"{path}.{key.replace('.', '_')}"
-                    projected = self._walk(item, child, ctx, leaf, nested)
+                    projected = self._walk(item, child, ctx, leaf, rule)
                     if not isinstance(projected, Dropped):
                         out[neutralize(key)] = projected
                 return out
             if isinstance(value, list):
-                items = [self._walk(item, path, ctx, leaf, nested) for item in value]
+                items = [self._walk(item, path, ctx, leaf, rule) for item in value]
                 return [item for item in items if not isinstance(item, Dropped)]
         return leaf(value, path, UNCLASSIFIED if rule is None else rule, ctx)
 

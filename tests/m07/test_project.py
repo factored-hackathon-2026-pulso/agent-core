@@ -2,15 +2,17 @@
 
 import hashlib
 import hmac
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
+from pydantic import ValidationError
 
 from agent_core.domain import Fingerprint, canonical_bytes, sha256_hex
 from agent_core.ports import KeyPurpose
 from agent_core.views.classification import DEFAULT_CATALOG, FieldRule
 from agent_core.views.fingerprints import verify_fingerprint
-from agent_core.views.service import ViewsConfigError, ViewService
+from agent_core.views.service import Rendered, ViewsConfigError, ViewService
 from testing.fakes.clock import FakeClock
 from testing.fakes.keys import FakeKeyProvider, synthetic_key
 from tests.m07.helpers import CATALOG, FieldAuthz, make_service, make_vault
@@ -73,10 +75,35 @@ def test_classified_pii_container_is_one_token() -> None:
     assert vault.resolve("⟦addr:1⟧") == '{"street":"Calle 1","city":"X"}'
 
 
-def test_public_container_passes_whole() -> None:
+def test_public_container_passes_its_plain_leaves() -> None:
+    catalog = {**CATALOG, "meta": FieldRule(field_class="public"),
+               "ledger": FieldRule(field_class="financial")}
+    data = {"meta": {"k": "v", "n": 3, "l": ["a", "b"]}, "ledger": {"x": "y"}}
+    views = make_service(catalog=catalog).project(data, "t", [], make_vault())
+    assert views.model == data
+    assert views.audit == data
+    forged = make_service(catalog=catalog).project({"meta": {"k": "⟦doc:1⟧"}}, "t", [], make_vault())
+    assert "⟦" not in str(forged.model)
+
+
+@pytest.mark.parametrize("parent", ["public", "financial"])
+def test_explicit_pii_children_inside_public_or_financial_container_are_protected(parent: str) -> None:
+    catalog = {**CATALOG, "meta": FieldRule(field_class=parent)}  # type: ignore[arg-type]
+    data = {"meta": {"email": "ana@example.test", "date_of_birth": "1990-05-14", "k": "v",
+                     "rows": [{"document_number": "1023456789", "z": 1}]}}
+    views = make_service(catalog=catalog).project(data, "t", [], make_vault())
+    assert views.model == {"meta": {"email": "⟦email:1⟧", "date_of_birth": "30-39", "k": "v",
+                                    "rows": [{"document_number": "⟦doc:1⟧", "z": 1}]}}
+    assert views.audit == {"meta": {"email": "***", "date_of_birth": "30-39", "k": "v",
+                                    "rows": [{"document_number": "***6789", "z": 1}]}}
+
+
+def test_quasi_drop_child_inside_public_container_is_removed() -> None:
     catalog = {**CATALOG, "meta": FieldRule(field_class="public")}
-    views = make_service(catalog=catalog).project({"meta": {"k": "v"}}, "t", [], make_vault())
+    views = make_service(catalog=catalog).project(
+        {"meta": {"postal_code": "110111", "k": "v"}}, "t", [], make_vault())
     assert views.model == {"meta": {"k": "v"}}
+    assert views.audit == {"meta": {"k": "v"}}
 
 
 def test_null_passes_in_every_view() -> None:
@@ -255,3 +282,22 @@ def test_untrusted_nested_in_untrusted_still_wraps_strings() -> None:
     inner = views.model["outer"]["inner"]  # type: ignore[index]
     assert inner["text"].startswith("<datos_no_confiables")
     assert inner["first_name"] == "⟦name:1⟧"
+
+
+def test_views_full_is_excluded_from_dumps() -> None:
+    views = make_service().project([ROW], "transactions", [], make_vault())
+    assert "full" not in views.model_dump()
+    assert "1023456789" not in views.model_dump_json().replace("***6789", "")
+    assert '"full"' not in views.model_dump_json()
+
+
+def test_validation_error_never_echoes_full_data() -> None:
+    aware = datetime(2026, 9, 29, tzinfo=UTC)
+    data = {"document_number": "1023456789", "when": aware}
+    with pytest.raises(ValidationError) as excinfo:
+        make_service().project(data, "customers", [], make_vault())
+    assert "document_number" not in str(excinfo.value)
+    assert "1023" not in str(excinfo.value)
+    with pytest.raises(ValidationError) as rendered:
+        Rendered(text=1023456789)  # type: ignore[arg-type]
+    assert "1023456789" not in str(rendered.value)
