@@ -3,6 +3,7 @@
 Interfaz pública (§2, fase 1). Otros módulos importan solo de aquí, nunca de los submódulos.
 """
 
+from agent_core.flows.agent import validate_agent, validate_flow_for_agent
 from agent_core.flows.claims import derive_claims
 from agent_core.flows.jsonlogic import JSONLOGIC_OPS, jsonlogic_problems
 from agent_core.flows.paths import Path, parse_path, template_vars, value_paths
@@ -32,7 +33,9 @@ __all__ = [
     "pin_release",
     "release_view",
     "template_vars",
+    "validate_agent",
     "validate_flow",
+    "validate_flow_for_agent",
     "validate_registry",
     "value_paths",
 ]

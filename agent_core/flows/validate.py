@@ -1,6 +1,7 @@
 """Orquestador de las reglas G0 (M1 §3.4, §4)."""
 
-from agent_core.domain import EntityKind, Flow
+from agent_core.domain import Agent, EntityKind, Flow
+from agent_core.flows.agent import release_flows, validate_agent, validate_flow_for_agent
 from agent_core.flows.context import Ctx, Rule, clip
 from agent_core.flows.registry import AuthoringRegistry
 from agent_core.flows.rules.exits import g0_06
@@ -29,9 +30,34 @@ def validate_flow(flow: Flow, reg: RegistryView) -> list[Violation]:
 
 
 def validate_registry(reg: AuthoringRegistry) -> list[Violation]:
-    """Toda versión de todo flow del registro (la Task 13 agrega agentes y releases)."""
+    """Flows, agentes y, por release, cada agente con sus flows (M1 §3.12).
+
+    Total y determinista. Cada flow se valida una vez (`validate_flow`) y cada par (agente, flow) una vez,
+    sin importar cuántas releases lo repitan: el costo es lineal en el tamaño del registro.
+    """
     found: list[Violation] = []
     for entity in reg.all(EntityKind.flow):
         if isinstance(entity, Flow):
             found += validate_flow(entity, reg)
+    for entity in reg.all(EntityKind.agent):
+        if isinstance(entity, Agent):
+            found += validate_agent(entity, reg)
+    checked: set[tuple[str, str, str, str]] = set()
+    for decl in reg.releases():
+        where = clip(f"releases/{decl.id}.yaml", 240)
+        for entry in decl.agents:
+            agent = reg.resolve(EntityKind.agent, entry.agent)
+            if not isinstance(agent, Agent):
+                found.append(Violation(rule="G0-02", path=where,
+                                       message=clip(f"agent {entry.agent} no existe en el registro", 240)))
+                continue
+            flows, missing = release_flows(reg, decl, agent)
+            for ref in missing:
+                text = clip(f"flow {ref} no existe en el registro", 240)
+                found.append(Violation(rule="G0-02", path=where, message=text))
+            for flow in flows:
+                key = (agent.id, agent.version, flow.id, flow.version)
+                if key not in checked:
+                    checked.add(key)
+                    found += validate_flow_for_agent(flow, agent, reg)
     return sort_violations(found)
