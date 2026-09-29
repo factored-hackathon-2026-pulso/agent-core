@@ -38,7 +38,11 @@ class Violation(BaseModel):
 
 def sort_violations(violations: Iterable[Violation]) -> list[Violation]:
     """Orden total y sin duplicados (M1 §4)."""
-    return sorted(set(violations), key=Violation.sort_key)
+    def key(v: Violation) -> tuple[tuple[str, str, str, str, str], bool, bool, bool]:
+        # `sort_key` iguala None con "": el desempate evita que dependa del orden de entrada.
+        return (v.sort_key(), v.flow is None, v.node_id is None, v.path is None)
+
+    return sorted(set(violations), key=key)
 
 
 class FlowSchemaError(SchemaError):

@@ -32,3 +32,17 @@ def test_fakes_package_does_not_eagerly_import_flows() -> None:
             "from testing.fakes import registry_from_directory; "
             "assert 'agent_core.flows' in sys.modules and callable(registry_from_directory)")
     subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_sort_violations_never_ties_none_with_empty_string() -> None:
+    import itertools
+
+    from agent_core.flows.violations import Violation, sort_violations
+
+    items = [Violation(rule="G0-01", message="m", **{field: value})
+             for field in ("flow", "node_id", "path") for value in (None, "")]
+    items.append(Violation(rule="G0-01", message="m"))
+    expected = sort_violations(items)
+    assert len(expected) == 4  # None y "" son distintos
+    for order in itertools.permutations(items):
+        assert sort_violations(order) == expected
