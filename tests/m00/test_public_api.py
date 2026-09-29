@@ -27,7 +27,7 @@ def test_ports_exports() -> None:
 
 
 # Constantes de módulo que son detalle interno o un import (`UTC`), no contrato.
-_INTERNAL = {"UTC", "MAX_DECIMAL_EXPONENT"}
+_INTERNAL = {"UTC", "MAX_DECIMAL_EXPONENT", "NUM_PATTERN", "ID_PATTERN", "EXACT_VERSION_PATTERN"}
 
 
 def _public_defs(module_name: str) -> set[str]:

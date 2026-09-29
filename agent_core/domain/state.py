@@ -7,7 +7,7 @@ from typing import Any, Literal, Self
 
 from pydantic import Field, NonNegativeInt, model_validator
 
-from agent_core.domain.base import Locale, Model, MutableModel, NodeId, Probability, UtcDatetime
+from agent_core.domain.base import Locale, Model, MutableModel, NodeId, Probability, Sha256Hex, UtcDatetime
 from agent_core.domain.identity import OnBehalfOf, Principal, SubjectRef
 from agent_core.domain.json import JsonValue
 from agent_core.domain.outcomes import Awaiting, Mode, Outcome
@@ -78,9 +78,9 @@ class Action(Model):
     flow: EntityRef
     tool: EntityRef
     args: dict[str, JsonValue]
-    args_hash: str
+    args_hash: Sha256Hex
     state: ActionState
-    confirmation_token_hash: str
+    confirmation_token_hash: Sha256Hex
     token_exp: UtcDatetime
     idempotency_key: str
     created_at: UtcDatetime

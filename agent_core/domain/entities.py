@@ -119,7 +119,7 @@ class LanguageDetection(Model):
 class InjectionRule(Model):
     """Regla de detección de inyección: regex o frase literal (M0 §2.4)."""
     id: str = Field(min_length=1)
-    pattern: str = Field(min_length=1)
+    pattern: str = Field(min_length=1, max_length=2048)  # acota el costo de compilar/evaluar
     kind: Literal["regex", "phrase"]
 
     @model_validator(mode="after")

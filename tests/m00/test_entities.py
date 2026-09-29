@@ -244,3 +244,13 @@ def test_fixture_is_synthetic_and_has_no_secrets() -> None:
     text = str(DISPUTA_CARGO).lower()
     for marker in ("akia", "secret", "password", "token", "api_key"):
         assert marker not in text
+
+
+def test_injection_rule_pattern_is_bounded() -> None:
+    from pydantic import ValidationError
+
+    from agent_core.domain.entities import InjectionRule
+
+    InjectionRule(id="r", pattern="a" * 2048, kind="phrase")
+    with pytest.raises(ValidationError):
+        InjectionRule(id="r", pattern="a" * 2049, kind="phrase")
