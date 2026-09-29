@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from agent_core.domain import Fact, FactSource, JsonValue, LanguageDetection
+from agent_core.guards import UNCALIBRATED
 from agent_core.response.numbers import NumberFormat
 from agent_core.response.types import ValidationContext
 from agent_core.views import TokenVault
@@ -45,6 +46,9 @@ def make_ctx(facts: Mapping[str, Fact] | None = None, allowed: set[str] | None =
         "vault": TokenVault("run-0001", FakeKeyProvider.default(), FakeIds()),
         "locale": "es",
         "lang_cfg": make_lang(),
+        "lang_thresholds": UNCALIBRATED,
+        "supported_locales": ("es", "pt"),
+        "find_clear_pii": lambda text: [],
         "number_format": None,
     }
     return ValidationContext(**(base | over))

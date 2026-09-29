@@ -26,3 +26,10 @@ def test_result_ok_is_derived_from_failures() -> None:
 def test_context_repr_hides_facts_and_vault() -> None:
     ctx = make_ctx({"f1": make_fact("f1", {"doc": "1023456789"})})
     assert "1023456789" not in repr(ctx) and "vault" not in repr(ctx)
+
+
+def test_context_carries_pii_closure_and_language_inputs() -> None:  # P3
+    ctx = make_ctx(find_clear_pii=lambda text: ["cliente.document_number"], supported_locales=("es",))
+    assert ctx.find_clear_pii("x") == ["cliente.document_number"]
+    assert ctx.supported_locales == ("es",) and ctx.lang_thresholds.switch_threshold == 1.0
+    assert "find_clear_pii" not in repr(ctx) and "lambda" not in repr(ctx)

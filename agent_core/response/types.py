@@ -1,11 +1,6 @@
-"""Tipos públicos del validador de respuesta de M8 (spec §2).
+"""Tipos públicos del validador de respuesta de M8 (spec §2)."""
 
-Nota: `ValidationContext` trae por ahora solo los campos del spec §2 (con `number_format` opcional,
-decidido 2026-09-29). Los campos que necesitan las comprobaciones de tokens/PII y de idioma están pendientes
-de decisión (spec §11) y no se añaden aquí.
-"""
-
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Literal
 
@@ -13,6 +8,7 @@ from pydantic import ValidationError
 
 from agent_core.domain import FactSource, JsonValue, LanguageDetection
 from agent_core.domain.base import Model
+from agent_core.guards import LangThresholds
 from agent_core.response.numbers import NumberFormat
 from agent_core.views import TokenVault
 
@@ -43,6 +39,10 @@ class ValidationContext:
     vault: TokenVault
     locale: str
     lang_cfg: LanguageDetection
+    lang_thresholds: LangThresholds
+    supported_locales: tuple[str, ...]
+    # Cierre que liga `ViewService.find_clear_pii` con los hechos `full` sin exponerlos: devuelve rutas.
+    find_clear_pii: Callable[[str], list[str]]
     number_format: NumberFormat | None = None  # dato opcional producido fuera de M8
 
     def __repr__(self) -> str:
