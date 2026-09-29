@@ -120,11 +120,45 @@ def flow_by_id(registry: RegistryPort, release: Release, flow_id: str) -> Flow:
     return registry.get(EntityRef(id=flow_id, version=release.entities[EntityKind.flow][flow_id]), Flow)
 
 
+def _discard_offer(frame: TurnFrame, registry: RegistryPort) -> None:
+    """Descarta la oferta vigente; ofrece la siguiente o, si era la última, vuelve la conversación normal
+    (plantilla `clarify` del agente, sin contarla como aclaración)."""
+    state = frame.state
+    key = f"offer:{state.pending_offer}"
+    attempts = {k: v for k, v in state.node_attempts.items() if k != key}
+    frame.state = state.model_copy(
+        update={"pending_offer": None, "awaiting": Awaiting.none, "node_attempts": attempts}
+    )
+    if not offer_next(frame, registry):
+        message = render_engine(registry, frame.release, frame.agent.templates.clarify, frame.state.locale)
+        frame.messages.append(message)
+
+
 def answer_offer(frame: TurnFrame, registry: RegistryPort, outcome: UnderstandOutcome) -> Flow | None:
-    """Respuesta a la oferta de una intención pendiente. Solo `affirm` sobre umbral la arranca."""
-    offered = frame.state.pending_offer
+    """Respuesta a la oferta de una intención pendiente (P1, decidida el 2026-09-29).
+
+    - `affirm` sobre umbral: devuelve el flow a arrancar.
+    - `deny` sobre umbral: descarta esa intención y ofrece la siguiente (o, si era la última, no ofrece
+      nada). El `deny` nunca escala ni suma reparación.
+    - Cualquier otra respuesta: la oferta sigue vigente una vez más y a la siguiente se descarta; cada uno
+      de esos turnos suma a `repair_turns_used` (el tope global es lo único que escala)."""
+    state = frame.state
+    offered = state.pending_offer
     assert offered is not None
-    affirmed = outcome.command is Command.affirm and outcome.above_threshold.get("command", False)
-    if affirmed:
+    confident = outcome.above_threshold.get("command", False)
+    if outcome.command is Command.affirm and confident:
         return flow_by_id(registry, frame.release, offered)
-    raise NotImplementedError("deny y respuestas ajenas a la oferta: Task 14b (P1)")
+    if outcome.command is Command.deny and confident:
+        _discard_offer(frame, registry)
+        return None
+    key = f"offer:{offered}"
+    repeated = state.node_attempts.get(key, 0) >= 1
+    frame.state = state.model_copy(update={"repair_turns_used": state.repair_turns_used + 1})
+    if repeated:
+        _discard_offer(frame, registry)
+        return None
+    state = frame.state
+    frame.state = state.model_copy(update={"node_attempts": {**state.node_attempts, key: 1}})
+    message = render_engine(registry, frame.release, frame.agent.templates.pending_offer, state.locale)
+    frame.messages.append(message)
+    return None
