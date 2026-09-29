@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from agent_core.domain.identity import Principal
 from agent_core.domain.json import dumps, loads
+from agent_core.domain.outcomes import Outcome
 from agent_core.domain.shared import Fingerprint, OutboxMessage, ToolStatus, TranscriptEntry
 from agent_core.domain.state import Action, RunState
 from agent_core.domain.turn import RunResult, TurnInput, TurnResult
@@ -200,3 +201,31 @@ def test_builders_are_synthetic_and_valid() -> None:
     advisor, obo = advisor_with_delegation()
     assert obo.grantee == advisor.key
     assert full_run_state().principal.type.value == "advisor"
+
+
+# model_copy(update=...) es la vía documentada (índice §5): debe revalidar la coherencia
+def test_model_copy_update_revalidates_coherence() -> None:
+    state = run_state()
+    with pytest.raises(ValidationError):
+        state.model_copy(update={"outcome": Outcome.resolved})
+    with pytest.raises(ValidationError):
+        state.model_copy(update={"status": "escalated"})
+    with pytest.raises(ValueError, match="desconocidos"):
+        state.model_copy(update={"unknown_field": 1})
+    assert state.outcome is None
+    assert state.status == "open"
+
+
+def test_model_copy_update_coherent_and_original_unchanged() -> None:
+    state = run_state()
+    closed = state.model_copy(
+        update={"status": "closed", "outcome": Outcome.resolved, "closed_at": NOW, "inactive_after": None}
+    )
+    assert closed.status == "closed"
+    assert closed.outcome is Outcome.resolved
+    assert state.status == "open"
+    assert state.outcome is None
+    assert state.model_copy() == state
+    bumped = state.model_copy(update={"state_version": 1})
+    assert bumped.state_version == 1
+    assert state.state_version == 0

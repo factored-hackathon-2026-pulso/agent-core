@@ -1,8 +1,9 @@
 """Estado del run (M0 §2.6). Cada parte tiene un solo módulo que la escribe (índice §5)."""
 
+from collections.abc import Mapping
 from decimal import Decimal
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal, Self
 
 from pydantic import Field, NonNegativeInt, model_validator
 
@@ -169,3 +170,17 @@ class RunState(MutableModel):
         if self.mode == "task" and self.session_id is not None:
             raise ValueError("un run task no tiene session_id")
         return self
+
+    def model_copy(self, *, update: Mapping[str, Any] | None = None, deep: bool = False) -> Self:
+        """Vía documentada de actualización (índice §5): revalida el estado resultante, falla cerrado.
+
+        `model_copy` de pydantic no valida; aquí el estado fusionado pasa de nuevo por todos los validadores.
+        """
+        if update:
+            unknown = set(update) - set(type(self).model_fields)
+            if unknown:
+                raise ValueError(f"campos desconocidos en update: {sorted(unknown)}")
+        merged = super().model_copy(update=update, deep=deep)
+        if not update:
+            return merged
+        return type(self).model_validate(merged.model_dump(mode="python"))
