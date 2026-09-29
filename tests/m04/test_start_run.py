@@ -2,6 +2,8 @@
 
 from typing import Any
 
+import pytest
+
 from agent_core.domain import AgentSelector, Awaiting, Outcome, RunInput
 from tests.m04.harness import World
 
@@ -111,3 +113,14 @@ def test_start_run_no_toma_lease_ni_guarda_resultado_por_client_turn_id() -> Non
     w = World()
     result = start(w)
     assert w.store.leases == {} and w.store.turn_results == {} and result.run_id == "run-0001"
+
+
+def test_un_run_task_abierto_nunca_lleva_inactive_after(monkeypatch: pytest.MonkeyPatch) -> None:
+    """m04 §3.6: `inactive_after` es del modo conversacional; el barrido no debe ver runs task."""
+    from agent_core.turn.closing import Closer
+
+    monkeypatch.setattr(Closer, "apply_outcome", lambda self, frame, outcome: None)
+    w = World()
+    result = start(w, agent="tarea")
+    state = w.store.runs[result.run_id]
+    assert state.status == "open" and state.mode == "task" and state.inactive_after is None
