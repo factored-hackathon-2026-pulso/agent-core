@@ -4,7 +4,8 @@ import re
 from collections.abc import Callable, Iterable
 
 from agent_core.guards import detect_language
-from agent_core.response.types import Draft, Failure, ValidationContext
+from agent_core.response.check_numbers import check_numbers
+from agent_core.response.types import CheckId, Draft, Failure, ValidationContext
 from agent_core.views import TOKEN_PATTERN
 
 TOKEN_RE = re.compile(TOKEN_PATTERN)
@@ -57,3 +58,12 @@ def check_language(draft: Draft, ctx: ValidationContext) -> list[Failure]:
     if detected == ctx.locale:
         return []
     return [Failure(check="language", detail=f"idioma esperado {ctx.locale}, detectado {detected}")]
+
+
+CHECKS: tuple[tuple[CheckId, Check], ...] = (
+    ("format", check_format),
+    ("citations", check_citations),
+    ("numbers", check_numbers),
+    ("tokens_pii", check_tokens_pii),
+    ("language", check_language),
+)
