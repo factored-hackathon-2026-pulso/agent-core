@@ -12,6 +12,7 @@ from agent_core.domain import (
     EngineEvent,
     EntityKind,
     EntityRef,
+    EscalationRequest,
     Flow,
     OnBehalfOf,
     Principal,
@@ -23,6 +24,8 @@ from agent_core.domain import (
     RunState,
     Slot,
     TranscriptRef,
+    TurnInProgress,
+    TurnInput,
     TurnResult,
 )
 from agent_core.handoff import HandoffService
@@ -216,6 +219,87 @@ class TurnEngine:
             frame.uow.release_turn(saved.run_id, frame.turn_id)
         frame.state = saved
         return result
+
+    # --- handle_turn --------------------------------------------------------------------------------
+
+    def handle_turn(
+        self, principal: Principal, on_behalf_of: OnBehalfOf | None, turn: TurnInput
+    ) -> TurnResult:
+        meter = StageMeter(self._clock)
+        turn_id = self._ids.new_id(IdKind.turn)
+        leased: str | None = None
+        try:
+            with self._uow_factory() as uow:
+                found = uow.find_run_by_session(turn.session_id)
+                if found is None:
+                    raise EngineError(ProblemCode.not_found, "sesión")
+                cached = uow.get_turn_result(found.run_id, turn.client_turn_id)
+                if cached is not None:  # paso 1: un duplicado devuelve lo guardado aunque el run ya cerró
+                    return cached
+                try:
+                    uow.acquire_turn(found.run_id, turn_id, self._clock.now(), self._config.lease_ttl)
+                except TurnInProgress as exc:
+                    raise EngineError(ProblemCode.turn_in_progress, "turno en curso") from exc
+                leased = found.run_id
+                cached = uow.get_turn_result(found.run_id, turn.client_turn_id)
+                if cached is not None:  # el otro turno commiteó entre mi lectura y mi lease
+                    uow.release_turn(found.run_id, turn_id)
+                    uow.commit()
+                    leased = None
+                    return cached
+                state = uow.load_run(found.run_id) or found  # estado fresco tras tomar el lease
+                if state.status != "open":
+                    raise EngineError(ProblemCode.run_closed, "run cerrado")
+                outcome = self._process(uow, state, principal, on_behalf_of, turn, turn_id, meter)
+                uow.commit()
+                leased = None
+                if isinstance(outcome, EngineError):
+                    raise outcome
+                return outcome
+        except Exception:
+            if leased is not None:
+                self._release_quietly(leased, turn_id)
+            raise
+
+    def _release_quietly(self, run_id: str, turn_id: str) -> None:
+        """Una excepción (no una caída) libera el lease con una UoW propia para que el reintento no espere
+        al TTL. Una caída real (`BaseException`) no pasa por aquí: el lease vence solo."""
+        try:
+            with self._uow_factory() as uow:
+                uow.release_turn(run_id, turn_id)
+                uow.commit()
+        except Exception:
+            pass
+
+    def _process(
+        self,
+        uow: UnitOfWork,
+        state: RunState,
+        principal: Principal,
+        on_behalf_of: OnBehalfOf | None,
+        turn: TurnInput,
+        turn_id: str,
+        meter: StageMeter,
+    ) -> TurnResult | EngineError:
+        """Pasos 3 a 14. Devuelve un `EngineError` (ya commiteable) cuando el turno cierra el run sin
+        procesar el mensaje (abandono, P2)."""
+        state = begin_turn(state.model_copy(update={"turn_count": state.turn_count + 1}), self._clock)
+        runtime = self._runtimes.open(state, principal, on_behalf_of)
+        agent, release = runtime.step.agent, runtime.step.release
+        frame = self._new_frame(
+            uow, state, turn_id, "turn", turn.client_turn_id, agent, runtime, meter, release
+        )
+        frame.turn = turn
+        frame.text_model = runtime.model_text(turn.text)  # C1: el texto crudo no sale de aquí
+        frame.buffer.reserve_turn_started()
+        if self._registry.release_status(state.release) == "revoked":  # paso 3
+            request = EscalationRequest(
+                reason_code="release_revoked", target_queue=agent.default_target_queue, priority="normal"
+            )
+            with frame.meter.stage("flow"):
+                self._closer.escalate(frame, request, "revocation")
+            return self._finish(frame, record=True)
+        raise NotImplementedError("pasos 4-12: Tasks 9-16")
 
     # --- start_run ----------------------------------------------------------------------------------
 
