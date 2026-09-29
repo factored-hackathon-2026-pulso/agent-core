@@ -16,7 +16,7 @@ from agent_core.domain import (
     Policy,
     StartFlowAction,
 )
-from agent_core.interpreter import NO_RESUME, evaluate, start_flow, truthy
+from agent_core.interpreter import NO_RESUME, Resume, evaluate, start_flow, truthy
 from agent_core.ports import RegistryPort
 from agent_core.turn.closing import Closer
 from agent_core.turn.frame import TurnFrame
@@ -202,3 +202,14 @@ def run_global_handlers(
         if handler.applies(signals):
             return handler.run(env, frame, signals)
     return None
+
+
+def resolve_pending_confirm(outcome: UnderstandOutcome) -> Resume:
+    """Con `confirm` pendiente y ningún manejador global: `affirm`/`deny` sobre umbral responden el
+    confirm; todo lo demás (intención nueva, `out_of_scope`, `clarify`, bajo umbral) es `unclear`."""
+    signals = Signals(outcome)
+    if signals.is_(Command.affirm):
+        return Resume("confirm_answer", "yes")
+    if signals.is_(Command.deny):
+        return Resume("confirm_answer", "no")
+    return Resume("confirm_answer", "unclear")

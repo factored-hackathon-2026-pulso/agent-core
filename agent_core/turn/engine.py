@@ -50,7 +50,8 @@ from agent_core.turn.closing import Closer
 from agent_core.turn.config import TurnConfig
 from agent_core.turn.events import CommandInfo, TurnEvents
 from agent_core.turn.frame import TurnFrame
-from agent_core.turn.handlers import Env, run_global_handlers
+from agent_core.turn.handlers import Env, resolve_pending_confirm, run_global_handlers
+from agent_core.turn.intents import queue_mentioned
 from agent_core.turn.metering import StageMeter
 from agent_core.turn.ports import (
     EventChain,
@@ -319,20 +320,46 @@ class TurnEngine:
         if self._guard(frame):  # paso 7: unsupported / tamaño → plantilla, sin Understand ni flow
             return self._finish(frame, record=True)
         understood = self._understand_step(frame)  # paso 8
-        if understood is not None:
-            with frame.meter.stage("flow"):  # paso 9
-                handled = run_global_handlers(
-                    self._env,
-                    frame,
-                    understood,
-                    confirm_pending=frame.state.awaiting is Awaiting.confirmation,
-                )
-                if handled is not None:
-                    if handled.advance:
-                        self._advance(frame)
-            if handled is not None:
-                return self._finish(frame, record=True)
-        raise NotImplementedError("pasos 10-12: Tasks 13-16")
+        with frame.meter.stage("flow"):  # pasos 9 a 12
+            self._decide_and_advance(frame, understood)
+        return self._finish(frame, record=True)
+
+    def _decide_and_advance(self, frame: TurnFrame, understood: UnderstandOutcome | None) -> None:
+        """Pasos 9-12 tras Understand: manejadores globales, elección de flow o resolución del `confirm`,
+        y `advance`."""
+        confirm_pending = frame.state.awaiting is Awaiting.confirmation
+        if understood is None:  # botón: sin Understand y sin manejadores; nunca `unclear` (T-M4-05)
+            self._advance_turn(frame)
+            return
+        handled = run_global_handlers(self._env, frame, understood, confirm_pending=confirm_pending)
+        if handled is not None:
+            if handled.advance:
+                self._advance_turn(frame)
+            return
+        if confirm_pending:
+            queued = queue_mentioned(self._registry, frame, understood)
+            frame.resume = resolve_pending_confirm(understood)
+            self._advance_turn(frame)
+            if queued and not frame.closed:
+                self._acknowledge(frame)
+            return
+        raise NotImplementedError("paso 10: Task 14")
+
+    def _advance_turn(self, frame: TurnFrame) -> None:
+        """`advance` y contadores de reparación de M4: un `unclear` de texto suma (C14); el botón no."""
+        text_unclear = frame.resume.kind == "confirm_answer" and frame.resume.value == "unclear"
+        self._advance(frame)
+        if text_unclear:
+            frame.state = frame.state.model_copy(
+                update={"repair_turns_used": frame.state.repair_turns_used + 1}
+            )
+
+    def _acknowledge(self, frame: TurnFrame) -> None:
+        frame.messages.append(
+            render_engine(
+                self._registry, frame.release, frame.agent.templates.pending_ack, frame.state.locale
+            )
+        )
 
     def _understand_step(self, frame: TurnFrame) -> UnderstandOutcome | None:
         """Paso 8. Un botón `confirm` no pasa por Understand: `resume = confirm_answer`, `source=button`."""

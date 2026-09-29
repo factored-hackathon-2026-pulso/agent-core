@@ -282,7 +282,7 @@ class World:
         )
         write = tool_def("radicar_pqr", "write_reversible", source="pqr")
         readback = tool_def("obtener_pqr", "read", source="pqr")
-        self.add_tool(write)
+        self.add_tool(write, handler=lambda a: {"status": "Open", "pqr_id": "pqr-demo-1", **a})
         self.add(readback)
         self.tools.register_readback(readback, of=EntityRef(id="radicar_pqr", version="1.0.0"))
         self.add_tool(tool_def("obtener_dato", "read"), handler=lambda a: {"ok": True})
@@ -434,6 +434,29 @@ class World:
         result = self.turn("cargo desconocido de cincuenta dólares")
         assert result.confirmation is not None
         return result
+
+    def seed_at_confirm(self) -> Any:
+        """Deja el run en `confirmar` con una acción `proposed` real, manejando M2 directo (sin M4).
+
+        Devuelve el `ConfirmationPrompt`. Reinicia el contador de commits: lo que sigue lo mide la prueba."""
+        from dataclasses import replace
+
+        from agent_core.interpreter import NO_RESUME, Resume, advance, begin_turn, start_flow
+
+        state = self.open_run(turn_count=2)
+        state = start_flow(begin_turn(state, self.clock), DISPUTA)
+        ctx = replace(
+            self.runtimes.open(state, self.principal, None).step, turn_id="turn-seed", release=self.release()
+        )
+        state = advance(state, ctx, NO_RESUME).state
+        out = advance(begin_turn(state, self.clock), ctx, Resume("slot_answer", "cargo desconocido"))
+        assert out.confirmation is not None
+        final = out.state.model_copy(update={"awaiting": "confirmation", "awaiting_node_id": "confirmar"})
+        with self.store.uow() as uow:
+            uow.save_run(final, final.state_version)
+            uow.commit()
+        self.uow_factory.commits = 0  # type: ignore[attr-defined]
+        return out.confirmation
 
     def agent_selector(self, agent_id: str = "atencion") -> AgentSelector:
         return AgentSelector(id=agent_id, alias="prod")
