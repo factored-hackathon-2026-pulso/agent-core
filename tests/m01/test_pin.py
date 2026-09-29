@@ -9,6 +9,7 @@ from agent_core.domain import (
     EntityRef,
     Flow,
     InjectionRuleset,
+    KnowledgeSnapshot,
     LanguageDetection,
     RefSpec,
     SchemaError,
@@ -248,3 +249,103 @@ def test_registry_from_directory() -> None:
     memory = registry_from_directory(FIXTURE, "demo")
     assert memory.release_status("demo") == "active"
     assert memory.get(EntityRef.parse("disputa-cargo@1.0.0"), Flow).id == "disputa-cargo"
+
+
+# --- Snapshot de conocimiento en la clausura (registry, ADR 0017; spec del registry §15) ---
+
+def _snapshot(version: str, path: str = "faq/disputas") -> KnowledgeSnapshot:
+    return KnowledgeSnapshot.model_validate(
+        {"id": "kb", "version": version, "pages": [
+            {"path": path, "hash": "a" * 64, "audience": "public", "status": "approved",
+             "approved_by": "aprobador-1", "lang": "es"}]}
+    )
+
+
+def _knowledge_registry(*snapshots: KnowledgeSnapshot, knowledge: str | None = "kb@^1") -> AuthoringRegistry:
+    decl = _decl(knowledge=knowledge) if knowledge is not None else _decl()
+    return AuthoringRegistry.from_entities(
+        [*ENTITIES, LANG, _flow_version("1.0.0"), agent(), *snapshots], [decl]
+    )
+
+
+def test_release_decl_knowledge_is_optional_and_a_valid_ref() -> None:
+    assert _decl().knowledge is None
+    assert str(_decl(knowledge="kb@^1").knowledge) == "kb@^1"
+    with pytest.raises(ValueError):
+        _decl(knowledge="kb@")
+
+
+def test_kind_of_knowledge_snapshot() -> None:
+    assert kind_of(_snapshot("1.0.0")) is EntityKind.knowledge_snapshot
+
+
+def test_pin_fixes_the_highest_snapshot_in_release_and_closure() -> None:
+    pinned = pin_release(_knowledge_registry(_snapshot("1.0.0"), _snapshot("1.2.0", "faq/otra")), "r")
+    assert str(pinned.release.knowledge_snapshot) == "kb@1.2.0"
+    assert pinned.release.entities[EntityKind.knowledge_snapshot] == {"kb": "1.2.0"}
+    (snapshot,) = [e for e in pinned.entities if isinstance(e, KnowledgeSnapshot)]
+    assert snapshot.version == "1.2.0"
+    require_exact_refs(pinned.release)
+
+
+def test_pinned_snapshot_resolves_through_the_runtime_port_and_view() -> None:
+    pinned = pin_release(_knowledge_registry(_snapshot("1.0.0")), "r")
+    memory = InMemoryRegistry()
+    memory.add(*pinned.entities)
+    memory.add_release(pinned.release, "atencion")
+    assert pinned.release.knowledge_snapshot is not None
+    assert memory.get(pinned.release.knowledge_snapshot, KnowledgeSnapshot).pages[0].path == "faq/disputas"
+    view = release_view(memory, pinned.release)
+    assert view.resolve(EntityKind.knowledge_snapshot, RefSpec.parse("kb@1")) is not None
+
+
+def test_pin_without_knowledge_leaves_the_snapshot_unset() -> None:
+    pinned = pin_release(_knowledge_registry(_snapshot("1.0.0"), knowledge=None), "r")
+    assert pinned.release.knowledge_snapshot is None
+    assert EntityKind.knowledge_snapshot not in pinned.release.entities
+    assert not any(isinstance(e, KnowledgeSnapshot) for e in pinned.entities)
+
+
+def test_pin_unresolved_knowledge_is_a_schema_error() -> None:
+    with pytest.raises(SchemaError, match=r"knowledge.*kb@\^2.*no resuelve"):
+        pin_release(_knowledge_registry(_snapshot("1.0.0"), knowledge="kb@^2"), "r")
+
+
+def test_pin_with_knowledge_is_deterministic() -> None:
+    first = pin_release(_knowledge_registry(_snapshot("1.0.0"), _snapshot("1.1.0", "faq/otra")), "r")
+    second = pin_release(_knowledge_registry(_snapshot("1.1.0", "faq/otra"), _snapshot("1.0.0")), "r")
+    assert first.release.model_dump_json() == second.release.model_dump_json()
+    assert [e.model_dump_json() for e in first.entities] == [e.model_dump_json() for e in second.entities]
+
+
+def _write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
+_SNAPSHOT_YAML = """\
+id: kb
+version: 1.0.0
+pages:
+  - {{path: {path}, hash: '{digest}', audience: public, status: {status}, lang: es{extra}}}
+"""
+
+
+def test_loader_reads_knowledge_snapshots_and_the_release_reference(tmp_path: Path) -> None:
+    _write(tmp_path / "knowledge_snapshots" / "kb@1.0.0.yaml", _SNAPSHOT_YAML.format(
+        path="faq/disputas", digest="a" * 64, status="approved", extra=", approved_by: aprobador-1"))
+    _write(tmp_path / "releases" / "r.yaml",
+           "id: r\nagents: [{agent: atencion@1}]\nlanguage_detection: lang@1\nknowledge: kb@^1\n")
+    reg, violations = load_registry(tmp_path)
+    assert violations == []
+    assert isinstance(reg.get_exact(EntityKind.knowledge_snapshot, "kb", "1.0.0"), KnowledgeSnapshot)
+    decl = reg.release("r")
+    assert decl is not None and str(decl.knowledge) == "kb@^1"
+
+
+def test_loader_reports_an_invalid_snapshot_without_aborting(tmp_path: Path) -> None:
+    _write(tmp_path / "knowledge_snapshots" / "kb@1.0.0.yaml", _SNAPSHOT_YAML.format(
+        path="'../secreto'", digest="a" * 64, status="draft", extra=""))
+    reg, violations = load_registry(tmp_path)
+    assert [v.rule for v in violations] == ["G0-01"]
+    assert reg.versions(EntityKind.knowledge_snapshot, "kb") == []

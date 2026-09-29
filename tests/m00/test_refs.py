@@ -105,7 +105,7 @@ def test_agent_selector_dict_validates_alias_and_exclusivity() -> None:
 def test_entity_kind_matches_spec() -> None:
     assert {k.value for k in EntityKind} == {
         "agent", "flow", "decision_model", "policy", "template", "prompt", "tool",
-        "language_detection", "injection_ruleset", "model_profile",
+        "language_detection", "injection_ruleset", "model_profile", "knowledge_snapshot",
     }  # fmt: skip
 
 

@@ -13,6 +13,8 @@ from agent_core.domain.entities import (
     Flow,
     InjectionRuleset,
     Interrupt,
+    KnowledgePage,
+    KnowledgeSnapshot,
     LanguageDetection,
     ModelProfile,
     Prompt,
@@ -254,3 +256,87 @@ def test_injection_rule_pattern_is_bounded() -> None:
     InjectionRule(id="r", pattern="a" * 2048, kind="phrase")
     with pytest.raises(ValidationError):
         InjectionRule(id="r", pattern="a" * 2049, kind="phrase")
+
+
+# --- Snapshot de conocimiento (registry, ADR 0015 y 0017) ---
+
+_HASH_A = "a" * 64
+_HASH_B = "b" * 64
+
+
+def _page(path: str = "faq/disputas", **over: Any) -> dict[str, Any]:
+    base: dict[str, Any] = {"path": path, "hash": _HASH_A, "audience": "public", "status": "approved",
+                            "approved_by": "aprobador-1", "lang": "es"}
+    return base | over
+
+
+def _snapshot(*pages: dict[str, Any]) -> dict[str, Any]:
+    return {"id": "kb-base", "version": "1.0.0", "pages": list(pages) or [_page()]}
+
+
+def test_knowledge_snapshot_is_a_registry_entity() -> None:
+    snapshot = KnowledgeSnapshot.model_validate(_snapshot(_page(), _page("faq/disputas-pt", lang="pt",
+                                                                        translation_of="faq/disputas")))
+    assert ENTITY_KIND[KnowledgeSnapshot] is EntityKind.knowledge_snapshot
+    assert snapshot.pages[0].source_refs == []
+    assert snapshot.pages[1].translation_of == "faq/disputas"
+
+
+def test_knowledge_page_approval_is_coherent() -> None:
+    with pytest.raises(ValidationError):  # aprobada sin quién la aprobó
+        KnowledgePage.model_validate(_page(approved_by=None))
+    with pytest.raises(ValidationError):  # borrador con aprobador
+        KnowledgePage.model_validate(_page(status="draft", approved_by="aprobador-1"))
+    assert KnowledgePage.model_validate(_page(status="draft", approved_by=None)).status == "draft"
+
+
+@pytest.mark.parametrize("bad", ["../secreto", "a/../b", "/abs", "a//b", "", " a", "a b", "ñ/x", "a/"])
+def test_knowledge_page_path_must_be_safe_and_relative(bad: str) -> None:
+    with pytest.raises(ValidationError):
+        KnowledgePage.model_validate(_page(bad))
+
+
+def test_knowledge_page_hash_and_enums_are_strict() -> None:
+    for over in ({"hash": "A" * 64}, {"hash": "abc"}, {"audience": "cliente"}, {"status": "publicada"},
+                 {"lang": "es-CO"}):
+        with pytest.raises(ValidationError):
+            KnowledgePage.model_validate(_page(**over))
+
+
+def test_knowledge_page_validity_range_is_ordered() -> None:
+    ok = KnowledgePage.model_validate(_page(valid_from="2026-01-01", valid_to="2026-01-01"))
+    assert ok.valid_from == ok.valid_to
+    with pytest.raises(ValidationError):
+        KnowledgePage.model_validate(_page(valid_from="2026-02-01", valid_to="2026-01-01"))
+
+
+def test_knowledge_snapshot_rejects_duplicate_paths_and_dangling_translations() -> None:
+    with pytest.raises(ValidationError):
+        KnowledgeSnapshot.model_validate(_snapshot(_page(), _page(hash=_HASH_B)))
+    with pytest.raises(ValidationError):
+        KnowledgeSnapshot.model_validate(_snapshot(_page(translation_of="no-existe")))
+    with pytest.raises(ValidationError):  # una página no es traducción de sí misma
+        KnowledgeSnapshot.model_validate(_snapshot(_page(translation_of="faq/disputas")))
+
+
+def test_knowledge_snapshot_is_bounded_and_immutable() -> None:
+    with pytest.raises(ValidationError):
+        KnowledgePage.model_validate(_page(source_refs=[f"ref-{i}" for i in range(51)]))
+    with pytest.raises(ValidationError):
+        KnowledgePage.model_validate(_page(source_refs=["x" * 501]))
+    snapshot = KnowledgeSnapshot.model_validate(_snapshot())
+    with pytest.raises(ValidationError):
+        snapshot.version = "2.0.0"  # type: ignore[misc]
+    with pytest.raises(ValidationError):
+        KnowledgeSnapshot.model_validate({**_snapshot(), "extra": 1})
+
+
+def test_release_pins_an_optional_exact_knowledge_snapshot() -> None:
+    base: dict[str, Any] = {"id": "rel-1", "status": "active", "interrupts": [],
+                            "language_detection": "lang-detect@1.0.0"}
+    assert Release.model_validate(base).knowledge_snapshot is None
+    release = Release.model_validate({**base, "knowledge_snapshot": "kb-base@1.0.0"})
+    assert release.knowledge_snapshot is not None and str(release.knowledge_snapshot) == "kb-base@1.0.0"
+    for bad in ("kb-base@^1", "kb-base", "kb-base@1"):
+        with pytest.raises(ValidationError):
+            Release.model_validate({**base, "knowledge_snapshot": bad})

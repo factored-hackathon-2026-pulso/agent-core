@@ -13,6 +13,7 @@ from agent_core.domain import (
     EntityRef,
     Flow,
     InjectionRuleset,
+    KnowledgeSnapshot,
     LanguageDetection,
     ModelProfile,
     Policy,
@@ -31,6 +32,7 @@ ENTITY_TYPES: Mapping[EntityKind, type[RegistryEntity]] = MappingProxyType(
         EntityKind.policy: Policy, EntityKind.template: Template, EntityKind.prompt: Prompt,
         EntityKind.tool: ToolDef, EntityKind.language_detection: LanguageDetection,
         EntityKind.injection_ruleset: InjectionRuleset, EntityKind.model_profile: ModelProfile,
+        EntityKind.knowledge_snapshot: KnowledgeSnapshot,
     }
 )
 

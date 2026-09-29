@@ -10,7 +10,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, NonNegativeInt, PositiveInt, StringConstraints, model_validator
 
-from agent_core.domain.base import EntityId, ExactVersion, Locale, Model
+from agent_core.domain.base import EntityId, ExactVersion, Locale, Model, Sha256Hex
 from agent_core.domain.errors import InvalidRuntimeRef
 from agent_core.domain.identity import AuthLevel, PrincipalType
 from agent_core.domain.json import JsonValue
@@ -140,6 +140,67 @@ class InjectionRuleset(Model):
     rules: list[InjectionRule]
 
 
+# Ruta relativa de una página (`ruta` de `ruta@snapshot#ancla`): ASCII, sin `..`, `//`, `/` inicial ni final.
+PagePath = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9_./-]{0,254}$")]
+
+_MAX_SNAPSHOT_PAGES = 10_000
+_MAX_PAGE_SOURCE_REFS = 50
+_MAX_PAGE_SOURCE_REF_CHARS = 500
+_SourceRef = Annotated[str, StringConstraints(min_length=1, max_length=_MAX_PAGE_SOURCE_REF_CHARS)]
+
+
+def _check_page_path(path: str) -> str:
+    if path.endswith("/") or "//" in path or ".." in path.split("/"):
+        raise ValueError("ruta de página no segura")
+    return path
+
+
+class KnowledgePage(Model):
+    """Entrada de un snapshot de conocimiento: metadatos y hash del contenido, no el texto (ADR 0015, 0017).
+
+    El texto vive en el `BlobStore` del registry, direccionado por `hash`."""
+    path: PagePath
+    hash: Sha256Hex
+    audience: Literal["public", "internal", "agent_only"]
+    status: Literal["draft", "approved"]
+    approved_by: str | None = Field(default=None, min_length=1)
+    lang: Locale
+    translation_of: PagePath | None = None
+    valid_from: date | None = None
+    valid_to: date | None = None
+    source_refs: list[_SourceRef] = Field(default_factory=list, max_length=_MAX_PAGE_SOURCE_REFS)
+
+    @model_validator(mode="after")
+    def _coherent(self) -> "KnowledgePage":
+        _check_page_path(self.path)
+        if self.translation_of is not None:
+            _check_page_path(self.translation_of)
+        if (self.status == "approved") != (self.approved_by is not None):
+            raise ValueError("una página está aprobada si y solo si tiene approved_by")
+        if self.valid_from is not None and self.valid_to is not None and self.valid_from > self.valid_to:
+            raise ValueError("valid_from no puede ser posterior a valid_to")
+        return self
+
+
+class KnowledgeSnapshot(Model):
+    """Conjunto inmutable de páginas de conocimiento, fijado por una release (ADR 0015, M12)."""
+    id: EntityId
+    version: ExactVersion
+    pages: list[KnowledgePage] = Field(default_factory=list, max_length=_MAX_SNAPSHOT_PAGES)
+
+    @model_validator(mode="after")
+    def _paths_are_unique_and_translations_resolve(self) -> "KnowledgeSnapshot":
+        paths = [page.path for page in self.pages]
+        if len(set(paths)) != len(paths):
+            raise ValueError("ruta de página duplicada en el snapshot")
+        known = set(paths)
+        for page in self.pages:
+            if page.translation_of is not None and (page.translation_of == page.path
+                                                    or page.translation_of not in known):
+                raise ValueError("translation_of debe ser otra página del mismo snapshot")
+        return self
+
+
 class Release(Model):
     """Conjunto inmutable de versiones exactas de entidades que forman un despliegue (M0 §2.4)."""
     id: str = Field(min_length=1)
@@ -148,6 +209,7 @@ class Release(Model):
     interrupts: list[Interrupt] = Field(default_factory=list)
     language_detection: EntityRef
     injection_ruleset: EntityRef | None = None
+    knowledge_snapshot: EntityRef | None = None
     max_input_chars: PositiveInt = 4000
 
     @model_validator(mode="after")
@@ -272,7 +334,7 @@ class DecisionModelDef(Model):
 
 RegistryEntity = (
     Agent | Flow | Policy | Template | Prompt | ToolDef | DecisionModelDef | LanguageDetection
-    | InjectionRuleset | ModelProfile
+    | InjectionRuleset | ModelProfile | KnowledgeSnapshot
 )
 
 ENTITY_KIND: Mapping[type, EntityKind] = MappingProxyType(
@@ -287,5 +349,6 @@ ENTITY_KIND: Mapping[type, EntityKind] = MappingProxyType(
         LanguageDetection: EntityKind.language_detection,
         InjectionRuleset: EntityKind.injection_ruleset,
         ModelProfile: EntityKind.model_profile,
+        KnowledgeSnapshot: EntityKind.knowledge_snapshot,
     }
 )

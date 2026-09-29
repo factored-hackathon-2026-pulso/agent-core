@@ -11,7 +11,8 @@
     "tool",
     "language_detection",
     "injection_ruleset",
-    "model_profile"
+    "model_profile",
+    "knowledge_snapshot"
   ],
   "title": "EntityKind",
   "type": "string"
