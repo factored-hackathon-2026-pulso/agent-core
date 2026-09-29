@@ -1,7 +1,9 @@
 """`HandoffService` (M10 §2–3). Único emisor de `escalated` y `handoff_resolved`;
 construye `handoff_created`."""
 
+import re
 from collections.abc import Sequence
+from datetime import timedelta
 
 from agent_core.domain import (
     Action,
@@ -14,6 +16,8 @@ from agent_core.domain import (
     EscalatedPayload,
     EscalationRequest,
     HandoffCreatedPayload,
+    HandoffResolved,
+    HandoffResolvedPayload,
     JsonValue,
     Message,
     OnBehalfOf,
@@ -23,11 +27,12 @@ from agent_core.domain import (
     ProblemCode,
     RunState,
     Template,
+    TurnInProgress,
     to_jsonable,
 )
 from agent_core.handoff.builder import build_minimal_packet, build_packet
 from agent_core.handoff.errors import HandoffPreconditionError
-from agent_core.handoff.packet import HandoffPacket, HandoffRecord
+from agent_core.handoff.packet import HandoffPacket, HandoffQuality, HandoffRecord, Resolution
 from agent_core.handoff.projection import Projector
 from agent_core.handoff.recorder import EventRecorder, append_events
 from agent_core.handoff.texts import default_handoff_message
@@ -44,6 +49,19 @@ from agent_core.ports import (
 from agent_core.views import ViewService
 
 _PENDING = (ActionState.proposed, ActionState.confirmed)
+_RESOLUTION_LEASE = timedelta(seconds=30)
+_CODE_RE = re.compile(r"[a-z0-9][a-z0-9_:-]{0,63}")
+_QUALITIES = frozenset({"useful", "incomplete", "unnecessary"})
+_MAX_NOTES = 2000
+
+
+def _validate_resolution(code: str, quality: str, notes: str | None) -> None:
+    if _CODE_RE.fullmatch(code) is None:
+        raise EngineError(ProblemCode.invalid_request, "resolution_code inválido")
+    if quality not in _QUALITIES:
+        raise EngineError(ProblemCode.invalid_request, "handoff_quality inválido")
+    if notes is not None and len(notes) > _MAX_NOTES:
+        raise EngineError(ProblemCode.invalid_request, "notes demasiado largas")
 
 
 class HandoffService:
@@ -136,6 +154,44 @@ class HandoffService:
                   obo: OnBehalfOf | None) -> dict[str, JsonValue]:
         value = self._projector.for_reader(run_id, action.args, action.tool.id, reader, obo)
         return value if isinstance(value, dict) else {}
+
+    # --- record_resolution -----------------------------------------------------------------------------
+
+    def record_resolution(self, handoff_ref: str, reader: Principal, resolution_code: str,
+                          handoff_quality: HandoffQuality, notes: str | None = None, *,
+                          on_behalf_of: OnBehalfOf | None = None) -> EngineEvent:
+        """Registra la resolución del receptor una sola vez: marca el registro y agrega `handoff_resolved`."""
+        _validate_resolution(resolution_code, handoff_quality, notes)
+        now = self._clock.now()
+        with self._uow_factory() as uow:
+            record = self._load_record(uow, handoff_ref)
+            run = self._load_run(uow, record.packet.run_id)
+            self._authorize(reader, on_behalf_of, run)
+            lease = f"resolve-{handoff_ref}"
+            try:
+                uow.acquire_turn(run.run_id, lease, now, _RESOLUTION_LEASE)
+            except TurnInProgress:
+                raise EngineError(ProblemCode.turn_in_progress, "resolución en curso") from None
+            record = self._load_record(uow, handoff_ref)  # relee con el lease tomado
+            if record.resolution is not None:
+                uow.release_turn(run.run_id, lease)
+                uow.commit()
+                raise EngineError(ProblemCode.handoff_already_resolved, handoff_ref)
+            event = HandoffResolved(
+                event_id=self._ids.new_id(IdKind.event), run_id=run.run_id, turn_id=None,
+                session_id=run.session_id, release=run.release, ts=now,
+                payload=HandoffResolvedPayload(handoff_ref=handoff_ref, resolution_code=resolution_code,
+                                               handoff_quality=handoff_quality, reader_type=reader.type),
+            )
+            resolution = Resolution(resolution_code=resolution_code, handoff_quality=handoff_quality,
+                                    notes=notes, resolved_at=now, reader_type=reader.type,
+                                    reader_id=reader.id)
+            resolved = record.model_copy(update={"resolution": resolution})
+            uow.put_handoff(handoff_ref, to_jsonable(resolved))
+            self._record(uow, run, [event])
+            uow.release_turn(run.run_id, lease)
+            uow.commit()
+            return event
 
     # --- utilidades compartidas con record_resolution --------------------------------------------------
 
