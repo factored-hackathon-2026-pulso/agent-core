@@ -1,6 +1,6 @@
 # M0 — Dominio y contratos
 
-- Estado: **rev. 5 para revisión** · Fase 1
+- Estado: **rev. 5 · implementado** (fase 1) · Fase 1
 - Paquetes: `agent_core.domain`, `agent_core.ports`, `testing/fakes`
 - Origen: spec general §2, §5 (esquemas de nodos), §8 (estado), §10 (códigos), §14 (dependencias)
 - ADRs: 0001 (stack), 0002 (contratos), 0006 (principal y delegación), 0007 (acciones), 0008 (vistas y claves)
@@ -41,6 +41,17 @@
   - `GenerationResult` con `tokens_in`/`tokens_out`; error `GatewayError(kind)`;
   - `LlmUsage` con `tokens_in`/`tokens_out` y `cost_known`;
   - `UnitOfWork.add_usage` (M4 acumula costo y hits en la transacción del turno); `CostCounters` pasa a M4.
+- implementación de M0 (2026-09-29), decisiones que el spec no cubría:
+  - `loads` rechaza claves duplicadas; `to_jsonable` rechaza claves que colisionan tras `str()`; `RecursionError` se convierte en `ValueError`; se rechaza un `Decimal` con |exponente| > 1000;
+  - `dumps` escribe `Decimal` con `format(d, "f")` (no `str(d)`, que puede emitir `1E+3`);
+  - `canonical_bytes`: un `Decimal` con exponente >= 0 se canoniza como el entero que representa, igual que su round-trip `dumps`→`loads` (el hash no cambia al persistir y recargar); los escalados (`"500.00"`) siguen como string;
+  - alias de agente `[a-z][a-z0-9_-]*`; `AgentSelector.parse("x@")` se rechaza; semver sin ceros a la izquierda y solo dígitos ASCII;
+  - `Principal.id` y `PrincipalKey.id` no pueden ser vacíos; `AuthLevel` comparado con otro tipo lanza `TypeError`;
+  - `RunState` valida al asignar (con rollback) y `model_copy(update=...)` revalida la coherencia;
+  - `EnvKeyProvider`: formato `kid:base64` (alfabeto estándar, estricto, >= 32 bytes, la primera es la vigente, material distinto por propósito);
+  - dobles: el lease se puede tomar cuando `now == expires_at`; `put_run_idempotency` duplicado gana el primero (provisorio: M9/M4 deben fijar el conflicto antes del adaptador Postgres); id duplicado en el outbox se ignora; `spent_today` usa el día UTC; `resolve_release` devuelve releases revocadas (M4 escala con `release_revoked`);
+  - `contracts/`: un esquema por cada modelo o enum exportado por `domain` y `ports` (modo validación, con alias); pendientes: forma string de las refs, `Decimal` de salida y `Node` sin `discriminator` explícito;
+  - guardarraíles: todo módulo tiene prohibido importar `adapters`, `cli` y `contracts`; `domain` no importa `ports`; más APIs de tiempo y azar en `banned-api`.
 
 ## 1. Propósito y límites
 
@@ -155,7 +166,7 @@ class Release:        id: str; status: Literal["active", "revoked"]
                       max_input_chars: int = 4000
 class Policy:         id: str; version: str; owner: str; expr: JsonValue; rationale: str
 class Template:       id: str; version: str; locales: dict[Locale, str]; reads: frozenset[str]
-                      # reads: variables de hecho que lee (para derive_claims de M1)
+                      # reads: rutas que lee; el loader de M1 las deriva de {{ }} (M1 §3.3)
 class Prompt:         id: str; version: str; locales: dict[Locale, str]; reads: frozenset[str]
                       model_profile: RefSpec                                # rev. 5
 class StructuredMode(StrEnum): native, prompted
