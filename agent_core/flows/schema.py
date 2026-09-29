@@ -246,7 +246,10 @@ def validator_problems(validator: SlotValidator) -> list[str]:
 
 
 def schema_violations(flow: Flow) -> list[Violation]:
-    """G0-01 más allá del esquema Pydantic. `path` es un JSON Pointer dentro del flow."""
+    """G0-01 más allá del esquema Pydantic. `path` es un JSON Pointer dentro del flow.
+
+    Devuelve a lo sumo `MAX_ERRORS` violaciones más un aviso final con la cantidad omitida.
+    """
     found: list[Violation] = []
     if not flow.nodes:
         found.append(Violation(rule="G0-01", path="/nodes", message="el flow no tiene nodos"))
@@ -286,4 +289,7 @@ def schema_violations(flow: Flow) -> list[Violation]:
         if isinstance(node, CollectNode) and node.config.validator is not None:
             for problem in validator_problems(node.config.validator):
                 add(problem, "/config/validator")
+    if len(found) > MAX_ERRORS:  # cota determinista: el orden natural (por nodo) y luego el aviso
+        omitted = len(found) - MAX_ERRORS
+        found = [*found[:MAX_ERRORS], Violation(rule="G0-01", message=f"se omitieron {omitted} errores más")]
     return found

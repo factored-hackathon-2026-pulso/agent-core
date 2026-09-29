@@ -274,3 +274,39 @@ def test_regex_fails_closed_on_unexpected_shape(monkeypatch: pytest.MonkeyPatch)
     assert "no se puede verificar la regex" in problem
     monkeypatch.setattr(schema, "_PARSER", SimpleNamespace(parse=lambda _p: 5))
     assert "no se puede verificar la regex" in _regex_problems("a+")[0]
+
+
+def _bad_everywhere(size: int) -> dict[str, Any]:
+    d = base()
+    d["nodes"] = [
+        {"id": f"n{i}", "type": "collect", "config": {"slot": "s", "prompt_ref": "t/pedir",
+                                                      "validator": {"kind": "regex", "value": "("}},
+         "next": {"ok": "n0"}}
+        for i in range(size)
+    ]
+    return d
+
+
+def test_schema_violations_are_capped_with_a_notice() -> None:
+    found = schema_violations(flow(_bad_everywhere(2000)))
+    assert len(found) == schema.MAX_ERRORS + 1
+    assert all(v.rule == "G0-01" for v in found)
+    assert [v.node_id for v in found[:-1]] == [f"n{i}" for i in range(schema.MAX_ERRORS)]
+    assert found[-1].message == "se omitieron 1800 errores más"
+    assert found[-1].node_id is None
+    assert schema_violations(flow(_bad_everywhere(2000))) == found
+
+
+def test_schema_violations_under_the_cap_have_no_notice() -> None:
+    found = schema_violations(flow(_bad_everywhere(schema.MAX_ERRORS)))
+    assert len(found) == schema.MAX_ERRORS
+    assert not any("omitieron" in v.message for v in found)
+
+
+def test_parse_flow_raises_with_the_capped_list() -> None:
+    with pytest.raises(FlowSchemaError) as info:
+        parse_flow(_bad_everywhere(2000), source="flows/malo@1.0.0.yaml")
+    violations = info.value.violations
+    assert len(violations) == schema.MAX_ERRORS + 1
+    assert sum("omitieron" in v.message for v in violations) == 1
+    assert all((v.path or "").startswith("flows/malo@1.0.0.yaml#") for v in violations)
