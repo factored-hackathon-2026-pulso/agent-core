@@ -1,13 +1,17 @@
 """G0-05: invariante de escritura (M1 §3.5).
 
 Total: nunca lanza; un prerrequisito sin resolver (tool inexistente) no añade ruido (G0-02 ya lo reporta).
+
+Endurecimiento sobre §3.5.7 (el spec se enmendará): el verify V de una escritura W no puede ser el nodo de
+entrada y sus únicas aristas entrantes son (W, ok) y (W, uncertain). Así ningún camino llega a
+`V.verified` sin haber ejecutado W (tras su confirm.yes).
 """
 
 from collections.abc import Iterator
 
 from agent_core.domain import ConfirmNode, RiskClass, ToolNode, VerifyNode, WriteToolNode
 from agent_core.flows.claims import derive_claims
-from agent_core.flows.context import Ctx, clip
+from agent_core.flows.context import Ctx, clip, pointer_segment
 from agent_core.flows.graph import Edge, verify_of, writes_by_confirm
 from agent_core.flows.violations import Violation
 
@@ -36,6 +40,7 @@ def _write_conditions(ctx: Ctx, writes: dict[str, list[WriteToolNode]]) -> Itera
     """§3.5.3 a §3.5.7, por confirm."""
     graph = ctx.graph
     verify_writers: dict[str, list[str]] = {}
+    linked: dict[str, list[str]] = {}  # verify enlazado → escrituras que lo tienen como ok/uncertain
     for confirm_id, group in sorted(writes.items()):
         group = sorted(group, key=lambda w: w.id)
         confirm = graph.nodes.get(confirm_id)
@@ -60,6 +65,8 @@ def _write_conditions(ctx: Ctx, writes: dict[str, list[WriteToolNode]]) -> Itera
                 yield ctx.v(RULE, write.id,
                             f"hay caminos a {clip(write.id)} que no pasan por {clip(confirm_id)}.yes")
             verify = verify_of(graph, write)
+            if verify is not None:
+                linked.setdefault(verify.id, []).append(write.id)
             if verify is None or verify.config.by != "idempotency_key":
                 yield ctx.v(RULE, write.id,
                             "ok y uncertain deben ir directo al mismo verify con by: "
@@ -70,6 +77,26 @@ def _write_conditions(ctx: Ctx, writes: dict[str, list[WriteToolNode]]) -> Itera
         if len(writers) > 1:
             names = ", ".join(clip(w) for w in sorted(writers))
             yield ctx.v(RULE, verify_id, f"el verify lo comparten varias escrituras: {names}")
+    yield from _verify_entries(ctx, linked)
+
+
+def _verify_entries(ctx: Ctx, linked: dict[str, list[str]]) -> Iterator[Violation]:
+    """Endurecimiento de §3.5.7: V solo se alcanza desde (W, ok) y (W, uncertain), y no es la entrada."""
+    graph = ctx.graph
+    incoming: dict[str, list[tuple[str, str]]] = {}
+    for src in graph.order:
+        for result, dst in graph.succ.get(src, ()):
+            if dst in linked:
+                incoming.setdefault(dst, []).append((src, result))
+    for verify_id, writers in sorted(linked.items()):
+        if graph.entry == verify_id:
+            yield ctx.v(RULE, verify_id, f"el verify {clip(verify_id)} no puede ser el nodo de entrada")
+        for src, result in incoming.get(verify_id, []):
+            if src in writers and result in ("ok", "uncertain"):
+                continue
+            yield ctx.v(RULE, src,
+                        f"el verify {clip(verify_id)} solo se alcanza desde ok y uncertain de su escritura; "
+                        f"sobra next.{clip(result)}", f"/next/{pointer_segment(result)}")
 
 
 def _claim_conditions(ctx: Ctx, writes: dict[str, list[WriteToolNode]]) -> Iterator[Violation]:

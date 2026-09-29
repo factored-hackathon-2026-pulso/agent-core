@@ -431,3 +431,45 @@ def test_large_flow_uses_a_bounded_number_of_reachability_queries(monkeypatch: p
     monkeypatch.setattr(graph_module.FlowGraph, "reachable", counting)
     assert check(d) == []
     assert calls <= 6 * blocks
+
+
+# ------------------------------------------------ endurecimiento de 3.5.7: entradas del verify
+def test_verify_reached_by_a_rule_branch_skipping_the_write() -> None:  # P1
+    d = base()
+    node(d, "buscar")["next"]["ok"] = "r"
+    d["nodes"].append(_rule("r", "verificar", "confirmar"))
+    violations = [v for v in check(d) if v.rule == "G0-05"]
+    assert any(v.node_id == "r" and v.path is not None and v.path.endswith("/next/true") for v in violations)
+
+
+def test_verify_as_entry_node() -> None:  # P2
+    d = base()
+    idx = next(i for i, n in enumerate(d["nodes"]) if n["id"] == "verificar")
+    d["nodes"].insert(0, d["nodes"].pop(idx))
+    assert any(v.rule == "G0-05" and "no puede ser el nodo de entrada" in v.message for v in check(d))
+
+
+def test_write_denied_to_its_own_verify() -> None:  # P3
+    d = base()
+    node(d, "escribir")["next"]["denied"] = "verificar"
+    violations = [v for v in check(d) if v.rule == "G0-05"]
+    assert [(v.node_id, v.path) for v in violations] == [("escribir", "/nodes/3/next/denied")]
+
+
+def test_loop_back_to_verify_through_a_collect_node() -> None:  # P15
+    d = base()
+    node(d, "confirmar")["next"]["no"] = "volver"
+    d["nodes"].append({"id": "volver", "type": "collect",
+                       "config": {"slot": "otro", "prompt_ref": "t/pedir"},
+                       "next": {"ok": "verificar", "max_attempts": "esc"}})
+    assert any(v.node_id == "volver" for v in check(d) if v.rule == "G0-05")
+
+
+def test_shared_verify_is_reported_once_without_entry_noise() -> None:
+    d = base()
+    node(d, "ok_msg")["next"]["next"] = "confirmar2"
+    d["nodes"] += _block("2", "fin")[:2]
+    node(d, "escribir2")["next"].update({"ok": "verificar", "uncertain": "verificar"})
+    shared = [m for m in _messages(d) if "comparten" in m]
+    assert len(shared) == 1
+    assert not any("sobra" in m for m in _messages(d))
