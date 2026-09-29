@@ -13,7 +13,8 @@ def registry_from_directory(root: Path, release_id: str) -> InMemoryRegistry:
     reg, violations = load_registry(root)
     problems = [*violations, *validate_registry(reg)]
     if problems:
-        detail = "; ".join(f"{v.rule} {v.path}: {v.message}" for v in problems)
+        shown = [f"{v.rule} {v.path}: {v.message}"[:240] for v in problems[:20]]
+        detail = "; ".join(shown) + (f"; y {len(problems) - 20} más" if len(problems) > 20 else "")
         raise SchemaError("registro inválido: " + detail)
     pinned = pin_release(reg, release_id)
     memory = InMemoryRegistry()

@@ -1,4 +1,6 @@
+import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -6,11 +8,13 @@ from agent_core.domain import (
     EntityKind,
     EntityRef,
     Flow,
+    InjectionRuleset,
     LanguageDetection,
     RefSpec,
     SchemaError,
     require_exact_refs,
 )
+from agent_core.flows import pin as pin_module
 from agent_core.flows.claims import derive_claims
 from agent_core.flows.pin import pin_release
 from agent_core.flows.refs import entity_ref_sites
@@ -125,6 +129,74 @@ def test_pin_release_with_only_exact_refs_matches_authoring() -> None:
     pinned = pin_release(reg, "r")
     assert {e.id for e in pinned.entities if isinstance(e, Flow)} == {"base"}
     assert pinned.aliases == {"atencion": ["prod"]}
+
+
+INJECTION = InjectionRuleset.model_validate(
+    {"id": "inj", "version": "1.0.0", "rules": [{"id": "r1", "pattern": "ignora", "kind": "phrase"}]}
+)
+
+
+def test_interrupts_and_injection_resolve_through_release_view() -> None:
+    interrupts = [
+        {"id": "salir", "priority": 1, "action": {"type": "start_flow", "flow": "base@^1"},
+         "signal_policy": "pol@1"},
+        {"id": "humano", "priority": 2,
+         "action": {"type": "escalate", "target_queue": "q", "priority": "high"}},
+    ]
+    decl = _decl(flows=["base@^1"], interrupts=interrupts, injection_ruleset="inj@1")
+    reg = AuthoringRegistry.from_entities(
+        [*ENTITIES, LANG, INJECTION, _flow_version("1.0.0"), _flow_version("1.2.0"), agent()], [decl]
+    )
+    pinned = pin_release(reg, "r")
+    assert str(pinned.release.injection_ruleset) == "inj@1.0.0"
+    memory = InMemoryRegistry()
+    memory.add(*pinned.entities)
+    view = release_view(memory, pinned.release)
+    start = pinned.release.interrupts[0]
+    assert str(start.action.flow) == "base@1.2.0"  # type: ignore[union-attr]
+    assert view.resolve(EntityKind.flow, start.action.flow) is not None  # type: ignore[union-attr]
+    assert start.signal_policy is not None
+    assert view.resolve(EntityKind.policy, start.signal_policy) is not None
+    assert pinned.release.injection_ruleset is not None
+    injection = RefSpec.parse(str(pinned.release.injection_ruleset))
+    assert view.resolve(EntityKind.injection_ruleset, injection) is not None
+    assert _walk_every_site(reg, "r") > 10
+
+
+def _flow_with(node: dict[str, Any]) -> Flow:
+    doc = base()
+    doc["nodes"].append(node)
+    return flow(doc)
+
+
+PRODUCTION_NODES = [
+    {"id": "sub", "type": "subflow", "config": {"flow": "otro@%s"}},
+    {"id": "ag", "type": "agent", "config": {"tools_allowed": ["leer@%s"], "max_steps": 3,
+                                              "prompt_ref": "p/gen@%s", "goal": "x"}},
+]
+
+
+@pytest.mark.parametrize("spec", ["1.0.0", "1"])
+@pytest.mark.parametrize("node", PRODUCTION_NODES, ids=["subflow", "agent"])
+def test_pin_fails_closed_on_unknown_ref_sites(
+    monkeypatch: pytest.MonkeyPatch, node: dict[str, Any], spec: str
+) -> None:
+    monkeypatch.setattr(pin_module, "validate_flow", lambda flow, reg: [])
+    text = str(node).replace("%s", spec).replace("'", '"')
+    built = json.loads(text)
+    reg = AuthoringRegistry.from_entities(
+        [*ENTITIES, LANG, _flow_with(built), flow({**base(), "id": "otro"}), agent()], [_decl()]
+    )
+    with pytest.raises(SchemaError, match="referencia sin fijar"):
+        pin_release(reg, "r")
+
+
+@pytest.mark.parametrize("alias", ["PROD !", "a b", ""])
+def test_pin_rejects_invalid_alias(alias: str) -> None:
+    decl = _decl(agents=[{"agent": "atencion@1", "aliases": [alias]}])
+    reg = AuthoringRegistry.from_entities([*ENTITIES, LANG, _flow_version("1.0.0"), agent()], [decl])
+    with pytest.raises(SchemaError, match="alias"):
+        pin_release(reg, "r")
 
 
 def _walk_every_site(reg: AuthoringRegistry, release_id: str) -> int:

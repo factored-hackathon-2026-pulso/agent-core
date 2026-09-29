@@ -13,6 +13,8 @@ from typing import Any
 from pydantic import ValidationError
 
 from agent_core.domain import (
+    AgentSelector,
+    DomainError,
     EntityKind,
     Flow,
     Interrupt,
@@ -21,6 +23,7 @@ from agent_core.domain import (
     Release,
     SchemaError,
     StartFlowAction,
+    iter_refspecs,
     require_exact_refs,
 )
 from agent_core.flows.context import clip
@@ -54,12 +57,20 @@ def _exact(chosen: Chosen, kind: EntityKind, ref: RefSpec) -> str:
 
 def _pinned(entity: RegistryEntity, chosen: Chosen) -> RegistryEntity:
     sites = entity_ref_sites(entity)
-    if not sites:
-        return entity
     doc = entity.model_dump(mode="python", by_alias=True)
+    covered: set[str] = set()
     for site in sites:
-        _set(doc, site.pointer, _exact(chosen, site.kind, site.ref))
-    return type(entity).model_validate(doc)
+        exact = _exact(chosen, site.kind, site.ref)
+        _set(doc, site.pointer, exact)
+        covered.add(exact)
+    pinned = type(entity).model_validate(doc) if sites else entity
+    # Falla cerrada: toda referencia del modelo debe haber sido fijada por un sitio conocido. Una referencia
+    # de un tipo de nodo que `entity_ref_sites` no conoce quedaría fuera de `Release.entities`.
+    for ref in iter_refspecs(pinned):
+        if str(ref) not in covered:
+            label = f"{entity.id}@{entity.version}"
+            raise SchemaError(f"referencia sin fijar en {clip(label, 120)}: {clip(str(ref), 120)}")
+    return pinned
 
 
 def _pinned_interrupt(interrupt: Interrupt, chosen: Chosen) -> Interrupt:
@@ -114,6 +125,12 @@ def pin_release(reg: AuthoringRegistry, release_id: str) -> PinnedRelease:
             want(EntityKind.flow, interrupt.action.flow, f"interrupts/{i}/action/flow")
         if interrupt.signal_policy is not None:
             want(EntityKind.policy, interrupt.signal_policy, f"interrupts/{i}/signal_policy")
+    for i, entry in enumerate(decl.agents):
+        for alias in entry.aliases:
+            try:  # mismo formato de alias que el selector de agente del request (M0)
+                AgentSelector.model_validate({"id": entry.agent.id, "alias": alias})
+            except ValidationError:
+                errors.add(f"agents/{i}/aliases: alias inválido {clip(alias, 40)!r}")
     want(EntityKind.language_detection, decl.language_detection, "language_detection")
     if decl.injection_ruleset is not None:
         want(EntityKind.injection_ruleset, decl.injection_ruleset, "injection_ruleset")
@@ -153,7 +170,9 @@ def pin_release(reg: AuthoringRegistry, release_id: str) -> PinnedRelease:
         require_exact_refs(release)
         for entity in entities:
             require_exact_refs(entity)
-    except (ValidationError, ValueError, KeyError, TypeError, LookupError) as exc:
+    except SchemaError:
+        raise
+    except (DomainError, ValidationError, ValueError, KeyError, TypeError, LookupError) as exc:
         raise SchemaError(
             f"pin_release: la clausura de {clip(release_id, 80)!r} no se pudo fijar ({type(exc).__name__})"
         ) from exc
