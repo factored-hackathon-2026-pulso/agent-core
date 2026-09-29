@@ -350,6 +350,7 @@ class TurnEngine:
             return self._finish(frame, record=True)
         frame.state, events = self._actions.expire_tokens(frame.state, turn_id=turn_id)  # paso 6
         frame.buffer.add(*events)
+        frame.tokens_expired = bool(events)
         if self._guard(frame):  # paso 7: unsupported / tamaño → plantilla, sin Understand ni flow
             return self._finish(frame, record=True)
         understood = self._understand_step(frame)  # paso 8
@@ -417,6 +418,9 @@ class TurnEngine:
 
     def _advance_turn(self, frame: TurnFrame) -> None:
         """`advance` y contadores de reparación de M4: un `unclear` de texto suma (C14); el botón no."""
+        if frame.tokens_expired and frame.state.awaiting is Awaiting.confirmation:
+            # Un token vencido nunca confirma: el `confirm` vuelve a proponer con token nuevo (rev. 2).
+            frame.resume = NO_RESUME
         text_unclear = frame.resume.kind == "confirm_answer" and frame.resume.value == "unclear"
         self._advance(frame)
         if text_unclear:

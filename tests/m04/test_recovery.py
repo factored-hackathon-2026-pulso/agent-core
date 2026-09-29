@@ -1,11 +1,15 @@
 """Pasos 5-6: recuperación de acciones en `executing` y tokens vencidos (T-M4-12)."""
 
+from datetime import timedelta
+from typing import Any
+
 import pytest
 
 from agent_core.domain import EntityRef, Flow, RunState
 from agent_core.turn.recovery import position_at_verify
 from testing.builders import action
 from tests.m04.harness import RUN_ID, World
+from tests.m04.helpers import cmd
 
 WRITE_REF = EntityRef(id="radicar_pqr", version="1.0.0")
 
@@ -57,31 +61,55 @@ def test_recuperacion_que_termina_el_flow_acaba_el_turno() -> None:
     assert w.saved().pending_offer is None and RUN_ID in w.store.runs
 
 
-@pytest.mark.skip(
-    reason="AMBIGUO (reportado): tras expire_tokens el confirm queda sin acción proposed y M3 lanza "
-    "IllegalTransition ante cualquier confirm_answer; el spec no dice qué hace el turno. Ver informe."
-)
-def test_token_vencido_cancela_la_propuesta_y_emite_action_cancelled() -> None:
-    from datetime import timedelta
-
-    from tests.m04.helpers import cmd
-
-    w = World()
+def expired_confirm(w: World) -> Any:
     prompt = w.seed_at_confirm()
     w.clock.advance(timedelta(minutes=20))  # el token vence (M3) sin llegar al TTL de inactividad
+    return prompt
+
+
+def test_token_vencido_cancela_la_propuesta_y_emite_action_cancelled() -> None:
+    w = World()
+    prompt = expired_confirm(w)
     w.understand.push(cmd("affirm"))
     w.turn("sí")
     types = w.event_types()
-    assert "action_cancelled" in types and w.write_calls() == []  # un token vencido nunca confirma
+    assert w.write_calls() == []  # un token vencido nunca confirma
     cancelled = [e for e in w.events() if e.type == "action_cancelled"]
     assert cancelled[0].payload.reason.value == "token_expired"
     assert types.index("expiry_evaluated") < types.index("action_cancelled") < types.index("command_emitted")
     assert prompt.token
 
 
-def test_sin_acciones_pendientes_no_hay_recuperacion() -> None:
-    from tests.m04.helpers import cmd
+def test_token_vencido_re_propone_con_token_nuevo_y_no_confirma_con_el_si() -> None:
+    w = World()
+    prompt = expired_confirm(w)
+    w.understand.push(cmd("affirm"))
+    result = w.turn("sí")
+    saved = w.saved()
+    assert result.awaiting.value == "confirmation" and result.confirmation is not None
+    assert result.confirmation.token != prompt.token
+    assert [a.state.value for a in saved.actions] == ["cancelled", "proposed"]
+    assert saved.status == "open" and saved.repair_turns_used == 0  # no es un unclear del usuario
 
+
+def test_token_vencido_con_boton_tambien_re_propone() -> None:
+    w = World()
+    prompt = expired_confirm(w)
+    result = w.turn_confirm(prompt.token, "yes")
+    assert w.write_calls() == [] and result.confirmation is not None
+    assert result.confirmation.token != prompt.token and w.understand.calls == []
+
+
+def test_tras_re_proponer_el_nuevo_token_si_confirma() -> None:
+    w = World()
+    prompt = expired_confirm(w)
+    again = w.turn_confirm(prompt.token, "yes")
+    assert again.confirmation is not None
+    done = w.turn_confirm(again.confirmation.token, "yes")
+    assert len(w.write_calls()) == 1 and done.status == "closed"
+
+
+def test_sin_acciones_pendientes_no_hay_recuperacion() -> None:
     w = World()
     w.open_run(active=True)
     w.understand.push(cmd("continue"))
@@ -90,8 +118,6 @@ def test_sin_acciones_pendientes_no_hay_recuperacion() -> None:
 
 
 def test_recuperacion_que_deja_al_usuario_esperando_procesa_el_mensaje() -> None:
-    from tests.m04.helpers import cmd
-
     w = World()
     w.open_run(
         active_flow={"flow": "disputa-larga@1.0.0", "node_id": "radicar"},

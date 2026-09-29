@@ -32,7 +32,7 @@ Dependencias por constructor (solo por nombre): `uow_factory`, `registry`, `cloc
 3. **Release:** si está `revoked` → `escalate(release_revoked)` sin ejecutar nodos.
 4. **Abandono:** si `now − last_activity_at > inactivity_ttl` → M4 cierra el run con `abandoned` (ver 3.6), invalida las acciones y responde `410 run_closed` **sin procesar el mensaje**. La app abre un run nuevo (M9); el motor no reabre el run por su cuenta (decisión P2, 2026-09-29).
 5. **Recuperación:** `actions.pending_recovery(state)` no vacío → posicionar el flow en el `verify` correspondiente y avanzar desde ahí antes de procesar el mensaje.
-6. **Tokens vencidos:** `actions.expire_tokens(state, turn_id=…)` (devuelve el estado y los eventos `action_cancelled`).
+6. **Tokens vencidos:** `actions.expire_tokens(state, turn_id=…)` (devuelve el estado y los eventos `action_cancelled`). Si cancela la propuesta de un `confirm` pendiente, el turno avanza con `resume = none` y el `confirm` re-propone con token nuevo (§13).
 7. **Guardas (M6):** idioma, tamaño, injection. `unsupported` → plantilla en `default_locale`, sin Understand ni flow. Actualiza `state.locale`. `injection_flagged` → `degraded = true` para este turno.
 8. **Understand:**
    - Si el request trae `confirm: {token, answer}` → no se llama a Understand; `resume = confirm_answer(answer)`.
@@ -205,4 +205,4 @@ Detalles de implementación que el spec no fijaba (revisar):
 - `unclear` de `confirm` por texto suma siempre a `repair_turns_used` (equivale a "creció `node_attempts`" salvo en el intento que agota `max_attempts`).
 - Los `Slot` de Understand se guardan tal cual (vista `model`); un slot ya `validated` no se pisa.
 
-**Abierto nuevo:** tras `expire_tokens` (paso 6) un `confirm` puede quedar sin acción `proposed` y M3 lanza `IllegalTransition` ante cualquier `confirm_answer`. Falta decidir qué hace el turno (propuesta: `resume = none` para que el `confirm` proponga de nuevo con token nuevo; un token vencido nunca confirma). Sin implementar; prueba saltada en `tests/m04/test_recovery.py`.
+**Token vencido en `confirm` (decidido el 2026-09-29):** si el paso 6 cancela una propuesta por token vencido y el run esperaba confirmación, el turno avanza con `resume = none` (aunque llegue un `yes` por botón o un `affirm`): el `confirm` propone de nuevo con token nuevo y el usuario debe confirmar otra vez. Un token vencido nunca confirma. No suma `repair_turns_used`.

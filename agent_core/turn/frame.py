@@ -49,5 +49,6 @@ class TurnFrame:
     cost_usd: Decimal = Decimal("0")
     initial_run_cost: Decimal = Decimal("0")
     closed: bool = False  # el run se cerró o escaló en este turno (ya emitió `run_closed`)
+    tokens_expired: bool = False  # el paso 6 canceló propuestas por token vencido
     advanced: bool = False  # `advance` corrió en este turno
     output: dict[str, JsonValue] | None = None  # `end.output_map` (modo task)
