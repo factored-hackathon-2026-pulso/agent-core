@@ -1,7 +1,9 @@
 # Fronteras entre módulos (docs/specs/motor/00-indice.md §3).
 # Si un módulo necesita importar otro que no está permitido aquí, es un cambio de interfaz: se decide primero en el spec.
 [importlinter]
-root_package = agent_core
+root_packages =
+    agent_core
+    agent_telemetry
 
 [importlinter:contract:m0]
 name = M0 (domain, ports) no importa ningún módulo
@@ -319,3 +321,11 @@ source_modules =
     agent_core.domain
 forbidden_modules =
     agent_core.ports
+
+[importlinter:contract:telemetry]
+name = agent_telemetry no importa agent_core
+type = forbidden
+source_modules =
+    agent_telemetry
+forbidden_modules =
+    agent_core
