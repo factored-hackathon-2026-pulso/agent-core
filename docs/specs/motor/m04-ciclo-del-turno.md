@@ -45,7 +45,7 @@ Dependencias por constructor: `UnitOfWork`, `RegistryPort`, `Clock`, `GuardServi
 13b. **Medir:** emitir `turn_completed` (3.7) como último evento del turno.
 14. **Persistir:** una transacción con `state` (`state_version + 1`), eventos del turno (los que devuelve `execute_write` ya los persistió el `EventRecorder` dentro de los commits de M3 y no se vuelven a agregar; el recorder de M4 vuelca primero los eventos pendientes del turno), outbox y resultado por `client_turn_id`.
 
-`start_run` hace: crear `RunState` (release fijada, principal sin secretos, `locale` inicial = `lang` del request si es soportado, si no `default_locale`), emitir `run_started` con `reportable_attrs`, arrancar `entry_flow` y, en modo task, avanzar hasta un terminal.
+`start_run` hace: crear `RunState` (release fijada, principal sin secretos, `locale` inicial = `lang` del request si es soportado, si no `default_locale`), emitir `run_started` con `reportable_attrs`, arrancar `entry_flow` y, en modo task, avanzar hasta un terminal (M1 G0-16 garantiza que un flow task no tiene nodos que esperan; si aun así M2 devuelve una espera, es un bug y el run escala con `validation_failed`).
 
 ### 3.2 Manejadores globales
 

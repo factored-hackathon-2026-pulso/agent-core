@@ -14,6 +14,7 @@
   - rev. 11: huellas con clave (HMAC-SHA256 + JCS + `kid`) en la vista `audit` y el transcript (auto-revisión #4).
   - rev. 12: outcomes declarables por modo, `abandoned`/`escalated` solo del motor; renumeración del ADR de conocimiento a 0015 (auto-revisión #7, #8, #9).
   - rev. 14: métricas de eficiencia y tiempos en el log de auditoría: `latency_ms` en `tool_called`, `llm` en `response_emitted`, evento `turn_completed`, `Clock.monotonic_ns()` y campos de medición excluidos del replay (M0 rev. 3; §11, §12).
+  - rev. 15: revisión de M1 (`specs/motor/m01-validacion-estatica.md` rev. 2): G0-04 por grafo sin nodos que esperan; G0-05 con paso por `confirm.yes`, `verify` enlazado por estructura, tools de escritura solo por `action_from` y reclamos también desde el `confirm`; reclamos derivados conservadores (toda tool, `decide`, plantilla de respaldo, `end.output_map`); reglas 15 (`model_profile` de prompts, ADR 0016) y 16 (flows task sin nodos que esperan); sintaxis de plantilla `{{ ruta }}` con `reads` derivado. El detalle manda en M1.
   - rev. 13: revisión de M0 (`specs/motor/m00-dominio-y-contratos.md` rev. 2): `ActionState` con `uncertain`/`denied`; `Awaiting.input`; `on_behalf_of.grantee` y `403 delegation_mismatch`/`agent_forbidden`; `execute` devuelve solo `result_full` (las vistas las calcula el núcleo); IDs por `IdSource` inyectado; `Decimal` y JCS en M0; referencias de autoría (`RefSpec`) frente a runtime (exactas). El detalle de tipos manda en M0.
   - rev. 15: M3 rev. 2: el token de confirmación se rota en la reentrada; M3 recibe un `ActionContext` con ganchos y `execute_write` devuelve también `step_up_required`.
 - Repo: `agent-core`
@@ -366,6 +367,10 @@ Un flow se rechaza si ocurre cualquiera de estas situaciones:
 12. Falta una plantilla o prompt para algún locale de `supported_locales` de los agentes que declaran usar el flow. Esta regla se verifica en el gate de release.
 13. `claims` de un `respond` lista un id que no es un `confirm` del mismo flow.
 14. Un `end` declara un `outcome` fuera de los declarables (`resolved`, `abstained`, `cancelled`, `clarify_exhausted`, `completed`, `failed`); en particular, `abandoned` o `escalated`. Los `end` de un flow mezclan outcomes de modo conversacional y de modo task.
+15. Un `prompt` referenciado no tiene un `model_profile` existente (ADR 0016).
+16. Un flow de modo task contiene nodos que esperan al principal (`collect`, `confirm`, `respond` con `await`). En el MVP, por lo tanto, un agente task no escribe.
+
+Los algoritmos exactos de cada regla (en particular 4, 5 y la derivación de reclamos) están en M1.
 
 **Límite conocido de la regla 5.** Un texto fijo que afirma éxito sin leer hechos de la acción y sin declarar `claims`, o un texto generado que lo afirma sin citarlo, pasa esta validación. Lo primero se revisa al publicar el flow; lo segundo lo mide la unidad 6 como afirmación que contradice un hecho de referencia (§12).
 

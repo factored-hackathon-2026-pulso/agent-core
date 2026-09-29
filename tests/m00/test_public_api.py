@@ -12,9 +12,9 @@ def test_domain_exports() -> None:
                  "ToolDef",
                  "AnyEvent", "EngineEvent", "EngineError", "ProblemCode", "canonical_bytes", "loads", "dumps",
                  "EscalationRequest", "RejectedDraft", "ConfirmationPrompt", "TurnResult", "SCHEMA_VERSION",
-                 "GatewayError", "GatewayErrorKind"]:
+                 "GatewayError", "GatewayErrorKind", "KnowledgePage", "KnowledgeSnapshot"]:
         assert hasattr(domain, name), name
-    assert domain.SCHEMA_VERSION == "0.1.0"
+    assert domain.SCHEMA_VERSION == "0.2.0"
 
 
 def test_ports_exports() -> None:

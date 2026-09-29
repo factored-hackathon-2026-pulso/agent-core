@@ -51,6 +51,7 @@ class EntityKind(StrEnum):
     language_detection = "language_detection"
     injection_ruleset = "injection_ruleset"
     model_profile = "model_profile"
+    knowledge_snapshot = "knowledge_snapshot"
 
 
 def _split(text: str) -> tuple[str, str | None]:

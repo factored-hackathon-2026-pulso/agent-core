@@ -13,7 +13,8 @@
         "tool",
         "language_detection",
         "injection_ruleset",
-        "model_profile"
+        "model_profile",
+        "knowledge_snapshot"
       ],
       "title": "EntityKind",
       "type": "string"
@@ -208,6 +209,17 @@
       },
       "title": "Interrupts",
       "type": "array"
+    },
+    "knowledge_snapshot": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EntityRef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "language_detection": {
       "$ref": "#/$defs/EntityRef"
