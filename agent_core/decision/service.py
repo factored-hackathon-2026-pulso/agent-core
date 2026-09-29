@@ -79,6 +79,14 @@ class DecisionService:
                                    token_vault)
         return output, self._event(model_ref, output, locale, scope)
 
+    def decide_with_schema(self, model_ref: EntityRef, schema: dict[str, JsonValue],
+                           inputs_model_view: dict[str, JsonValue], locale: Locale, token_vault: TokenVault,
+                           *, scope: EventScope) -> tuple[DecisionOutput, DecisionMade]:
+        """Como `decide` con un esquema efectivo (Understand lo arma por release); no muta el registro."""
+        definition = self._registry.get(model_ref, DecisionModelDef)
+        output = self._decide_with(definition, schema, inputs_model_view, locale, token_vault)
+        return output, self._event(model_ref, output, locale, scope)
+
     def _event(self, model_ref: EntityRef, output: DecisionOutput, locale: Locale,
                scope: EventScope) -> DecisionMade:
         payload = DecisionMadePayload(

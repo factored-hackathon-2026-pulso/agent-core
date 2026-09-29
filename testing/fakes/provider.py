@@ -42,6 +42,7 @@ class ScriptedProvider:
         self._script = deque(script)
         self._clock = clock
         self.calls: list[tuple[ProviderSpec, dict[str, JsonValue], str]] = []
+        self.schemas: list[dict[str, JsonValue]] = []  # esquema efectivo de cada llamada
 
     def push(self, *steps: Step) -> None:
         self._script.extend(steps)
@@ -49,6 +50,7 @@ class ScriptedProvider:
     def predict(self, spec: ProviderSpec, inputs_model_view: dict[str, JsonValue],
                 schema: dict[str, JsonValue], locale: Locale) -> RawPrediction:
         self.calls.append((spec, deepcopy(inputs_model_view), locale))
+        self.schemas.append(deepcopy(schema))
         if not self._script:
             raise AssertionError("ScriptedProvider sin salida guionada")
         step = self._script.popleft()
