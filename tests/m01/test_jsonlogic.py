@@ -88,3 +88,22 @@ def test_deep_nesting_is_reported_not_raised() -> None:
 def test_reasonable_depth_is_accepted() -> None:
     assert jsonlogic_problems(_deep(20)) == []
     assert [p.raw for p in expr_paths(_deep(20))] == ["slots.a"]
+
+
+def _nested(levels: int) -> object:
+    expr: object = {"var": "slots.a"}
+    for _ in range(levels):
+        expr = {"!": [expr]}
+    return expr
+
+
+def test_exceeds_max_depth_boundary_and_scalars() -> None:
+    from agent_core.flows.jsonlogic import MAX_DEPTH, exceeds_max_depth, jsonlogic_problems
+
+    ok, deep = _nested(MAX_DEPTH - 1), _nested(MAX_DEPTH)
+    assert not exceeds_max_depth(ok)  # type: ignore[arg-type]
+    assert exceeds_max_depth(deep)  # type: ignore[arg-type]
+    assert not jsonlogic_problems(ok)  # type: ignore[arg-type]
+    assert jsonlogic_problems(deep)  # type: ignore[arg-type]
+    assert not exceeds_max_depth(5) and not exceeds_max_depth("x") and not exceeds_max_depth(None)
+    assert exceeds_max_depth(_nested(5000))  # type: ignore[arg-type]  # sin recursión

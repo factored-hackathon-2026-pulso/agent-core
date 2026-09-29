@@ -112,6 +112,27 @@ def _walk(node: JsonValue, where: str, depth: int = 0) -> Iterator[tuple[str, st
         yield ("literal", where, node)
 
 
+def exceeds_max_depth(expr: JsonValue) -> bool:
+    """True si `_walk` y `jsonlogic_problems` dejarían de descender por `MAX_DEPTH`. Iterativa."""
+    stack: list[tuple[JsonValue, int]] = [(expr, 0)]
+    while stack:
+        node, depth = stack.pop()
+        if not isinstance(node, (list, dict)):
+            continue
+        if depth >= MAX_DEPTH:
+            return True
+        if isinstance(node, list):
+            stack.extend((item, depth + 1) for item in node)
+        elif len(node) != 1:
+            stack.extend((value, depth + 1) for value in node.values())
+        else:
+            ((op, raw),) = node.items()
+            args = _args(raw)
+            children = args[1:] if op == "var" else [] if op in _PATH_OPS else args
+            stack.extend((arg, depth + 1) for arg in children)
+    return False
+
+
 def expr_paths(expr: JsonValue) -> list[Path]:
     """Rutas válidas que lee la expresión (`var` y `missing`). Ignora lo que excede `MAX_DEPTH`."""
     paths: list[Path] = []

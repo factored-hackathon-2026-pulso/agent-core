@@ -339,21 +339,21 @@ def test_task_flow_failed_end_is_valid() -> None:
     assert check(task_base()) == []
 
 
-# G0-06 no repite la causa que reporta G0-14
-def test_mixed_flow_failed_end_does_not_cascade_into_g0_06() -> None:
+# En un flow mixto end(failed) no es salida segura (M1 §3.7): G0-06 y G0-14 reportan las dos
+def test_mixed_flow_failed_end_is_reported_by_g0_06_and_g0_14() -> None:
     d = base()
     node(d, "buscar")["next"]["error"] = "fin_f"
     d["nodes"].append({"id": "fin_f", "type": "end", "config": {"outcome": "failed"}})
-    assert rules(check(d)) == {"G0-14"}
+    assert rules(check(d)) == {"G0-06", "G0-14"}
 
 
-def test_mixed_flow_still_reports_unsafe_end_in_g0_06() -> None:
+def test_mixed_flow_reports_each_unsafe_end_in_g0_06() -> None:
     d = base()
     node(d, "buscar")["next"]["error"] = "fin"  # end(resolved) no es una salida segura
-    node(d, "buscar")["next"]["timeout"] = "fin_f"  # end(failed) en un flow mixto: lo cubre G0-14
+    node(d, "buscar")["next"]["timeout"] = "fin_f"
     d["nodes"].append({"id": "fin_f", "type": "end", "config": {"outcome": "failed"}})
     found = [v for v in check(d) if v.rule == "G0-06"]
-    assert [v.path for v in found] == ["/nodes/1/next/error"]
+    assert [v.path for v in found] == ["/nodes/1/next/error", "/nodes/1/next/timeout"]
     assert rules(check(d)) == {"G0-06", "G0-14"}
 
 

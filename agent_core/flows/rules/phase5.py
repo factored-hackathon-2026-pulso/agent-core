@@ -30,18 +30,17 @@ from agent_core.domain import (
 )
 from agent_core.flows.context import Ctx, clip
 from agent_core.flows.graph import end_modes, flow_mode, is_waiting
-from agent_core.flows.jsonlogic import MAX_DEPTH, expr_literals, expr_paths, jsonlogic_problems
+from agent_core.flows.jsonlogic import MAX_DEPTH, exceeds_max_depth, expr_literals, expr_paths
 from agent_core.flows.paths import Path, parse_path, value_paths
 from agent_core.flows.violations import Violation
 
 READ_CLASSES = frozenset({RiskClass.read, RiskClass.compute})
 SLOTS_FACTS = frozenset({"slots", "facts"})
-_DEPTH_MARK = "profundidad"  # texto de `jsonlogic_problems` para el exceso de MAX_DEPTH
 
 
 def _too_deep(expr: JsonValue) -> bool:
     """True si la expresión excede `MAX_DEPTH`: `expr_paths` y `expr_literals` no verían todo."""
-    return any(_DEPTH_MARK in problem for problem in jsonlogic_problems(expr))
+    return exceeds_max_depth(expr)
 
 
 DEEP_MESSAGE = f"la expresión excede la profundidad máxima ({MAX_DEPTH}): no se puede comprobar completa"

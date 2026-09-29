@@ -10,7 +10,7 @@ from types import MappingProxyType
 from agent_core.domain import CollectNode, EndNode, EscalateNode, Outcome, RespondNode, node_kind
 from agent_core.flows.claims import derive_claims
 from agent_core.flows.context import Ctx, clip
-from agent_core.flows.graph import FlowGraph, end_modes, flow_mode
+from agent_core.flows.graph import FlowGraph, flow_mode
 from agent_core.flows.violations import Violation
 
 FAILURES: Mapping[str, frozenset[str]] = MappingProxyType(
@@ -69,8 +69,7 @@ def _safe(
 
 
 def g0_06(ctx: Ctx) -> Iterator[Violation]:
-    # Con mezcla de modos (task y conversacional) G0-14 ya reporta la causa: `end(failed)` no se reporta aquí.
-    task = flow_mode(ctx.flow) == "task" or len(end_modes(ctx.flow)) > 1
+    task = flow_mode(ctx.flow) == "task"
     claims = derive_claims(ctx.flow, ctx.reg)
     memo: dict[str, bool] = {}
     for ident in ctx.graph.order:

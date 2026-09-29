@@ -221,9 +221,7 @@ def test_failed_end_is_not_safe_in_conversational_flow() -> None:
     d = base()
     node(d, "buscar")["next"]["error"] = "fin_fallo"
     d["nodes"].append({"id": "fin_fallo", "type": "end", "config": {"outcome": "failed"}})
-    # Un end(failed) junto a end conversacionales es una mezcla de modos: G0-14 reporta la causa y G0-06
-    # no repite el síntoma (Task 12). El flow sigue siendo inválido.
-    assert rules(check(d)) == {"G0-14"}
+    assert "G0-06" in rules(check(d))
 
 
 # --- totalidad y sin ruido -------------------------------------------------------------------------
