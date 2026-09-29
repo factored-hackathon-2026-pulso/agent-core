@@ -23,16 +23,21 @@ class StageMeter:
         self._clock = clock
         self._start = clock.monotonic_ns()
         self._ns: dict[str, int] = {}
+        self._depth: dict[str, int] = {}
 
     @contextmanager
     def stage(self, name: StageName) -> Iterator[None]:
         if name not in _STAGES:
             raise ValueError(f"etapa desconocida: {name}")
+        depth = self._depth.get(name, 0)
+        self._depth[name] = depth + 1
         began = self._clock.monotonic_ns()
         try:
             yield
         finally:
-            self._ns[name] = self._ns.get(name, 0) + max(self._clock.monotonic_ns() - began, 0)
+            self._depth[name] = depth
+            if depth == 0:  # una etapa anidada en sí misma no se cuenta dos veces
+                self._ns[name] = self._ns.get(name, 0) + max(self._clock.monotonic_ns() - began, 0)
 
     def duration_ms(self) -> int:
         return _ms(self._clock.monotonic_ns() - self._start)

@@ -51,3 +51,13 @@ def test_etapa_desconocida_es_error() -> None:
     meter = StageMeter(FakeClock())
     with pytest.raises(ValueError), meter.stage("otra"):  # type: ignore[arg-type]
         pass
+
+
+def test_una_etapa_anidada_en_si_misma_no_se_cuenta_dos_veces() -> None:
+    clock = FakeClock()
+    meter = StageMeter(clock)
+    with meter.stage("flow"):
+        clock.advance(timedelta(milliseconds=3))
+        with meter.stage("flow"):
+            clock.advance(timedelta(milliseconds=4))
+    assert meter.stages().flow_ms == 7

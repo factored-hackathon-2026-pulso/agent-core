@@ -38,7 +38,7 @@ from testing.fakes.registry import InMemoryRegistry
 from testing.fakes.responder import ScriptedResponder
 from testing.fakes.storage import InMemoryAuditSink, InMemoryOutbox, InMemoryStore
 from testing.fakes.tools import FakeToolExecutor, RecordedCall
-from tests.m02.harness import CATALOG, AllowAllAuthz, tool_def
+from tests.m02.harness import CATALOG, AllowAllAuthz, SlowTools, tool_def
 from tests.m04.helpers import (
     CommitCounter,
     FakeRuntime,
@@ -243,7 +243,7 @@ class FakeRuntimeFactory:
             clock=w.clock,
             degraded=False,
             registry=w.registry,
-            tools=w.tools,
+            tools=w.step_tools,
             decisions=w.decisions,
             actions=w.manager,
             responder=w.responder,
@@ -266,6 +266,7 @@ class World:
         guards_advance: timedelta = timedelta(0),
         understand_advance: timedelta = timedelta(0),
         recorder_advance: timedelta = timedelta(0),
+        tool_advance: timedelta = timedelta(0),
         config: TurnConfig | None = None,
     ) -> None:
         from agent_core.views import FieldClassifier
@@ -276,6 +277,7 @@ class World:
         self.uow_factory: UnitOfWorkFactory = CommitCounter(self.store.uow)
         self.registry = InMemoryRegistry()
         self.tools = FakeToolExecutor(self.ids)
+        self.step_tools: Any = SlowTools(self.tools, self.clock, tool_advance) if tool_advance else self.tools
         self.decisions = ScriptedDecision()
         self.responder = ScriptedResponder()
         self.manager = ActionManager(self.ids, self.clock)
