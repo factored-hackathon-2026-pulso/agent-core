@@ -75,7 +75,12 @@ La spec dice que el detector "marca y cuenta" sin definir el método. Propuesta:
 - Se aplica al texto del usuario **y** a los campos `untrusted_text` que M7 envuelve antes de mandarlos a un modelo.
 - Reemplazable por un clasificador detrás de la misma interfaz, si la suite adversarial lo justifica.
 
-**Normalización (rev. 2):** antes de comparar, el texto pasa por `html.unescape`, NFKC, eliminación de caracteres de formato (categoría `Cf`, p. ej. `​`), minúsculas y colapso de espacios; las frases del ruleset se normalizan igual y las regex se compilan con `re.IGNORECASE`. `Release.injection_ruleset = None` → no se escanea (`ruleset = "none"`). El escaneo de campos `untrusted_text` lo hace `GuardService.scan_untrusted` con `scope = "untrusted_field"` en el evento; `run` usa `scope = "user_text"`.
+**Normalización (rev. 2):** antes de comparar, el texto pasa por `html.unescape`, NFKC, eliminación de caracteres de formato (categoría `Cf`, p. ej. `\u200b`), minúsculas y colapso de espacios; las frases del ruleset se normalizan igual y las regex se compilan con `re.IGNORECASE`. `Release.injection_ruleset = None` → no se escanea (`ruleset = "none"`). El escaneo de campos `untrusted_text` lo hace `GuardService.scan_untrusted` con `scope = "untrusted_field"` en el evento; `run` usa `scope = "user_text"`.
+
+**Envoltura de `scan_untrusted` (rev. 2):** antes de escanear, `scan_untrusted` quita solo la envoltura exterior exacta de M7, `<datos_no_confiables fuente="...">...</datos_no_confiables>` (la envoltura es del propio motor; si se escaneara, `fake-delimiter` marcaría todo campo envuelto). Un delimitador falso dentro del contenido sigue marcándose. Cualquier otra forma (sin la envoltura exacta, con texto antes o después, atributos distintos) se escanea completa, y entonces la propia etiqueta dispara `fake-delimiter`. Consecuencias:
+
+- `fuente` debe ser una ruta de campo propia del motor, nunca derivada de datos del usuario o de terceros, porque no se escanea.
+- `scan_untrusted` no limita el tamaño del texto (costo lineal, reglas acotadas); el tope `max_input_chars` solo aplica a `run`.
 
 M4 activa el modo degradado con `flagged = true`.
 
@@ -126,9 +131,9 @@ M4 activa el modo degradado con `flagged = true`.
 
 ## 10. Definición de terminado
 
-- `detect_language` y `scan_injection` puras con T-M6-01…10 en verde.
-- Ruleset de injection inicial y sus casos como fixture (`testing/injection_fixtures.py`), listo para publicarse en `agent-registry` (publicación pendiente, repo externo).
-- Latencia p95 de las guardas < 20 ms en nuestro entorno (propuesta).
+- [x] `detect_language` y `scan_injection` puras con T-M6-01…10 en verde.
+- [x] Ruleset de injection inicial y sus casos como fixture (`testing/injection_fixtures.py`); publicación en `agent-registry` pendiente (repo externo).
+- [x] Latencia p95 de las guardas < 20 ms en nuestro entorno (medido: 0,33 ms, p50 0,20 ms, 400 corridas con lingua caliente sobre ES/PT/EN/corto; `AGENT_CORE_PERF=1 uv run pytest tests/m06/test_latency.py -s`). Nota: en Windows `time.monotonic_ns` tiene resolución de ~15,6 ms, así que la prueba con `SystemClock` imprime 0,00 ms; la cifra de arriba se midió con `time.perf_counter_ns` fuera del repo. La prueba solo garantiza que no se superen 20 ms.
 
 ## 11. Abiertos
 
@@ -137,3 +142,4 @@ Ninguno de M6. Resueltos en rev. 2 (2026-09-29, decisiones confirmadas por el us
 ## Cambios
 
 - rev. 2 (2026-09-29): `LangThresholds`; `GuardService(registry, clock, ids, calibrations)`; `turn_id` en `run`; `scan_untrusted`; `validate_release`; `GuardResult.to_output`; normalización de injection; umbral 1.0 = desactivado; `size_ok = false` omite idioma e injection.
+- rev. 2 (2026-09-29): §3.3 documenta la envoltura exacta que `scan_untrusted` quita antes de escanear, que `fuente` debe ser un campo propio del motor (no se escanea) y que `scan_untrusted` no tiene tope de tamaño.
