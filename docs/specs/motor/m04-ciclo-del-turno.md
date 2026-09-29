@@ -90,7 +90,7 @@ M4 llama `actions.invalidate(state, reason, turn_id=…)` ante: `cancel`, abando
 
 ### 3.5 Escalamiento
 
-`handoff.escalate(state, request)` devuelve el estado con `status = escalated`, `outcome = escalated`, el evento `escalated` y el mensaje de outbox, que entran en la **misma** transacción del turno. M4 emite `run_closed{closed_by: escalation}` (M4 es el único emisor de `run_closed`). Turnos posteriores → `410 run_closed`.
+`handoff.escalate(state, request, events_so_far, uow=uow, turn_id=turn_id)` devuelve `(estado, [escalated], OutboxMessage, Message)` y ya persistió el paquete con `uow.put_handoff`. M4 debe haber invalidado antes las acciones `proposed`/`confirmed`. El estado con `status = escalated`, `outcome = escalated`, el evento `escalated` y el mensaje de outbox entran en la **misma** transacción del turno. M4 emite `run_closed{closed_by: escalation}` (M4 es el único emisor de `run_closed`). Turnos posteriores → `410 run_closed`.
 
 Después de `record_turn`, M4 rellena `response_emitted.payload.transcript_fp` con `model_copy` antes de pasar los eventos a M11 (M0 §2.10). `RunState.awaiting` se deriva del `Stop` de M2 (`awaiting_user` → `input`); la oferta de intención pendiente también es `input` con `pending_offer`.
 
