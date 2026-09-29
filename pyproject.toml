@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Núcleo de agentes: motor de decisión que ejecuta agentes descritos como datos versionados."
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "cryptography>=43",
     "pydantic>=2.9,<3",
     "rfc8785>=0.1.4",
 ]
