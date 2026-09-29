@@ -11,11 +11,22 @@ from agent_core.decision.types import (
     DecisionConfigError,
     DecisionOutput,
     DecisionProvider,
+    EventScope,
     ProviderError,
     ProviderTimeout,
     RawPrediction,
 )
-from agent_core.domain import DecisionModelDef, EntityRef, JsonValue, Locale, ProviderSpec, dumps
+from agent_core.domain import (
+    DecisionMade,
+    DecisionMadePayload,
+    DecisionModelDef,
+    EntityRef,
+    JsonValue,
+    LabelScore,
+    Locale,
+    ProviderSpec,
+    dumps,
+)
 from agent_core.ports import Clock, IdKind, IdSource, RegistryPort
 from agent_core.views import TOKEN_PATTERN, TokenVault
 
@@ -59,6 +70,28 @@ class DecisionService:
         """Corre la cadena y devuelve la salida (sin armar el evento)."""
         definition = self._registry.get(model_ref, DecisionModelDef)
         return self._decide_with(definition, definition.output_schema, inputs_model_view, locale, token_vault)
+
+    def decide(self, model_ref: EntityRef, inputs_model_view: dict[str, JsonValue], locale: Locale,
+               token_vault: TokenVault, *, scope: EventScope) -> tuple[DecisionOutput, DecisionMade]:
+        """Corre la cadena y arma `decision_made` (vista audit: valores con tokens, nunca `full`)."""
+        definition = self._registry.get(model_ref, DecisionModelDef)
+        output = self._decide_with(definition, definition.output_schema, inputs_model_view, locale,
+                                   token_vault)
+        return output, self._event(model_ref, output, locale, scope)
+
+    def _event(self, model_ref: EntityRef, output: DecisionOutput, locale: Locale,
+               scope: EventScope) -> DecisionMade:
+        payload = DecisionMadePayload(
+            decision_id=output.decision_id, model=model_ref, provider_used=output.provider_used,
+            model_version=output.model_version, fallback_depth=output.fallback_depth, value=output.value,
+            p_cal=dict(output.p_cal), p_raw=dict(output.p_raw),
+            top_k={name: [LabelScore(label=label, p=p) for label, p in pairs]
+                   for name, pairs in output.top_k.items()},
+            above_threshold=output.above_threshold, latency_ms=output.latency_ms, tokens=output.tokens,
+            cost_usd=output.cost_usd, locale=locale)
+        return DecisionMade(event_id=self._ids.new_id(IdKind.event), run_id=scope.run_id,
+                            turn_id=scope.turn_id, session_id=scope.session_id, release=scope.release,
+                            ts=self._clock.now(), payload=payload)
 
     def _decide_with(self, definition: DecisionModelDef, schema: dict[str, JsonValue],
                      inputs_model_view: dict[str, JsonValue], locale: Locale,
