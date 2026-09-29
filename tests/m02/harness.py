@@ -21,7 +21,7 @@ from agent_core.domain import (
     Template,
     ToolDef,
 )
-from agent_core.interpreter import CircuitBreaker, Resume, StepContext, StepOutcome, begin_turn
+from agent_core.interpreter import CircuitBreaker, Resume, StepContext, StepOutcome, advance, begin_turn
 from agent_core.views import DEFAULT_CATALOG, FieldClassifier, FieldRule, TokenVault, ViewService
 from testing.builders import NOW, run_state
 from testing.fakes.clock import FakeClock
@@ -160,8 +160,6 @@ class World:
 
     def step(self, state: RunState, resume: Resume | None = None, **ctx_over: Any) -> StepOutcome:
         """Un turno: `begin_turn` + `advance`, como hará M4."""
-        from agent_core.interpreter import advance
-
         return advance(begin_turn(state, self.clock), self.ctx(**ctx_over), resume or Resume())
 
     def persist(self, state: RunState) -> RunState:
