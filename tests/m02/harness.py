@@ -134,6 +134,9 @@ class World:
         self.add(definition)
         self.tools.register(definition, script=script, handler=handler)
 
+    def tools_ref(self, id: str) -> EntityRef:
+        return EntityRef(id=id, version="1.0.0")
+
     def release(self) -> Release:
         entities: dict[EntityKind, dict[str, str]] = {}
         for entity in self._entities:
