@@ -1,6 +1,16 @@
 """Intenciones pendientes y ofertas (m04 §3.3, ADR 0004)."""
 
-from agent_core.domain import Awaiting, Command, EntityKind, EntityRef, Flow, PendingIntent, Release, RunState
+from agent_core.domain import (
+    Awaiting,
+    Command,
+    EntityKind,
+    EntityRef,
+    Flow,
+    PendingIntent,
+    Release,
+    RunState,
+    Slot,
+)
 from agent_core.ports import RegistryPort
 from agent_core.turn.frame import TurnFrame
 from agent_core.turn.ports import UnderstandOutcome
@@ -89,3 +99,32 @@ def queue_mentioned(
     before = len(frame.state.pending_intents)
     frame.state = add_pending(frame.state, intents)
     return len(frame.state.pending_intents) - before
+
+
+def claim_slots(frame: TurnFrame, outcome: UnderstandOutcome) -> None:
+    """Los slots que trae Understand entran `claimed` (nunca hechos; M2 los lee como ausentes hasta que un
+    `collect` los valide). Un slot ya validado no se pisa."""
+    if not outcome.slots:
+        return
+    state = frame.state
+    slots = dict(state.slots)
+    for name, value in outcome.slots.items():
+        existing = slots.get(name)
+        if existing is not None and existing.status == "validated":
+            continue
+        slots[name] = Slot(value=value, status="claimed", source_turn=state.turn_count)
+    frame.state = state.model_copy(update={"slots": slots})
+
+
+def flow_by_id(registry: RegistryPort, release: Release, flow_id: str) -> Flow:
+    return registry.get(EntityRef(id=flow_id, version=release.entities[EntityKind.flow][flow_id]), Flow)
+
+
+def answer_offer(frame: TurnFrame, registry: RegistryPort, outcome: UnderstandOutcome) -> Flow | None:
+    """Respuesta a la oferta de una intención pendiente. Solo `affirm` sobre umbral la arranca."""
+    offered = frame.state.pending_offer
+    assert offered is not None
+    affirmed = outcome.command is Command.affirm and outcome.above_threshold.get("command", False)
+    if affirmed:
+        return flow_by_id(registry, frame.release, offered)
+    raise NotImplementedError("deny y respuestas ajenas a la oferta: Task 14b (P1)")

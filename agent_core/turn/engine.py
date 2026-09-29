@@ -50,8 +50,13 @@ from agent_core.turn.closing import Closer
 from agent_core.turn.config import TurnConfig
 from agent_core.turn.events import CommandInfo, TurnEvents
 from agent_core.turn.frame import TurnFrame
-from agent_core.turn.handlers import Env, resolve_pending_confirm, run_global_handlers
-from agent_core.turn.intents import queue_mentioned
+from agent_core.turn.handlers import Env, clarify_now, resolve_pending_confirm, run_global_handlers
+from agent_core.turn.intents import (
+    answer_offer,
+    claim_slots,
+    mentioned_flows,
+    queue_mentioned,
+)
 from agent_core.turn.metering import StageMeter
 from agent_core.turn.ports import (
     EventChain,
@@ -343,7 +348,44 @@ class TurnEngine:
             if queued and not frame.closed:
                 self._acknowledge(frame)
             return
-        raise NotImplementedError("paso 10: Task 14")
+        self._select_flow(frame, understood)
+
+    def _select_flow(self, frame: TurnFrame, outcome: UnderstandOutcome) -> None:
+        """Paso 10 (m04 §3.3): oferta pendiente, arranque de flow, intenciones pendientes y `continue`."""
+        state = frame.state
+        if state.pending_offer is not None and state.active_flow is None:
+            flow = answer_offer(frame, self._registry, outcome)
+            if flow is not None:
+                frame.state = start_flow(
+                    frame.state.model_copy(update={"pending_offer": None, "awaiting": Awaiting.none}), flow
+                )
+                frame.resume = NO_RESUME
+                self._advance_turn(frame)
+            return
+        claim_slots(frame, outcome)
+        mentioned = mentioned_flows(self._registry, frame.release, outcome)
+        if state.active_flow is None:
+            if outcome.command is not Command.start_flow or not mentioned:
+                clarify_now(self._env, frame, outcome)
+                return
+            first = mentioned[0][0]
+            frame.state = start_flow(frame.state, first)
+            queued = queue_mentioned(self._registry, frame, outcome, skip=first.id)
+            frame.resume = NO_RESUME
+            self._advance_turn(frame)
+        else:
+            queued = queue_mentioned(self._registry, frame, outcome, skip=state.active_flow.flow.id)
+            answers_slot = frame.state.awaiting is Awaiting.slot and outcome.command in (
+                Command.continue_,
+                Command.affirm,
+                Command.deny,
+            )
+            turn = frame.turn
+            assert turn is not None
+            frame.resume = Resume("slot_answer", turn.text) if answers_slot else NO_RESUME
+            self._advance_turn(frame)
+        if queued and not frame.closed:
+            self._acknowledge(frame)
 
     def _advance_turn(self, frame: TurnFrame) -> None:
         """`advance` y contadores de reparación de M4: un `unclear` de texto suma (C14); el botón no."""

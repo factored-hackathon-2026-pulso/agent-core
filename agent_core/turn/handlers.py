@@ -213,3 +213,8 @@ def resolve_pending_confirm(outcome: UnderstandOutcome) -> Resume:
     if signals.is_(Command.deny):
         return Resume("confirm_answer", "no")
     return Resume("confirm_answer", "unclear")
+
+
+def clarify_now(env: Env, frame: TurnFrame, outcome: UnderstandOutcome) -> Handled:
+    """Aclaración sin más señal (p. ej. run sin flow ni oferta y un comando que no arranca nada)."""
+    return _run_clarify(env, frame, Signals(outcome))
