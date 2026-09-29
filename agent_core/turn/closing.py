@@ -2,6 +2,8 @@
 
 M4 es el único emisor de `run_closed` (índice §6): todo cierre pasa por aquí."""
 
+from datetime import datetime
+
 from agent_core.actions import ActionManager
 from agent_core.domain import (
     Awaiting,
@@ -10,6 +12,7 @@ from agent_core.domain import (
     InvalidationReason,
     Outcome,
     ProblemCode,
+    RunState,
 )
 from agent_core.handoff import HandoffService
 from agent_core.interpreter import StepOutcome, Stop
@@ -17,6 +20,23 @@ from agent_core.ports import AuditSink, Clock, RegistryPort
 from agent_core.turn.events import ClosedBy
 from agent_core.turn.frame import TurnFrame
 from agent_core.turn.intents import offer_next
+
+
+def closed_state(state: RunState, outcome: Outcome, closed_by: ClosedBy, now: datetime) -> RunState:
+    """Estado de un run cerrado por M4 (`closed`): único para el turno y el barrido (m04 §3.6)."""
+    update: dict[str, object] = {
+        "status": "closed",
+        "outcome": outcome,
+        "closed_at": now,
+        "last_activity_at": now,
+        "inactive_after": None,
+        "awaiting": Awaiting.none,
+        "awaiting_node_id": None,
+        "pending_offer": None,
+    }
+    if closed_by == "flow":
+        update["active_flow"] = None
+    return state.model_copy(update=update)
 
 
 class Closer:
@@ -45,20 +65,7 @@ class Closer:
         """`status=closed`, `outcome` y `run_closed`. `abandoned` solo lo asigna M4; `escalated` solo M10."""
         if outcome is Outcome.escalated:
             raise EngineError(ProblemCode.internal_error, "escalated lo cierra M10, no close_run")
-        now = self._clock.now()
-        update: dict[str, object] = {
-            "status": "closed",
-            "outcome": outcome,
-            "closed_at": now,
-            "last_activity_at": now,
-            "inactive_after": None,
-            "awaiting": Awaiting.none,
-            "awaiting_node_id": None,
-            "pending_offer": None,
-        }
-        if closed_by == "flow":
-            update["active_flow"] = None
-        frame.state = frame.state.model_copy(update=update)
+        frame.state = closed_state(frame.state, outcome, closed_by, self._clock.now())
         frame.buffer.add(frame.events.run_closed(frame.state, frame.turn_id, outcome, closed_by))
         frame.closed = True
         frame.confirmation = None

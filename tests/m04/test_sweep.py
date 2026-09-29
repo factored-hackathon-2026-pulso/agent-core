@@ -138,3 +138,22 @@ def test_agentcore_sweep_sin_dsn_ni_sweeper_avisa_que_falta_postgres(
 ) -> None:
     assert main(["sweep"]) == 2
     assert "--dsn" in capsys.readouterr().err
+
+
+def test_el_cierre_del_barrido_es_igual_al_de_un_turno_que_encuentra_el_run_vencido() -> None:
+    """Un solo cierre `abandoned`: el barrido y el paso 4 dejan exactamente el mismo estado."""
+    from agent_core.domain import EngineError
+
+    swept, turned = World(), World()
+    for w in (swept, turned):
+        proposed_run(w)
+        w.clock.advance(timedelta(minutes=31))
+    swept.engine.sweep(swept.clock.now())
+    with pytest.raises(EngineError):
+        turned.turn("hola")
+    # El barrido no es un turno: no cuenta `turn_count` ni abre presupuestos por turno.
+    skip = {"turn_count", "budgets_used", "state_version"}
+    a = swept.saved().model_dump(mode="json", exclude=skip)
+    b = turned.saved().model_dump(mode="json", exclude=skip)
+    assert a == b
+    assert a["last_activity_at"] == a["closed_at"]

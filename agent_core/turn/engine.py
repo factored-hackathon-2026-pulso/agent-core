@@ -241,7 +241,8 @@ class TurnEngine:
         }
         if state.status == "open":
             update["last_activity_at"] = now
-            update["inactive_after"] = now + frame.agent.inactivity_ttl
+            if state.mode == "conversational":  # m04 §3.6: el barrido solo mira runs conversacionales
+                update["inactive_after"] = now + frame.agent.inactivity_ttl
         state = state.model_copy(update=update)
         completed = self._events.turn_completed(
             state,
