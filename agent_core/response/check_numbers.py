@@ -58,11 +58,12 @@ def check_numbers(draft: Draft, ctx: ValidationContext) -> list[Failure]:
         if citation in ctx.pages_model_view:
             cited.update(_walk(ctx.pages_model_view[citation]))
     failures: list[Failure] = []
-    for figure in figures:
+    # El detalle lleva la posición de la cifra, no su texto (lo escribe el modelo).
+    for position, figure in enumerate(figures, start=1):
         if figure.ambiguous and ctx.number_format is None:
-            failures.append(Failure(check="numbers", detail=f"cifra ambigua: {figure.raw}"))
+            failures.append(Failure(check="numbers", detail=f"cifra {position} ambigua"))
         elif figure.value is None:
-            failures.append(Failure(check="numbers", detail=f"cifra ilegible: {figure.raw}"))
+            failures.append(Failure(check="numbers", detail=f"cifra {position} ilegible"))
         elif figure.value not in cited:
-            failures.append(Failure(check="numbers", detail=f"cifra sin fuente: {figure.raw}"))
+            failures.append(Failure(check="numbers", detail=f"cifra {position} sin fuente"))
     return failures

@@ -11,7 +11,6 @@ from agent_core.domain import (
     EntityKind,
     EntityRef,
     EscalationRequest,
-    GatewayError,
     GenerateConfig,
     JsonValue,
     Locale,
@@ -26,7 +25,7 @@ from agent_core.domain import (
     ValidatorOutcome,
 )
 from agent_core.ports import Clock, IdKind, IdSource, LLMGateway, RegistryPort
-from agent_core.response.checks import check_tokens_pii
+from agent_core.response.checks import PII_DETAIL_PREFIX, check_tokens_pii
 from agent_core.response.templates import TemplateUnavailable, render_template_text
 from agent_core.response.types import Draft, Failure, ValidationContext, parse_draft
 from agent_core.response.usage import UsageMeter
@@ -102,7 +101,7 @@ class Responder:
                     {"check": f.check, "detail": f.detail} for f in last_failures]
             try:
                 result = meter.call(partial(ctx.gateway.generate, prompt, inputs, ctx.locale, DRAFT_SCHEMA))
-            except GatewayError:
+            except Exception:
                 break
             parsed = parse_draft(result.output)
             if isinstance(parsed, Failure):
@@ -113,8 +112,12 @@ class Responder:
                 outcome = ValidatorOutcome(ok=True, regenerations=attempt)
                 event = _event(state, ctx, "generated", False, outcome, meter)
                 return Message(kind="generated", text=text, locale=ctx.locale), rejected, [event]
+            # Con PII en claro el texto no se conserva: iría al transcript con el dato que se quiso evitar.
+            has_clear_pii = any(f.check == "tokens_pii" and f.detail.startswith(PII_DETAIL_PREFIX)
+                                for f in failures)
+            reason = "; ".join(f"{f.check}: {f.detail}" for f in failures)
             rejected.append(RejectedDraft(
-                text_model=text, reason="; ".join(f"{f.check}: {f.detail}" for f in failures),
+                text_model="" if has_clear_pii else text, reason=reason,
                 failures=list(dict.fromkeys(f.check for f in failures))))
             last_failures = failures
             regenerations = attempt

@@ -58,6 +58,7 @@ class Responder:
    - Cada cifra debe ser **numéricamente igual** a un valor de un hecho o página citados, con la precisión de la moneda (`Decimal`, sin tolerancia relativa).
    - Si la cifra no aparece en ningún hecho de origen `tool`/`identity`, debe venir de un hecho `compute`. Una cifra calculada sin su `compute` falla.
    - Se ignoran los dígitos dentro de tokens de M7.
+   - `ValidationContext.fact_sources` se conserva en el contexto pero esta comprobación no lo usa: el criterio es de origen del número (aparece o no en un hecho citado), no de su tipo. Un hecho `compute` respalda cifras como cualquier otro, y una cifra calculada sin su `compute` citado falla porque no está en ningún hecho citado. Filtrar por `source.kind` no cambiaría ningún resultado y dejaría sin definir el caso `knowledge` (M12).
    - Todo número del texto cuenta igual ("paso 2", "24 horas"): debe estar en un hecho citado. Una cifra ambigua sin `number_format` se rechaza aunque un hecho la respalde. Las fechas se comparan con valores ISO (`aaaa-mm-dd`) de los hechos; los valores de hecho numéricos son `int`, `Decimal` o cadenas `-?dígitos(.dígitos)?`.
 4. **Tokens y PII:** todo token del texto existe en el `token_map`; `ViewService.find_clear_pii` no encuentra identificadores `pii_direct` en claro.
 5. **Idioma:** `detect_language(text)` con la configuración, los umbrales y los idiomas soportados de M6 (`prior = locale`). Si la decisión es `short` o `undetermined` no rechaza; en otro caso rechaza si el idioma de mayor puntaje (`top2[0]`) difiere del `locale` del turno. No depende de los umbrales de cambio (con `UNCALIBRATED` igual compara `top2[0]`). Un idioma no soportado también rechaza.
@@ -73,7 +74,9 @@ si la plantilla no puede renderizarse → EscalationRequest(validation_failed)
 
 - Modo degradado: salta directo a `fallback_template_ref`.
 - **Uso del LLM:** M8 acumula en `LlmUsage` cada llamada a `gateway.generate` del nodo (generación y regeneración): `calls`, `tokens` y `cost_usd` de `GenerationResult`, `latency_ms` medido con `Clock.monotonic_ns()` alrededor de cada llamada, y `models`. Va en `response_emitted.llm`, también si al final se usó la plantilla. Si no se llamó al gateway, `llm = None`.
-- Cada borrador rechazado y su motivo se devuelve como `RejectedDraft` para que M11 lo mande al transcript.
+- Cada borrador rechazado y su motivo se devuelve como `RejectedDraft` para que M11 lo mande al transcript. Si el borrador falló por PII en claro (`tokens_pii`), `text_model` va vacío: el texto no se conserva; `reason` solo lleva ids y rutas.
+- **Detalles de falla sin texto del modelo:** `Failure.detail` (y por tanto `RejectedDraft.reason` y `validation_feedback`) solo lleva ids de comprobación, motivos fijos, rutas de campo, patrones (`pattern:email`), idiomas detectados y posiciones (`cita 2`, `cifra 1`, `token desconocido en la posición 1`). Nunca repite una cita, un token o una cifra escritos por el modelo, para que el prompt de regeneración no reintroduzca ese texto.
+- **Falla del gateway:** cualquier excepción de `gateway.generate` (`GatewayError` u otra, p. ej. del cliente HTTP) se trata como falla del gateway: no se reintenta, cuenta como una llamada con `cost_known = false` (salvo el uso que informe un `GatewayError`) y la cadena pasa a la plantilla de respaldo.
 - `Responder.template` trae un renderizador mínimo propio de `{{ facts.<nombre>.value(.campo)* }}` (M8 no importa `flows`); una ruta ausente, un locale ausente o una ruta que no sea de hechos lanza `TemplateUnavailable`, que la cadena traduce a `validation_failed`.
 - Las plantillas (`respond.template_ref`) no pasan por las comprobaciones 2 y 3 (son texto fijo con variables de hechos), pero sí por la 4.
 
@@ -97,7 +100,7 @@ M8 **no** se acopla a teléfono, canal ni `principal.attrs.country`, y no contie
 | Falla | Comportamiento |
 |---|---|
 | Validador rechaza | 1 regeneración → plantilla → `escalate(validation_failed)` |
-| Gateway caído | directo a la plantilla de respaldo |
+| Gateway caído (`GatewayError` u otra excepción) | directo a la plantilla de respaldo, sin regenerar |
 | Cifra ambigua | rechazo (medido como falso rechazo en eval) |
 
 ## 6. Eventos que emite
@@ -142,6 +145,7 @@ M8 **no** se acopla a teléfono, canal ni `principal.attrs.country`, y no contie
 - [x] Reglas duras: sin hora, aleatoriedad, `float()` ni `json.loads` en `agent_core/response`; sin PII en `Failure.detail`, `RejectedDraft.reason` ni eventos.
 - [x] Abiertos de M8 resueltos (§11); quedan fuera de M8 los de M2 y M12.
 - [x] Spec en rev. 2 en el mismo cambio.
+- [x] Revisión de `revisor-spec` atendida: borrador con PII sin texto en `RejectedDraft`, detalles de falla sin texto del modelo (también en `validation_feedback`), falla de gateway distinta de `GatewayError` definida, `fact_sources` documentado.
 
 Notas de la implementación (rev. 2): si `generate` termina en `EscalationRequest` no se emite `response_emitted`, así que el uso del LLM de esa cadena no sale en ningún evento (ver §11). En modo degradado el evento lleva `validator.ok = true` (no hubo borrador rechazado); tras rechazos o gateway caído, `ok = false` con los ids de la última falla.
 
@@ -156,3 +160,4 @@ Notas de la implementación (rev. 2): si `generate` termina en `EscalationReques
 - ~~**Renderizado de plantillas**~~ **Resuelto 2026-09-29:** renderizador mínimo propio (§3.2).
 - **Abiertos que siguen fuera de M8:** quién emite `response_emitted` para `respond(template_ref)` directo (M2); `PageView`, `knowledge_from` y su comprobación de citas de páginas (M12, tema #10).
 - **Nuevo:** cuando `generate` escala (`validation_failed`) no hay `response_emitted` y por tanto el uso del LLM (`llm`) de esa cadena no llega a M2 para cobrar presupuestos. Requiere decidir si se emite un evento con `kind` de fallo o si `generate` devuelve el uso aparte; toca M0 o el adaptador de M2.
+- **Nota (`.importlinter`):** el contrato `response` se llama "M8 (response) solo usa domain, ports y guards, views, knowledge". Es exacto como lista de dependencias permitidas (el contrato solo prohíbe el resto); M8 hoy no importa `knowledge`. No se toca.
