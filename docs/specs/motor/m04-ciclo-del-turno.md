@@ -206,3 +206,10 @@ Detalles de implementación que el spec no fijaba (revisar):
 - Los `Slot` de Understand se guardan tal cual (vista `model`); un slot ya `validated` no se pisa.
 
 **Token vencido en `confirm` (decidido el 2026-09-29):** si el paso 6 cancela una propuesta por token vencido y el run esperaba confirmación, el turno avanza con `resume = none` (aunque llegue un `yes` por botón o un `affirm`): el `confirm` propone de nuevo con token nuevo y el usuario debe confirmar otra vez. Un token vencido nunca confirma. No suma `repair_turns_used`.
+
+### Observaciones de la revisión (2026-09-29; el spec no las fija, no se cambian)
+
+- **Liberación del lease ante una excepción:** `_release_quietly` traga la falla de su propia UoW y no deja rastro en eventos ni estado. No es posible dejarlo visible dentro del diseño actual: el turno que falló hizo rollback, el catálogo de eventos de M0 no tiene un evento de fallo de turno y M4 no tiene puerto de logs. Consecuencia: si la liberación también falla, el lease vence solo por su TTL (`lease_ttl`, 60 s) y el reintento recibe `409` hasta entonces. Se añadiría un evento o un puerto de observabilidad solo con un cambio de M0/M11.
+- **Orden `409`/`410`:** con un lease ajeno vigente sobre un run ya cerrado, el turno recibe `409` (el lease se toma antes de mirar `status`). El spec lista ambos errores sin precedencia.
+- **`affirm`/`deny` con `awaiting = slot`:** sin `confirm` pendiente y con el run esperando un slot, `continue`, `affirm` y `deny` se toman como respuesta del slot (`slot_answer` con el texto crudo). El spec solo define `continue` para `collect` (§3.3).
+- **`inactive_after`:** solo se fija en runs conversacionales (§3.6); el cierre `abandoned` del turno y del barrido comparte una sola función (`closed_state`).
