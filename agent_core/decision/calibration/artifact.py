@@ -5,6 +5,7 @@ salida es determinista (JCS) y sin ambigüedad aunque un valor contenga separado
 
 from bisect import bisect_right
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Literal, Protocol, Self
 
 from pydantic import Field, model_validator
@@ -121,3 +122,18 @@ class InMemoryCalibrationSource:
 
     def get(self, run_id: str) -> CalibrationArtifact | None:
         return self._artifacts.get(run_id)
+
+
+class DirectoryCalibrationSource:
+    """Lee `<run_id>.json` de un directorio (solo con `loads` vía `from_json`)."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+
+    def get(self, run_id: str) -> CalibrationArtifact | None:
+        if not run_id or "/" in run_id or "\\" in run_id or run_id.startswith("."):
+            raise ValueError("run_id inválido para el directorio de calibraciones")
+        file = self._path / f"{run_id}.json"
+        if not file.is_file():
+            return None
+        return CalibrationArtifact.from_json(file.read_text(encoding="utf-8"))

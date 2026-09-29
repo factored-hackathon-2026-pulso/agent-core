@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-from agent_core.decision.calibration.artifact import CalibrationSource
+from agent_core.decision.calibration.artifact import CalibrationArtifact, CalibrationSource
 from agent_core.decision.schema import check_schema_supported, validate_output
 from agent_core.decision.types import (
     DecisionConfigError,
@@ -14,7 +14,7 @@ from agent_core.decision.types import (
     ProviderTimeout,
     RawPrediction,
 )
-from agent_core.domain import DecisionModelDef, EntityRef, JsonValue, Locale, ProviderSpec
+from agent_core.domain import DecisionModelDef, EntityRef, JsonValue, Locale, ProviderSpec, dumps
 from agent_core.ports import Clock, IdKind, IdSource, RegistryPort
 from agent_core.views import TokenVault
 
@@ -74,12 +74,47 @@ class DecisionService:
         depth, provider_used, raw = chosen
         p_raw = {name: raw.p_raw.get(name) for name in fields}
         top_k = {name: list(raw.top_k[name]) for name in fields if name in raw.top_k}
-        p_cal = {name: p_raw[name] if definition.calibration.method == "none" else None for name in fields}
+        p_cal, above = self._calibrate(definition, provider_used, locale, raw.value, p_raw)
         return DecisionOutput(
             value=raw.value, p_cal=p_cal, p_raw=p_raw, top_k=top_k,
-            above_threshold=dict.fromkeys(fields, False), provider_used=provider_used,
+            above_threshold=above, provider_used=provider_used,
             model_version=raw.model_version, fallback_depth=depth, latency_ms=latency_ms,
             tokens=usage.tokens, cost_usd=usage.cost_usd, decision_id=decision_id, model_calls=usage.calls)
+
+    def _calibrate(self, definition: DecisionModelDef, provider: str, locale: Locale,
+                   value: dict[str, JsonValue], p_raw: dict[str, float | None]
+                   ) -> tuple[dict[str, float | None], dict[str, bool]]:
+        """`p_cal` y `above_threshold` por campo calibrado (spec §3.1 pasos 3 y 4)."""
+        calibration = definition.calibration
+        cal_art = self._calibrations.get(calibration.run) if calibration.run else None
+        thr_art = self._calibrations.get(definition.thresholds_from) if definition.thresholds_from else None
+        p_cal: dict[str, float | None] = {}
+        above: dict[str, bool] = {}
+        for name in definition.calibrated_fields:
+            raw_p = p_raw[name]
+            calibrator = cal_art.calibrator(name, provider, locale) if cal_art else None
+            if raw_p is None:
+                p = None
+            elif calibrator is not None:
+                p = calibrator.apply(raw_p)
+            else:
+                p = raw_p if calibration.method == "none" else None
+            p_cal[name] = p
+            above[name] = self._passes(thr_art, name, value, provider, locale, p)
+        return p_cal, above
+
+    @staticmethod
+    def _passes(artifact: CalibrationArtifact | None, name: str, value: dict[str, JsonValue], provider: str,
+                locale: Locale, p_cal: float | None) -> bool:
+        # Combinación ausente = umbral 1.0 y nunca pasa (spec §5: sin calibración, siempre low_confidence),
+        # ni siquiera con p_cal == 1.0.
+        if p_cal is None or artifact is None or name not in value:
+            return False
+        item = value[name]
+        key = (name, item if isinstance(item, str) else dumps(item), provider, locale)
+        if key not in artifact.thresholds:
+            return False
+        return p_cal >= artifact.thresholds[key]
 
     @staticmethod
     def _check_inputs(definition: DecisionModelDef, inputs: dict[str, JsonValue]) -> None:
