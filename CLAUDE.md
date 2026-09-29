@@ -17,10 +17,13 @@ Python 3.12, FastAPI, Pydantic v2, Postgres 16, `uv`, `docker-compose`. Sin cola
 ## Comandos
 
 - Pruebas de un módulo: `uv run pytest tests/mXX`
+- Suites de contrato de los puertos: `uv run pytest tests/contracts`
 - Todas las pruebas: `uv run pytest`
 - Fronteras entre módulos: `uv run lint-imports` (config en `.importlinter`)
-- Tipos: `uv run mypy agent_core`
+- Tipos: `uv run mypy` (strict; archivos en `pyproject.toml`)
 - Lint: `uv run ruff check .`
+- Contratos: `uv run agentcore contracts` (regenera) · `uv run agentcore contracts --check` (CI)
+- Postgres local (M3, M4, M9, M11): `docker compose up -d postgres`
 
 ## Estructura
 
