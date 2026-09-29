@@ -176,15 +176,30 @@ def _has_repeat(pattern: Any) -> bool:
     return False
 
 
+def _holds_subpattern(value: Any) -> bool:
+    """True si `value` es un subpatrón o una secuencia que contiene uno (a cualquier profundidad)."""
+    if isinstance(value, _PARSER.SubPattern):
+        return True
+    return isinstance(value, tuple | list) and any(_holds_subpattern(item) for item in value)
+
+
 def _children(op: Any, av: Any) -> list[Any]:
-    if op in _REPEATS:
+    """Subpatrones de un nodo del árbol de `re`. Falla cerrado: un operador con subpatrones que no se
+    conoce (versiones futuras de Python) lanza `ValueError` en vez de omitirse en silencio."""
+    if op in _REPEATS or op == _PARSER.POSSESSIVE_REPEAT:
         return [av[2]]
-    if _PARSER is not None and op == _PARSER.SUBPATTERN:
+    if op == _PARSER.SUBPATTERN:
         return [av[3]]
-    if _PARSER is not None and op == _PARSER.BRANCH:
+    if op == _PARSER.ATOMIC_GROUP:
+        return [av]
+    if op == _PARSER.BRANCH:
         return list(av[1])
-    if _PARSER is not None and op in (_PARSER.ASSERT, _PARSER.ASSERT_NOT):
+    if op in (_PARSER.ASSERT, _PARSER.ASSERT_NOT):
         return [av[1]]
+    if op == _PARSER.GROUPREF_EXISTS:
+        return [av[1]] if av[2] is None else [av[1], av[2]]
+    if _holds_subpattern(av):
+        raise ValueError(f"operador de regex sin manejar: {op}")
     return []
 
 

@@ -216,6 +216,30 @@ def test_catastrophic_regex_is_g0_01(pattern: str) -> None:
     assert _rules(d) == {"G0-01"}
 
 
+@pytest.mark.parametrize(
+    "pattern",
+    ["(?>(a+)+)$", "(x)?(?(1)(a+)+|b)$", "(x)?(?(1)b|(a+)+)$", "(?:(a+)+)++", "(?=(a+)+)b"],
+)
+def test_nested_quantifiers_in_atomic_conditional_possessive_groups_are_rejected(pattern: str) -> None:
+    problems = _regex_problems(pattern)
+    assert problems and "cuantificadores ilimitados anidados" in problems[0]
+    d = base()
+    node(d, "pedir")["config"]["validator"] = {"kind": "regex", "value": pattern}
+    assert _rules(d) == {"G0-01"}
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    ["(?>ab+)c", "(x)?(?(1)a+|b+)$", "(?=a+)b", "(?<=ab)c", "(?<!x)y+", "(?:a|b)c", "(a|b)+", "(?:ab)*c",
+     "(?P<n>a)+(?P=n)"],
+)
+def test_benign_regex_with_advanced_constructs_is_accepted(pattern: str) -> None:
+    assert _regex_problems(pattern) == []
+    d = base()
+    node(d, "pedir")["config"]["validator"] = {"kind": "regex", "value": pattern}
+    assert parse_flow(d).id == "base"
+
+
 @pytest.mark.parametrize("pattern", [r"^\d{3}-\d{4}$", "[a-z]+@[a-z]+", "(ab)+", "a+b*"])
 def test_ordinary_regex_is_accepted(pattern: str) -> None:
     d = base()
@@ -274,6 +298,17 @@ def test_regex_fails_closed_on_unexpected_shape(monkeypatch: pytest.MonkeyPatch)
     assert "no se puede verificar la regex" in problem
     monkeypatch.setattr(schema, "_PARSER", SimpleNamespace(parse=lambda _p: 5))
     assert "no se puede verificar la regex" in _regex_problems("a+")[0]
+
+
+def test_regex_fails_closed_on_unknown_operator_with_subpattern(monkeypatch: pytest.MonkeyPatch) -> None:
+    real = schema._PARSER
+    names = ("SUBPATTERN", "BRANCH", "ATOMIC_GROUP", "ASSERT", "ASSERT_NOT", "GROUPREF_EXISTS",
+             "POSSESSIVE_REPEAT", "SubPattern")
+    fake = SimpleNamespace(**{n: getattr(real, n) for n in names},
+                           parse=lambda _p: [("OPERADOR_NUEVO", real.parse("(a+)+"))])
+    monkeypatch.setattr(schema, "_PARSER", fake)
+    (problem,) = _regex_problems("a")
+    assert "no se puede verificar la regex" in problem and "forma inesperada" in problem
 
 
 def _bad_everywhere(size: int) -> dict[str, Any]:
