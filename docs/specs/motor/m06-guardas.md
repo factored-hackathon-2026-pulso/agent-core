@@ -133,7 +133,7 @@ M4 activa el modo degradado con `flagged = true`.
 
 - [x] `detect_language` y `scan_injection` puras con T-M6-01…10 en verde.
 - [x] Ruleset de injection inicial y sus casos como fixture (`testing/injection_fixtures.py`); publicación en `agent-registry` pendiente (repo externo).
-- [x] Latencia p95 de las guardas < 20 ms en nuestro entorno (medido: 0,33 ms, p50 0,20 ms, 400 corridas con lingua caliente sobre ES/PT/EN/corto; `AGENT_CORE_PERF=1 uv run pytest tests/m06/test_latency.py -s`). Nota: en Windows `time.monotonic_ns` tiene resolución de ~15,6 ms, así que la prueba con `SystemClock` imprime 0,00 ms; la cifra de arriba se midió con `time.perf_counter_ns` fuera del repo. La prueba solo garantiza que no se superen 20 ms.
+- [x] Latencia p95 de las guardas < 20 ms en nuestro entorno (medido: 0,33 ms, p50 0,20 ms, 400 corridas con lingua caliente sobre ES/PT/EN/corto; `AGENT_CORE_PERF=1 uv run pytest tests/m06/test_latency.py -s`). Nota: en Windows `time.monotonic_ns` tiene resolución de ~15,6 ms, así que la prueba con `SystemClock` imprime 0,00 ms; la cifra de 0,33 ms (p95) se midió en Windows con un script externo desechable que usa `time.perf_counter_ns` (no reproducible desde el repo, porque TID251 lo prohíbe). La prueba del repo `tests/m06/test_latency.py` con `AGENT_CORE_PERF=1` es en Windows solo un techo grueso (los ticks de `monotonic` son de ~15,6 ms) y en Linux una medición real del p95.
 
 ## 11. Abiertos
 

@@ -4,8 +4,7 @@ from typing import Literal
 
 from pydantic import Field, NonNegativeInt
 
-from agent_core.domain import GuardsOutput, InjectionGuard, LangGuard, LangScore
-from agent_core.domain.base import Locale, Model, Probability
+from agent_core.domain import GuardsOutput, InjectionGuard, LangGuard, LangScore, Locale, Model, Probability
 
 
 class GuardsConfigError(Exception):

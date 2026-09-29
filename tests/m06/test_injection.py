@@ -48,7 +48,8 @@ def test_phrase_rules_are_literal_not_regex() -> None:
 
 
 def test_normalization() -> None:
-    assert normalize_for_scan("  IGNORA​   las\tinstrucciones &lt;x&gt; ") == "ignora las instrucciones <x>"
+    raw = "  IGNORA\u200b   las\tinstrucciones &lt;x&gt; "
+    assert normalize_for_scan(raw) == "ignora las instrucciones <x>"
     assert normalize_for_scan("ﬁn") == "fin"  # NFKC
 
 
