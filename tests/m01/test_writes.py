@@ -5,6 +5,7 @@ import pytest
 from agent_core.flows import graph as graph_module
 from agent_core.flows.context import Ctx
 from agent_core.flows.rules.writes import g0_05
+from agent_core.flows.violations import Violation
 from tests.m01.cases import _tool, base, check, flow, node, registry, rules, task_base
 
 
@@ -392,10 +393,13 @@ def test_rule_is_total_on_malformed_pydantic_valid_flows() -> None:
         lambda d: node(d, "verificar")["config"].update(readback="fantasma@1"),
         lambda d: node(d, "ok_msg")["config"].update(claims=["nada", "fin"]),
     ]
-    for mutate in mutations:
+    expected = [{"G0-05"}, {"G0-05"}, {"G0-05"}, set(), set(), set()]
+    for mutate, want in zip(mutations, expected, strict=True):
         d = base()
         mutate(d)
-        list(g0_05(Ctx.build(flow(d), registry())))
+        found = list(g0_05(Ctx.build(flow(d), registry())))
+        assert all(isinstance(v, Violation) for v in found)
+        assert {v.rule for v in found} == want  # solo G0-05, nunca G0-06 ni otra regla
 
 
 def test_messages_clip_author_strings() -> None:

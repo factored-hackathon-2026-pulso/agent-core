@@ -1,5 +1,6 @@
 from typing import Any
 
+from agent_core.flows.violations import Violation
 from tests.m01.cases import base, check, node, rules, task_base
 
 
@@ -245,7 +246,9 @@ def test_duplicate_ids_and_unresolved_tool_do_not_raise() -> None:
     d["nodes"].append(dict(node(d, "buscar")))
     node(d, "buscar")["config"]["tool"] = "no_existe@1"
     node(d, "buscar")["next"]["error"] = "fin"
-    check(d)  # no lanza
+    found = check(d)
+    assert all(isinstance(v, Violation) for v in found)
+    assert rules(found) == {"G0-01", "G0-02"}  # sin cascada de G0-05 ni G0-06
 
 
 def test_many_failure_edges_into_one_long_chain() -> None:
