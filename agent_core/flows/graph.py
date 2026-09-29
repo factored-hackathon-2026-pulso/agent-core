@@ -87,6 +87,17 @@ def verify_of(graph: FlowGraph, write: WriteToolNode) -> VerifyNode | None:
     return None
 
 
+def end_modes(flow: Flow) -> frozenset[str]:
+    """Modos en los que algún `end` del flow es declarable. Más de uno es la mezcla de G0-14."""
+    return frozenset(
+        mode
+        for node in flow.nodes
+        if isinstance(node, EndNode)
+        for mode in DECLARABLE
+        if is_declarable(node.config.outcome, mode)
+    )
+
+
 def flow_mode(flow: Flow) -> str | None:
     """`task` o `conversational` si todos los `end` son declarables en él; None si no hay o se mezclan."""
     ends = [node for node in flow.nodes if isinstance(node, EndNode)]
