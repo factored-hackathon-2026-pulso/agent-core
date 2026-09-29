@@ -30,7 +30,7 @@ Dependencias por constructor: `UnitOfWork`, `RegistryPort`, `Clock`, `GuardServi
 1. **Deduplicación:** si `client_turn_id` ya tiene resultado guardado, se devuelve ese `TurnResult` sin reprocesar.
 2. **Cargar:** `uow.find_run_by_session(session_id)`; `uow.acquire_turn(run_id, turn_id, now, ttl)` toma el lease del turno **antes** de trabajar (M0 §2.9): si otro turno lo tiene → `TurnInProgress` → `409 turn_in_progress`. Run cerrado → `410 run_closed`. Cada commit usa `save_run(expected_version)` como defensa; el lease se libera en el commit final.
 3. **Release:** si está `revoked` → `escalate(release_revoked)` sin ejecutar nodos.
-4. **Abandono:** si `now − last_activity_at > inactivity_ttl` → cerrar con `abandoned` (ver 3.6) y responder `run_closed`.
+4. **Abandono:** si `now − last_activity_at > inactivity_ttl` → M4 cierra el run con `abandoned` (ver 3.6), invalida las acciones y responde `410 run_closed` **sin procesar el mensaje**. La app abre un run nuevo (M9); el motor no reabre el run por su cuenta (decisión P2, 2026-09-29).
 5. **Recuperación:** `actions.pending_recovery(state)` no vacío → posicionar el flow en el `verify` correspondiente y avanzar desde ahí antes de procesar el mensaje.
 6. **Tokens vencidos:** `actions.expire_tokens(state, turn_id=…)` (devuelve el estado y los eventos `action_cancelled`).
 7. **Guardas (M6):** idioma, tamaño, injection. `unsupported` → plantilla en `default_locale`, sin Understand ni flow. Actualiza `state.locale`. `injection_flagged` → `degraded = true` para este turno.
@@ -81,7 +81,7 @@ Entrada: `UnderstandResult` con `command`, `p_cal` y la marca `below_threshold` 
 - Sin flow activo y `command = start_flow` → `interpreter.start_flow(flow)`; `additional_flows` van a `pending_intents`.
 - Con flow activo: `start_flow` y `additional_flows` van a `pending_intents`, ordenadas por `flow.priority` desc y, en empate, por `mention_order`; se agrega un acuse al mensaje.
 - Una intención pendiente no invalida una acción esperando confirmación.
-- Al terminar el flow activo con pendientes: se ofrece la primera (plantilla) y el run queda esperando; solo arranca con `affirm`. Con `deny` se descarta y se ofrece la siguiente.
+- Al terminar el flow activo con pendientes: se ofrece la primera (plantilla) y el run queda esperando; solo arranca con `affirm`. Con `deny` se descarta esa intención y se ofrece la siguiente; si era la última, no se ofrece nada y la conversación sigue en modo normal (plantilla del agente). Si la respuesta no es `affirm` ni `deny`, la oferta sigue vigente una vez más y luego se descarta; cada uno de esos turnos suma a `repair_turns_used`. El `deny` nunca escala: la escalada es solo el tope global `max_repair_turns_per_run` (decisión P1, 2026-09-29).
 - `continue`: se reanuda el nodo actual con `resume = slot_answer(texto)` si el nodo es `collect`.
 
 ### 3.4 Invalidación de acciones
@@ -181,5 +181,7 @@ Tiempos, todos desde el log de auditoría (no dependen del muestreo de trazas):
 
 ## 11. Abiertos
 
-- La spec no dice qué pasa con `deny` ante la oferta de una intención pendiente; se propone descartarla y ofrecer la siguiente (3.3).
-- La spec cierra con `abandoned` al cargar un run vencido, pero no dice qué recibe ese turno. Se propone `410 run_closed` y que la app abra un run nuevo sobre el mismo subject (paso 4 de 3.1).
+Los dos abiertos originales quedaron resueltos el 2026-09-29 por el usuario (las confirmaciones C1–C15 del plan de implementación siguen pendientes y no se reflejan aquí):
+
+- **P1 (`deny` ante la oferta de una intención pendiente):** ver 3.3.
+- **P2 (turno que encuentra el run vencido):** ver paso 4 de 3.1.
