@@ -1,6 +1,6 @@
 # M4 — Ciclo del turno
 
-- Estado: borrador · Fase 2
+- Estado: rev. 2 (2026-09-29) · Fase 2 · Fase A implementada con dobles
 - Paquete: `agent_core.turn`
 - Origen: spec general §4.1 (estado, release, revocación, recuperación, abandono), §4.4 (uso del resultado de Understand), §4.5, §4.6, §4.8, §4.9, §4.10, invalidación de §4
 - ADRs: 0004 (intenciones e interrupciones), 0007 (precedencia con `confirm` pendiente), 0013 (cierre por escalamiento)
@@ -16,12 +16,12 @@ Orquesta un turno (modo conversacional) o una corrida (modo task) **después** d
 
 ```python
 class TurnEngine:
-    def start_run(self, principal, on_behalf_of, run_input: RunInput) -> TurnResult      # task o inicio conversacional
+    def start_run(self, principal, on_behalf_of, run_input: RunInput) -> RunResult       # task o inicio conversacional (C5)
     def handle_turn(self, principal, on_behalf_of, turn: TurnInput) -> TurnResult
     def sweep(self, now: datetime) -> SweepReport                                        # barrido periódico
 ```
 
-Dependencias por constructor: `UnitOfWork`, `RegistryPort`, `Clock`, `GuardService` (M6), `UnderstandService` (M5), `Interpreter` (M2), `ActionManager` (M3), `HandoffService` (M10), `TurnRecorder` (M11).
+Dependencias por constructor (solo por nombre): `uow_factory`, `registry`, `clock`, `ids`, `guards` (`GuardsPort`, M6), `understand` (`UnderstandPort`, M5), `actions` (`ActionManager`, M3), `handoff` (`HandoffService`, M10), `recorder` (`TurnRecorderPort`, M11), `chain` (`EventChain`, M11), `audit` (`AuditSink`), `runtimes` (`RuntimeFactory`, puente con M7), `trace` (`TraceIds`), `config` (`TurnConfig`) y, opcional, `authz` (solo `reportable_attrs()` para `run_started`). M2 son funciones (`advance`, `start_flow`, `begin_turn`), no una clase `Interpreter`.
 
 ## 3. Comportamiento
 
@@ -97,7 +97,7 @@ Después de `record_turn`, M4 rellena `response_emitted.payload.transcript_fp` c
 ### 3.6 Cierre y barrido
 
 - Cerrar un run: `status = closed`, `outcome`, `run_closed`. El outcome `abandoned` solo lo asigna M4; `escalated` solo M10.
-- `sweep(now)`: selecciona con `uow.list_inactive(now)` runs `open` con `inactive_after < now` (M4 mantiene `inactive_after = last_activity_at + inactivity_ttl` en cada turno) (30 min por defecto en conversacional), los cierra con `abandoned`, invalida sus acciones y emite `expiry_evaluated{instante usado, ttl}` por cada evaluación.
+- `sweep(now)`: selecciona con `uow.list_inactive(now, limit)` (por lotes) runs `open` con `inactive_after < now` (M4 mantiene `inactive_after = last_activity_at + inactivity_ttl` en cada turno) (30 min por defecto en conversacional), los cierra con `abandoned`, invalida sus acciones y emite `expiry_evaluated{instante usado, ttl}` por cada evaluación.
 
 ### 3.7 Medición del turno (`turn_completed`)
 
@@ -189,3 +189,20 @@ Los dos abiertos originales quedaron resueltos el 2026-09-29 por el usuario (las
 ## 12. Fronteras (nota de la rev. 2)
 
 - El contrato `turn` de `.importlinter` usa `allow_indirect_imports = True` (aprobado el 2026-09-29): M4 importa `agent_core.interpreter`, que internamente usa `flows` y `views`. Siguen prohibidos los imports **directos** de M4 a `flows`, `views`, `response`, `knowledge`, `api`, `adapters`, `cli`, `contracts` y `registry`. Todo lo que M4 necesita de M7 entra por `RuntimeFactory`/`TurnRuntime` (`agent_core/turn/ports.py`).
+
+## 13. Decisiones de la rev. 2 (2026-09-29)
+
+Aprobadas por el usuario: C1 (`RuntimeFactory`/`TurnRuntime` sobre M7), C2 (plantillas del motor con `registry.get`, sin variables; la versión sale de los pines de la release), C3 (`signal_policy` evalúa `{"message": {"text": <vista model>}}`), C5 (`start_run -> RunResult`), C6 (`TraceIds`), C7 (el flow interrumpido va a `pending_intents` y reinicia desde su entrada), C8 (`cancel` cierra solo el flow, sin mensaje), C10 (M4 no emite `response_emitted`; solo rellena `transcript_fp`), C11 (`closed_by="flow"` para `end(abstained|clarify_exhausted)`), C12 (`expiry_evaluated` en cada turno), C13 (`turn_count = 1` en `start_run`), C14 (solo el `unclear` de texto suma reparación), C15 (`lease_ttl` 60 s), puertos locales `UnderstandPort`, `TurnRecorderPort`, `EventChain`; `turn_started` reservado al frente del buffer.
+
+Detalles de implementación que el spec no fijaba (revisar):
+
+- `turn_count` se incrementa al empezar el turno (no al persistir): así `Slot.source_turn` y `degraded_turns` usan el número del turno en curso.
+- `input` de un run task entra como slots `claimed`.
+- Tras `cancel`, si quedan intenciones pendientes se ofrece la primera.
+- `clarify` agotado con `on_clarify_exhausted = "end"` cierra `clarify_exhausted` sin mensaje (no hay plantilla del motor para eso; la app usa `outcome`).
+- P1: el contador de la oferta repetida vive en `node_attempts["offer:<flow>"]`; al descartar la última oferta se responde con la plantilla `clarify` sin contarla como aclaración.
+- Un turno abandonado (paso 4) no guarda `TurnResult` por `client_turn_id`: el reintento recibe `410`.
+- `unclear` de `confirm` por texto suma siempre a `repair_turns_used` (equivale a "creció `node_attempts`" salvo en el intento que agota `max_attempts`).
+- Los `Slot` de Understand se guardan tal cual (vista `model`); un slot ya `validated` no se pisa.
+
+**Abierto nuevo:** tras `expire_tokens` (paso 6) un `confirm` puede quedar sin acción `proposed` y M3 lanza `IllegalTransition` ante cualquier `confirm_answer`. Falta decidir qué hace el turno (propuesta: `resume = none` para que el `confirm` proponga de nuevo con token nuevo; un token vencido nunca confirma). Sin implementar; prueba saltada en `tests/m04/test_recovery.py`.
