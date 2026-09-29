@@ -1,6 +1,6 @@
 # M5 — DecisionModel y Understand
 
-- Estado: borrador · Fase 4
+- Estado: rev. 2 (2026-09-29) · Fase 4
 - Paquete: `agent_core.decision`
 - Origen: spec general §4.4, §7, §12 (métricas de `DecisionModel`), §15 (riesgo JEV)
 - ADRs: 0005 (contrato, JEV como proveedor, campos calibrados, tabla de umbrales), 0012 (calibración por idioma, datos PT)
@@ -18,49 +18,83 @@ Incluye también el **formato del artefacto de calibración** y la herramienta o
 
 ```python
 # DecisionModelDef, ProviderSpec y CalibrationRef son tipos de M0 (§2.4): los lee M1 (G0-11) y el registro.
+@dataclass(frozen=True)
 class RawPrediction:      value: dict; p_raw: dict[str, float | None]; top_k: dict[str, list[tuple[str, float]]]
-                          latency_ms; tokens; cost_usd
+                          latency_ms; tokens; cost_usd: Decimal; model_version: str = "unknown"
 class DecisionProvider(Protocol):
     name: str
-    def predict(self, spec: ProviderSpec, inputs_model_view: dict, schema: dict, locale: str) -> RawPrediction
+    def predict(self, spec: ProviderSpec, inputs_model_view: dict, schema: dict, locale: Locale) -> RawPrediction
+class ProviderTimeout(Exception); class DecisionConfigError(Exception)
+class ProviderError(Exception):      # uso parcial de una llamada fallida (también cuesta)
+    tokens: int; cost_usd: Decimal
+@dataclass(frozen=True)
 class DecisionOutput:     value: dict; p_cal: dict[str, float | None]; p_raw; top_k
                           above_threshold: dict[str, bool]; provider_used; model_version
-                          fallback_depth: int; latency_ms; tokens; cost_usd; decision_id
+                          fallback_depth: int; latency_ms; tokens; cost_usd: Decimal; decision_id
+                          model_calls: int                    # llamadas `predict` (reintentos y fallbacks incluidos)
+                          def as_decision(self) -> Decision   # el `Decision` de M0 (sin `above_threshold`)
+@dataclass(frozen=True)
+class EventScope:         run_id; release; turn_id: str | None = None; session_id: str | None = None
 
 class DecisionService:
-    def decide(self, model_ref: EntityRef, inputs_model_view: dict, locale: str, token_vault) -> tuple[DecisionOutput, EngineEvent]
-class UnderstandService:
-    def run(self, model_view_text: str, context: UnderstandContext, locale: str) -> tuple[UnderstandResult, list[EngineEvent]]
+    def __init__(self, registry, providers: Mapping[str, DecisionProvider], calibrations: CalibrationSource,
+                 clock, ids)
+    def decide(self, model_ref: EntityRef, inputs_model_view: dict, locale: Locale, token_vault,
+               *, scope: EventScope) -> tuple[DecisionOutput, DecisionMade]
+    def decide_output(self, model_ref, inputs_model_view, locale, token_vault) -> DecisionOutput  # sin evento
 
-class UnderstandResult:   command; flow: str | None; interrupt: str | None; additional_flows: list[str]
-                          slots: dict[str, Any]; above_threshold: dict[str, bool]; decision_id
+@dataclass(frozen=True)
+class UnderstandContext:  model_ref: EntityRef; flows: list[str]; interrupts: list[str]
+                          current_node: str | None; confirm_pending: bool
+                          recent_turns: list[str]              # `text_model` (vista model); M4 arma n fijo
+                          token_vault: TokenVault; scope: EventScope
+@dataclass(frozen=True)
+class UnderstandResult:   command: Command; flow: str | None; interrupt: str | None; additional_flows: list[str]
+                          slots: dict            # claimed: sin validar
+                          above_threshold: dict[str, bool]; decision_id: str
+                          p_cal: dict[str, float | None]       # solo los campos con marca
+class UnderstandService:
+    def __init__(self, decisions: DecisionService)
+    def run(self, model_view_text: str, context: UnderstandContext, locale: Locale
+            ) -> tuple[UnderstandResult, list[DecisionMade]]
+
+# Proveedores (agent_core.decision): RuleProvider(), ClassifierProvider(loader: ArtifactLoader),
+# LlmStructuredProvider(gateway: LLMGateway), JevProvider(transport: JevTransport, capture=None)
 
 # Offline (paquete agent_core.decision.calibration)
 class CalibrationArtifact: run_id; split_hash; method
                            calibrators: dict[(field, provider, lang), IsotonicMap]
                            thresholds: dict[(field, value, provider, lang), float]
-                           target: dict[field, {"metric": "precision" | "recall", "value": float}]
-def calibrate(model_def, dev_split, providers) -> CalibrationArtifact
+                           target: dict[field, Target{metric: "precision" | "recall", value}]
+                           limitations: list[str]; metrics: dict
+class CalibrationSource(Protocol): def get(self, run_id: str) -> CalibrationArtifact | None
+def calibrate(model_def, dev_split: Sequence[DevExample], providers, *, targets: Mapping[str, Target],
+              min_samples: Mapping[str, int], min_support: int) -> CalibrationArtifact
 ```
+
+`DecisionPort.decide` de M2 (`decide(model, inputs, locale) -> DecisionResult`) no puede vivir aquí (M5 no importa `interpreter`): el adaptador `DecisionOutput → DecisionResult` (con `vault = ctx.vault` y `model_calls`) lo escribe M2 o la composición de M4 (P1, fuera de M5).
 
 ## 3. Comportamiento
 
 ### 3.1 `decide`
 
-1. Arma la entrada con `input_view` (siempre vista `model`; un path fuera de esa vista es error de configuración).
-2. Recorre `providers` en orden:
+1. Arma la entrada con `input_view` (siempre vista `model`; un path fuera de esa vista es error de configuración). Nota de implementación: `decide` no arma la entrada (la recibe ya proyectada por M2/M4 en vista `model`); solo verifica que las claves **de primer nivel** de `inputs_model_view` estén en `input_view` (si este no es vacío) y no valida rutas anidadas.
+2. Recorre `providers` en orden (un proveedor sin adaptador registrado es `DecisionConfigError`, revisado antes de llamar a ninguno):
    - timeout o error → siguiente proveedor (`fallback_depth += 1`);
    - salida fuera de `output_schema` → **1** reintento con el mismo proveedor; si vuelve a fallar, siguiente.
-3. Calibra cada campo calibrado con el mapa `(field, provider, lang)`. Sin mapa: `p_cal = p_raw` si `method = none`, si no `null`.
-4. Umbral: `thresholds[(field, value, provider, lang)]`; **combinación ausente = 1.0**. `above_threshold[field] = p_cal is not None and p_cal >= umbral`. `p_cal = null` cuenta como bajo umbral.
-5. **Tokens:** todo valor que parezca token se resuelve con `token_vault.exists(token)`; un token desconocido invalida la salida → todos los campos calibrados quedan bajo umbral.
-6. Cadena agotada → `DecisionOutput` con `above_threshold` todo en `false` (la rama es `low_confidence`).
+   `tokens` y `cost_usd` acumulan todas las llamadas (también las fallidas); `latency_ms` es la duración total medida con `Clock.monotonic_ns`.
+3. Calibra cada campo calibrado con el mapa `(field, provider, lang)` del artefacto de `calibration.run`. Sin mapa: `p_cal = p_raw` si `method = none`, si no `null`. `p_raw = null` da `p_cal = null`.
+4. Umbral (artefacto de `thresholds_from`): `thresholds[(field, value, provider, lang)]`; **combinación ausente = 1.0 y nunca pasa**, ni con `p_cal = 1.0` (coherente con §5: sin calibración, siempre `low_confidence`). `above_threshold[field] = p_cal is not None and p_cal >= umbral`. `p_cal = null` cuenta como bajo umbral; un campo calibrado ausente de `value` también.
+5. **Tokens:** todo string de `value` (valores y claves, en cualquier profundidad) que coincida con `TOKEN_PATTERN` de M7 se verifica con `token_vault.exists(token)`; un token desconocido invalida la salida → todos los campos calibrados quedan bajo umbral (`p_cal` se conserva para diagnóstico y `value` no se toca).
+6. Cadena agotada → `DecisionOutput` con `value = {}`, `p_cal`/`p_raw` en `null`, `above_threshold` todo en `false`, `provider_used = model_version = "none"` y `fallback_depth = len(providers)` (la rama es `low_confidence`).
 7. Emite `decision_made` con la salida completa (vista `audit`).
 
 ### 3.2 Understand
 
-- Esquema cerrado: `command` (enum), `flow` (enum de flows de la release), `interrupt` (enum de interrupciones de la release), `additional_flows`, `slots`.
-- Campos calibrados: `command`, `flow` (solo con `start_flow`), `interrupt` (solo con `interrupt`).
+- Esquema cerrado, armado por release (no muta el `DecisionModelDef` del registro): `command` (enum de `Command`), `flow` (enum de flows de la release), `interrupt` (enum de interrupciones de la release), `additional_flows` (lista del enum de flows), `slots` (único objeto libre).
+- Entrada al proveedor (vista `model`): `{text, recent_turns, current_node, confirm_pending}`.
+- Campos calibrados: `command`, `flow` (solo con `start_flow`), `interrupt` (solo con `interrupt`). Los demás `above_threshold` se omiten (no `false`); `additional_flows` y `slots` nunca llevan umbral.
+- Cadena agotada: `command = clarify` con `above_threshold["command"] = false` (valor neutro; M4 decide qué hacer).
 - Umbrales de `interrupt` se fijan por **recall** (objetivo en `target`); el resto por precisión.
 - Una sola llamada a modelo por turno. El contexto incluye `recent_turns` (unidad 7) en vista `model`, el nodo actual y si hay `confirm` pendiente.
 - Los slots salen como `claimed`; M4/M2 nunca los tratan como hechos.
@@ -69,9 +103,9 @@ def calibrate(model_def, dev_split, providers) -> CalibrationArtifact
 
 | Proveedor | Uso en el MVP | Notas |
 |---|---|---|
-| `jev` | preferido si pasa la prueba de humo | adaptador HTTP; captura del request para medir fugas (M7) |
-| `classifier` | respaldo y baseline | artefacto entrenado (ref + hash de datos) que produce el científico de datos; TF-IDF + regresión logística es suficiente para empezar |
-| `rule` | decisiones triviales | p ∈ {0, 1} |
+| `jev` | preferido si pasa la prueba de humo | adaptador sobre transporte inyectable (`JevTransport`); la key la pone el transporte real (variable `JEV_API_KEY` vía `KeyProvider`), nunca el adaptador; forma del request/response **provisional** hasta el contrato real; captura del request para medir fugas (M7) |
+| `classifier` | respaldo y baseline | artefacto JSON `tfidf-logreg-v1` (ref + hash de datos) que exporta el científico de datos; TF-IDF + regresión logística evaluados en Python puro (sin `scikit-learn`); ver §3.5 |
+| `rule` | decisiones triviales | p ∈ {0, 1}; `config` en §3.5 |
 | `llm_structured` | **solo baseline en evaluación**, sin umbral | vía `LLMGateway`; `p_cal = null` salvo logprobs |
 
 Cambiar de proveedor o de orden es un cambio de datos (`DecisionModelDef`), no de código.
@@ -80,9 +114,17 @@ Cambiar de proveedor o de orden es un cambio de datos (`DecisionModelDef`), no d
 
 1. Corre cada proveedor sobre el split de desarrollo, por idioma.
 2. Ajusta isotónica por `(field, provider, lang)`.
-3. Elige por `(field, value, provider, lang)` el umbral mínimo que cumple el objetivo (precisión para `command`/`flow`, recall para `interrupt`).
-4. Si la muestra PT no alcanza el mínimo de la unidad 6, copia la calibración ES y lo marca como limitación en el artefacto.
-5. Reporta ECE, macro-F1, precisión al umbral y cobertura por idioma y proveedor.
+3. Elige por `(field, value, provider, lang)` el umbral según el objetivo: **precisión** (`command`/`flow`): el mínimo umbral con precisión ≥ objetivo; **recall** (`interrupt`): el **máximo** umbral con recall ≥ objetivo (con recall el "mínimo que cumple" sería trivial). Sin soporte (`< min_support`) o sin umbral que cumpla → la combinación se omite (queda en 1.0).
+4. Si la muestra de un idioma no alcanza `min_samples[lang]` (sin valor por defecto: lo fija la unidad 6), copia la calibración del idioma base `es` y añade `"<lang>: calibración copiada de es (muestra < mínimo)"` a `limitations`. Sin ejemplos `es` es error.
+5. Reporta ECE (10 bins), macro-F1, precisión al umbral y cobertura (y recall al umbral si el objetivo es recall) por idioma y proveedor, en `CalibrationArtifact.metrics` (valores como string con 6 decimales; idioma con muestra sintética marcado `synthetic`).
+6. `calibrate` es función pura del contenido: `split_hash = sha256(JCS(ejemplos ordenados por id))` y `run_id = "cal-" + sha256(JCS({modelo, split_hash, método, proveedores, targets, min_samples, min_support}))[:16]`, sin reloj ni `IdSource`; un proveedor que falla o responde fuera de esquema cuenta como ejemplo sin predicción.
+
+### 3.5 Formatos y comando
+
+- **`CalibrationSource.get(run_id)`** (P6): protocolo interno de M5 (no es puerto de M0) con `InMemoryCalibrationSource` y `DirectoryCalibrationSource` (`<run_id>.json`). `calibration.run` da los calibradores y `thresholds_from` la tabla de umbrales; sin `thresholds_from` todo queda bajo umbral.
+- **`rule.config`** (P7): `{"cases": [{"when": {"path": "<clave de la entrada>", "equals": <json>}, "value": {...}}], "default": {...}}`. Primer caso que coincide → `p_raw = 1.0`; sin caso → `default` con `p_raw = 0.0`; sin `default`, `ProviderError`. Igualdad estricta (`true` no es `1`).
+- **`classifier` `tfidf-logreg-v1`** (P4): `{format, data_hash, vocab, idf, classes, coef, intercept}`; tokens `\w+` en NFKC minúsculas, `x = conteo * idf` normalizado L2, softmax estable; `top_k` ordenado por `(-p, valor)`. El artefacto entra por un `ArtifactLoader` inyectado. Toma `inputs["text"]` e ignora otras claves.
+- **Informe** (P8): `uv run python -m agent_core.decision report --artifact <ruta.json> [--events <ruta.jsonl>] [--format md|json] [--out <ruta>]` (no toca `agent_core/cli.py`); artefacto ilegible → código 2. Con `--events` agrega latencia p50/p95 (nearest-rank), costo total y tasa de respaldo por idioma y proveedor.
 
 ## 4. Invariantes
 
@@ -103,7 +145,7 @@ Cambiar de proveedor o de orden es un cambio de datos (`DecisionModelDef`), no d
 
 ## 6. Eventos que emite
 
-`decision_made {decision_id, model@v, provider_used, fallback_depth, value (audit), p_cal, p_raw, top_k, latency_ms, tokens, cost_usd, locale}`.
+`decision_made {decision_id, model@v, provider_used, model_version, fallback_depth, value (audit), p_cal, p_raw, top_k, above_threshold, latency_ms, tokens, cost_usd, locale}`; `latency_ms` es campo de medición (`MEASURED_FIELDS`). `value` lleva tokens, nunca `full`; no se registra razonamiento del modelo.
 
 ## 7. Pruebas
 
@@ -143,5 +185,13 @@ Con `ScriptedProvider` (salidas y latencias guionadas) y artefactos de calibraci
 
 ## 11. Abiertos
 
-- Resultado de la prueba de humo de JEV.
-- Mínimo de muestra PT (lo fija la unidad 6).
+- Resultado de la prueba de humo de JEV (bloqueante antes del miércoles 30/09) y contrato real de su request/response (P0/P0b). Falta la API key (`JEV_API_KEY`): el transporte HTTP no está construido.
+- Mínimo de muestra PT (lo fija la unidad 6): `calibrate` lo exige como parámetro `min_samples`, sin valor por defecto.
+- Artefactos reales de Understand ES (y PT si llega la muestra) y del clasificador: los produce otro equipo (P9).
+- Adaptador `DecisionOutput → DecisionResult` de M2 (P1): lo escribe M2 o la composición de M4.
+
+## 12. Decisiones de la rev. 2
+
+Confirmadas por el usuario el 2026-09-29: `decide(..., *, scope: EventScope)`; `UnderstandContext`/`UnderstandResult` (con `p_cal`, nombre `above_threshold`); `RawPrediction.model_version`; `ProviderError` con uso parcial; `DecisionOutput.model_calls`; regla de recall (máximo umbral); formato `tfidf-logreg-v1`; `CalibrationSource`; `rule.config`; comando del informe; `calibrate` con parámetros keyword-only sin defecto.
+
+Decisiones de implementación que conviene revisar: (a) combinación ausente en la tabla nunca pasa, ni con `p_cal = 1.0` (§3.1.4); (b) `run_id` también hashea `min_samples` y `min_support`; (c) `ArtifactLoader` y `Target` entran a la interfaz pública; (d) cadena agotada en Understand devuelve `clarify` por debajo del umbral; (e) `fallback_depth = len(providers)` con la cadena agotada.

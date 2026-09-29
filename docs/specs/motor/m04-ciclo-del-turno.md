@@ -1,6 +1,6 @@
 # M4 — Ciclo del turno
 
-- Estado: borrador · Fase 2
+- Estado: rev. 2 (2026-09-29) · Fase 2 · Fase A implementada con dobles
 - Paquete: `agent_core.turn`
 - Origen: spec general §4.1 (estado, release, revocación, recuperación, abandono), §4.4 (uso del resultado de Understand), §4.5, §4.6, §4.8, §4.9, §4.10, invalidación de §4
 - ADRs: 0004 (intenciones e interrupciones), 0007 (precedencia con `confirm` pendiente), 0013 (cierre por escalamiento)
@@ -16,12 +16,12 @@ Orquesta un turno (modo conversacional) o una corrida (modo task) **después** d
 
 ```python
 class TurnEngine:
-    def start_run(self, principal, on_behalf_of, run_input: RunInput) -> TurnResult      # task o inicio conversacional
+    def start_run(self, principal, on_behalf_of, run_input: RunInput) -> RunResult       # task o inicio conversacional (C5)
     def handle_turn(self, principal, on_behalf_of, turn: TurnInput) -> TurnResult
     def sweep(self, now: datetime) -> SweepReport                                        # barrido periódico
 ```
 
-Dependencias por constructor: `UnitOfWork`, `RegistryPort`, `Clock`, `GuardService` (M6), `UnderstandService` (M5), `Interpreter` (M2), `ActionManager` (M3), `HandoffService` (M10), `TurnRecorder` (M11).
+Dependencias por constructor (solo por nombre): `uow_factory`, `registry`, `clock`, `ids`, `guards` (`GuardsPort`, M6), `understand` (`UnderstandPort`, M5), `actions` (`ActionManager`, M3), `handoff` (`HandoffService`, M10), `recorder` (`TurnRecorderPort`, M11), `chain` (`EventChain`, M11), `audit` (`AuditSink`), `runtimes` (`RuntimeFactory`, puente con M7), `trace` (`TraceIds`), `config` (`TurnConfig`) y, opcional, `authz` (solo `reportable_attrs()` para `run_started`). M2 son funciones (`advance`, `start_flow`, `begin_turn`), no una clase `Interpreter`.
 
 ## 3. Comportamiento
 
@@ -30,9 +30,9 @@ Dependencias por constructor: `UnitOfWork`, `RegistryPort`, `Clock`, `GuardServi
 1. **Deduplicación:** si `client_turn_id` ya tiene resultado guardado, se devuelve ese `TurnResult` sin reprocesar.
 2. **Cargar:** `uow.find_run_by_session(session_id)`; `uow.acquire_turn(run_id, turn_id, now, ttl)` toma el lease del turno **antes** de trabajar (M0 §2.9): si otro turno lo tiene → `TurnInProgress` → `409 turn_in_progress`. Run cerrado → `410 run_closed`. Cada commit usa `save_run(expected_version)` como defensa; el lease se libera en el commit final.
 3. **Release:** si está `revoked` → `escalate(release_revoked)` sin ejecutar nodos.
-4. **Abandono:** si `now − last_activity_at > inactivity_ttl` → cerrar con `abandoned` (ver 3.6) y responder `run_closed`.
+4. **Abandono:** si `now − last_activity_at > inactivity_ttl` → M4 cierra el run con `abandoned` (ver 3.6), invalida las acciones y responde `410 run_closed` **sin procesar el mensaje**. La app abre un run nuevo (M9); el motor no reabre el run por su cuenta (decisión P2, 2026-09-29).
 5. **Recuperación:** `actions.pending_recovery(state)` no vacío → posicionar el flow en el `verify` correspondiente y avanzar desde ahí antes de procesar el mensaje.
-6. **Tokens vencidos:** `actions.expire_tokens(state, turn_id=…)` (devuelve el estado y los eventos `action_cancelled`).
+6. **Tokens vencidos:** `actions.expire_tokens(state, turn_id=…)` (devuelve el estado y los eventos `action_cancelled`). Si cancela la propuesta de un `confirm` pendiente, el turno avanza con `resume = none` y el `confirm` re-propone con token nuevo (§13).
 7. **Guardas (M6):** idioma, tamaño, injection. `unsupported` → plantilla en `default_locale`, sin Understand ni flow. Actualiza `state.locale`. `injection_flagged` → `degraded = true` para este turno.
 8. **Understand:**
    - Si el request trae `confirm: {token, answer}` → no se llama a Understand; `resume = confirm_answer(answer)`.
@@ -81,7 +81,7 @@ Entrada: `UnderstandResult` con `command`, `p_cal` y la marca `below_threshold` 
 - Sin flow activo y `command = start_flow` → `interpreter.start_flow(flow)`; `additional_flows` van a `pending_intents`.
 - Con flow activo: `start_flow` y `additional_flows` van a `pending_intents`, ordenadas por `flow.priority` desc y, en empate, por `mention_order`; se agrega un acuse al mensaje.
 - Una intención pendiente no invalida una acción esperando confirmación.
-- Al terminar el flow activo con pendientes: se ofrece la primera (plantilla) y el run queda esperando; solo arranca con `affirm`. Con `deny` se descarta y se ofrece la siguiente.
+- Al terminar el flow activo con pendientes: se ofrece la primera (plantilla) y el run queda esperando; solo arranca con `affirm`. Con `deny` se descarta esa intención y se ofrece la siguiente; si era la última, no se ofrece nada y la conversación sigue en modo normal (plantilla del agente). Si la respuesta no es `affirm` ni `deny`, la oferta sigue vigente una vez más y luego se descarta; cada uno de esos turnos suma a `repair_turns_used`. El `deny` nunca escala: la escalada es solo el tope global `max_repair_turns_per_run` (decisión P1, 2026-09-29).
 - `continue`: se reanuda el nodo actual con `resume = slot_answer(texto)` si el nodo es `collect`.
 
 ### 3.4 Invalidación de acciones
@@ -97,7 +97,7 @@ Después de `record_turn`, M4 rellena `response_emitted.payload.transcript_fp` c
 ### 3.6 Cierre y barrido
 
 - Cerrar un run: `status = closed`, `outcome`, `run_closed`. El outcome `abandoned` solo lo asigna M4; `escalated` solo M10.
-- `sweep(now)`: selecciona con `uow.list_inactive(now)` runs `open` con `inactive_after < now` (M4 mantiene `inactive_after = last_activity_at + inactivity_ttl` en cada turno) (30 min por defecto en conversacional), los cierra con `abandoned`, invalida sus acciones y emite `expiry_evaluated{instante usado, ttl}` por cada evaluación.
+- `sweep(now)`: selecciona con `uow.list_inactive(now, limit)` (por lotes) runs `open` con `inactive_after < now` (M4 mantiene `inactive_after = last_activity_at + inactivity_ttl` en cada turno) (30 min por defecto en conversacional), los cierra con `abandoned`, invalida sus acciones y emite `expiry_evaluated{instante usado, ttl}` por cada evaluación.
 
 ### 3.7 Medición del turno (`turn_completed`)
 
@@ -181,5 +181,35 @@ Tiempos, todos desde el log de auditoría (no dependen del muestreo de trazas):
 
 ## 11. Abiertos
 
-- La spec no dice qué pasa con `deny` ante la oferta de una intención pendiente; se propone descartarla y ofrecer la siguiente (3.3).
-- La spec cierra con `abandoned` al cargar un run vencido, pero no dice qué recibe ese turno. Se propone `410 run_closed` y que la app abra un run nuevo sobre el mismo subject (paso 4 de 3.1).
+Los dos abiertos originales quedaron resueltos el 2026-09-29 por el usuario (las confirmaciones C1–C15 del plan de implementación siguen pendientes y no se reflejan aquí):
+
+- **P1 (`deny` ante la oferta de una intención pendiente):** ver 3.3.
+- **P2 (turno que encuentra el run vencido):** ver paso 4 de 3.1.
+
+## 12. Fronteras (nota de la rev. 2)
+
+- El contrato `turn` de `.importlinter` usa `allow_indirect_imports = True` (aprobado el 2026-09-29): M4 importa `agent_core.interpreter`, que internamente usa `flows` y `views`. Siguen prohibidos los imports **directos** de M4 a `flows`, `views`, `response`, `knowledge`, `api`, `adapters`, `cli`, `contracts` y `registry`. Todo lo que M4 necesita de M7 entra por `RuntimeFactory`/`TurnRuntime` (`agent_core/turn/ports.py`).
+
+## 13. Decisiones de la rev. 2 (2026-09-29)
+
+Aprobadas por el usuario: C1 (`RuntimeFactory`/`TurnRuntime` sobre M7), C2 (plantillas del motor con `registry.get`, sin variables; la versión sale de los pines de la release), C3 (`signal_policy` evalúa `{"message": {"text": <vista model>}}`), C5 (`start_run -> RunResult`), C6 (`TraceIds`), C7 (el flow interrumpido va a `pending_intents` y reinicia desde su entrada), C8 (`cancel` cierra solo el flow, sin mensaje), C10 (M4 no emite `response_emitted`; solo rellena `transcript_fp`), C11 (`closed_by="flow"` para `end(abstained|clarify_exhausted)`), C12 (`expiry_evaluated` en cada turno), C13 (`turn_count = 1` en `start_run`), C14 (solo el `unclear` de texto suma reparación), C15 (`lease_ttl` 60 s), puertos locales `UnderstandPort`, `TurnRecorderPort`, `EventChain`; `turn_started` reservado al frente del buffer.
+
+Detalles de implementación que el spec no fijaba (revisar):
+
+- `turn_count` se incrementa al empezar el turno (no al persistir): así `Slot.source_turn` y `degraded_turns` usan el número del turno en curso.
+- `input` de un run task entra como slots `claimed`.
+- Tras `cancel`, si quedan intenciones pendientes se ofrece la primera.
+- `clarify` agotado con `on_clarify_exhausted = "end"` cierra `clarify_exhausted` sin mensaje (no hay plantilla del motor para eso; la app usa `outcome`).
+- P1: el contador de la oferta repetida vive en `node_attempts["offer:<flow>"]`; al descartar la última oferta se responde con la plantilla `clarify` sin contarla como aclaración.
+- Un turno abandonado (paso 4) no guarda `TurnResult` por `client_turn_id`: el reintento recibe `410`.
+- `unclear` de `confirm` por texto suma siempre a `repair_turns_used` (equivale a "creció `node_attempts`" salvo en el intento que agota `max_attempts`).
+- Los `Slot` de Understand se guardan tal cual (vista `model`); un slot ya `validated` no se pisa.
+
+**Token vencido en `confirm` (decidido el 2026-09-29):** si el paso 6 cancela una propuesta por token vencido y el run esperaba confirmación, el turno avanza con `resume = none` (aunque llegue un `yes` por botón o un `affirm`): el `confirm` propone de nuevo con token nuevo y el usuario debe confirmar otra vez. Un token vencido nunca confirma. No suma `repair_turns_used`.
+
+### Observaciones de la revisión (2026-09-29; el spec no las fija, no se cambian)
+
+- **Liberación del lease ante una excepción:** `_release_quietly` traga la falla de su propia UoW y no deja rastro en eventos ni estado. No es posible dejarlo visible dentro del diseño actual: el turno que falló hizo rollback, el catálogo de eventos de M0 no tiene un evento de fallo de turno y M4 no tiene puerto de logs. Consecuencia: si la liberación también falla, el lease vence solo por su TTL (`lease_ttl`, 60 s) y el reintento recibe `409` hasta entonces. Se añadiría un evento o un puerto de observabilidad solo con un cambio de M0/M11.
+- **Orden `409`/`410`:** con un lease ajeno vigente sobre un run ya cerrado, el turno recibe `409` (el lease se toma antes de mirar `status`). El spec lista ambos errores sin precedencia.
+- **`affirm`/`deny` con `awaiting = slot`:** sin `confirm` pendiente y con el run esperando un slot, `continue`, `affirm` y `deny` se toman como respuesta del slot (`slot_answer` con el texto crudo). El spec solo define `continue` para `collect` (§3.3).
+- **`inactive_after`:** solo se fija en runs conversacionales (§3.6); el cierre `abandoned` del turno y del barrido comparte una sola función (`closed_state`).

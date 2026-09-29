@@ -1,0 +1,22 @@
+{
+  "run_id": "cal-0123456789abcdef",
+  "split_hash": "3f2b8c1d4e5a69708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8",
+  "method": "isotonic",
+  "calibrators": [
+    {"key": ["command", "classifier", "es"], "value": {"xs": [0.1, 0.5, 0.9], "ys": [0.05, 0.6, 0.95]}},
+    {"key": ["command", "classifier", "pt"], "value": {"xs": [0.1, 0.5, 0.9], "ys": [0.05, 0.6, 0.95]}},
+    {"key": ["interrupt", "classifier", "es"], "value": {"xs": [0.2, 0.8], "ys": [0.1, 0.9]}}
+  ],
+  "thresholds": [
+    {"key": ["command", "affirm", "classifier", "es"], "value": 0.6},
+    {"key": ["command", "affirm", "classifier", "pt"], "value": 0.9},
+    {"key": ["command", "deny", "classifier", "es"], "value": 0.7},
+    {"key": ["interrupt", "cancelar", "classifier", "es"], "value": 0.3}
+  ],
+  "target": {
+    "command": {"metric": "precision", "value": 0.9},
+    "interrupt": {"metric": "recall", "value": 0.95}
+  },
+  "limitations": ["pt: calibración copiada de es (muestra < mínimo)"],
+  "metrics": {}
+}
