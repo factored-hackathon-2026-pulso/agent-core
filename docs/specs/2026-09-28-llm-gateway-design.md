@@ -160,7 +160,7 @@ Parámetros del modelo: `max_tokens` y `temperature` se envían tal cual. Un mod
 
 ### 3.7 Validación local del esquema (`check_output` pasa a `domain`)
 
-- `check_output(schema, value, path="") -> str | None` es hoy un validador puro de M2 (`interpreter/schema.py`, 74 líneas). Se mueve a `agent_core/domain/schema.py` y se exporta desde `agent_core.domain`; `interpreter` lo importa desde ahí. El comportamiento no cambia.
+- `check_output(schema, value, path="") -> str | None` era un validador puro de M2 (`interpreter/schema.py`) y ahora vive en `agent_core/domain/schema.py`, exportado desde `agent_core.domain`; `interpreter` lo importa desde ahí. El comportamiento no cambia.
 - Subconjunto cerrado: `type`, `enum`, `properties`, `required`, `additionalProperties` (booleano) e `items`. Las anotaciones (`description`, `title`, …) se ignoran. Una palabra clave fuera de la lista falla cerrado.
 - El mensaje describe la ruta y la regla, nunca el valor.
 - Consecuencia para los esquemas de M5 (`{slots: objeto libre}`) y M8 (`{text, citations}`): caben en el subconjunto. `oneOf`, `anyOf` y `$ref` no; por eso el esquema del paso del nodo `agent` es plano (§3.8).
@@ -254,7 +254,9 @@ Sin red: el adaptador se prueba con un transporte HTTP falso (`respx` sobre `htt
 | T-M8-12 | M8: `invalid_output` regenera una vez y luego usa la plantilla; los otros `kind` van directo a la plantilla; `cost_known = false` si un error no informa costo (siguiente id libre en m08; ajustar si se ocupa antes) |
 | T-M1-46 | M1 G0-24: una tool en `tools_allowed` sin `description` o `args_schema`, o con `args_schema` fuera del subconjunto, falla la validación estática (siguiente id libre en m01) |
 
-**Prueba de humo (manual, fuera de CI):** `agentcore llm-smoke --profile <id@v>` corre 10 prompts sintéticos ES/PT contra el endpoint configurado y reporta la tasa de `invalid_output`, la latencia p50/p95 y el costo. Se corre contra OpenRouter antes de promover un perfil nuevo. Incluye 3 pasos del nodo `agent` para medir la tasa de pasos inválidos.
+**Prueba de humo (manual, fuera de CI):** `agentcore llm-smoke --profile <id@v>` corre 10 prompts sintéticos ES/PT contra el endpoint configurado y reporta la tasa de `invalid_output`, la latencia p50/p95 y el costo. Se corre contra OpenRouter antes de promover un perfil nuevo. Incluye 3 pasos del nodo `agent` (prompt, tool de solo lectura y configuración sintéticos, atados al mismo perfil) para medir la tasa de pasos inválidos; el reporte trae una línea `pasos agent` con esa tasa.
+
+*Cómo correrla:* define `LLM_ENDPOINTS` y la variable de la key en el shell (en PowerShell, `$env:LLM_ENDPOINTS = '...'`; ver `.env.example`); el directorio de `--registry` debe traer un `model_profile` YAML con `endpoint_alias: openrouter` y `structured: prompted`; luego `uv run agentcore llm-smoke --registry <dir> --profile <id@v> [--n N]`. Un perfil inexistente, `--n < 1` o falta de endpoints terminan con código de uso, sin traza.
 
 ## 8. Evaluación
 
@@ -307,5 +309,8 @@ Comparar dos perfiles es comparar dos releases (unidad 6).
 - **`GatewayError` sin evento en el nodo `agent`:** cuando `AgentPort.step` lanza un `GatewayError`, M2 carga el uso y termina en `gave_up` sin dejar ningún evento en el log de auditoría (`agent_step` solo se emite en pasos que devolvieron). Abierto: si `agent_step` debe registrar el fallo (`status` con el `kind`) para que la auditoría explique el `gave_up`.
 - **`SCHEMA_VERSION` sin subir:** `ToolDef.description` y `args_schema` se agregaron como campos opcionales sin subir `SCHEMA_VERSION` (`0.4.0`). Abierto: decidir si un campo opcional nuevo exige subirla y regenerar `contracts/` con otra versión.
 - **`llm_structured` en M5:** cómo su `ProviderSpec` referencia un `Prompt`. Se resuelve al construir M5; el gateway no cambia.
+- **Respuesta exitosa sin `usage`:** hoy devuelve costo 0 y M8 deja `cost_known = true`, lo que contradice la intención de §3.3 (`cost_known = false`). Abierto: decidirlo con un indicador en `GenerationResult` (p. ej. `usage_known`) que M8 lea.
+- **Aviso de arranque por alias faltante:** §5 dice que la demo avisa al arrancar de los perfiles con alias sin configurar; no está cableado. Seguimiento para el bootstrap de la API.
+- **Un cliente nuevo por llamada:** sin keep-alive, así que las latencias de la prueba de humo incluyen el establecimiento de TCP/TLS. Abierto: reutilizar el cliente por alias si la latencia importa.
 - **Perfil del prompt del nodo `agent`:** debe ser `structured: prompted` (§3.8); `LLMAgentPort` lo verifica en ejecución. Abierto: regla G0-25 de M1 que lo detecte en la validación estática.
 - **Mecanismo del tope total (§3.1 paso 5):** decidido en el plan: la llamada corre en un hilo y el adaptador espera con `Future.result(timeout=timeout_s)` (sin leer el reloj, regla de `ruff`). Los timeouts por fase del SDK son por chunk y no acotan un endpoint que gotea, así que al vencer el plazo el adaptador cierra el cliente (`client.close()`, errores ignorados) desde el hilo que espera: la lectura bloqueada falla y el hilo abandonado termina (los workers de `ThreadPoolExecutor` no son daemon y se unen al salir del intérprete). La llamada se envía con `contextvars.copy_context().run` para que el contexto de OpenTelemetry siga al hilo. Criterio de aceptación: T-U5-11.
