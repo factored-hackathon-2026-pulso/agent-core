@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import psycopg
+from pydantic import ValidationError
 
 from agent_core.domain import Principal, dumps, loads
 from agent_core.flows import load_yaml
@@ -20,7 +21,9 @@ from agent_core.registry import (
     Origin,
     PgRegistryStore,
     RegistryError,
+    RegistryErrorCode,
     RegistryService,
+    RegistryStore,
     RunReleaseReader,
     ScenarioEvaluator,
 )
@@ -42,8 +45,15 @@ def build_registry_service(dsn: str, *, evaluator: EvalPort, clock: Clock, ids: 
     return RegistryService(store, evaluator, clock, ids, runs=runs)
 
 
+# Dobles de PRUEBA (claves y mundo sintéticos en el repo): solo se usan si AGENTCORE_ALLOW_DEMO=1.
+DEMO_VERIFIER = "testing.registry_demo:demo_verifier"
+DEMO_HARNESS = "testing.registry_demo:build_harness"
+
+
 def _load(path: str) -> Any:
-    module, _, attr = path.partition(":")
+    module, sep, attr = path.partition(":")
+    if not sep or not attr:
+        raise ValueError(f"`{path}` no tiene la forma modulo:atributo")
     return getattr(importlib.import_module(module), attr)
 
 
@@ -54,8 +64,15 @@ def _drafts(paths: list[Path]) -> list[EntityDraft]:
         files = sorted(path.rglob("*.yaml")) if path.is_dir() else [path]
         for f in files:
             data = load_yaml(f.read_bytes())
-            assert isinstance(data, dict)
-            out.append(EntityDraft.model_validate(data))
+            if not isinstance(data, dict):
+                raise RegistryError(RegistryErrorCode.validation_failed,
+                                    f"{f}: el archivo debe ser un mapa con `kind`, `docs` y `content`")
+            try:
+                out.append(EntityDraft.model_validate(data))
+            except ValidationError as exc:  # sin `input`: el contenido puede traer texto libre
+                fields = sorted({".".join(str(x) for x in e["loc"]) for e in exc.errors(include_input=False)})
+                raise RegistryError(RegistryErrorCode.validation_failed,
+                                    f"{f}: no cumple el formato de draft ({', '.join(fields)})") from None
     return out
 
 
@@ -63,8 +80,10 @@ def add_registry_parser(sub: Any) -> None:
     reg = sub.add_parser("registry", help="registry de entidades (unidad 2)")
     reg.add_argument("--dsn", default=None, help="Postgres del registry (o AGENTCORE_REGISTRY_DSN)")
     reg.add_argument("--credential", default=None, help="JWS del principal (o AGENTCORE_CREDENTIAL)")
-    reg.add_argument("--verifier", default="testing.registry_demo:demo_verifier")
-    reg.add_argument("--harness", default="testing.registry_demo:build_harness")
+    reg.add_argument("--verifier", default=None,
+                     help="verificador (modulo:atributo); obligatorio salvo AGENTCORE_ALLOW_DEMO=1")
+    reg.add_argument("--harness", default=None,
+                     help="harness de evaluación (modulo:atributo); obligatorio salvo AGENTCORE_ALLOW_DEMO=1")
     cmds = reg.add_subparsers(dest="registry_cmd", required=True)
     cmds.add_parser("import").add_argument("root", type=Path)
     exp = cmds.add_parser("export")
@@ -106,17 +125,36 @@ def add_registry_parser(sub: Any) -> None:
 
 
 def run_registry_cli(args: argparse.Namespace, *, clock: Clock, ids: IdSource,
-                     env: Callable[[str], str | None]) -> int:
+                     env: Callable[[str], str | None], store: RegistryStore | None = None) -> int:
+    """`store` permite inyectar el almacén (pruebas); sin él se usa Postgres con `--dsn`."""
     dsn = args.dsn or env("AGENTCORE_REGISTRY_DSN")
     credential = args.credential or env("AGENTCORE_CREDENTIAL")
-    if not dsn or not credential:
+    if (not dsn and store is None) or not credential:
         print("agentcore registry necesita --dsn y --credential (o sus variables de entorno)",
               file=sys.stderr)
         return 2
-    verifier: IdentityVerifier = _load(args.verifier)()
+    demo = env("AGENTCORE_ALLOW_DEMO") == "1"
+    verifier_path = args.verifier or (DEMO_VERIFIER if demo else None)
+    harness_path = args.harness or (DEMO_HARNESS if demo else None)
+    if verifier_path is None or harness_path is None:
+        print("agentcore registry necesita --verifier y --harness (rutas modulo:atributo). Los dobles de "
+              "prueba de testing.registry_demo solo se usan con AGENTCORE_ALLOW_DEMO=1", file=sys.stderr)
+        return 2
+    try:
+        verifier: IdentityVerifier = _load(verifier_path)()
+        harness = _load(harness_path)()
+    except (ImportError, AttributeError, ValueError) as exc:
+        print(f"no se pudo cargar el verificador o el harness ({type(exc).__name__}: {exc}); "
+              "revisa las rutas modulo:atributo y que el módulo esté instalado", file=sys.stderr)
+        return 2
     actor: Principal = verifier.verify(credential)
-    evaluator = ScenarioEvaluator(_load(args.harness)(), LocalSandbox(ids))
-    service = build_registry_service(dsn, evaluator=evaluator, clock=clock, ids=ids)
+    # max_workers=1: el harness comparte reloj e ids (no thread-safe) entre corridas.
+    evaluator = ScenarioEvaluator(harness, LocalSandbox(ids), max_workers=1)
+    if store is not None:
+        service = RegistryService(store, evaluator, clock, ids)
+    else:
+        assert dsn is not None
+        service = build_registry_service(dsn, evaluator=evaluator, clock=clock, ids=ids)
     try:
         result = _dispatch(service, actor, args)
     except RegistryError as exc:
