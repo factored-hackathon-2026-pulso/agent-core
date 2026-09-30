@@ -81,6 +81,8 @@ class TableAuthz:
         return {}  # pragma: no cover
 
     def can_read_field(self, reader: Principal, obo: OnBehalfOf | None, field: str, purpose: str) -> bool:
+        if reader.type is PrincipalType.builder:
+            return False  # ADR 0006, ADR 0019: el builder nunca lee datos de clientes, ni con concesión
         return reader.id is not None and (field, purpose) in self._grants
 
     def reportable_attrs(self) -> frozenset[str]:

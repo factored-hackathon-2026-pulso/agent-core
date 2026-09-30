@@ -43,3 +43,9 @@
 - Los intentos denegados se registran como `access_denied` y alimentan la métrica de accesos no autorizados.
 - El motor no contiene ningún concepto bancario.
 - **(#2)** Un principal que renueva su token conserva `type` e `id`, así que sigue en el mismo run. Un traspaso entre asesores abre un run nuevo sobre el mismo subject.
+
+## Enmienda 2026-09-30 (ADR 0019)
+- **Agentes internos:** el principal del constructor es `builder` (no existe `PrincipalType.agent`; la línea del registry que lo decía se corrige). El constructor son dos agentes, uno `conversational` y uno `task`.
+- **Identidad hacia el registry:** el adaptador de tools del registry decide por su propia credencial con rol `constructor`; el principal del run solo viaja como actor de auditoría.
+- **`builder` sin datos de clientes:** además de la tabla, es una prueba de contrato de `AuthzPort` (subject, campos y parámetros vinculados).
+- **Copiloto:** principal `advisor`, run propio sobre el subject de la delegación, solo lectura y cálculo en su primera versión.

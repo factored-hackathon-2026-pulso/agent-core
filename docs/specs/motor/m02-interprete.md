@@ -107,6 +107,33 @@ Antes de cada nodo y de cada llamada a modelo se descuenta de `budgets_used`: `m
 
 Subconjunto cerrado: `JSONLOGIC_OPS` de M1 (`var`, `==`, `!=`, `>`, `>=`, `<`, `<=`, `and`, `or`, `!`, `in`, `if`, `missing`, con su aridad). Un operador fuera de la lista es error de esquema (G0-01), no de runtime. Aritmética con `Decimal`, nunca `float`. `evaluate(expr, data, reads=None)` registra las rutas `var`/`missing` que lee, para `rule_evaluated.inputs` (D11).
 
+### 3.7 Nodo `agent` (diseño, ADR 0019; no implementado)
+
+Hoy `HANDLERS` no tiene `agent` y G0-01 rechaza el nodo. Esta sección fija el comportamiento para cuando se construya; la usan el copiloto del asesor y el agente constructor.
+
+**Configuración** (M0, ver m00 §2.5): `tools_allowed` (solo `read` y `compute`, G0-07), `max_steps`, `prompt_ref`, `goal` y, nuevos, `save_as` (nombre del hecho donde entra la salida) y `output_schema` (JSON Schema estricto de la respuesta final).
+
+**Bucle.** Hasta `max_steps` pasos, cada uno con una llamada al `LLMGateway` con `prompt_ref`, el `goal` y los hechos permitidos (vista `model`, M7). El modelo devuelve una llamada a una tool de `tools_allowed` o la respuesta final:
+- **Tool:** se ejecuta con `ctx.tools.execute` y los `bound_params` del principal, y `authorize_subject` se repite en cada llamada (ADR 0006). Un `denied`, `error` o `timeout` vuelve al modelo como resultado y cuenta como paso. Los campos `untrusted_text` llegan marcados como tales (ADR 0008).
+- **Respuesta final:** se valida contra `output_schema` y contra la regla numérica de M8 (ADR 0011: toda cifra sale de un hecho). Si falla, una regeneración; si vuelve a fallar → `gave_up`.
+
+**Resultados.** `answered`: `facts[save_as] = {value, source: {agent, ref, inputs}}`, con `inputs` los `fact_id` que las tools produjeron en el bucle. `gave_up`: se agotó `max_steps`, la respuesta no validó, no hay tool permitida, o el turno está en modo degradado.
+
+**Modo degradado** (spec general §4.1 paso 6): con `injection_flagged` el nodo no llama al modelo y devuelve `gave_up`.
+
+**Presupuestos.** El nodo cuenta como un nodo. Cada paso descuenta una llamada a modelo, tokens, costo y tiempo de pared (§3.5); al agotarse → `EscalationRequest(budget_exceeded)`.
+
+**Eventos.** Un `agent_step` por paso (M0, nuevo): `node_id`, `step`, `kind` (`tool`/`final`), `tool@v?`, `status`, `latency_ms`. Los argumentos y resultados van en vista `audit` y el texto del modelo como huella con clave (ADR 0003); nunca razonamiento intermedio.
+
+**Determinismo y replay.** El bucle usa solo puertos inyectados. Con un gateway guionado produce los mismos eventos; el replay `audit` verifica la cadena de `agent_step` sin volver a llamar al modelo, y el replay `fixture` guiona sus salidas.
+
+**Límites duros.**
+- El nodo no escribe: `tools_allowed` solo admite `read` y `compute` (G0-07), y `write_draft` tampoco (m01 §3.13).
+- Solo escribe en `facts[save_as]`: no toca `slots` ni `decisions`.
+- G0-22 impide que esa salida alimente una escritura, una `rule` o un `verify`.
+
+**Pruebas previstas.** `max_steps` agotado → `gave_up`; una tool fuera de `tools_allowed` no se ejecuta; modo degradado sin llamada al modelo; respuesta inválida → una regeneración y luego `gave_up`; los eventos `agent_step` reproducen bajo un gateway guionado; `denied` por delegación ajena vuelve al modelo sin datos del subject.
+
 ## 4. Invariantes
 
 - **Determinismo:** con el mismo estado, las mismas salidas de puertos y el mismo `Clock`, `advance` produce el mismo estado y los mismos eventos (base del replay, M11).
@@ -202,6 +229,7 @@ Vía `tool_called` (lectura y `compute`), por `tool@v`: latencia p50/p95, tasa p
 
 - Validador `decide` de `collect`: no se sabe qué campo de la decisión valida (hoy `NotImplementedError`, D14).
 - Quién llena `open_questions` (índice §10).
+- **Nodo `agent` (§3.7, ADR 0019):** falta decidir el formato del prompt del bucle (la spec del gateway), cómo se serializa `output_schema` para el modelo y si `max_steps` cuenta también las regeneraciones.
 - Parámetros del circuit breaker por `tool_def` (hoy por constructor, D10).
 - Reinicio de `node_attempts` al terminar un flow (hoy solo lo reinicia `start_flow`).
 - (a) Step-up de escritura: M3 `execute_write` devuelve solo `"step_up_required"`, sin el nivel requerido; M2 usa `min_auth_level` de la tool. Requiere que M3 lo transporte.

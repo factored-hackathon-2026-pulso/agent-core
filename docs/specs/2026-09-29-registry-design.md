@@ -231,7 +231,7 @@ Sigue el patrón de M9: `problem+json`, `trace_id` en toda respuesta e `Idempote
 | `aprobador` | además, aprobar, rechazar, publicar, promover y revocar |
 | `dueño_politica` | aprobar cambios de políticas protegidas (ADR 0009) |
 
-- **Verificación en el servidor.** El agente constructor autentica como principal propio (tipo `agent`) con rol `constructor`. Nunca recibe las herramientas de aprobar, publicar, promover ni revocar, y aunque se le pidiera, el servidor las rechaza con `forbidden_role`.
+- **Verificación en el servidor.** El agente constructor autentica como principal de tipo `builder` (ADR 0006; no existe un tipo `agent`) con rol `constructor`. El adaptador de tools del registry decide por su **propia credencial** con solo ese rol; el principal del run viaja como actor de auditoría y nunca como fuente de permisos (ADR 0019): una persona con rol `aprobador` que chatea con el constructor no le presta ese rol. Nunca recibe las herramientas de aprobar, publicar, promover ni revocar, y aunque se le pidiera, el servidor las rechaza con `forbidden_role`.
 - **Solo aprobación humana.** El campo `actor` de `approve` debe ser una persona. La aprobación automática queda fuera hasta que se especifique (§17).
 - **Contenido no confiable.** Todo lo que propone un agente o un LLM se valida contra el esquema estricto, nunca se ejecuta, y tiene límites de tamaño y de cantidad. Las expresiones regulares de reglas de injection pasan por una guarda contra ReDoS.
 - **Lo que el constructor lee** (trazas, documentación, páginas) es dato y no instrucción. Las páginas de conocimiento se tratan como `untrusted_text` (ADR 0008, M12).
@@ -390,3 +390,20 @@ Todos **aditivos**; ninguno bloquea lo que está en curso.
 6. **Retención** de `registry_events` y de propuestas abandonadas.
 7. **Export a git** de solo lectura: si se activa y con qué frecuencia.
 8. **Sembrado inicial:** cómo se importa al registry el contenido YAML de la demo (herramienta `agentcore registry import`).
+
+## 18. Dependencias del motor y de los agentes internos (ADR 0019)
+
+Lo que el motor y los agentes internos (constructor, copiloto del asesor) necesitan de este registry y que hoy no existe. Nada de esto está construido.
+
+| # | Dependencia | Quién la necesita | Nota |
+|---|---|---|---|
+| 1 | **Borradores reversibles e idempotentes** (`put_draft` con `expected_rev`, reintento con la misma `idempotency_key` sin duplicar) y **`readback_by`** para verificar la escritura | tools `write_draft` del constructor | La clase `write_draft` solo es admisible si ninguna release publicada lee un borrador (§2 regla 7). Si no se garantiza, el constructor vuelve a `confirm → act → verify` |
+| 2 | **Adaptador de `ToolExecutor`** que envuelva la API de §6 (crear propuesta, editar borrador, validar, congelar, evaluar) con su propia credencial de rol `constructor` | constructor | `FakeToolExecutor` cubre las pruebas mientras tanto |
+| 3 | **`forbidden_role` en `ProblemCode`** (M0) y su verificación en el servidor | constructor | Hoy no existe en `agent_core` |
+| 4 | **Puerto de escritura de propuestas.** `RegistryPort` (M0) es solo lectura | constructor | Un puerto nuevo cambia M0 y `contracts/` |
+| 5 | **Roles del registry frente a `Principal.roles`** (lista libre) y sus scopes | constructor, `aprobador` | Definir cómo se emiten y quién los firma |
+| 6 | **Validación de referencias del nodo `agent`** (`prompt_ref`, `tools_allowed`) en el gate G0 | copiloto y constructor | Al levantar G0-01 para `agent` |
+| 7 | **Clase de riesgo de las tools del constructor** declarada en su `ToolDef` (`write_draft`) y comprobada por AG-02 | constructor | m01 §3.13 |
+| 8 | **Publicación de conocimiento aprobado**, si el copiloto lo consulta | copiloto | Depende también de M12 y de habilitar `knowledge_refs` (G0-01) |
+| 9 | **Catálogo de campos y plantillas de handoff como entidades versionadas**, solo si se elige esa vía | M7, M10 | Hoy son valores por defecto en código |
+| 10 | **Topes del agente autónomo** (§17.4) | constructor por señal | Sin valores, el constructor `task` no debería activarse |

@@ -83,6 +83,12 @@ Un rechazo en 1–5 **no procesa el turno**: sin Understand, modelos, tools ni t
 - Un agente o alias inexistente es `404 not_found` (el puerto de registro no define su excepción: se captura `LookupError`).
 - `bind_params` **no tiene consumidor en M9**: ni `RunInput` ni `RunState` llevan parámetros vinculados; los usa M2/unidad 3 al ejecutar tools. Lo que sí garantiza M9 (T-M9-03) es que nada del body sustituye al principal: el body rechaza campos desconocidos (`customer_id` → `422`).
 - Un agente cuyo `subject_kinds` esté vacío no recibe subject.
+- **`customer` ↔ subject `customer` es por diseño**, no un residuo del dominio: `PrincipalType.customer` significa "el titular de su propio registro" (ADR 0006, tabla de subjects). Un agente sobre otro tipo de sujeto usa `advisor`, `service` o `builder`, cuyo subject sale de la delegación o del scope.
+- **Contrato de `AuthzPort` (ADR 0019).** Toda implementación, la de la unidad 3 incluida, pasa `tests/contracts/test_authz_contract.py`:
+  - un `builder` no obtiene subject de tipo `customer`, ni campos (`can_read_field` es siempre falso, con o sin concesión), ni un `subject_ref` en `bind_params`;
+  - un `advisor` solo actúa sobre el subject de su delegación y solo si es el `grantee`; sus parámetros vinculados salen de la delegación, no del subject pedido;
+  - un rechazo nunca incluye la referencia del subject en su motivo.
+- **Copiloto del asesor (ADR 0019).** Es un agente `conversational` con `invocable_by: [advisor]`. Cada run es propio del asesor y arranca con su delegación; el transcript del cliente lo lee por `authorize_read` (delegación vigente sobre el subject), con los campos que la política permita por `purpose`.
 
 ### 3.3 Versión e idempotencia
 
@@ -193,6 +199,7 @@ Fuera de la definición pero hecho: `TableAuthz` (`testing/fakes/authz.py`) como
 
 - **Contrato `api` de `.importlinter`** (decisión del usuario). Con los `Protocol` de `api/protocols.py` el contrato pasa sin `allow_indirect_imports`; importar `TurnEngine`, `HandoffService` o `TranscriptReader` directamente sí lo exigiría.
 - **Cableado real.** No existe aún un `agentcore serve` ni la factoría en `composition` que arme `ApiDeps` (verificador, `TableAuthz`/unidad 3, `TurnEngine`, `HandoffService`, `TranscriptReader`, `AuditLog`, `OtelSecurityLog`, `TraceIds` de M4 con el `trace_id` de OTel).
+- **Copiloto y constructor (ADR 0019):** el vocabulario de `purpose` para el copiloto y los scopes del `builder` siguen sin definir; la prueba de contrato fija solo las negaciones.
 - **`AuthzPort` sin especificar:** qué significa `subject=None` en `authorize_agent`, las claves de `bind_params`, el vocabulario de `purpose` y los scopes de `service`/`builder` (`TableAuthz` usa `subject:<kind>`/`subject:*` como convención propia del doble).
 - **Anónimos y contadores:** sin límite por sesión anónima en el motor.
 - **Resolución de handoff:** la respuesta `{handoff_ref, resolution_code, handoff_quality, trace_id}` es propuesta de M9; la spec general no define su cuerpo.

@@ -60,3 +60,8 @@
 - **(#1)** El validador estático necesita análisis de caminos y de procedencia de hechos (~40 LOC). La unidad 2 debe exponer qué variables de hecho lee cada plantilla.
 - **(#1) Riesgo residual:** un texto fijo que afirma éxito sin leer hechos ni declarar `claims`, o un texto generado que lo afirma sin citarlo, pasa la validación estática. Se revisa al publicar y lo mide la unidad 6.
 - **(#6)** Todo `confirm` necesita cablear `max_attempts` (regla 6.1.3) hacia una salida segura (regla 6.1.6). El estado del run guarda `node_attempts` y `repair_turns_used`.
+
+## Enmienda 2026-09-30 (ADR 0019)
+- **Clase `write_draft`** (diseño, sin construir): tool cuyo efecto queda confinado a un borrador del registry que ninguna release publicada lee. Se ejecuta como `act → verify`, sin `confirm`, y conserva `idempotency_key`, `readback_by`, `verify` obligatorio y auditoría por escritura. El gate humano es la aprobación de la propuesta.
+- Solo agentes con `invocable_by ⊆ {builder}` pueden usarla (AG-02). Todo lo demás (`write_reversible`, `write_irreversible`, `money_movement`) conserva `confirm → act → verify` sin cambios.
+- G0-16 no se relaja: un flow `task` escribe con `write_draft` o no escribe.

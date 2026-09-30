@@ -232,4 +232,5 @@ M0 define el esquema de cada evento; M11 los encadena y persiste. El módulo emi
 | Formato de la credencial (`raw_credential`) | M9 | **Resuelto (2026-09-29)**: JWS compacto Ed25519 con `kid` (m09 §3.8); no cambia el puerto |
 | G0-15 reclamada por el gateway (ADR 0016) y por M12 | M1, M12 | **resuelto** en M1 rev. 2: G0-15 = `model_profile` de prompts, G0-16 = flows task sin nodos que esperan; M12 propone G0-17…G0-21 |
 | Fase 1 "en modo task" con un flow conversacional | M1, M2, M4 | **resuelto** en M1 rev. 2: arnés sobre M2 en la fase 1; G0-16 impide nodos que esperan en flows task |
+| Agentes internos (copiloto del asesor y constructor): nodo `agent` de solo lectura, clase `write_draft`, G0-22, G0-23, AG-02, identidad acotada del constructor | M0, M1, M2, M3, M9; registry (§18) | **diseñado, no construido** (ADR 0019; m01 §3.13, m02 §3.7, m09 §3.2). `AuthzPort` ya tiene su prueba de contrato |
 | Sintaxis de plantilla y `Template.reads` sin definir | M1, M2, M8 | **resuelto** en M1 rev. 2: `{{ ruta }}` y `reads` derivado al cargar |

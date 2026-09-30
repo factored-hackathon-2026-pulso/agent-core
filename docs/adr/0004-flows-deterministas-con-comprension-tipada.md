@@ -54,3 +54,7 @@
 - https://rasa.com/docs/pro/customize/command-generator/
 - https://www.langchain.com/resources/langgraph-vs-temporal
 - https://zylos.ai/research/2026-04-24-durable-execution-agent-runtimes/
+
+## Enmienda 2026-09-30 (ADR 0019)
+- El nodo `agent` sigue siendo un ReAct acotado **solo de lectura y cálculo**. Se especifica su comportamiento (M2 §3.7) y se agrega la regla G0-22: su salida no alimenta escrituras, `rule` ni `verify`. Sigue sin construirse; G0-01 lo rechaza hasta entonces.
+- Lo usan los agentes internos (copiloto del asesor y constructor), con la escritura guionada aparte.
