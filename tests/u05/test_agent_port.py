@@ -1,5 +1,6 @@
 """`LLMAgentPort`: un paso del nodo `agent` sobre `generate` prompted (spec §3.8; T-U5-13..15)."""
 
+from datetime import date
 from decimal import Decimal
 from typing import Any
 
@@ -13,8 +14,11 @@ from agent_core.domain import (
     GatewayError,
     GatewayErrorKind,
     JsonValue,
+    ModelPrice,
+    ModelProfile,
     Prompt,
     SchemaError,
+    StructuredMode,
     ToolDef,
 )
 from agent_core.interpreter import AgentFinal, AgentObservation, AgentRequest, AgentToolCall
@@ -32,8 +36,18 @@ def _step(output: JsonValue, *, tokens_in: int = 40, tokens_out: int = 10) -> Ge
                             cost_usd=Decimal("0.001"), model="scripted-1")
 
 
-def _port(*script: Any, docs: bool = True) -> tuple[LLMAgentPort, ScriptedGateway]:
+def _profile(structured: StructuredMode = StructuredMode.prompted) -> ModelProfile:
+    return ModelProfile(
+        id="perfil", version="1.0.0", endpoint_alias="openrouter", model="vendor/modelo-x",
+        temperature=Decimal("0.2"), max_tokens=300, timeout_s=8, structured=structured,
+        price=ModelPrice(input_per_mtok=Decimal("3.00"), output_per_mtok=Decimal("15.00"),
+                         source="prueba", as_of=date(2026, 9, 30)))
+
+
+def _port(*script: Any, docs: bool = True,
+          structured: StructuredMode = StructuredMode.prompted) -> tuple[LLMAgentPort, ScriptedGateway]:
     registry = InMemoryRegistry()
+    registry.add(_profile(structured))
     extra: dict[str, Any] = {"description": "Busca un cargo", "args_schema": ARGS_SCHEMA} if docs else {}
     registry.add(
         ToolDef.model_validate({"id": "leer", "version": "1.0.0", "risk_class": "read",
@@ -122,3 +136,11 @@ def test_a_gateway_error_goes_up_unchanged() -> None:
     with pytest.raises(GatewayError) as caught:
         port.step(_request(), run_state())
     assert caught.value is error
+
+
+def test_a_native_profile_fails_fast_before_calling_the_gateway() -> None:
+    port, gateway = _port(_step({"kind": "final", "output": {}}), structured=StructuredMode.native)
+    with pytest.raises(SchemaError, match="prompted") as caught:
+        port.step(_request(), run_state())
+    assert "perfil@1.0.0" in str(caught.value) and "p/agente@1.0.0" in str(caught.value)
+    assert gateway.calls == []

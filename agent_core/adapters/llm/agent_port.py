@@ -13,9 +13,12 @@ from agent_core.domain import (
     GatewayErrorKind,
     InvalidRuntimeRef,
     JsonValue,
+    ModelProfile,
+    Prompt,
     RefSpec,
     RunState,
     SchemaError,
+    StructuredMode,
     ToolDef,
 )
 from agent_core.interpreter import AgentFinal, AgentObservation, AgentRequest, AgentStepResult, AgentToolCall
@@ -54,10 +57,21 @@ class LLMAgentPort:
             "output_schema": config.output_schema,
         }
         prompt = self._resolve_ref(EntityKind.prompt, config.prompt_ref)
+        self._require_prompted(prompt)
         result = self._gateway.generate(prompt, inputs, state.locale, STEP_SCHEMA)
         return AgentStepResult(
             action=_action(result), model_calls=1, tokens=result.tokens_in + result.tokens_out,
             cost_usd=result.cost_usd)
+
+    def _require_prompted(self, prompt: EntityRef) -> None:
+        """Falla rápido si el perfil es `native`: `STEP_SCHEMA` no cabe en `json_schema` estricto de OpenAI."""
+        prompt_def = self._registry.get(prompt, Prompt)
+        profile_ref = prompt_def.model_profile.require_exact()
+        profile = self._registry.get(profile_ref, ModelProfile)
+        if profile.structured is StructuredMode.native:
+            raise SchemaError(
+                f"el prompt {prompt} del nodo agent usa el perfil {profile_ref} con structured=native; "
+                "el paso del agente necesita structured=prompted")
 
     def _catalog_entry(self, ref: RefSpec) -> JsonValue:
         exact = self._resolve_ref(EntityKind.tool, ref)
