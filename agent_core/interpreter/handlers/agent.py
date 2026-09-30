@@ -6,6 +6,7 @@ se valida contra `output_schema` y entra como un hecho de origen `agent`. Nunca 
 `read` o `compute` no se ejecuta, aunque esté listada (G0-07 lo impide en el flow)."""
 
 import re
+from decimal import Decimal
 from typing import Any
 
 from agent_core.domain import (
@@ -16,6 +17,7 @@ from agent_core.domain import (
     EntityRef,
     Fact,
     FactSource,
+    GatewayError,
     IllegalTransition,
     JsonValue,
     RiskClass,
@@ -140,8 +142,15 @@ def handle_agent(node: AgentNode, state: RunState, ctx: StepContext, resume: Res
         if run_budget_exhausted(loop.state, ctx):
             return escalate_now(loop.state, ctx, "budget_exceeded", loop.emitted)
         started = ctx.clock.monotonic_ns()
-        result = ctx.agents.step(
-            AgentRequest(node.id, node.config, step, tuple(loop.observations), feedback), loop.state)
+        try:
+            result = ctx.agents.step(
+                AgentRequest(node.id, node.config, step, tuple(loop.observations), feedback), loop.state)
+        except GatewayError as failure:
+            # La falla del modelo no escapa del turno: el nodo se rinde y cuenta lo que el proveedor informó.
+            loop.state = charge_model(
+                loop.state, calls=1, tokens=(failure.tokens_in or 0) + (failure.tokens_out or 0),
+                cost=failure.cost_usd or Decimal("0"))
+            break
         loop.state = charge_model(loop.state, calls=result.model_calls, tokens=result.tokens,
                                   cost=result.cost_usd)
         feedback = None
