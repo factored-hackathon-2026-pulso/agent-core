@@ -62,3 +62,19 @@ def test_returned_objects_do_not_alias_state() -> None:
         p = tx.get_proposal("prop-1")
         assert p is not None and p.model_copy(update={"title": "x"}).title == "x"
         assert tx.get_proposal("prop-1") == p
+
+
+def test_latest_release_for_agent_version_breaks_ties_by_release_id_desc() -> None:  # T13-4
+    from agent_core.domain import Release
+    from agent_core.registry.models import StoredRelease
+    from testing.builders import NOW
+
+    store = InMemoryRegistryStore()
+    with store.transaction() as tx:
+        for rid in ("rel-a", "rel-c", "rel-b"):
+            release = Release.model_validate(
+                {"id": rid, "status": "active", "language_detection": "lang@1.0.0"})
+            tx.insert_release(StoredRelease(release=release, release_hash="h" * 64, agent_id="atencion",
+                                            agent_version="1.0.0", base_release_id=None, proposal_id=None,
+                                            published_by="t", published_at=NOW), [])
+        assert tx.latest_release_for_agent_version("atencion", "1.0.0") == "rel-c"

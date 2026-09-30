@@ -28,7 +28,14 @@ from agent_core.registry.store import RegistryTx, Status
 
 _INSERT_ONLY = ("reg_blobs", "reg_entity_versions", "reg_releases", "reg_release_entities", "reg_approvals",
                 "reg_eval_runs", "reg_events", "reg_alias_log")
-_MUTABLE = ("reg_release_status", "reg_aliases", "reg_proposals", "reg_proposal_changes", "reg_publish_keys")
+# Mutables y controladas (spec §3.2): el rol de la aplicación nunca borra; cada tabla tiene lo mínimo que usa.
+_GRANTS_MUTABLE = {
+    "reg_release_status": "SELECT, INSERT, UPDATE",   # alta al publicar, `revoke`
+    "reg_aliases": "SELECT, INSERT, UPDATE",          # `publish` (staging) y `promote`
+    "reg_publish_keys": "SELECT, INSERT",             # idempotencia: solo se escribe una vez
+    "reg_proposals": "SELECT, INSERT, UPDATE",
+    "reg_proposal_changes": "SELECT, INSERT, UPDATE",
+}
 
 
 def apply_registry_schema(conn: "psycopg.Connection[Any]", app_role: str | None = None) -> None:
@@ -38,9 +45,9 @@ def apply_registry_schema(conn: "psycopg.Connection[Any]", app_role: str | None 
     role = sql.Identifier(app_role)
     for table in _INSERT_ONLY:
         conn.execute(sql.SQL("GRANT SELECT, INSERT ON {} TO {}").format(sql.Identifier(table), role))
-    for table in _MUTABLE:
-        grant = sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON {} TO {}")
-        conn.execute(grant.format(sql.Identifier(table), role))
+    for table, privileges in _GRANTS_MUTABLE.items():
+        grant = sql.SQL("GRANT {} ON {} TO {}").format(sql.SQL(privileges), sql.Identifier(table), role)
+        conn.execute(grant)
     row = conn.execute("SELECT current_schema()").fetchone()
     assert row is not None
     seqs = sql.SQL("GRANT USAGE ON ALL SEQUENCES IN SCHEMA {} TO {}")
@@ -172,7 +179,7 @@ class _PgTx:
 
     def latest_release_for_agent_version(self, agent_id: str, version: str) -> str | None:
         row = self._one("SELECT release_id FROM reg_releases WHERE agent_id = %s AND agent_version = %s "
-                        "ORDER BY published_at DESC LIMIT 1", (agent_id, version))
+                        "ORDER BY published_at DESC, release_id DESC LIMIT 1", (agent_id, version))
         return row[0] if row else None
 
     # alias

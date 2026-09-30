@@ -96,7 +96,7 @@ class _Tx:
 
     def latest_release_for_agent_version(self, agent_id: str, version: str) -> str | None:
         found = [r for r in self._s.releases.values() if (r.agent_id, r.agent_version) == (agent_id, version)]
-        return max(found, key=lambda r: r.published_at).release.id if found else None
+        return max(found, key=lambda r: (r.published_at, r.release.id)).release.id if found else None
 
     def lock_agent(self, agent_id: str) -> None:
         """Sin efecto: el lock global de la transacción ya serializa todo."""

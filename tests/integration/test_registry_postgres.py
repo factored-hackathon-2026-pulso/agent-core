@@ -286,3 +286,34 @@ def test_concurrent_seed_imports_of_same_agent_one_wins(registry_store: PgRegist
         t.join(30)
     registry_store.fail_on = None
     assert sorted(outcomes) == ["illegal_transition", "imported"], outcomes
+
+
+@pytest.mark.parametrize("table", ["reg_release_status", "reg_aliases", "reg_publish_keys", "reg_proposals",
+                                   "reg_proposal_changes", "reg_releases", "reg_events"])
+def test_app_role_cannot_delete_from_any_table(registry_store: PgRegistryStore, table: str) -> None:
+    _service(registry_store).import_seed(ANA, REGISTRY_DEMO)
+    with registry_store.connect() as conn:
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute(f"DELETE FROM {table}")
+
+
+def test_app_role_privileges_on_mutable_tables_are_minimal(registry_store: PgRegistryStore) -> None:
+    """Spec §3.2: las claves de idempotencia solo se insertan; el estado de release no se borra."""
+    with registry_store.connect() as conn:
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute("UPDATE reg_publish_keys SET release_id = 'x'")
+
+
+def test_latest_release_for_agent_version_breaks_ties_by_release_id_desc(
+        registry_store: PgRegistryStore) -> None:
+    from agent_core.registry.models import StoredRelease
+    from testing.builders import NOW
+
+    with registry_store.transaction() as tx:
+        for rid in ("rel-a", "rel-c", "rel-b"):
+            release = Release.model_validate(
+                {"id": rid, "status": "active", "language_detection": "lang@1.0.0"})
+            tx.insert_release(StoredRelease(release=release, release_hash="h" * 64, agent_id="atencion",
+                                            agent_version="1.0.0", base_release_id=None, proposal_id=None,
+                                            published_by="t", published_at=NOW), [])
+        assert tx.latest_release_for_agent_version("atencion", "1.0.0") == "rel-c"
