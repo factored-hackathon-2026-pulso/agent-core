@@ -7,7 +7,7 @@ import pytest
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from opentelemetry.trace import Tracer
+from opentelemetry.trace import StatusCode, Tracer
 from respx import MockRouter
 
 from agent_core.domain import GatewayError
@@ -58,6 +58,16 @@ def test_an_error_with_usage_keeps_the_usage_on_the_span(respx_mock: MockRouter)
     assert attrs["gen_ai.usage.input_tokens"] == 7 and attrs["gen_ai.usage.output_tokens"] == 3
 
 
+def test_an_error_span_has_no_exception_event_nor_status_description(respx_mock: MockRouter) -> None:
+    respx_mock.post(CHAT).respond(503, json={"error": {"message": "TEXTO-DEL-MODELO"}})
+    tracer, exporter = _tracer()
+    with pytest.raises(GatewayError):
+        make_world(tracer=tracer).gateway.generate(PROMPT, INPUTS, "es")
+    (span,) = exporter.get_finished_spans()
+    assert all(event.name != "exception" for event in span.events)
+    assert span.status.status_code == StatusCode.ERROR and not span.status.description
+
+
 @pytest.mark.parametrize("failure", ["http", "salida", "conexion"])
 def test_neither_the_key_nor_the_content_reach_spans_logs_or_errors(
         respx_mock: MockRouter, caplog: pytest.LogCaptureFixture, failure: str) -> None:
@@ -71,6 +81,7 @@ def test_neither_the_key_nor_the_content_reach_spans_logs_or_errors(
     caplog.set_level(logging.INFO)  # el SDK `openai` registra el contenido de los requests solo en DEBUG
     with pytest.raises(GatewayError) as caught:
         make_world(tracer=tracer).gateway.generate(PROMPT, INPUTS, "es", DRAFT)
+    assert exporter.get_finished_spans()
     seen = [caplog.text, str(caught.value), repr(caught.value)]
     for span in exporter.get_finished_spans():
         seen += [str(span.name), str(dict(span.attributes or {})),

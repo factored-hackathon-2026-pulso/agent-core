@@ -10,7 +10,7 @@ from typing import Any
 import openai
 from openai import OpenAI
 from opentelemetry import trace
-from opentelemetry.trace import Span, Tracer
+from opentelemetry.trace import Span, Status, StatusCode, Tracer
 
 from agent_core.adapters.llm.config import EndpointConfig, default_client
 from agent_core.adapters.llm.cost import price_of
@@ -56,7 +56,8 @@ class OpenAICompatGateway:
         text = prompt_def.locales.get(locale)
         if text is None:
             raise SchemaError(f"el prompt {prompt} no tiene el locale {locale}")
-        with self._tracer.start_as_current_span("chat") as span:
+        with self._tracer.start_as_current_span(
+                "chat", record_exception=False, set_status_on_exception=False) as span:
             span.set_attribute("gen_ai.operation.name", "chat")
             span.set_attribute("gen_ai.provider.name", profile.endpoint_alias)
             span.set_attribute("gen_ai.request.model", profile.model)
@@ -65,7 +66,8 @@ class OpenAICompatGateway:
             try:
                 result = self._call(profile, text, inputs_model_view, schema)
             except GatewayError as error:
-                # Solo tipo y uso; nunca `record_exception` (guardaría el mensaje de la excepción).
+                # Solo tipo y uso: sin evento `exception` (mensaje/stacktrace) y con estado sin descripción.
+                span.set_status(Status(StatusCode.ERROR))
                 span.set_attribute("agentcore.gateway.error_kind", error.kind.value)
                 _set_usage(span, error.model, error.tokens_in, error.tokens_out)
                 raise
