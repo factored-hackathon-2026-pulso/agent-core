@@ -48,11 +48,13 @@ class UnderstandContext:  model_ref: EntityRef; flows: list[str]; interrupts: li
                           current_node: str | None; confirm_pending: bool
                           recent_turns: list[str]              # `text_model` (vista model); M4 arma n fijo
                           token_vault: TokenVault; scope: EventScope
+                          slots_model_ref: EntityRef | None = None   # modelo de la 2.ª llamada (slots); sin él no hay
 @dataclass(frozen=True)
 class UnderstandResult:   command: Command; flow: str | None; interrupt: str | None; additional_flows: list[str]
                           slots: dict            # claimed: sin validar
                           above_threshold: dict[str, bool]; decision_id: str
                           p_cal: dict[str, float | None]       # solo los campos con marca
+                          model_calls: int; tokens: int; cost_usd: Decimal   # de todo el turno (1.ª y 2.ª llamada)
 class UnderstandService:
     def __init__(self, decisions: DecisionService)
     def run(self, model_view_text: str, context: UnderstandContext, locale: Locale
@@ -98,7 +100,7 @@ def calibrate(model_def, dev_split: Sequence[DevExample], providers, *, targets:
 - Campos calibrados: `command`, `flow` (solo con `start_flow`), `interrupt` (solo con `interrupt`). Los demás `above_threshold` se omiten (no `false`); `additional_flows` y `slots` nunca llevan umbral.
 - Cadena agotada: `command = clarify` con `above_threshold["command"] = false` (valor neutro; M4 decide qué hacer).
 - Umbrales de `interrupt` se fijan por **recall** (objetivo en `target`); el resto por precisión.
-- Una llamada a JEV por turno para los campos calibrados; los slots se extraen con una segunda llamada a `llm_structured` solo cuando `command = start_flow` (ADR 0005, enmienda 2026-09-29). **Pendiente de implementar:** `UnderstandService.run` hoy hace una sola llamada. El contexto incluye `recent_turns` (unidad 7) en vista `model`, el nodo actual y si hay `confirm` pendiente.
+- Una llamada a JEV por turno para los campos calibrados; los slots se extraen con una segunda llamada a `llm_structured` solo cuando `command = start_flow` (ADR 0005, enmienda 2026-09-29). La 2.ª llamada usa `UnderstandContext.slots_model_ref` (un `DecisionModelDef` con `llm_structured`, sin campos calibrados; lo resuelve M4 y sin él no hay 2.ª llamada); recibe la misma entrada más `flow`, con esquema `{slots: objeto libre}`, y emite su propio `decision_made` (`run` devuelve los dos eventos, el de Understand primero). Si esa llamada falla o agota su cadena, el comando se conserva y `slots = {}` (M2 los pide con `collect`); los slots de la 2.ª llamada reemplazan a los de la 1.ª. El contexto incluye `recent_turns` (unidad 7) en vista `model`, el nodo actual y si hay `confirm` pendiente.
 - Los slots salen como `claimed`; M4/M2 nunca los tratan como hechos.
 
 ### 3.3 Proveedores del MVP
@@ -208,7 +210,7 @@ Con `ScriptedProvider` (salidas y latencias guionadas) y artefactos de calibraci
 
 - **P0b (contrato real de JEV): cerrado el 2026-09-29.** Adaptador y `HttpJevTransport` implementados contra la doc oficial (§3.3.1); informe en `docs/informes/2026-09-29-m5-jev-humo.md`.
 - **P0 (prueba de humo de JEV): ejecutada el 2026-09-29 con `jev-1.13.0`** (50 ES + 50 PT + 10 portuñol sintéticos; informe `docs/informes/2026-09-29-m5-jev-humo.md` §4–§6). `command` 96% ES / 94% PT, `flow` 100% (n=18 por idioma); latencia desde el entorno del usuario p50 375 ms / p95 453 ms; 0 errores y 0 respuestas 429/529 en 220 llamadas; coste ≈ 0.00002 USD por llamada; ECE cruda 3.5% (ES) y 6.0% (PT), con solo 7–8 casos bajo p = 0.9. **Salvedades:** n pequeño y textos inventados; `continue` 62.5% (n=8, confundido con `clarify`, con `p_raw` < 0.5); `start_flow`↔`cancel` se solapan (pt-11 falla con p = 0.89). No sustituye la calibración con datos etiquetados reales (P9).
-- **Decisión sobre JEV en Understand (2026-09-29):** `choice`/`noul` sí (`command`, `flow`, `interrupt`), con calibración de M5 por idioma y `model` fijado a `jev-1.13.0`; slots libres por `llm_structured`; `additional_flows` apagado por defecto (no probado). JEV **no** entra como segunda opinión de idioma (ADR 0005 #5: no es claramente mejor en mensajes cortos). **ADR 0005 enmendado el 2026-09-29** (una llamada a JEV por turno más una a `llm_structured` para slots solo con `start_flow`; versión `jev-1.13.0` fijada) y §3.2 actualizado. **Falta implementar la segunda llamada en `UnderstandService`** (abierto).
+- **Decisión sobre JEV en Understand (2026-09-29):** `choice`/`noul` sí (`command`, `flow`, `interrupt`), con calibración de M5 por idioma y `model` fijado a `jev-1.13.0`; slots libres por `llm_structured`; `additional_flows` apagado por defecto (no probado). JEV **no** entra como segunda opinión de idioma (ADR 0005 #5: no es claramente mejor en mensajes cortos). **ADR 0005 enmendado el 2026-09-29** (una llamada a JEV por turno más una a `llm_structured` para slots solo con `start_flow`; versión `jev-1.13.0` fijada) y §3.2 actualizado. La segunda llamada ya está implementada en `UnderstandService` (2026-09-29); falta que M4 resuelva `slots_model_ref` desde la release (Fase B).
 - Región de procesamiento y período de retención de JEV: no figuran en la doc pública ni en el DPA (pedirlos por escrito).
 - Mínimo de muestra PT (lo fija la unidad 6): `calibrate` lo exige como parámetro `min_samples`, sin valor por defecto.
 - Artefactos reales de Understand ES (y PT si llega la muestra) y del clasificador: los produce otro equipo (P9).
