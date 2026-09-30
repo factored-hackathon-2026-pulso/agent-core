@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from agent_core.domain import EntityRef, IllegalTransition
+from agent_core.domain import EntityRef, GatewayError, GatewayErrorKind, IllegalTransition
 from agent_core.interpreter import AgentFinal, AgentStepResult, AgentToolCall, Resume, Stop
 from agent_core.ports import ToolStatus
 from testing.fakes.agent import ScriptedAgent
@@ -171,3 +171,37 @@ def test_the_loop_is_deterministic() -> None:
 
     assert run() == run()
     assert Resume().kind == "none"
+
+
+class FailingAgent:
+    """`AgentPort` cuyo paso falla con la excepción dada."""
+
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    def step(self, request: Any, state: Any) -> AgentStepResult:
+        raise self.error
+
+
+def test_t_u5_17_a_gateway_error_ends_the_node_as_gave_up_and_charges_the_reported_usage() -> None:
+    w, _, state = _world()
+    error = GatewayError(GatewayErrorKind.invalid_output, tokens_in=7, tokens_out=3,
+                         cost_usd=Decimal("0.004"), model="m")
+    out = w.step(state, agents=FailingAgent(error))
+    assert _node(out) == "esc"  # gave_up
+    used = out.state.budgets_used
+    assert (used.turn_model_calls, used.run_tokens, used.run_cost) == (1, 10, Decimal("0.004"))
+
+
+def test_t_u5_17_a_gateway_error_without_usage_charges_the_call_only() -> None:
+    w, _, state = _world()
+    out = w.step(state, agents=FailingAgent(GatewayError(GatewayErrorKind.timeout)))
+    used = out.state.budgets_used
+    assert _node(out) == "esc"
+    assert (used.turn_model_calls, used.run_tokens, used.run_cost) == (1, 0, Decimal("0"))
+
+
+def test_t_u5_17_any_other_exception_still_goes_up() -> None:
+    w, _, state = _world()
+    with pytest.raises(RuntimeError):
+        w.step(state, agents=FailingAgent(RuntimeError("error de programación")))

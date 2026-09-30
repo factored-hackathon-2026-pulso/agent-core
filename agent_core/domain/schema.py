@@ -1,13 +1,13 @@
-"""Validación de la salida del nodo `agent` contra su `output_schema` (m02 §3.7).
+"""Subconjunto cerrado de JSON Schema (spec del gateway §3.7), sin dependencias nuevas.
 
-Subconjunto cerrado de JSON Schema, sin dependencias nuevas: `type`, `enum`, `properties`, `required`,
-`additionalProperties` (booleano) e `items`. Las anotaciones (`description`, `title`, ...) se ignoran;
-cualquier otra palabra clave falla cerrado (la salida se rechaza). El mensaje describe la ruta y la regla,
-nunca el valor: puede volver al modelo como motivo de regeneración."""
+Lo usan M2 (salida del nodo `agent`), el gateway de LLM (salida estructurada) y M1 (`args_schema`):
+`type`, `enum`, `properties`, `required`, `additionalProperties` (booleano) e `items`. Las anotaciones
+(`description`, `title`, ...) se ignoran; cualquier otra palabra clave falla cerrado. El mensaje describe
+la ruta y la regla, nunca el valor: puede volver al modelo como motivo de regeneración."""
 
 from decimal import Decimal
 
-from agent_core.domain import JsonValue
+from agent_core.domain.json import JsonValue
 
 _ANNOTATIONS = frozenset({"description", "title", "default", "examples", "$schema", "$id"})
 _SUPPORTED = frozenset({"type", "enum", "properties", "required", "additionalProperties", "items"})
@@ -71,4 +71,24 @@ def _check_object(schema: dict[str, JsonValue], value: dict[str, JsonValue], pat
                 return error
         elif schema.get("additionalProperties") is False:
             return f"{path or '/'}: propiedad no permitida {name!r}"
+    return None
+
+
+def unsupported_keyword(schema: dict[str, JsonValue], path: str = "") -> str | None:
+    """`None` si todas las palabras clave del esquema (también las anidadas en `properties` e `items`)
+    están en el subconjunto; si no, la ruta y la primera palabra no soportada."""
+    where = path or "/"
+    for key in schema:
+        if key not in _SUPPORTED and key not in _ANNOTATIONS:
+            return f"{where}: palabra clave no soportada {key!r}"
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        for name, child in properties.items():
+            if isinstance(child, dict):
+                error = unsupported_keyword(child, f"{path}/{name}")
+                if error is not None:
+                    return error
+    items = schema.get("items")
+    if isinstance(items, dict):
+        return unsupported_keyword(items, f"{path}/items")
     return None

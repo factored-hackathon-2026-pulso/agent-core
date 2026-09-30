@@ -45,9 +45,13 @@ def _template(tid: str, text: str, locales: tuple[str, ...] = ("es", "pt")) -> T
 
 
 def _tool(tid: str, risk: str, **extra: Any) -> ToolDef:
+    # Las tools de lectura y cálculo (las que un nodo `agent` puede usar) nacen documentadas (G0-24).
+    docs: dict[str, Any] = (
+        {"description": f"tool {tid}", "args_schema": {"type": "object"}}
+        if risk in ("read", "compute") else {})
     return ToolDef.model_validate(
         {"id": tid, "version": "1.0.0", "risk_class": risk, "min_auth_level": "session",
-         "idempotent": risk in ("read", "compute"), **extra}
+         "idempotent": risk in ("read", "compute"), **docs, **extra}
     )
 
 
@@ -71,9 +75,13 @@ ENTITIES: list[RegistryEntity] = [
     *(_template(tid, text) for tid, text in _TEXTS.items()),
     _template("t/solo_es", "Solo español.", ("es",)),
     _tool("leer", "read"),
+    _tool("sindoc", "read", description=None, args_schema=None),
+    _tool("blanco", "read", description="   "),
+    _tool("malschema", "read", args_schema={"type": "object", "properties": {"a": {"oneOf": []}}}),
     _tool("leer_escritura", "read"),
     _tool("calc", "compute"),
-    _tool("escribir", "write_reversible", readback_by="idempotency_key"),
+    _tool("escribir", "write_reversible", readback_by="idempotency_key",
+          description="tool escribir", args_schema={"type": "object"}),  # documentada: aísla G0-07 de G0-24
     _model("modelo", ["campo"]),
     _model("modelo_nc", []),
     _model("modelo_lc", ["campo"], ["a", "low_confidence"]),

@@ -76,7 +76,13 @@ si la plantilla no puede renderizarse → EscalationRequest(validation_failed)
 - **Uso del LLM:** M8 acumula en `LlmUsage` cada llamada a `gateway.generate` del nodo (generación y regeneración): `calls`, `tokens` y `cost_usd` de `GenerationResult`, `latency_ms` medido con `Clock.monotonic_ns()` alrededor de cada llamada, y `models`. Va en `response_emitted.llm`, también si al final se usó la plantilla. Si no se llamó al gateway, `llm = None`.
 - Cada borrador rechazado y su motivo se devuelve como `RejectedDraft` para que M11 lo mande al transcript. Si el borrador falló por PII en claro (`tokens_pii`), `text_model` va vacío: el texto no se conserva; `reason` solo lleva ids y rutas.
 - **Detalles de falla sin texto del modelo:** `Failure.detail` (y por tanto `RejectedDraft.reason` y `validation_feedback`) solo lleva ids de comprobación, motivos fijos, rutas de campo, patrones (`pattern:email`), idiomas detectados y posiciones (`cita 2`, `cifra 1`, `token desconocido en la posición 1`). Nunca repite una cita, un token o una cifra escritos por el modelo, para que el prompt de regeneración no reintroduzca ese texto.
-- **Falla del gateway:** cualquier excepción de `gateway.generate` (`GatewayError` u otra, p. ej. del cliente HTTP) se trata como falla del gateway: no se reintenta, cuenta como una llamada con `cost_known = false` (salvo el uso que informe un `GatewayError`) y la cadena pasa a la plantilla de respaldo.
+- **Falla del gateway** (2026-09-30, unidad 5; gateway spec §3.3): cualquier excepción de `gateway.generate` cuenta como una llamada, con `cost_known = false` salvo el uso que informe un `GatewayError`. Qué sigue depende del `kind`:
+
+  | `GatewayError.kind` (u otra excepción) | Comportamiento |
+  |---|---|
+  | `invalid_output` | falla de la comprobación de formato: **1 regeneración** y luego la plantilla de respaldo |
+  | `timeout`, `unavailable`, `rate_limited`, `refused` | directo a la plantilla de respaldo, sin regenerar |
+  | otra excepción (p. ej. del cliente HTTP) | como `unavailable` |
 - `Responder.template` trae un renderizador mínimo propio de `{{ facts.<nombre>.value(.campo)* }}` (M8 no importa `flows`); una ruta ausente, un locale ausente o una ruta que no sea de hechos lanza `TemplateUnavailable`, que la cadena traduce a `validation_failed`.
 - Las plantillas (`respond.template_ref`) no pasan por las comprobaciones 2 y 3 (son texto fijo con variables de hechos), pero sí por la 4.
 
@@ -100,7 +106,8 @@ M8 **no** se acopla a teléfono, canal ni `principal.attrs.country`, y no contie
 | Falla | Comportamiento |
 |---|---|
 | Validador rechaza | 1 regeneración → plantilla → `escalate(validation_failed)` |
-| Gateway caído (`GatewayError` u otra excepción) | directo a la plantilla de respaldo, sin regenerar |
+| `GatewayError` `invalid_output` | 1 regeneración → plantilla (§3.2) |
+| `GatewayError` `timeout`, `unavailable`, `rate_limited` o `refused`, u otra excepción | directo a la plantilla de respaldo, sin regenerar |
 | Cifra ambigua | rechazo (medido como falso rechazo en eval) |
 
 ## 6. Eventos que emite
@@ -124,6 +131,7 @@ M8 **no** se acopla a teléfono, canal ni `principal.attrs.country`, y no contie
 | T-M8-09 | Los borradores rechazados salen en `RejectedDraft` con motivo | — |
 | T-M8-10 | Dígitos dentro de tokens no cuentan como cifras | — |
 | T-M8-11 | Generación rechazada + regeneración rechazada + plantilla: `llm.calls = 2` con tokens y costo sumados; modo degradado: `llm = None` | — |
+| T-M8-12 | Errores del gateway por `kind`: `invalid_output` regenera una vez y luego usa la plantilla; `timeout`, `unavailable`, `rate_limited` y `refused` van directo a la plantilla; `cost_known = false` si el error no informa costo (`tests/m08/test_responder_generate.py`) | — |
 
 ## 8. Evaluación
 
