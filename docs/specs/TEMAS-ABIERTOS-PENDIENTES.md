@@ -1,6 +1,6 @@
 # Temas abiertos — Motor de decisión (spec 2026-09-28)
 
-- Estado: **9 de 9 temas originales resueltos; #10 (`read` construido), #11, #12, #14, #15 y #16 cerrados el 2026-09-30 (decisiones abajo); siguen abiertos #13 (alto), #17 y #18 (medios).** Reemplaza la versión anterior de este documento, cuyo contenido se descartó por basarse en hallazgos incorrectos.
+- Estado: **9 de 9 temas originales resueltos; #10 (`read` construido), #11, #12, #14, #15 y #16 cerrados el 2026-09-30 (decisiones abajo); #13 resuelto salvo las piezas reales de las unidades 3, 6 y 7 (2026-09-30); siguen abiertos #17 y #18 (medios).** Reemplaza la versión anterior de este documento, cuyo contenido se descartó por basarse en hallazgos incorrectos.
 - Fecha: 2026-09-28
 - Spec: `2026-09-28-motor-de-decision-design.md` (rev. 15)
 - Regla de trabajo: antes de resolver cada tema se lee el ADR que lo gobierna.
@@ -30,7 +30,7 @@ Tampoco eran temas abiertos: la cadena de hash y `reportable_attrs` (ADR 0003), 
 | 10 | ADR de conocimiento (0015) aceptado pero no integrado en la spec | Alta | **Resuelto como diseño (2026-09-30); construcción en fase 2** |
 | 11 | Capa de analítica (cálculo y visualización de métricas) sin spec | Media | **Resuelto (2026-09-30)** |
 | 12 | Política del contexto conversacional (`recent_turns`) sin definir | Media | **Resuelto (2026-09-30)** |
-| 13 | Servidor arrancable: faltan las piezas externas del cableado | **Alta** | **Abierto** |
+| 13 | Servidor arrancable: faltan las piezas externas del cableado | Alta | **Resuelto salvo las piezas reales de las unidades 3, 6 y 7 (2026-09-30)** |
 | 14 | Emisión y firma de los roles `constructor`/`aprobador` y de `attrs.actor` | Alta | **Resuelto (2026-09-30)** |
 | 15 | Validador `decide` de `collect`: qué campo de la decisión valida | Media | **Resuelto: no soportado hasta la fase 2 (2026-09-30)** |
 | 16 | Límites, retención y topes del agente autónomo (registry) | Media | **Resuelto salvo los topes, que esperan a activar el constructor `task` (2026-09-30)** |
@@ -71,19 +71,13 @@ Pendiente de construcción: las vistas SQL y la conexión a Phoenix; no bloquean
 - **Contenido:** mensaje del cliente y respuesta del agente, en vista `model`, sin borradores rechazados. Los hechos siguen saliendo solo de acciones verificadas, nunca del historial.
 - **Entre runs:** nada; un asunto retomado es un run nuevo con contexto limpio.
 
-## 13. Servidor arrancable — abierto
-Encontrado en la auditoría del 2026-09-30. `create_app` existe y el registry se monta como extensión, pero ningún proceso compone el motor con adaptadores reales (no hay `agentcore serve`; registry §14, m09 §201). No es solo la unidad 3: para servir la release de demo con un modelo real faltan:
-- **`ToolExecutor` real (unidad 3):** adaptadores a los backends con el punto de control de políticas (riesgo de la tool, parámetros ligados, `step_up_required` antes de cualquier efecto, idempotencia de escrituras; ADR 0007, 0009, 0010). Hoy solo `FakeToolExecutor` y `LocalSandboxTools` (respuestas sembradas).
-- **`AuthzPort` real (unidad 3):** hoy solo `TableAuthz`, una tabla provisional de `testing/`.
-- **`TranscriptStore` persistente (unidad 7):** solo `InMemoryTranscript`; el transcript se pierde al reiniciar.
-- **Identidad:** `JwsIdentityVerifier` recibe las claves públicas por constructor y nadie las carga desde configuración; falta definir de dónde salen (servicio de identidad) y qué implementa `grant_active`.
-- **Proveedores de decisión:** la release de demo usa `jev` (servicio externo con key; `HttpJevTransport` existe) y `classifier` (falta un `ArtifactLoader` real y sus artefactos).
-- **Calibración:** `CalibrationSource` real con artefactos etiquetados (m05 §8, dato pendiente P9).
-- **Lectores de la API:** `HandoffService` y `TranscriptReader` quedan dentro de `build_turn_engine`; habría que exponerlos para armar `ApiDeps`.
-- **Dependencia de ejecución:** `uvicorn` no está declarado en `pyproject.toml`.
-- **Arranque:** el aviso por alias de endpoint sin configurar (gateway §5) y por proveedores sin configurar depende de este comando.
-
-Por qué es alta: sin esto la demo no corre de punta a punta sobre adaptadores reales. Decidir antes: si la demo usa un servidor con dobles etiquetados (`AGENTCORE_ALLOW_DEMO=1`, como el verificador de demo del registry) o espera a la unidad 3.
+## 13. Servidor arrancable — resuelto salvo las piezas reales
+**Decidido el 2026-09-30:** la demo corre con un modelo real y el resto como dobles etiquetados. Spec: `docs/superpowers/specs/2026-09-30-servidor-arrancable-design.md`; plan: `docs/superpowers/plans/2026-09-30-servidor-arrancable.md`.
+- **Construido:** `agentcore serve` (`agent_core/composition/serve.py`, `serve_ports.py`, `build_engine` en `engine.py`). Reales: Postgres, gateway de LLM, JEV por HTTP (`AGENTCORE_JEV_API_KEY`), claves HMAC/cifrado (`EnvKeyProvider`) y claves públicas de identidad (`--identity-keys`, `agent_core/adapters/identity_keys.py`). `uvicorn` declarado en `pyproject.toml`.
+- **Dobles, solo con `AGENTCORE_ALLOW_DEMO=1`** (`testing/serve_demo.py`; `serve` los lista al arrancar): tools, `AuthzPort`, transcript en memoria, calibración, proveedor `classifier`, `FieldClassifier`, `grant_active` y, sin `--identity-keys`, el verificador de demo. Sin la variable, `serve` sale con código 2 y nombra cada pieza faltante.
+- **Sigue pendiente, con su punto de enchufe (`--tools`, `--authz`, `--transcript`, `--calibration`, `--classifier`, `--field-classifier`, `--grant-active`):** `ToolExecutor` y `AuthzPort` reales (unidad 3), `TranscriptStore` persistente (unidad 7), calibración real con artefactos etiquetados (P9, unidad 6), artefactos del `classifier` y el servicio de identidad real con `grant_active`.
+- **No montado todavía:** `serve` no expone la API HTTP del registry (`build_api_deps` ya acepta un `registry_service`; falta cablear el evaluador y el harness reales). El CLI `agentcore registry` no cambia.
+- **Abierto menor:** el aviso de alias de LLM sin configurar al arrancar (gateway §5) no está cableado.
 
 ## 14. Roles del registry y `attrs.actor` — resuelto
 **Decidido el 2026-09-30.** Implementado en `agent_core/registry/roles.py`, `testing/fakes/authz.py` y `testing/fakes/identity.py`; el detalle de permisos está en registry §8 y la enmienda de datos de clientes en ADR 0006.
