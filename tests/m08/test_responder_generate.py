@@ -1,6 +1,8 @@
 from dataclasses import replace
 from decimal import Decimal
 
+import pytest
+
 from agent_core.domain import (
     EscalationRequest,
     GatewayError,
@@ -236,3 +238,38 @@ def test_non_gateway_error_is_a_gateway_failure_and_goes_to_the_template() -> No
     payload = _payload(events)
     assert broken.calls == 1 and payload.fallback_used
     assert payload.llm is not None and payload.llm.calls == 1 and payload.llm.cost_known is False
+
+
+INVALID = GatewayError(GatewayErrorKind.invalid_output, tokens_in=5, tokens_out=3, cost_usd=Decimal("0.0005"),
+                       model="scripted-1")
+
+
+def test_t_m8_12_invalid_output_regenerates_once_and_reports_a_format_rejection() -> None:
+    w = World([INVALID, gen(GOOD, ["f-pqr"])])
+    message, rejected, events = w.run()
+    assert isinstance(message, Message) and message.kind == "generated"
+    assert len(rejected) == 1 and rejected[0].failures == ["format"] and rejected[0].text_model == ""
+    payload = _payload(events)
+    assert payload.validator.regenerations == 1 and payload.llm.calls == 2  # type: ignore[union-attr]
+    assert payload.llm.cost_known is True  # el error informó su costo  # type: ignore[union-attr]
+    feedback = w.gateway.calls[1].inputs["validation_feedback"]
+    assert isinstance(feedback, list) and feedback[0]["check"] == "format"  # type: ignore[call-overload]
+
+
+def test_t_m8_12_two_invalid_outputs_fall_back_to_the_template() -> None:
+    w = World([INVALID, INVALID])
+    message, rejected, events = w.run()
+    assert isinstance(message, Message) and message.kind == "template"
+    payload = _payload(events)
+    assert payload.fallback_used and payload.validator.failures == ["format"]
+    assert len(w.gateway.calls) == 2 and len(rejected) == 2
+
+
+@pytest.mark.parametrize("kind", [GatewayErrorKind.timeout, GatewayErrorKind.unavailable,
+                                  GatewayErrorKind.rate_limited, GatewayErrorKind.refused])
+def test_t_m8_12_other_gateway_errors_go_straight_to_the_template(kind: GatewayErrorKind) -> None:
+    w = World([GatewayError(kind)])
+    message, rejected, events = w.run()
+    assert isinstance(message, Message) and message.kind == "template" and rejected == []
+    assert len(w.gateway.calls) == 1
+    assert _payload(events).llm.cost_known is False  # type: ignore[union-attr]
