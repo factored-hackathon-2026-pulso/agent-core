@@ -31,6 +31,12 @@ def _blank(raw: str) -> bool:
     return not raw.strip()
 
 
+def _credential(raw: str) -> str:
+    """El JWS de `Authorization`, con o sin el esquema `Bearer` (sin distinguir mayúsculas)."""
+    scheme, _, rest = raw.strip().partition(" ")
+    return rest.strip() if scheme.lower() == "bearer" else raw.strip()
+
+
 def is_run_owner(presented: Principal, snapshot: Principal) -> bool:
     if presented.key != snapshot.key:
         return False
@@ -86,9 +92,9 @@ class AccessGate:
     ) -> tuple[Principal, OnBehalfOf | None]:
         """Chequeo 1: firma. Falla cerrado ante cualquier duda; solo log de seguridad, nada en la cadena."""
         try:
-            if raw_auth is None or _blank(raw_auth):
+            if raw_auth is None or _blank(raw_auth) or _blank(_credential(raw_auth)):
                 raise CredentialsInvalid("credencial ausente")
-            principal = self._verifier.verify(raw_auth)
+            principal = self._verifier.verify(_credential(raw_auth))
             if principal.id is None and not principal.attrs.get(ANON_SESSION_ATTR):
                 raise CredentialsInvalid("anónimo sin sesión")
             obo = None

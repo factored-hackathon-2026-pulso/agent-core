@@ -205,3 +205,17 @@ def test_security_log_never_carries_the_credential() -> None:
     w = World()
     w.denied("token-super-secreto")
     assert "token-super-secreto" not in repr(w.security.entries)
+
+
+@pytest.mark.parametrize("raw", ["Bearer tok-c", "bearer tok-c", "BEARER   tok-c"])
+def test_bearer_scheme_is_accepted_and_stripped(raw: str) -> None:
+    w = World()
+    w.verifier.register("tok-c", principal())
+    assert w.admit(raw).principal == principal()
+
+
+@pytest.mark.parametrize("raw", ["Bearer", "Bearer ", "Bearer    ", "Basic tok-c"])
+def test_bearer_without_a_token_or_another_scheme_is_credentials_invalid(raw: str) -> None:
+    w = World()
+    w.verifier.register("tok-c", principal())
+    assert w.denied(raw).code is ProblemCode.credentials_invalid

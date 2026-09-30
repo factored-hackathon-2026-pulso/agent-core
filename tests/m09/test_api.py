@@ -50,10 +50,12 @@ ROUTES: list[tuple[str, str, dict[str, Any] | None]] = [
 
 
 class World:
-    def __init__(self, limits: RateLimitConfig | None = None) -> None:
+    def __init__(
+        self, limits: RateLimitConfig | None = None, verifier: Any = None, clock: FakeClock | None = None
+    ) -> None:
         self.store = InMemoryStore()
-        self.clock = FakeClock()
-        self.verifier = StubVerifier()
+        self.clock = clock or FakeClock()
+        self.verifier = verifier or StubVerifier()
         self.turns = FakeTurns()
         self.handoffs = FakeHandoffs()
         self.transcripts = FakeTranscripts()
@@ -79,10 +81,11 @@ class World:
             limits=limits or RateLimitConfig(),
         )
         self.client = TestClient(create_app(deps), raise_server_exceptions=False)
-        self.verifier.register("tok-c", principal())
-        advisor, obo = advisor_with_delegation()
-        self.verifier.register("tok-a", advisor)
-        self.verifier.register("tok-d", obo)
+        if isinstance(self.verifier, StubVerifier):
+            self.verifier.register("tok-c", principal())
+            advisor, obo = advisor_with_delegation()
+            self.verifier.register("tok-a", advisor)
+            self.verifier.register("tok-d", obo)
 
     def _uow(self):  # type: ignore[no-untyped-def]
         self.uow_opens += 1
