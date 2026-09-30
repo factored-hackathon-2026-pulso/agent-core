@@ -1,6 +1,6 @@
 # M4 — Ciclo del turno
 
-- Estado: rev. 2 (2026-09-29) · Fase 2 · Fase A implementada con dobles · Fase B: grabador y cadena de M11 verificados y Understand cableado a M5 · Fase C (Postgres) pendiente
+- Estado: rev. 2 (2026-09-29) · Fase 2 · Fase A implementada con dobles · Fase B: grabador y cadena de M11 verificados y Understand cableado a M5 · Fase C (Postgres) implementada
 - Paquete: `agent_core.turn`
 - Origen: spec general §4.1 (estado, release, revocación, recuperación, abandono), §4.4 (uso del resultado de Understand), §4.5, §4.6, §4.8, §4.9, §4.10, invalidación de §4
 - ADRs: 0004 (intenciones e interrupciones), 0007 (precedencia con `confirm` pendiente), 0013 (cierre por escalamiento)
@@ -176,8 +176,8 @@ Tiempos, todos desde el log de auditoría (no dependen del muestreo de trazas):
 ## 10. Definición de terminado
 
 - [x] Pipeline completo con dobles, T-M4-01…17 en verde.
-- [ ] Integración con Postgres: bloqueo optimista, `409` y transacción única por turno (Fase C: pendiente; Docker no estaba disponible al intentarlo el 2026-09-29).
-- [ ] `sweep` invocable por un comando (`agentcore sweep`) para la demo: el comando existe, pero sin un sweeper inyectado termina con exit 2 hasta que la Fase C lo cablee sobre Postgres.
+- [x] Integración con Postgres: bloqueo optimista, `409` con dos conexiones y transacción única por turno (`tests/integration/test_m4_postgres.py`, más la suite de contrato de `UnitOfWork` sobre Postgres y T-M3-03/04 en `tests/integration/`).
+- [x] `sweep` invocable por un comando (`agentcore sweep --dsn … --registry …`) sobre Postgres real (`tests/integration/test_sweep_postgres.py`).
 
 ## 11. Abiertos
 
@@ -231,3 +231,13 @@ Detalles de implementación que el spec no fijaba (revisar):
 5. `UnderstandRequest` gana `turn_id` y `step`; `UnderstandOutcome` gana `model_calls` y `tokens` (junto a `cost_usd`). `p_cal` no se propaga: `command_emitted` no lo lleva.
 
 **Abierto (M2/M4):** las llamadas de Understand no se cargan a `budgets_used.turn_model_calls` (dueño M2); `max_model_calls_per_turn` solo cuenta las de M2. El ADR 0005 pide que el límite admita 2 llamadas de Understand; no se resolvió qué módulo las carga.
+
+## 15. Fase C: Postgres (2026-09-29)
+
+- **Adaptador:** `agent_core/adapters/postgres_uow.py` (`PostgresStore`, `PostgresUoW`, `PostgresAuditSink`, `PostgresOutbox`, `PostgresCostCounters`) y `agent_core/adapters/sql/schema.sql` (esquema plano, idempotente; el log de auditoría sigue en `audit_events.sql`). Sin dependencias nuevas: `psycopg[binary]` ya lo trajo M11.
+- **Transacción única:** la UoW acumula todo y lo aplica en `commit()` dentro de **una** transacción de Postgres. **Bloqueo optimista:** `UPDATE runs … WHERE state_version = <base>` (o `INSERT … ON CONFLICT DO NOTHING` para un run nuevo); 0 filas → `VersionConflict` y no se aplica nada. **Lease:** sentencia autocommit propia (`INSERT … ON CONFLICT DO UPDATE … WHERE mismo turno OR vencido`), visible de inmediato y no lo deshace un rollback; `release_turn` se aplica con el commit.
+- **Contrato:** `tests/contracts/test_uow_contract.py` corre los mismos 31 checks contra el doble en memoria y contra Postgres (parámetro `postgres`, marcador `integration`). Para Postgres los eventos de prueba van encadenados (`prev_hash` del primer evento = `genesis_hash`) y `append_outside_turn` recibe un evento ya encadenado: `adapters` no puede importar `audit`, así que `PostgresAuditSink` no encadena y M9 debe usar `AuditLog.append_standalone`.
+- **Marcador y CI:** las pruebas de Postgres llevan `@pytest.mark.integration` y se omiten sin base (`AGENTCORE_REQUIRE_POSTGRES=1` las exige; el CI ya levanta el servicio). Se mantuvo la convención de M11 en vez de `AGENT_CORE_INTEGRATION=1`.
+- **`agentcore sweep`:** `agent_core/cli.py` (raíz de composición) compone el `Sweeper` con la DSN (`--dsn` o `AGENTCORE_DATABASE_URL`; nunca se imprime) y un `RegistryPort` mínimo sobre el directorio de autoría (`--registry`, por versión exacta) hasta que exista el registry de la unidad 2. Errores de Postgres o del registro salen con exit 1 y sin la DSN.
+- **Ediciones de prueba aprobadas:** `tests/m03/harness.py` (`World(uow_factory=…, record=…)`) y `tests/contracts/test_uow_contract.py` (backend `postgres`, eventos encadenados).
+- **Pendiente:** un turno que falla deja el lease hasta su TTL si la liberación también falla (ver §13); el barrido lo deja igual si el registro no tiene el agente (exit 1).
