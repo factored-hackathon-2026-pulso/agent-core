@@ -1,6 +1,6 @@
 # M9 — Acceso y API
 
-- Estado: rev. 2 (2026-09-29) · Fase 3 · implementado con dobles y verificado sobre Postgres · pendiente `TestIdentityIssuer` (formato de `raw_credential`, decisión abierta)
+- Estado: rev. 2 (2026-09-29) · Fase 3 · implementado con dobles y verificado sobre Postgres · formato de `raw_credential` decidido (JWS Ed25519)
 - Paquete: `agent_core.api`
 - Origen: spec general §3, §4.1 (firma, vigencia, coincidencia, límites), §4.2, §4.7 (respuesta de step-up), §10, §13.4, §13.5, §13.12
 - ADRs: 0006 (principal, delegación, `principal_mismatch`), 0010 (niveles, step-up, credenciales antes del turno), 0002 (`/v1`, contratos), 0003 (OpenTelemetry), 0007 (idempotencia de escrituras; el `Idempotency-Key` de runs es de esta spec)
@@ -27,7 +27,7 @@ Rutas (contrato generado en `contracts/openapi.json` por `agentcore contracts`):
 | `GET /v1/handoffs/{handoff_ref}` | `get_handoff` | M10 `get` |
 | `POST /v1/handoffs/{handoff_ref}/resolution` | `post_resolution` | M10 `record_resolution` |
 
-Cabeceras: `Authorization` (principal firmado, valor tal cual), `X-On-Behalf-Of` (delegación firmada, solo asesores) e `Idempotency-Key` (obligatoria en `POST /v1/runs`, 1 a 255 caracteres imprimibles). Todas las respuestas llevan `trace_id`.
+Cabeceras: `Authorization` (principal firmado, con o sin el esquema `Bearer`), `X-On-Behalf-Of` (delegación firmada, solo asesores) e `Idempotency-Key` (obligatoria en `POST /v1/runs`, 1 a 255 caracteres imprimibles). Todas las respuestas llevan `trace_id`.
 
 ```python
 class AccessGate:
@@ -64,7 +64,7 @@ create_app(deps: ApiDeps) -> FastAPI   # ApiDeps agrupa puertos, servicios inyec
 
 Un rechazo en 1–5 **no procesa el turno**: sin Understand, modelos, tools ni transcript. La app renueva y reintenta con el mismo `client_turn_id`.
 
-- **Credencial ausente, vacía o sin firma válida**, y un anónimo sin sesión firmada: `credentials_invalid`. Falla cerrado.
+- **Credencial ausente, vacía (también `Bearer` sin token) o sin firma válida**, y un anónimo sin sesión firmada: `credentials_invalid`. Falla cerrado.
 - **Registro.** Todo rechazo va al log de seguridad (`SecurityLog`; implementación `OtelSecurityLog`: evento en el span activo y línea de log, con motivo, tipo de principal y `trace_id`; nunca la credencial, el `principal.id` ni el body). Para 2–4 (y `subject_forbidden`/`agent_forbidden` de §3.2), si el run existe, M9 pide a M11 un append mínimo fuera del turno (`AuditLog.append_standalone`) con `access_denied`. Sin run (p. ej. `POST /v1/runs`) o con firma inválida, solo log de seguridad. Si la escritura en la cadena falla, la denegación se mantiene y se registra `audit_write_failed`.
 - **Identidad de un principal anónimo** (decisión 2026-09-29). Un anónimo no tiene `id`, así que `(type, id)` no lo distingue: su identidad es `attrs["anon_session"]`, un id de sesión firmado en la credencial. El chequeo 4 lo compara además de `(type, id)`. Sin él, cualquier anónimo pasaría el chequeo sobre el run de otro.
 - **`principal_mismatch` con lectura previa.** Comparar con el snapshot exige leer el run. Se lee (solo lectura, sin lease) después de validar la firma y antes de cargar el turno en M4; ninguna otra lectura ni escritura precede a la firma.
@@ -117,6 +117,18 @@ Cuando M4 devuelve `awaiting: step_up`, M9 responde `200` con `step_up: {require
 ### 3.7 Observabilidad (ADR 0003)
 
 Un span `agentcore.api.request` por request (OpenTelemetry, provider de `agent_telemetry`), con una lista cerrada de atributos (método y status). El `trace_id` de la respuesta es el de la traza si hay una activa; si no, uno del `IdSource`. `agent_telemetry.span()` exige `run_id` y `agentcore.release`, que no existen en un 401, por eso la puerta usa la API de OTel directamente. Nada de credenciales, `principal.id` ni body en atributos.
+
+### 3.8 Formato de la credencial (`raw_credential`, decisión 2026-09-29)
+
+JWS compacto `header.payload.firma` (base64url sin relleno), firmado con Ed25519. Lo verifica `JwsIdentityVerifier` (`agent_core/adapters/jws_identity.py`), que implementa `IdentityVerifier`; lo emite el servicio de identidad y, en la demo, `TestIdentityIssuer`.
+
+- **Header exacto** `{"alg": "EdDSA", "kid", "typ"}`; cualquier otro campo o `alg` (incluidos `none` y `HS256`) se rechaza. `typ` separa `principal+jws` de `delegation+jws`, y cada uno se verifica con su propio juego de claves: la delegación la firma el emisor de asignaciones, no el de principales (ADR 0006).
+- **Payload:** el `Principal` o el `OnBehalfOf` serializado con `dumps`, leído con `loads` y validado por el modelo (campos extra, fechas sin zona o un anónimo con `id` se rechazan). Sin secretos. Un anónimo lleva `attrs["anon_session"]`.
+- **Rotación:** las claves se indexan por `kid`; rotar es publicar la nueva y retirar la vieja.
+- **Solo firma:** el verificador no mira `exp` (el puerto lo dice): la vigencia es de M9 con el `Clock`, nunca de la librería.
+- **Fallo cerrado:** cualquier duda es `CredentialsInvalid("credencial inválida")`, sin la credencial en el mensaje. Tope de 8192 caracteres. `grant_active` devuelve `False` si el servicio de asignaciones falla.
+- **Cabecera:** `Authorization: Bearer <jws>` (también se acepta sin `Bearer`); la delegación va sin esquema en `X-On-Behalf-Of`.
+- **Demo:** `TestIdentityIssuer` (`testing/fakes/identity.py`) firma con claves de PRUEBA derivadas de una semilla fija y pública (`kid` `test-*`), nunca para producción; con el mismo `Clock` emite los mismos tokens. `uv run python -m testing.demo_identities` imprime el cliente, el asesor con su delegación, el anónimo, el vencido y el elevado (OTP simulado, `auth.simulated`).
 
 ## 4. Invariantes
 
@@ -173,13 +185,12 @@ Intentos de acceso no autorizado (`access_denied` por motivo), tasa de `401`/`40
 
 - [x] Rutas y `AccessGate` con T-M9-01…14 en verde (`tests/m09`, 176 pruebas; integración con Postgres en `tests/integration/test_m9_postgres.py`).
 - [x] `openapi.json` generado en `contracts/` por `agentcore contracts` (con `--check`). «Usado por las apps»: pendiente de las apps.
-- [ ] `TestIdentityIssuer` con script para emitir principales de la demo (cliente, asesor con delegación, anónimo, vencido). **Bloqueado** por el formato de `raw_credential` (decisión abierta, ver §11). Mientras tanto, las pruebas usan `StubVerifier` con tokens opacos.
+- [x] `TestIdentityIssuer` con script para emitir principales de la demo (cliente, asesor con delegación, anónimo, vencido, elevado): `python -m testing.demo_identities`. Las pruebas de la API usan `StubVerifier` (tokens opacos) y, de punta a punta, el verificador real (`test_identity_e2e`).
 
 Fuera de la definición pero hecho: `TableAuthz` (`testing/fakes/authz.py`) como `AuthzPort` de prueba; idempotencia de `start_run` en M4.
 
 ## 11. Abiertos
 
-- **Formato de `raw_credential`** (índice §Abiertos; decisión del usuario). `AccessGate` y `IdentityVerifier` lo tratan como texto opaco (el valor de `Authorization` tal cual, sin `Bearer`). Bloquea `TestIdentityIssuer`.
 - **Contrato `api` de `.importlinter`** (decisión del usuario). Con los `Protocol` de `api/protocols.py` el contrato pasa sin `allow_indirect_imports`; importar `TurnEngine`, `HandoffService` o `TranscriptReader` directamente sí lo exigiría.
 - **Cableado real.** No existe aún un `agentcore serve` ni la factoría en `composition` que arme `ApiDeps` (verificador, `TableAuthz`/unidad 3, `TurnEngine`, `HandoffService`, `TranscriptReader`, `AuditLog`, `OtelSecurityLog`, `TraceIds` de M4 con el `trace_id` de OTel).
 - **`AuthzPort` sin especificar:** qué significa `subject=None` en `authorize_agent`, las claves de `bind_params`, el vocabulario de `purpose` y los scopes de `service`/`builder` (`TableAuthz` usa `subject:<kind>`/`subject:*` como convención propia del doble).
