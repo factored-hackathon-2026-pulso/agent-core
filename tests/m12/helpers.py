@@ -116,7 +116,8 @@ def release(snapshot: str | None = SNAPSHOT) -> Release:
 
 @dataclass
 class World:
-    source: InMemoryKnowledgeSource = field(default_factory=lambda: InMemoryKnowledgeSource(standard_records()))
+    source: InMemoryKnowledgeSource = field(
+        default_factory=lambda: InMemoryKnowledgeSource(standard_records()))
     snapshot: str | None = SNAPSHOT
 
     def __post_init__(self) -> None:

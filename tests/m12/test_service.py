@@ -7,6 +7,7 @@ import pytest
 
 from agent_core.domain import KnowledgeRead, RunState, page_ref
 from agent_core.knowledge import KnowledgeService
+from testing.fakes.knowledge import InMemoryKnowledgeSource
 from tests.m12.helpers import (
     SNAPSHOT,
     CountingSource,
@@ -58,7 +59,8 @@ def test_ok_delivers_only_the_requested_section_in_model_view() -> None:
     assert page.ref == REF_PLAZOS and page.meta.anchor == "plazos" and page.meta.path == "faq/cargos.md"
     assert "15 días hábiles" in page.content_model and "monto del cargo" not in page.content_model
     payload = _event(events).payload
-    assert (payload.result, payload.refs, payload.filtered_out, payload.reason) == ("ok", [REF_PLAZOS], [], None)
+    assert (payload.result, payload.refs) == ("ok", [REF_PLAZOS])
+    assert (payload.filtered_out, payload.missing, payload.reason) == ([], [], None)
     assert payload.purpose == "customer_answer" and payload.node_id == "saber"
     assert page.source.kind == "knowledge" and page.source.ref == REF_PLAZOS
 
@@ -73,7 +75,8 @@ def test_a_page_without_anchor_is_delivered_whole_and_in_order() -> None:
 
 def test_several_pages_keep_the_order_of_the_node() -> None:
     world = World()
-    state, result, events = world.read(node("faq/cargos.md#requisitos", "faq/externa.md", "faq/cargos.md#plazos"))
+    request = node("faq/cargos.md#requisitos", "faq/externa.md", "faq/cargos.md#plazos")
+    state, result, events = world.read(request)
     assert result == "ok"
     assert [p.meta.anchor for p in state.pages["kb"]] == ["requisitos", None, "plazos"]
     assert len(_event(events).payload.refs) == 3
@@ -120,13 +123,13 @@ def test_expired_and_not_yet_valid_pages_are_denied_for_customers() -> None:
 
 
 def test_vigencia_is_judged_with_the_clock_of_the_context() -> None:
-    world = World()
-    _, result, _ = world.read(node("faq/vencida.md"))
-    assert result == "not_found"  # el servicio real ya la filtró
-    leaky = World(LeakySource(standard_records()))
-    leaky.clock.advance(timedelta(days=-200))  # 2026-03-12: dentro de la vigencia
-    _, result, _ = leaky.read(node("faq/vencida.md"))
-    assert result == "ok"
+    hasta = record("faq/hasta.md", "# Hasta\n\nVigente.\n", valid_to="2026-09-29")
+    world = World(InMemoryKnowledgeSource([hasta]))
+    _, result, _ = world.read(node("faq/hasta.md"))
+    assert result == "ok"  # el último día de vigencia todavía cuenta
+    world.clock.advance(timedelta(days=2))
+    _, result, events = world.read(node("faq/hasta.md"))
+    assert result == "denied" and [f.reason for f in _event(events).payload.filtered_out] == ["expired"]
 
 
 def test_customer_answer_uses_the_translation_when_the_turn_language_differs() -> None:
@@ -220,13 +223,14 @@ def test_translation_lookup_with_a_source_that_fails_in_index_is_also_source_una
         def index(self, snapshot: str, view: Any) -> Any:
             raise ConnectionError("x")
 
-    _, result, events = World(IndexDown(standard_records())).read(node("faq/externa.md"), run_state(locale="pt"))
+    world = World(IndexDown(standard_records()))
+    _, result, events = world.read(node("faq/externa.md"), run_state(locale="pt"))
     assert result == "not_found" and _event(events).payload.reason == "source_unavailable"
 
 
 def test_a_release_without_a_snapshot_is_not_found_and_never_calls_the_source() -> None:
     source = CountingSource(standard_records())
-    state, result, events = World(source, snapshot=None).read(node("faq/cargos.md"))
+    _, result, events = World(source, snapshot=None).read(node("faq/cargos.md"))
     assert result == "not_found" and source.reads == 0
     assert _event(events).payload.reason == "no_snapshot"
 
@@ -243,7 +247,8 @@ def test_external_content_is_wrapped_as_untrusted_text_and_internal_content_is_n
     world = World()
     state, _, _ = world.read(node("faq/externa.md", "faq/cargos.md#plazos"))
     external, internal = state.pages["kb"]
-    assert external.content_model.startswith("<datos_no_confiables") and "Texto de fuera" in external.content_model
+    assert external.content_model.startswith("<datos_no_confiables")
+    assert "Texto de fuera" in external.content_model
     assert "datos_no_confiables" not in internal.content_model
 
 
