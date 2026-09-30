@@ -18,7 +18,7 @@ from agent_core.registry.candidate import (
     release_hash,
 )
 from agent_core.registry.entities import AnyEntity, content_hash, decode_entity, encode_entity, version_ref
-from agent_core.registry.errors import RegistryError, RegistryErrorCode
+from agent_core.registry.errors import IntegrityError, RegistryError, RegistryErrorCode
 from agent_core.registry.evaluation.ports import EvalPort, EvalTarget
 from agent_core.registry.evaluation.report import EvalReport
 from agent_core.registry.models import (
@@ -76,6 +76,9 @@ class ProposalDetail(_V):
     proposal: Proposal
     changes: list[EntityDraft]
     last_eval: EvalRun | None
+
+
+PROMOTABLE_ALIASES = frozenset({"staging", "prod"})
 
 
 def release_id_for(candidate_hash: str) -> str:
@@ -393,6 +396,9 @@ class RegistryService:
     def promote(self, actor: Principal, agent_id: str, alias: str, release_id: str,
                 reason: str = "") -> AliasChange:
         require_approver(actor)
+        if alias not in PROMOTABLE_ALIASES:
+            raise RegistryError(RegistryErrorCode.validation_failed,
+                                f"el alias debe ser uno de: {', '.join(sorted(PROMOTABLE_ALIASES))}")
         with self._store.transaction() as tx:
             stored = tx.get_release(release_id)
             if stored is None:
@@ -400,7 +406,7 @@ class RegistryService:
             if tx.release_status(release_id) != "active":
                 raise RegistryError(RegistryErrorCode.illegal_transition,
                                     "no se promueve una release revocada")
-            if agent_id not in stored.release.entities.get(EntityKind.agent, {}):
+            if stored.agent_id != agent_id:
                 raise RegistryError(RegistryErrorCode.illegal_transition, "la release no contiene al agente")
             change = AliasChange(agent_id=agent_id, alias=alias,
                                  before=tx.get_alias(agent_id, alias, for_update=True), after=release_id,
@@ -437,7 +443,9 @@ class RegistryService:
             assert version is not None
             entities.append(EntityInRelease(ref=ref, content_hash=version.content_hash, docs=version.docs,
                                             changed_vs_base=has_base and ref not in base_refs))
-        status = tx.release_status(release_id) or "active"
+        status = tx.release_status(release_id)
+        if status is None:  # toda release nace con su fila de estado: si falta, la base está dañada
+            raise IntegrityError(f"la release {release_id} no tiene estado")
         ks = stored.release.knowledge_snapshot
         return ReleaseDetail(release_id=release_id, status=status, agent_id=stored.agent_id,
                              entities=entities, knowledge_snapshot=str(ks) if ks else None,

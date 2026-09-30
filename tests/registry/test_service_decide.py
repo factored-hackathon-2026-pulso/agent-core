@@ -291,3 +291,27 @@ def test_evaluate_with_version_taken_is_candidate_changed_not_500() -> None:  # 
     with pytest.raises(RegistryError) as info:
         w.service.evaluate(ANA, pid, "disputas-suite")
     _assert_candidate_changed(info)
+
+
+def test_promote_only_accepts_staging_and_prod() -> None:  # menor de la revisión final
+    w = World()
+    with pytest.raises(RegistryError) as info:
+        w.service.promote(ANA, AGENT, "cualquier-cosa", "rel-demo")
+    assert _code(info) is RegistryErrorCode.validation_failed
+    assert w.service.promote(ANA, AGENT, "staging", "rel-demo").after == "rel-demo"
+
+
+def test_promote_checks_the_release_belongs_to_the_agent() -> None:
+    w = World()
+    with pytest.raises(RegistryError) as info:
+        w.service.promote(ANA, "otro-agente", "prod", "rel-demo")
+    assert _code(info) is RegistryErrorCode.illegal_transition
+    assert w.service.get_release("rel-demo").agent_id == AGENT  # y no movió nada
+
+
+def test_release_without_status_row_is_integrity_error_not_active() -> None:
+    from agent_core.registry.errors import IntegrityError
+    w = World()
+    del w.store._state.status["rel-demo"]
+    with pytest.raises(IntegrityError):
+        w.service.get_release("rel-demo")
