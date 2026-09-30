@@ -102,6 +102,20 @@ def test_a_success_without_usage_reports_zero_tokens_and_cost(respx_mock: MockRo
     respx_mock.post(CHAT).respond(200, json=completion("hola", usage=None))
     result = make_world().gateway.generate(PROMPT, INPUTS, "es")
     assert (result.tokens_in, result.tokens_out, result.cost_usd) == (0, 0, Decimal("0"))
+    assert result.usage_known is False
+
+
+def test_a_success_with_usage_marks_the_usage_as_known(respx_mock: MockRouter) -> None:
+    respx_mock.post(CHAT).respond(200, json=completion("hola"))
+    assert make_world().gateway.generate(PROMPT, INPUTS, "es").usage_known is True
+
+
+@pytest.mark.parametrize("bad", [{"x": object()}, {"x": float("nan")}])
+def test_inputs_that_are_not_canonical_json_are_a_programming_error_not_an_outage(
+        respx_mock: MockRouter, bad: dict) -> None:  # type: ignore[type-arg]
+    with pytest.raises(SchemaError):
+        make_world().gateway.generate(PROMPT, bad, "es")
+    assert respx_mock.calls.call_count == 0
 
 
 def test_a_missing_locale_is_a_programming_error(respx_mock: MockRouter) -> None:

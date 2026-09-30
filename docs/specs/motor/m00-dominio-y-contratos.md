@@ -1,6 +1,6 @@
 # M0 — Dominio y contratos
 
-- Estado: **rev. 8 · implementado** (fase 1) · Fase 1
+- Estado: **rev. 9 · implementado** (fase 1) · Fase 1
 - Paquetes: `agent_core.domain`, `agent_core.ports`, `testing/fakes`
 - Origen: spec general §2, §5 (esquemas de nodos), §8 (estado), §10 (códigos), §14 (dependencias)
 - ADRs: 0001 (stack), 0002 (contratos), 0006 (principal y delegación), 0007 (acciones), 0008 (vistas y claves)
@@ -54,6 +54,11 @@
   - `Release.knowledge_snapshot: EntityRef | None = None` (exacta; `None` = sin conocimiento);
   - `SCHEMA_VERSION` 0.1.0 → 0.2.0 (menor: no rompe a los consumidores de 0.1.0) y `contracts/` regenerado;
   - `RegistryPort` no cambia; `eval_suite`, la documentación por versión y los errores de la API del registry viven en `agent_core.registry`, no aquí.
+- rev. 9 (2026-09-30), auditoría del gateway y del registry (`SCHEMA_VERSION` 0.3.0 → 0.4.0 → 0.5.0 → 0.6.0 → **0.7.0**). Pone al día la trazabilidad de versiones y aplica §9 (un campo opcional nuevo sube la versión menor):
+  - 0.4.0: ADR 0019 (`AgentNodeConfig.save_as`/`output_schema`, `FactSource.kind = "agent"`, evento `agent_step`) y `ToolDef.description`/`args_schema` del gateway, que se agregaron sin subir la versión y quedan cubiertos por esta entrada;
+  - 0.5.0: `IdKind.proposal` e `IdKind.eval_run` (registry);
+  - 0.6.0: `GenerationResult.usage_known: bool = True` (`false` si el proveedor no informó el uso; M8 marca `cost_known = false`);
+  - 0.7.0: `AgentStepPayload.kind` admite `"failed"` y gana `error_kind: GatewayErrorKind | None = None` (el nodo `agent` deja un `agent_step` cuando el gateway falla, para que la auditoría explique el `gave_up`).
 - implementación de M0 (2026-09-29), decisiones que el spec no cubría:
   - `loads` rechaza claves duplicadas; `to_jsonable` rechaza claves que colisionan tras `str()`; `RecursionError` se convierte en `ValueError`; se rechaza un `Decimal` con |exponente| > 1000;
   - `dumps` escribe `Decimal` con `format(d, "f")` (no `str(d)`, que puede emitir `1E+3`);
@@ -436,6 +441,7 @@ class Outbox:                        # lo consume la unidad 4; se escribe por la
     def mark_delivered(self, message_id: str) -> None
 
 class GenerationResult: output: JsonValue; tokens_in: int; tokens_out: int; cost_usd: Decimal; model: str
+                        usage_known: bool = True   # false: el proveedor no informó el uso (M8 marca cost_known = false)
 # generate falla con GatewayError (§2.11); detalle en la spec de la unidad 5
 class LLMGateway:
     def generate(self, prompt: EntityRef, inputs_model_view: dict[str, JsonValue], locale: Locale,
@@ -647,6 +653,6 @@ No tiene métricas propias. Los esquemas de eventos son la entrada de la unidad 
 ## 11. Abiertos
 
 - Ninguno bloqueante para la fase 1.
-- **Agentes internos (ADR 0019):** `AgentNodeConfig.save_as`/`output_schema`, `FactSource.kind = "agent"` y el evento `agent_step` están implementados (SCHEMA_VERSION 0.4.0, `contracts/` regenerado). `RiskClass.write_draft` sigue solo diseñado. Falta decidir si `Agent.default_target_queue` pasa a ser opcional para agentes que nunca escalan.
+- **Agentes internos (ADR 0019):** `AgentNodeConfig.save_as`/`output_schema`, `FactSource.kind = "agent"` y el evento `agent_step` están implementados (SCHEMA_VERSION 0.4.0, `contracts/` regenerado; hoy 0.7.0). `RiskClass.write_draft` sigue solo diseñado. Falta decidir si `Agent.default_target_queue` pasa a ser opcional para agentes que nunca escalan.
 - **Dependiente del tema #10:** el nodo `knowledge`, `RunState.pages`, `PageView` y la forma final de `KnowledgeSource` entran cuando se apruebe M12 (versión mayor del esquema de flows, versión menor del resto).
 - ~~**Formato de la credencial** (`raw_credential`)~~ **Resuelto 2026-09-29 (M9 §3.8):** JWS compacto Ed25519 con `kid`; no cambia el puerto.

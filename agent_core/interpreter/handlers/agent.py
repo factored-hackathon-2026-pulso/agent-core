@@ -18,6 +18,7 @@ from agent_core.domain import (
     Fact,
     FactSource,
     GatewayError,
+    GatewayErrorKind,
     IllegalTransition,
     JsonValue,
     RiskClass,
@@ -73,6 +74,10 @@ class _Loop:
     def _step_event(self, step: int, started: int, **fields: Any) -> None:
         payload = AgentStepPayload(node_id=self.node.id, step=step, latency_ms=self._ms(started), **fields)
         self.emitted.append(self.events.agent_step(self.state, payload))
+
+    def failed(self, step: int, started: int, kind: GatewayErrorKind) -> None:
+        """Deja rastro del fallo del gateway para que la auditoría explique el `gave_up`."""
+        self._step_event(step, started, kind="failed", error_kind=kind)
 
     def final(self, step: int, started: int, output: JsonValue) -> str | None:
         """`None` si la salida entró como hecho; si no, el motivo (sin datos) para regenerar."""
@@ -150,6 +155,7 @@ def handle_agent(node: AgentNode, state: RunState, ctx: StepContext, resume: Res
             loop.state = charge_model(
                 loop.state, calls=1, tokens=(failure.tokens_in or 0) + (failure.tokens_out or 0),
                 cost=failure.cost_usd or Decimal("0"))
+            loop.failed(step, started, failure.kind)
             break
         loop.state = charge_model(loop.state, calls=result.model_calls, tokens=result.tokens,
                                   cost=result.cost_usd)
