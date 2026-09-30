@@ -24,13 +24,14 @@ ANON_SESSION_ATTR = "anon_session"
 class Admitted:
     principal: Principal
     on_behalf_of: OnBehalfOf | None
+    run: RunState | None = None  # el snapshot que se leyó para el chequeo 4, si existe
 
 
 def _blank(raw: str) -> bool:
     return not raw.strip()
 
 
-def _same_principal(presented: Principal, snapshot: Principal) -> bool:
+def is_run_owner(presented: Principal, snapshot: Principal) -> bool:
     if presented.key != snapshot.key:
         return False
     if presented.id is not None:
@@ -76,9 +77,9 @@ class AccessGate:
                 raise deny(ProblemCode.delegation_expired)
             if obo.grantee != principal.key:
                 raise deny(ProblemCode.delegation_mismatch)
-        if run is not None and not _same_principal(principal, run.principal):
+        if run is not None and not is_run_owner(principal, run.principal):
             raise deny(ProblemCode.principal_mismatch)
-        return Admitted(principal, obo)
+        return Admitted(principal, obo, run)
 
     def _verify(
         self, raw_auth: str | None, raw_delegation: str | None, trace_id: str

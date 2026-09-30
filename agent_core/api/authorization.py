@@ -5,7 +5,7 @@ El subject nunca sale del body ni del modelo: para `customer` y `advisor` lo der
 fondo es del `AuthzPort` (unidad 3); aquí solo se decide qué subject se le pregunta."""
 
 from agent_core.api.denials import Denials
-from agent_core.api.gate import Admitted
+from agent_core.api.gate import Admitted, is_run_owner
 from agent_core.api.protocols import DenialRecorder, SecurityLog
 from agent_core.domain import (
     Agent,
@@ -85,6 +85,16 @@ class RunAuthorizer:
             raise self._denials.deny(
                 ProblemCode.subject_forbidden, run, principal.type, trace_id, decision.reason or ""
             )
+
+    def authorize_read(self, admitted: Admitted, run: RunState, *, trace_id: str) -> None:
+        """Lectura del estado o del transcript de un run: su dueño, o quien el `AuthzPort` autorice sobre su
+        subject (asesor con delegación, service por scope). Un run sin subject solo lo lee su dueño."""
+        principal, obo = admitted.principal, admitted.on_behalf_of
+        if is_run_owner(principal, run.principal):
+            return
+        if run.subject is not None and self._authz.authorize_subject(principal, obo, run.subject).allowed:
+            return
+        raise self._denials.deny(ProblemCode.subject_forbidden, run, principal.type, trace_id)
 
     def _resolve_agent(self, run_input: RunInput, principal: Principal) -> Agent:
         try:

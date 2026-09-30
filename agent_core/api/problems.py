@@ -55,9 +55,7 @@ def problem(code: ProblemCode, detail: str, trace_id: str, status: int | None = 
 
 def _validation_detail(exc: RequestValidationError) -> str:
     """Solo dónde y qué regla falló; nunca el valor recibido."""
-    return "; ".join(
-        f"{'.'.join(str(part) for part in err['loc'])}: {err['type']}" for err in exc.errors()
-    )
+    return "; ".join(f"{'.'.join(str(part) for part in err['loc'])}: {err['type']}" for err in exc.errors())
 
 
 def install_error_handlers(app: FastAPI) -> None:
@@ -77,8 +75,10 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(StarletteHTTPException)
     async def _http(request: Request, exc: StarletteHTTPException) -> ProblemResponse:
         # Errores del propio framework (ruta inexistente, método no permitido): conservan su status HTTP.
-        code = ProblemCode.not_found if exc.status_code == 404 else (
-            ProblemCode.internal_error if exc.status_code >= 500 else ProblemCode.invalid_request
+        code = (
+            ProblemCode.not_found
+            if exc.status_code == 404
+            else (ProblemCode.internal_error if exc.status_code >= 500 else ProblemCode.invalid_request)
         )
         return problem(code, "", request_trace_id(request), status=exc.status_code)
 
