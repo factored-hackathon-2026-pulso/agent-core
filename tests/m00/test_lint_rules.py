@@ -21,7 +21,7 @@ def _ruff(path: Path, *extra: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", "ruff", "check", "--no-cache", "--config", str(ROOT / "pyproject.toml"),
          *extra, str(path)],
-        capture_output=True, text=True, cwd=ROOT, check=False,
+        capture_output=True, text=True, encoding="utf-8", cwd=ROOT, check=False,
     )
 
 
@@ -77,7 +77,7 @@ def test_exemption_is_limited_to_the_two_adapters(tmp_path: Path) -> None:
 
 def test_repo_import_contracts_pass() -> None:
     result = subprocess.run([sys.executable, "-c", _LINT_IMPORTS], capture_output=True, text=True,
-                            cwd=ROOT, check=False)
+                            encoding="utf-8", cwd=ROOT, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
 
 
@@ -97,7 +97,7 @@ def test_m0_boundary_contract_fires_on_a_violation(tmp_path: Path) -> None:
         return subprocess.run(
             [sys.executable, "-c", _LINT_IMPORTS.replace("lint_imports_command()", "")
              + "sys.argv = ['lint-imports', '--config', 'fix.ini']; lint_imports_command()"],
-            capture_output=True, text=True, cwd=tmp_path, check=False,
+            capture_output=True, text=True, encoding="utf-8", cwd=tmp_path, check=False,
         )
 
     clean = run()
@@ -165,8 +165,8 @@ def test_module_cannot_import_adapters_nor_domain_ports(tmp_path: Path) -> None:
            + "sys.argv = ['lint-imports', '--config', 'fix.ini']; lint_imports_command()")
 
     def run() -> subprocess.CompletedProcess[str]:
-        return subprocess.run([sys.executable, "-c", cmd], capture_output=True, text=True, cwd=tmp_path,
-                              check=False)
+        return subprocess.run([sys.executable, "-c", cmd], capture_output=True, text=True, encoding="utf-8",
+                              cwd=tmp_path, check=False)
 
     assert run().returncode == 0
     (pkg / "flows" / "bad.py").write_text("from fixpkg import adapters  # noqa: F401\n", encoding="utf-8")
