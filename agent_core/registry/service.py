@@ -1,6 +1,8 @@
 """`RegistryService` (spec §4, §5, §7.2): máquina de estados de propuestas sobre un `RegistryStore`."""
 
 from collections.abc import Sequence
+from datetime import datetime
+from pathlib import Path
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict
@@ -8,7 +10,13 @@ from pydantic import BaseModel, ConfigDict
 from agent_core.domain import EntityKind, Principal, RegistryEntity, Release, loads
 from agent_core.flows import Violation
 from agent_core.ports import Clock, IdKind, IdSource
-from agent_core.registry.candidate import Candidate, CandidateError, build_candidate, parse_semver
+from agent_core.registry.candidate import (
+    Candidate,
+    CandidateError,
+    build_candidate,
+    parse_semver,
+    release_hash,
+)
 from agent_core.registry.entities import AnyEntity, content_hash, decode_entity, encode_entity, version_ref
 from agent_core.registry.errors import RegistryError, RegistryErrorCode
 from agent_core.registry.evaluation.ports import EvalPort, EvalTarget
@@ -30,6 +38,7 @@ from agent_core.registry.models import (
     RunLineage,
     StoredRelease,
     StoredVersion,
+    VersionDocs,
     VersionRef,
     VersionSummary,
 )
@@ -38,6 +47,7 @@ from agent_core.registry.snapshot import SnapshotRegistry
 from agent_core.registry.store import RegistryStore, RegistryTx
 from agent_core.registry.suite import EvalSuite
 from agent_core.registry.validation import DEFAULT_LIMITS, Limits, check_draft_limits, validate_candidate
+from agent_core.registry.yaml_io import dump_entities, dump_release, load_seed
 
 
 class RunReleaseReader(Protocol):
@@ -484,3 +494,58 @@ class RegistryService:
                               knowledge_snapshot=detail.knowledge_snapshot, proposal_id=stored.proposal_id,
                               eval_verdict=verdict, built_by=built_by, approved_by=approved_by,
                               published_at=stored.published_at)
+
+    # --- importación y exportación YAML ----------------------------------------------------------------
+
+    def import_seed(self, actor: Principal, root: Path) -> list[ReleaseDetail]:
+        require_approver(actor)
+        pinned_list, suites = load_seed(root)
+        details: list[ReleaseDetail] = []
+        with self._store.transaction() as tx:
+            now, who = self._clock.now(), actor_id(actor)
+            seed_docs = VersionDocs(description="Importado desde YAML", rationale="semilla", changelog="")
+            # Las suites se guardan como versiones, pero no entran en la release (spec §3.1).
+            for suite in suites:
+                self._insert_if_new(tx, suite, seed_docs, None, who, now)
+            for pinned in pinned_list:
+                if len(pinned.aliases) != 1:
+                    raise RegistryError(RegistryErrorCode.validation_failed,
+                                        "una release por agente en esta entrega")
+                [agent_id] = list(pinned.aliases)
+                if tx.get_alias(agent_id, "staging") is not None:
+                    raise RegistryError(RegistryErrorCode.illegal_transition,
+                                        f"el agente {agent_id} ya tiene releases; usa una propuesta")
+                refs = [self._insert_if_new(tx, e, seed_docs, None, who, now) for e in pinned.entities]
+                digest = release_hash(pinned.release)
+                release_id = release_id_for(digest)
+                release = pinned.release.model_copy(update={"id": release_id})
+                tx.insert_release(StoredRelease(
+                    release=release, release_hash=digest, agent_id=agent_id,
+                    agent_version=release.entities[EntityKind.agent][agent_id], base_release_id=None,
+                    proposal_id=None, published_by=who, published_at=now), sorted(refs, key=str))
+                for alias in ("staging", "prod"):
+                    tx.set_alias(AliasChange(agent_id=agent_id, alias=alias, before=None, after=release_id,
+                                             actor=who, reason="importación inicial", at=now))
+                self._event(tx, "imported", actor, release_id=release_id)
+                details.append(self._detail(tx, release_id))
+        return details
+
+    def _insert_if_new(self, tx: RegistryTx, entity: AnyEntity, docs: VersionDocs, proposal_id: str | None,
+                       who: str, now: datetime) -> VersionRef:
+        ref, digest = version_ref(entity), content_hash(entity)
+        stored = tx.get_version(ref)
+        if stored is None:
+            tx.blobs.put(encode_entity(entity))
+            tx.insert_version(StoredVersion(ref=ref, content_hash=digest, docs=docs, proposal_id=proposal_id,
+                                            created_by=who, created_at=now))
+        elif stored.content_hash != digest:
+            raise RegistryError(RegistryErrorCode.validation_failed, f"{ref} ya existe con otro contenido")
+        return ref
+
+    def export(self, release_id: str) -> dict[str, bytes]:
+        with self._store.transaction() as tx:
+            stored = tx.get_release(release_id)
+            if stored is None:
+                raise RegistryError(RegistryErrorCode.not_found, "la release no existe")
+            entities = [self._load(tx, ref) for ref in tx.release_refs(release_id)]
+        return {**dump_entities(entities), **dump_release(stored.release, stored.agent_id)}
