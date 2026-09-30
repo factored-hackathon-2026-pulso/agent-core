@@ -220,6 +220,8 @@ def base_state(**over: Any) -> RunState:
 @dataclass
 class World:
     store: InMemoryStore = field(default_factory=InMemoryStore)
+    uow_factory: UnitOfWorkFactory | None = None  # otro almacén (p. ej. Postgres); por defecto, `store.uow`
+    record: Any = None  # `EventRecorder` por defecto de `ctx()` (Postgres exige eventos encadenados, M11)
     clock: FakeClock = field(default_factory=FakeClock)
     ids: FakeIds = field(default_factory=FakeIds)
     rendered: list[RefSpec] = field(default_factory=list)
@@ -229,6 +231,10 @@ class World:
         self.write_behaviour()
         self.tools.register_readback(READBACK, of=WRITE_REF)
         self.manager = ActionManager(self.ids, self.clock)
+
+    @property
+    def uow(self) -> UnitOfWorkFactory:
+        return self.uow_factory or self.store.uow
 
     def write_behaviour(self, *, script: tuple[Scripted, ...] = (), handler: Handler | None = None) -> None:
         self.tools.register(WRITE, script=script, handler=handler or (lambda args: {**RESOURCE, **args}))
@@ -241,20 +247,22 @@ class World:
             predicate: Any = eq_var, run_id: str = RUN_ID, **hooks: Any) -> ActionContext:
         call = ToolCallContext(run_id=run_id, release=RELEASE, principal=principal(),
                                subject=base_state().subject, turn_id=TURN_ID)
-        return ActionContext(uow_factory=CrashingFactory(self.store.uow, crash), tools=tools or self.tools,
+        if self.record is not None:
+            hooks.setdefault("record", self.record)
+        return ActionContext(uow_factory=CrashingFactory(self.uow, crash), tools=tools or self.tools,
                              call=call, render=self.render, predicate=predicate, **hooks)
 
 
 def persist(w: World, state: RunState) -> RunState:
     """Lo que hace M4 al cerrar un turno: guarda el estado en su propia transacción."""
-    with w.store.uow() as uow:
+    with w.uow() as uow:
         saved = uow.save_run(state, state.state_version)
         uow.commit()
     return saved
 
 
 def reload(w: World) -> RunState:
-    with w.store.uow() as uow:
+    with w.uow() as uow:
         loaded = uow.load_run(RUN_ID)
     assert loaded is not None
     return loaded
