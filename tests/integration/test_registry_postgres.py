@@ -1,5 +1,6 @@
 """Registry sobre Postgres real (spec §13). Requiere docker compose up -d postgres."""
 
+from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
 
@@ -7,6 +8,7 @@ import psycopg
 import pytest
 
 from agent_core.domain import AgentSelector, EntityRef, Flow, Release, Template
+from agent_core.ports import RegistryPort
 from agent_core.registry.errors import IntegrityError, RegistryError, RegistryErrorCode
 from agent_core.registry.models import Origin
 from agent_core.registry.postgres.runtime import PostgresRegistry
@@ -15,15 +17,7 @@ from agent_core.registry.service import RegistryService
 from testing.builders import principal
 from testing.fakes.clock import FakeClock
 from testing.fakes.ids import FakeIds
-from tests.contracts.test_registry_contract import (
-    EXACT_FLOW,
-    KNOWLEDGE,
-    RANGED_FLOW,
-    check_get_exact_entity,
-    check_get_knowledge_snapshot,
-    check_get_with_non_exact_content_raises,
-    check_resolve_release_by_alias_and_version,
-)
+from tests.contracts.test_registry_contract import CHECKS, EXACT_FLOW, KNOWLEDGE, RANGED_FLOW
 from tests.registry.helpers import AGENT, REGISTRY_DEMO, human, prompt_draft
 from tests.registry.service_world import SUITE, FakeEvaluator
 
@@ -112,13 +106,10 @@ def pg_registry(registry_store: PgRegistryStore) -> PostgresRegistry:
     return PostgresRegistry(registry_store, FakeClock())
 
 
-def test_postgres_registry_passes_contract(pg_registry: PostgresRegistry) -> None:  # T-REG-17
-    check_get_exact_entity(pg_registry)
-    check_get_with_non_exact_content_raises(pg_registry)
-    check_resolve_release_by_alias_and_version(pg_registry)
-    check_get_knowledge_snapshot(pg_registry)
-    with pytest.raises(KeyError):
-        pg_registry.get(EntityRef.parse("flujo@9.9.9"), Flow)
+@pytest.mark.parametrize("check", CHECKS, ids=lambda c: c.__name__)
+def test_postgres_registry_passes_contract(pg_registry: PostgresRegistry,
+                                           check: Callable[[RegistryPort], None]) -> None:  # T-REG-17
+    check(pg_registry)
 
 
 def test_candidates_and_drafts_are_invisible(registry_store: PgRegistryStore) -> None:  # T-REG-18
@@ -193,6 +184,10 @@ def test_end_to_end_prompt_change(registry_store: PgRegistryStore) -> None:  # T
     lineage = service.lineage_for_run(ANA, "run-e2e")
     changed = {e.ref.id: e.docs for e in lineage.entities if e.changed_vs_base}
     assert changed["p/resumen_radicado"].description == "cambio de prueba"
+    unchanged = [e for e in lineage.entities if e.ref.id == "t/acuse"]  # no se tocó: igual que la base
+    assert unchanged and not any(e.changed_vs_base for e in unchanged)
+    assert {e.ref.id for e in lineage.entities if e.changed_vs_base} == set(changed)
+    assert len(changed) < len(lineage.entities)
     assert lineage.approved_by == "ana" and lineage.eval_verdict == "pass"
 
 

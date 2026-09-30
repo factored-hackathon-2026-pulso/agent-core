@@ -1,6 +1,8 @@
 """Contrato de `RegistryPort` (spec M0 T-M0-C-*) contra InMemoryRegistry, más las pruebas de seguridad del
 doble: solo versiones exactas, entidades publicadas inmutables y sin aliasing con el llamador."""
 
+from collections.abc import Callable
+
 import pytest
 
 from agent_core.domain import (
@@ -9,6 +11,7 @@ from agent_core.domain import (
     Flow,
     InvalidRuntimeRef,
     KnowledgeSnapshot,
+    RegistryEntity,
     Release,
     Template,
 )
@@ -46,29 +49,98 @@ def check_get_with_non_exact_content_raises(registry: RegistryPort) -> None:
 
 def check_resolve_release_by_alias_and_version(registry: RegistryPort) -> None:
     assert registry.resolve_release(AgentSelector.parse("atencion"), principal()).id == "rel-1"
-    assert registry.resolve_release(AgentSelector.parse("atencion@2.0.0"), principal()).id == "rel-2"
+    assert registry.resolve_release(AgentSelector.parse("atencion@1.0.0"), principal()).id == "rel-1"
 
 
-@pytest.fixture(params=["in_memory"])
+def check_get_serves_only_the_exact_version(registry: RegistryPort) -> None:
+    with pytest.raises(KeyError):
+        registry.get(EntityRef.parse("flujo@1.0.1"), Flow)
+    with pytest.raises(KeyError):
+        registry.get(EntityRef.parse("flujo@2.0.0"), Flow)
+
+
+def check_get_with_wrong_kind_fails_instead_of_returning_other_type(registry: RegistryPort) -> None:
+    with pytest.raises(KeyError):
+        registry.get(EntityRef.parse("flujo@1.0.0"), Template)
+
+
+def check_unknown_selector_and_release_fail_closed(registry: RegistryPort) -> None:
+    with pytest.raises(KeyError):
+        registry.resolve_release(AgentSelector.parse("desconocido"), principal())
+    with pytest.raises(KeyError):
+        registry.resolve_release(AgentSelector.parse("atencion@9.9.9"), principal())
+    with pytest.raises(KeyError):
+        registry.release_status("rel-x")
+
+
+def check_release_status_is_active(registry: RegistryPort) -> None:
+    assert registry.release_status("rel-1") == "active"
+
+
+def check_returned_entities_are_copies(registry: RegistryPort) -> None:
+    tpl = registry.get(EntityRef.parse("t/saludo@1.0.0"), Template)
+    tpl.locales["es"] = "Hackeado"
+    flow = registry.get(EntityRef.parse("flujo@1.0.0"), Flow)
+    flow.nodes.clear()
+    assert registry.get(EntityRef.parse("t/saludo@1.0.0"), Template).locales == {"es": "Hola"}
+    assert len(registry.get(EntityRef.parse("flujo@1.0.0"), Flow).nodes) == 2
+
+
+def check_returned_release_is_a_copy(registry: RegistryPort) -> None:
+    rel = registry.resolve_release(AgentSelector.parse("atencion"), principal())
+    rel.interrupts.append(rel.interrupts)  # type: ignore[arg-type]
+    assert registry.resolve_release(AgentSelector.parse("atencion"), principal()).interrupts == []
+
+
+def check_get_knowledge_snapshot(registry: RegistryPort) -> None:
+    snapshot = registry.get(EntityRef.parse("kb-base@1.0.0"), KnowledgeSnapshot)
+    assert [page.path for page in snapshot.pages] == ["faq/disputas"]
+
+
+def check_get_unknown_version_raises_key_error(registry: RegistryPort) -> None:
+    with pytest.raises(KeyError):
+        registry.get(EntityRef.parse("flujo@9.9.9"), Flow)
+
+
+# Spec del registry §7.1: toda implementación de `RegistryPort` del paquete (memoria, `SnapshotRegistry` y
+# `PostgresRegistry`) pasa ESTA lista completa. Añadir una comprobación aquí la añade a las tres.
+CHECKS = (
+    check_get_exact_entity,
+    check_get_with_non_exact_content_raises,
+    check_resolve_release_by_alias_and_version,
+    check_get_serves_only_the_exact_version,
+    check_get_with_wrong_kind_fails_instead_of_returning_other_type,
+    check_unknown_selector_and_release_fail_closed,
+    check_release_status_is_active,
+    check_returned_entities_are_copies,
+    check_returned_release_is_a_copy,
+    check_get_knowledge_snapshot,
+    check_get_unknown_version_raises_key_error,
+)
+
+
+def _entities() -> list[RegistryEntity]:
+    return [Flow.model_validate(EXACT_FLOW), Flow.model_validate(RANGED_FLOW),
+            Template(id="t/saludo", version="1.0.0", locales={"es": "Hola"}), KNOWLEDGE]
+
+
+@pytest.fixture(params=["in_memory", "snapshot"])
 def registry(request: pytest.FixtureRequest) -> RegistryPort:
+    if request.param == "snapshot":
+        from agent_core.registry.snapshot import SnapshotRegistry  # T-REG-17: SnapshotRegistry (spec §5.3)
+        release = _release("rel-1", entities={"agent": {"atencion": "1.0.0"}})
+        return SnapshotRegistry(release, _entities())
     reg = InMemoryRegistry()
-    reg.add(Flow.model_validate(EXACT_FLOW), Flow.model_validate(RANGED_FLOW),
-            Template(id="t/saludo", version="1.0.0", locales={"es": "Hola"}), KNOWLEDGE)
-    reg.add_release(_release("rel-1"), agent_id="atencion")
-    reg.add_release(_release("rel-2"), agent_id="atencion", alias=None, version="2.0.0")
+    reg.add(*_entities())
+    reg.add_release(_release("rel-1", entities={"agent": {"atencion": "1.0.0"}}), agent_id="atencion")
+    reg.add_release(_release("rel-1", entities={"agent": {"atencion": "1.0.0"}}), agent_id="atencion",
+                    alias=None, version="1.0.0")
     return reg
 
 
-def test_get_exact_entity(registry: RegistryPort) -> None:
-    check_get_exact_entity(registry)
-
-
-def test_get_with_non_exact_content_raises(registry: RegistryPort) -> None:
-    check_get_with_non_exact_content_raises(registry)
-
-
-def test_resolve_release_by_alias_and_version(registry: RegistryPort) -> None:
-    check_resolve_release_by_alias_and_version(registry)
+@pytest.mark.parametrize("check", CHECKS, ids=lambda c: c.__name__)
+def test_registry_port_contract(registry: RegistryPort, check: Callable[[RegistryPort], None]) -> None:
+    check(registry)  # T-REG-17
 
 
 def test_revoked_release_status() -> None:
@@ -82,25 +154,7 @@ def test_revoked_release_status() -> None:
 
 # --- solo versiones exactas, sin resolución ---------------------------------------------------------------
 
-def test_get_serves_only_the_exact_version(registry: RegistryPort) -> None:
-    with pytest.raises(KeyError):
-        registry.get(EntityRef.parse("flujo@1.0.1"), Flow)
-    with pytest.raises(KeyError):
-        registry.get(EntityRef.parse("flujo@2.0.0"), Flow)
 
-
-def test_get_with_wrong_kind_fails_instead_of_returning_other_type(registry: RegistryPort) -> None:
-    with pytest.raises(KeyError):
-        registry.get(EntityRef.parse("flujo@1.0.0"), Template)
-
-
-def test_unknown_selector_and_release_fail_closed(registry: RegistryPort) -> None:
-    with pytest.raises(KeyError):
-        registry.resolve_release(AgentSelector.parse("desconocido"), principal())
-    with pytest.raises(KeyError):
-        registry.resolve_release(AgentSelector.parse("atencion@9.9.9"), principal())
-    with pytest.raises(KeyError):
-        registry.release_status("rel-x")
 
 
 def test_alias_and_version_are_separate_namespaces() -> None:
@@ -168,19 +222,6 @@ def test_revoke_unknown_release_fails() -> None:
 
 # --- sin aliasing: los llamadores no pueden mutar el registro --------------------------------------------
 
-def test_returned_entities_are_copies(registry: RegistryPort) -> None:
-    tpl = registry.get(EntityRef.parse("t/saludo@1.0.0"), Template)
-    tpl.locales["es"] = "Hackeado"
-    flow = registry.get(EntityRef.parse("flujo@1.0.0"), Flow)
-    flow.nodes.clear()
-    assert registry.get(EntityRef.parse("t/saludo@1.0.0"), Template).locales == {"es": "Hola"}
-    assert len(registry.get(EntityRef.parse("flujo@1.0.0"), Flow).nodes) == 2
-
-
-def test_returned_release_is_a_copy(registry: RegistryPort) -> None:
-    rel = registry.resolve_release(AgentSelector.parse("atencion"), principal())
-    rel.interrupts.append(rel.interrupts)  # type: ignore[arg-type]
-    assert registry.resolve_release(AgentSelector.parse("atencion"), principal()).interrupts == []
 
 
 def test_source_object_mutation_after_add_does_not_alter_registry() -> None:
@@ -197,9 +238,6 @@ def check_get_knowledge_snapshot(registry: RegistryPort) -> None:
     snapshot = registry.get(EntityRef.parse("kb-base@1.0.0"), KnowledgeSnapshot)
     assert [page.path for page in snapshot.pages] == ["faq/disputas"]
 
-
-def test_get_knowledge_snapshot(registry: RegistryPort) -> None:
-    check_get_knowledge_snapshot(registry)
 
 
 def test_release_carries_its_exact_knowledge_snapshot() -> None:
@@ -218,25 +256,3 @@ def test_knowledge_snapshot_is_immutable_once_published() -> None:
     other = KnowledgeSnapshot.model_validate({"id": "kb-base", "version": "1.0.0", "pages": []})
     with pytest.raises(ValueError):
         reg.add(other)
-
-
-# --- SnapshotRegistry (registry, spec §5.3): las comprobaciones de entidades ----------------------------
-
-@pytest.fixture
-def snapshot_registry() -> RegistryPort:
-    from agent_core.registry.snapshot import SnapshotRegistry
-    return SnapshotRegistry(_release("rel-1"), [
-        Flow.model_validate(EXACT_FLOW), Flow.model_validate(RANGED_FLOW),
-        Template(id="t/saludo", version="1.0.0", locales={"es": "Hola"}), KNOWLEDGE])
-
-
-def test_snapshot_get_exact_entity(snapshot_registry: RegistryPort) -> None:
-    check_get_exact_entity(snapshot_registry)
-
-
-def test_snapshot_get_with_non_exact_content_raises(snapshot_registry: RegistryPort) -> None:
-    check_get_with_non_exact_content_raises(snapshot_registry)
-
-
-def test_snapshot_get_knowledge_snapshot(snapshot_registry: RegistryPort) -> None:
-    check_get_knowledge_snapshot(snapshot_registry)

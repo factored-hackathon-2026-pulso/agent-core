@@ -477,7 +477,7 @@ Las que necesitan Postgres van en `tests/integration/`; el resto usa dobles en m
 | 14 | `tests/registry/test_service_decide.py::test_human_completes_cycle_alone` |
 | 15 | `tests/registry/test_service_decide.py::test_publish_with_moved_staging_is_stale_and_rebases` |
 | 16 | `tests/registry/test_service_decide.py::test_two_proposals_same_agent_second_publish_is_stale`, `tests/integration/test_registry_postgres.py::test_second_publish_on_same_agent_is_stale` |
-| 17 | `tests/integration/test_registry_postgres.py::test_postgres_registry_passes_contract`, `tests/contracts/test_registry_contract.py` (`SnapshotRegistry`) |
+| 17 | `tests/integration/test_registry_postgres.py::test_postgres_registry_passes_contract`, `tests/contracts/test_registry_contract.py` (`InMemoryRegistry` y `SnapshotRegistry`, lista `CHECKS` completa; la misma lista corre contra `PostgresRegistry`) |
 | 18 | `tests/integration/test_registry_postgres.py::test_candidates_and_drafts_are_invisible` |
 | 19 | `tests/registry/test_memory_store.py::test_blob_round_trip_and_integrity`, `tests/integration/test_registry_postgres.py::test_tampered_blob_raises_integrity_error` |
 | 20 | `tests/registry/test_service_decide.py::test_promote_and_revoke`, `tests/integration/test_registry_postgres.py::test_revoked_release_not_resolved_for_new_runs` |
