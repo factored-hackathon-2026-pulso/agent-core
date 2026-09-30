@@ -28,7 +28,8 @@ def check_draft_limits(drafts: Sequence[EntityDraft], limits: Limits) -> list[Vi
 
 
 def validate_candidate(c: Candidate, *, base_versions: Mapping[tuple[str, str], str],
-                       drafted: Collection[tuple[str, str]], limits: Limits = DEFAULT_LIMITS) -> list[Violation]:
+                       drafted: Collection[tuple[str, str]],
+                       limits: Limits = DEFAULT_LIMITS) -> list[Violation]:
     out: list[Violation] = list(validate_registry(AuthoringRegistry.from_entities(c.entities, [c.decl])))
     for entity in [*c.entities, *c.suites]:
         ref = version_ref(entity)
