@@ -171,7 +171,7 @@ Intentos de acceso no autorizado (`access_denied` por motivo), tasa de `401`/`40
 
 ## 10. Definición de terminado
 
-- [x] Rutas y `AccessGate` con T-M9-01…14 en verde (`tests/m09`, 200+ pruebas; integración con Postgres en `tests/integration/test_m9_postgres.py`).
+- [x] Rutas y `AccessGate` con T-M9-01…14 en verde (`tests/m09`, 176 pruebas; integración con Postgres en `tests/integration/test_m9_postgres.py`).
 - [x] `openapi.json` generado en `contracts/` por `agentcore contracts` (con `--check`). «Usado por las apps»: pendiente de las apps.
 - [ ] `TestIdentityIssuer` con script para emitir principales de la demo (cliente, asesor con delegación, anónimo, vencido). **Bloqueado** por el formato de `raw_credential` (decisión abierta, ver §11). Mientras tanto, las pruebas usan `StubVerifier` con tokens opacos.
 
