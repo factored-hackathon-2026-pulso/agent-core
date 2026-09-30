@@ -43,7 +43,8 @@
 - **Proveedor de la demo: OpenRouter**, como un alias más de `LLM_ENDPOINTS`. Los perfiles de la demo usan `structured = prompted`: OpenRouter enruta entre proveedores y uno puede ignorar `response_format` sin avisar. `native` sigue soportado; su uso con OpenRouter necesitaría `provider.require_parameters` (campo aparte en `ModelProfile`, fuera de esta rev.).
 - **Validación local sin `jsonschema`:** el gateway reutiliza el validador de subconjunto cerrado de M2 (`check_output`), que pasa a `agent_core.domain`.
 - **Nodo `agent` (ADR 0019):** su adaptador real de `AgentPort` (`LLMAgentPort`) se construye sobre `generate` en modo `prompted`, sin tool-calling nativo de la API. `ToolDef` gana `description` y `args_schema` para el catálogo que ve el modelo.
-- **Resultado de la prueba de humo:** sigue pendiente.
+- **Versión del SDK:** `openai` queda fijado a la última 2.x, exactamente `openai==2.54.0`: la línea 3.x depende de `httpx2`, que el transporte de pruebas `respx` no puede interceptar.
+- **Resultado de la prueba de humo:** sigue pendiente (requiere la key del usuario; no se corrió en la unidad 5).
 
 ## Fuentes
 - https://docs.litellm.ai/blog/security-update-march-2026

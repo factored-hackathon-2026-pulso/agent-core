@@ -1,6 +1,6 @@
 # Spec — LLM gateway (unidad 5)
 
-- Estado: rev. 2, borrador para revisión · se construye sobre `origin/main` (3bf8afc); M8 lo necesita para la demo antes del congelamiento (02/10)
+- Estado: rev. 2, implementada (2026-09-30; falta la prueba de humo manual contra OpenRouter) · se construye sobre `origin/main` (3bf8afc); M8 lo necesita para la demo antes del congelamiento (02/10)
 - Fecha: 2026-09-28 (rev. 2: 2026-09-30)
 - Repo: `agent-core` · rama `feat/llm-gateway` (worktree `.claude/worktrees/llm-gateway`)
 - Paquete: `agent_core.adapters.llm`
@@ -148,6 +148,7 @@ Parámetros del modelo: `max_tokens` y `temperature` se envían tal cual. Un mod
   - las semconv GenAI de la versión fijada: `gen_ai.operation.name = chat`, `gen_ai.provider.name` (el alias), `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.usage.input_tokens` y `gen_ai.usage.output_tokens`;
   - los atributos propios `agentcore.prompt`, `agentcore.model_profile` y `agentcore.gateway.error_kind`.
 - Captura de contenido desactivada (ADR 0003). Nunca van a spans ni logs la key, los headers ni el contenido de mensajes o respuestas.
+- El SDK `openai` registra el contenido de los requests en DEBUG: los loggers `openai` y `httpx` no se activan en DEBUG en ningún entorno con datos reales.
 - La latencia que llega al log de auditoría la mide M8 con el `Clock` (M0 §2.10). El span tiene la suya propia.
 
 ### 3.6 Costo por principal (ya aplicado en M4, M9 y M0)
@@ -279,26 +280,29 @@ Comparar dos perfiles es comparar dos releases (unidad 6).
 ## 10. Definición de terminado
 
 **Gateway**
-- `OpenAICompatGateway` exportado; T-U5-01…11 en verde; `mypy`, `ruff` y `lint-imports` en verde (el adaptador solo importa `domain`, `ports` y el SDK `openai`).
-- `openai` fijado a versión exacta con hash en `uv.lock`; `respx` en dependencias de desarrollo.
-- `LLM_ENDPOINTS` y `OPENROUTER_API_KEY` (sin valor) documentados en `.env.example`.
-- Suite de contrato de `LLMGateway` parametrizada por `ScriptedGateway` y `OpenAICompatGateway`.
-- `agentcore llm-smoke` implementado y corrido contra OpenRouter, con el resultado anotado en el ADR 0016.
-- `check_output` movida a `domain` (T-U5-12).
+- [x] `OpenAICompatGateway` exportado; T-U5-01…11 en verde; `mypy`, `ruff` y `lint-imports` en verde (el adaptador solo importa `domain`, `ports` y el SDK `openai`).
+- [x] `openai` fijado a versión exacta (`openai==2.54.0`) con hash en `uv.lock`; `respx` en dependencias de desarrollo.
+- [x] `LLM_ENDPOINTS` y `OPENROUTER_API_KEY` (sin valor) documentados en `.env.example`.
+- [x] Suite de contrato de `LLMGateway` parametrizada por `ScriptedGateway` y `OpenAICompatGateway`.
+- [x] `agentcore llm-smoke` implementado.
+- [ ] `agentcore llm-smoke` corrido contra OpenRouter, con el resultado anotado en el ADR 0016 (manual, requiere la key del usuario; pendiente).
+- [x] `check_output` movida a `domain` (T-U5-12).
 
 **Nodo `agent`**
-- `LLMAgentPort` exportado; T-U5-13…18 en verde; excepción de `.importlinter` acotada a su módulo (`ignore_imports` de `agent_core.adapters.llm.agent_port -> agent_core.interpreter`).
-- `handle_agent` captura `GatewayError` (T-U5-17) y `composition` inyecta `agents` (T-U5-18).
-- `ToolDef.description` y `args_schema` en M0, con `contracts/` regenerado y la regla G0-24 en M1 con su prueba.
-- m02 §3.7 y §11 actualizados: el abierto del adaptador real queda cerrado y apunta a esta spec.
+- [x] `LLMAgentPort` exportado; T-U5-13…18 en verde; excepción de `.importlinter` acotada a su módulo (`ignore_imports` de `agent_core.adapters.llm.agent_port -> agent_core.interpreter`).
+- [x] `handle_agent` captura `GatewayError` (T-U5-17) y `composition` inyecta `agents` (T-U5-18).
+- [x] `ToolDef.description` y `args_schema` en M0, con `contracts/` regenerado y la regla G0-24 en M1 con su prueba.
+- [x] m02 §3.7 y §11 actualizados: el abierto del adaptador real queda cerrado y apunta a esta spec.
 
 **Cambios en otras specs (aplicados en el mismo cambio)**
-- M8 (errores del gateway, §3.3) con su código y pruebas; M0 (`ToolDef`); M1 (G0-24); M2 (§3.7 y §11, import de `check_output`). M4 (`add_usage`) y M0 rev. 5 ya están aplicados.
+- [x] M8 (errores del gateway, §3.3) con su código y pruebas; M0 (`ToolDef`); M1 (G0-24); M2 (§3.7 y §11, import de `check_output`). M4 (`add_usage`) y M0 rev. 5 ya están aplicados.
 
 ## 11. Abiertos
 
 - **Modelo concreto de la demo en OpenRouter:** sin elegir. No bloquea la construcción; se necesita para la prueba de humo. Debe soportar salida JSON obediente en modo `prompted` y ES/PT.
 - **Prompt del bucle del nodo `agent`:** el texto concreto del `Prompt` (instrucciones del formato `kind/tool/args/output`) se escribe en el registro de la demo, no en el código. La spec fija el contrato, no la redacción.
 - **Regla de M1 para `output_schema`:** m02 §11 anota que falta detectar al validar el flow un `output_schema` fuera del subconjunto. G0-24 cubre `args_schema`; extenderla a `output_schema` es trivial pero no está en el alcance de esta rev.
+- **`GatewayError` sin evento en el nodo `agent`:** cuando `AgentPort.step` lanza un `GatewayError`, M2 carga el uso y termina en `gave_up` sin dejar ningún evento en el log de auditoría (`agent_step` solo se emite en pasos que devolvieron). Abierto: si `agent_step` debe registrar el fallo (`status` con el `kind`) para que la auditoría explique el `gave_up`.
+- **`SCHEMA_VERSION` sin subir:** `ToolDef.description` y `args_schema` se agregaron como campos opcionales sin subir `SCHEMA_VERSION` (`0.4.0`). Abierto: decidir si un campo opcional nuevo exige subirla y regenerar `contracts/` con otra versión.
 - **`llm_structured` en M5:** cómo su `ProviderSpec` referencia un `Prompt`. Se resuelve al construir M5; el gateway no cambia.
 - **Mecanismo del tope total (§3.1 paso 5):** decidido en el plan: la llamada corre en un hilo y el adaptador espera con `Future.result(timeout=timeout_s)` (sin leer el reloj, regla de `ruff`). Un hilo abandonado termina por los timeouts por fase del SDK. Criterio de aceptación: T-U5-11.

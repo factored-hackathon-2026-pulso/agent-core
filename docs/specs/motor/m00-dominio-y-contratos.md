@@ -195,6 +195,8 @@ class ToolDef:        id: str; version: str; risk_class: RiskClass
                       idempotent: bool; readback_by: Literal["idempotency_key"] | None   # obligatorio en write_*
                       untrusted_fields: list[str]; source: str | None        # tabla de origen para M7
                       confirmation_ttl: timedelta = 5 min
+                      description: str | None = None        # catálogo del nodo `agent` (unidad 5): qué hace la tool, para el modelo
+                      args_schema: dict | None = None       # catálogo del nodo `agent`: subconjunto cerrado de JSON Schema (`domain.schema`)
                       is_write -> bool                                      # risk_class ∉ {read, compute}
 class ProviderSpec:   provider: Literal["jev", "classifier", "llm_structured", "rule"]; config: dict[str, JsonValue]
 class CalibrationRef: method: Literal["none", "isotonic", "platt", "temperature"]; run: str | None
@@ -213,6 +215,8 @@ class KnowledgeSnapshot: id: str; version: str; pages: list[KnowledgePage]  # <=
 RegistryEntity = Agent | Flow | Policy | Template | Prompt | ToolDef | DecisionModelDef
                  | LanguageDetection | InjectionRuleset | ModelProfile | KnowledgeSnapshot
 ```
+
+`description` y `args_schema` (2026-09-30, unidad 5) son opcionales en M0: solo el catálogo que `LLMAgentPort` le muestra al modelo del nodo `agent` los necesita, y M1 (G0-24) los exige para toda tool de `tools_allowed` de un nodo `agent`. `check_output` (validador del subconjunto cerrado de JSON Schema) es ahora de `agent_core.domain` (`schema.py`), no de M2.
 
 Validadores: `default_locale ∈ supported_locales`; `ToolDef` de escritura exige `readback_by`; `Budgets` con valores positivos.
 

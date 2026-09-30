@@ -183,6 +183,7 @@ campo   := [A-Za-z0-9_]+
 | G0-14 | `end` con outcome no declarable, o mezcla de modos | `is_declarable(outcome, modo)`; todos los `end` en un mismo modo (§3.8) | 5 |
 | G0-15 | Prompt sin perfil de modelo (ADR 0016) | Para cada `generate.prompt_ref` que resuelve, `reg.resolve(model_profile, prompt.model_profile)` no es `None` | 5 |
 | G0-16 | Flow de modo task con nodos que esperan | Si el modo del flow es `task` (§3.8), no tiene `collect`, `confirm` ni `respond(await: true)`: un run task no tiene turnos que los contesten | 5 |
+| G0-24 | Tool de un nodo `agent` sin documentar | Toda tool de `tools_allowed` de un nodo `agent` lleva `description` y un `args_schema` dentro del subconjunto cerrado (`domain.schema`); el mensaje nombra la tool y la palabra clave fuera del subconjunto (§3.13) | 5 |
 
 **Consecuencia de G0-16:** en el MVP un agente task no puede escribir, porque toda escritura exige un `confirm` (G0-05). G0-16 **no se relaja** (ADR 0019): un flow task escribe solo con tools `write_draft` (§3.13) o, en producción, con `await_approval` (ADR 0014).
 
@@ -397,6 +398,7 @@ Cualquier error de `load_yaml` es una sola `Violation` G0-01 con la ruta del arc
 - **Referencias:** `tools_allowed` y `prompt_ref` son sitios de referencia (G0-02) y `pin_release` los fija.
 - **G0-07** es alcanzable. **G0-15** cubre también el `prompt_ref` del `agent`. **G0-12** (locales) alcanza al prompt por ser un sitio de plantilla. **G0-06** trata `gave_up` como rama de fallo.
 - **G0-22:** ninguna ruta `facts.<save_as>` de un nodo `agent` se lee en `rule.expr`, `verify.predicate`, `tool.args`, `confirm.action.args`, `escalate.priority_expr` ni `end.output_map`. Solo `respond` (plantilla, `allowed_facts` y su plantilla de respaldo) y el `input_view` de un `decide` pueden leerla. Para que un valor del agente llegue a una escritura debe pasar por un `collect` (la persona lo da) o por un `decide` con esquema.
+- **G0-24** (2026-09-30, unidad 5; **implementada**): toda tool de `tools_allowed` de un nodo `agent` lleva `description` y un `args_schema` dentro del subconjunto cerrado. Es el catálogo que `LLMAgentPort` le muestra al modelo; sin él falla cerrado en runtime, así que la regla lo detecta al validar. No alcanza a las tools fuera de un nodo `agent`.
 - Pruebas: `tests/m01/test_agent_node.py`.
 
 **Diseñado, no implementado (clase `write_draft`, constructor por señal):** depende de que el registry garantice borradores reversibles (registry §18) y de especificar la ruta sin `confirm` en M3.
@@ -477,6 +479,7 @@ Ninguno. La unidad 2 registra el resultado del gate.
 | T-M1-43 | `pin_release` sobre el registro de ejemplo: todas las referencias quedan exactas; cargado en `InMemoryRegistry`, `get` funciona; dos rangos que resuelven a versiones distintas del mismo id lanzan | 11 | 1 |
 | T-M1-44 | CLI: código `0` sobre el registro de ejemplo, `1` con un flow inválido y `2` con una raíz inexistente; `--json` con el formato de §3.12 y la lista ordenada | — | 1 |
 | T-M1-45 | `derive_claims` da lo mismo con `AuthoringRegistry` que con `release_view` sobre la release fijada | — | 1 |
+| T-M1-46 | G0-24: una tool de `tools_allowed` de un nodo `agent` sin `description` o sin `args_schema`, o con un `args_schema` fuera del subconjunto (el mensaje nombra la palabra clave), falla; una tool sin documentar fuera de un nodo `agent` no dispara G0-24 (`tests/m01/test_agent_node.py`) | — | 5 |
 
 ## 8. Evaluación
 
@@ -507,7 +510,7 @@ Sin métricas de runtime. Se reportan:
 
 ## 11. Abiertos
 
-- **Numeración de las reglas de conocimiento** (tema #10): con G0-15 (gateway) y G0-16 (modo task) tomadas, M12 pasa a proponer G0-17 a G0-21. Las reglas de agentes internos (§3.13) empiezan en G0-22.
+- **Numeración de las reglas de conocimiento** (tema #10): con G0-15 (gateway) y G0-16 (modo task) tomadas, M12 pasa a proponer G0-17 a G0-21. Las reglas de agentes internos (§3.13) empiezan en G0-22 (G0-24 se sumó con la unidad 5).
 - **Agentes internos (ADR 0019):** G0-23 y AG-02 están solo especificadas. Falta decidir si G0-22 debe cubrir también los `facts` de un `tool` `compute` que reciba una salida del agente, y si un `collect.prompt_ref` puede mostrar la salida del `agent` (hoy lo rechaza G0-22).
 - **Formato de `decide.input_view`:** lo define M5. M1 lo trata como una lista de rutas (§3.2); si M5 cambia la forma, cambia la tabla de productores de §3.6.
 
