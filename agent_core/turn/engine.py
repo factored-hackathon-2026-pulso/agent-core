@@ -197,7 +197,7 @@ class TurnEngine:
     def _fill_transcript_fp(frame: TurnFrame, refs: list[TranscriptRef]) -> None:
         if len(refs) < 2:
             return
-        fingerprint = refs[1].fingerprint
+        fingerprint = refs[-1].fingerprint  # M11: `[user, *rejected, final]`
 
         def fill(event: EngineEvent) -> EngineEvent:
             if isinstance(event, ResponseEmitted) and event.payload.transcript_fp is None:

@@ -1,8 +1,8 @@
-"""Puertos locales de M4 (patrón D1 de M2). Los adaptadores a M5/M11 reales van en Fase B.
+"""Puertos locales de M4 (patrón D1 de M2).
 
-[POR VERIFICAR] `UnderstandPort` reproduce m05 §2 (`UnderstandService.run`) y `TurnRecorderPort`/
-`EventChain` reproducen m11 §2 (`TurnRecorder.record_turn`, `AuditLog.append`); se contrastan con el
-código cuando exista."""
+`TurnRecorderPort` y `EventChain` se verificaron contra M11 real (`TurnRecorder.record_turn`,
+`AuditLog.append`; `tests/m04/test_real_m11.py`). `UnderstandPort` NO coincide con `UnderstandService.run`
+de M5: ver m04 §11 (discrepancias de la Fase B)."""
 
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -66,13 +66,14 @@ class TurnRecorderPort(Protocol):
         final_model: str,
         rejected: list[RejectedDraft],
     ) -> list[TranscriptRef]:
-        """Orden: entrada del usuario, respuesta final, borradores rechazados."""
+        """Orden (M11): entrada del usuario, borradores rechazados, respuesta final."""
         ...
 
 
 class EventChain(Protocol):
-    def append(self, uow: UnitOfWork, run_id: str, events: list[EngineEvent]) -> None:
-        """Encadena (seq, prev_hash, hash) y persiste con `uow.append_events`."""
+    def append(self, uow: UnitOfWork, run_id: str, events: list[EngineEvent]) -> object:
+        """Encadena (seq, prev_hash, hash) y persiste con `uow.append_events`. El retorno se ignora (M11
+        devuelve los eventos encadenados)."""
         ...
 
 

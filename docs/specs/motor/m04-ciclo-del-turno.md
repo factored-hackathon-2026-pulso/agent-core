@@ -1,6 +1,6 @@
 # M4 — Ciclo del turno
 
-- Estado: rev. 2 (2026-09-29) · Fase 2 · Fase A implementada con dobles
+- Estado: rev. 2 (2026-09-29) · Fase 2 · Fase A implementada con dobles · Fase B: grabador y cadena de M11 verificados; Understand pendiente de decisión · Fase C (Postgres) pendiente
 - Paquete: `agent_core.turn`
 - Origen: spec general §4.1 (estado, release, revocación, recuperación, abandono), §4.4 (uso del resultado de Understand), §4.5, §4.6, §4.8, §4.9, §4.10, invalidación de §4
 - ADRs: 0004 (intenciones e interrupciones), 0007 (precedencia con `confirm` pendiente), 0013 (cierre por escalamiento)
@@ -175,9 +175,9 @@ Tiempos, todos desde el log de auditoría (no dependen del muestreo de trazas):
 
 ## 10. Definición de terminado
 
-- Pipeline completo con dobles, T-M4-01…17 en verde.
-- Integración con Postgres: bloqueo optimista, `409` y transacción única por turno.
-- `sweep` invocable por un comando (`agentcore sweep`) para la demo.
+- [x] Pipeline completo con dobles, T-M4-01…17 en verde.
+- [ ] Integración con Postgres: bloqueo optimista, `409` y transacción única por turno (Fase C: pendiente; Docker no estaba disponible al intentarlo el 2026-09-29).
+- [ ] `sweep` invocable por un comando (`agentcore sweep`) para la demo: el comando existe, pero sin un sweeper inyectado termina con exit 2 hasta que la Fase C lo cablee sobre Postgres.
 
 ## 11. Abiertos
 
@@ -213,3 +213,19 @@ Detalles de implementación que el spec no fijaba (revisar):
 - **Orden `409`/`410`:** con un lease ajeno vigente sobre un run ya cerrado, el turno recibe `409` (el lease se toma antes de mirar `status`). El spec lista ambos errores sin precedencia.
 - **`affirm`/`deny` con `awaiting = slot`:** sin `confirm` pendiente y con el run esperando un slot, `continue`, `affirm` y `deny` se toman como respuesta del slot (`slot_answer` con el texto crudo). El spec solo define `continue` para `collect` (§3.3).
 - **`inactive_after`:** solo se fija en runs conversacionales (§3.6); el cierre `abandoned` del turno y del barrido comparte una sola función (`closed_state`).
+
+## 14. Fase B: contraste con M5 y M11 reales (2026-09-29)
+
+**M11 (verificado, `tests/m04/test_real_m11.py`):** `TurnRecorder` cumple `TurnRecorderPort` y `AuditLog` cumple `EventChain` (mypy). Dos discrepancias resueltas dentro de M4:
+
+- **Orden de las referencias de `record_turn`:** M11 devuelve `[user, *rejected, final]` (m11, decisión 3); M4 tomaba `refs[1]`, que con borradores rechazados era la huella de un borrador. Ahora usa `refs[-1]` (`transcript_fp` = huella de la respuesta final). El doble `InMemoryTurnRecorder` sigue ese orden.
+- **`EventChain.append`** devuelve `-> object` (M11 devuelve los eventos encadenados; M4 los ignora).
+- Recordatorio de M11: el `recorder()` de `AuditLog` solo agrega los eventos de M3; M4 ya vuelca antes los pendientes del turno (paso 14).
+
+**M5 (NO cableado; requiere decisión):** `UnderstandPort.run(UnderstandRequest) -> UnderstandOutcome` no equivale a `UnderstandService.run(text, UnderstandContext, locale) -> (UnderstandResult, list[DecisionMade])`. Lo que falta o difiere:
+
+1. `UnderstandContext.token_vault` es un `TokenVault` de M7 y M4 no puede importar `agent_core.views`; `TurnRuntime` tampoco lo expone.
+2. `recent_turns` (spec M5: "M4 arma n fijo") no tiene fuente en M4: `TranscriptStore.recent_turns` existe en M0 pero M4 no recibe ese puerto.
+3. `flows` e `interrupts` se pueden derivar de `release.entities[flow]` y `release.interrupts`, y `model_ref` de `pinned_ref(release, decision_model, agent.understand)`.
+4. `slots_model_ref` (2.ª llamada de slots) no tiene fuente: `Agent` no tiene campo y `Release.entities` no distingue el rol del modelo.
+5. `UnderstandOutcome` no lleva `p_cal`, `model_calls` ni `tokens` (M5 sí los da) y solo `cost_usd`; `max_model_calls_per_turn` no puede contar la 2.ª llamada.

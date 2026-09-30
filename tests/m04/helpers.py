@@ -149,9 +149,14 @@ class InMemoryTurnRecorder:
         if self.fail is not None:
             raise self.fail
         self.calls.append((run_id, turn_id, user_msg_model, final_model, rejected))
-        fp = Fingerprint(alg="HMAC-SHA256", kid="fp-1", value=f"fp{len(self.calls)}")
         n = len(self.calls)
-        return [TranscriptRef(entry_id=f"entry-{n}-{i}", fingerprint=fp) for i in range(2 + len(rejected))]
+        # Orden de M11: `[user, *rejected, final]`; la huella de la respuesta final es la última.
+        refs = [f"fp{n}-user", *[f"fp{n}-rejected-{i}" for i in range(len(rejected))], f"fp{n}"]
+        return [
+            TranscriptRef(entry_id=f"entry-{n}-{i}",
+                          fingerprint=Fingerprint(alg="HMAC-SHA256", kid="fp-1", value=value))
+            for i, value in enumerate(refs)
+        ]
 
 
 class PlainChain:
