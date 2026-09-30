@@ -34,18 +34,24 @@ def test_a_credential_signed_by_the_issuer_verifies(tmp_path: Path) -> None:
     assert verifier.verify(issuer.customer()).id == "cust-001"
 
 
-@pytest.mark.parametrize("bad", [
-    {"principal_keys": {}},                        # mapa vacío
-    {"principal_keys": {"k1": "no-es-b64url!"}},   # base64url inválido
-    {"principal_keys": {"k1": "AAAA"}},            # longitud distinta de 32 bytes
-    {"principal_keys": {"k1": 5}},                 # no es texto
-    {"delegation_keys": {}},
+@pytest.mark.parametrize(("bad", "value"), [
+    ({"principal_keys": {}}, None),                              # mapa vacío
+    ({"principal_keys": {"k1": "no-es-b64url!"}}, "no-es-b64url"),  # base64url inválido
+    ({"principal_keys": {"k1": "QUJDRA"}}, "QUJDRA"),            # longitud distinta de 32 bytes
+    ({"principal_keys": {"k1": 5}}, None),                       # no es texto
+    ({"delegation_keys": {}}, None),
+    ({"delegation_keys": {"d1": "no-es-b64url!"}}, "no-es-b64url"),
 ])
-def test_invalid_key_files_fail_closed_without_echoing_the_value(tmp_path: Path, bad: dict[str, Any]) -> None:
+def test_invalid_key_files_fail_closed_without_echoing_the_value(
+        tmp_path: Path, bad: dict[str, Any], value: str | None) -> None:
     issuer = TestIdentityIssuer(FakeClock())
     with pytest.raises(SchemaError) as info:
         load_identity_verifier(_file(tmp_path, issuer, **bad), lambda ref, now: True)
-    assert "no-es-b64url" not in str(info.value)
+    message = str(info.value)
+    if value is not None:
+        assert value not in message
+    for key in (issuer.principal_key, issuer.delegation_key):  # ninguna clave válida del archivo se imprime
+        assert _pub(key) not in message
 
 
 def test_missing_file_is_a_schema_error(tmp_path: Path) -> None:

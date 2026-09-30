@@ -728,7 +728,8 @@ def test_the_run_transcript_is_readable_through_the_wired_reader() -> None:
     run = client.post("/v1/runs", json={"agent": "atencion"}, headers=auth).json()
     got = client.get(f"/v1/runs/{run['run_id']}/transcript",
                      headers={"Authorization": auth["Authorization"]})
-    assert got.status_code in (200, 403)  # 403 si TableAuthz no concede lectura; nunca 500/404
+    assert got.status_code == 200  # SyntheticAuthz concede la lectura del dueño
+    assert got.json()["run_id"] == run["run_id"]
 ```
 
 Nota: antes de fijar las aserciones sobre `session_id`, `messages` y `run_id`, correr `uv run python -c "…"` o leer `agent_core/api/schemas.py` (`publish_run`, `publish_turn`) y usar los nombres exactos de campo del JSON de respuesta; el resto del test no cambia. Si la semántica del agente "atencion" exige otro `RunInput`, copiar el cuerpo de `EngineWorld.start()` en `testing/engine_world.py`.
@@ -741,7 +742,7 @@ Expected: FAIL con `ModuleNotFoundError: agent_core.composition.serve`.
 - [ ] **Step 3: Write minimal implementation**
 
 ```python
-"""Raíz de composición del servidor: `ServePorts` -> `ApiDeps` (motor real + API M9 + registry como extensión)."""
+"""Raíz de composición del servidor: `ServePorts` -> `ApiDeps` (motor real + API M9; el registry solo si se pasa un `registry_service`)."""
 
 from agent_core.api.app import ApiDeps
 from agent_core.api.security_log import OtelSecurityLog
@@ -926,7 +927,7 @@ Expected: PASS.
 
 - `TEMAS-ABIERTOS-PENDIENTES.md`: en la tabla, #13 pasa a **"Resuelto salvo las piezas reales de las unidades 3, 6 y 7 (2026-09-30)"**; el encabezado de estado deja de listar #13 como abierto; la sección `## 13.` reemplaza su cuerpo por: decisión (modelo real, resto doble), enlace a la spec y a este plan, y la lista de piezas que siguen pendientes (ToolExecutor real, AuthzPort real, TranscriptStore persistente, calibración real, artefactos del classifier, servicio de identidad real con `grant_active`).
 - `m09-acceso-y-api.md` §11: marcar "Cableado real" como resuelto (`agentcore serve`, `agent_core/composition/serve*.py`) y documentar el formato del archivo de claves de identidad.
-- `registry-design.md` §14: anotar que `serve` monta el registry como extensión (`registry_extension`).
+- `registry-design.md` §14: anotar que `build_api_deps` acepta el `registry_service`; `serve` aún no lo monta (spec §8).
 - Spec del servidor §3.2/§3.4: claves por `EnvKeyProvider`, `AGENTCORE_JEV_API_KEY`, `--identity-keys`, y `identity` entre los dobles en demo.
 
 - [ ] **Step 6: Punto de control final**

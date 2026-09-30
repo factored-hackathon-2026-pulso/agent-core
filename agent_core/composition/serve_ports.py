@@ -4,6 +4,7 @@ import argparse
 import importlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +12,7 @@ import psycopg
 
 from agent_core.adapters.env_keys import EnvKeyProvider, KeyConfigError
 from agent_core.adapters.identity_keys import load_identity_verifier
-from agent_core.adapters.llm import OpenAICompatGateway, load_endpoints
+from agent_core.adapters.llm import EndpointConfig, OpenAICompatGateway, load_endpoints
 from agent_core.adapters.postgres_uow import PostgresStore
 from agent_core.decision import DecisionConfigError, DecisionProvider, HttpJevTransport, JevProvider
 from agent_core.decision.calibration.artifact import CalibrationSource
@@ -95,7 +96,9 @@ def add_serve_parser(sub: Any) -> None:
     serve = sub.add_parser("serve", help="arranca el servidor HTTP (M9) con el motor compuesto")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
-    serve.add_argument("--dsn", default=None, help=f"DSN de Postgres (o {DSN_ENV}); no se imprime nunca")
+    serve.add_argument("--dsn", default=None,
+                       help=f"DSN de Postgres; prefiere {DSN_ENV}: por argv la contraseña queda visible "
+                            "en la lista de procesos. No se imprime nunca")
     serve.add_argument("--identity-keys", type=Path, default=None,
                        help="archivo con las claves públicas de identidad (principal y delegación)")
     for attr, name, default in _DOUBLES:
@@ -152,6 +155,20 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
             chosen[name] = given
     if not demo and args.identity_keys is None:
         problems.append("falta --identity-keys (archivo de claves públicas de identidad)")
+
+    # Configuración estática: se valida entera antes de ejecutar cualquier fábrica de pieza.
+    grant_active: list[Callable[[str, datetime], bool]] = []  # lo llena la fábrica de `grant-active`
+    verifier: IdentityVerifier | None = None
+    if args.identity_keys is not None:
+        try:
+            verifier = load_identity_verifier(args.identity_keys, lambda ref, now: grant_active[0](ref, now))
+        except SchemaError as exc:
+            problems.append(str(exc))
+    endpoints: dict[str, EndpointConfig] = {}
+    try:
+        endpoints = load_endpoints(env)
+    except SchemaError as exc:
+        problems.append(str(exc))
     if problems or not dsn or keys is None:
         raise ServeConfigError(problems)
 
@@ -174,16 +191,12 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         raise ServeConfigError(problems)
 
     doubles = list(built) if demo else []
-    if args.identity_keys is not None:
-        try:
-            verifier: IdentityVerifier = load_identity_verifier(args.identity_keys, built["grant-active"])
-        except SchemaError as exc:
-            raise ServeConfigError([str(exc)]) from None
-    else:  # sin archivo de claves solo se llega aquí en demo (arriba se exigió lo contrario)
+    grant_active.append(built["grant-active"])
+    if verifier is None:  # sin archivo de claves solo se llega aquí en demo (arriba se exigió lo contrario)
         verifier = _load(DEMO_VERIFIER)()
         doubles.append("identity")
 
-    gateway = OpenAICompatGateway(pg_registry, load_endpoints(env), env)
+    gateway = OpenAICompatGateway(pg_registry, endpoints, env)
     jev = JevProvider(HttpJevTransport(lambda: _jev_key(env), clock))
     return ServePorts(
         clock=clock, ids=ids, keys=keys, uow_factory=store.uow, audit=store.audit(), counters=store.costs(),

@@ -53,7 +53,10 @@ def test_the_transcript_is_served_by_the_wired_reader() -> None:
     run = client.post("/v1/runs", json={"agent": "atencion"},
                       headers={**_bearer(issuer), "Idempotency-Key": "k-2"}).json()
     got = client.get(f"/v1/runs/{run['run_id']}/transcript", headers=_bearer(issuer))
-    assert got.status_code in (200, 403), got.text  # 403 si la autorización no concede lectura; nunca 500
+    assert got.status_code == 200, got.text  # SyntheticAuthz concede la lectura del dueño
+    body = got.json()
+    assert body["run_id"] == run["run_id"]
+    assert "¿Qué cargo quieres disputar?" in [e["text"] for e in body["entries"]]
 
 
 def test_a_bad_credential_is_rejected_before_the_engine() -> None:

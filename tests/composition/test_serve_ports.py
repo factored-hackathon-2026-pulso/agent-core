@@ -136,3 +136,54 @@ def test_a_missing_jev_key_is_a_config_error_that_is_not_swallowed_as_a_provider
     transport = ports.providers["jev"]._transport  # type: ignore[attr-defined]
     with pytest.raises(DecisionConfigError, match="AGENTCORE_JEV_API_KEY"):
         transport.send({}, 1000)
+
+
+# --- menores del revisor: validación temprana y agregada ----------------------------------------------
+
+CALLS: list[str] = []
+
+
+def counting_piece(ctx: object) -> _Piece:
+    CALLS.append("called")
+    return _Piece()
+
+
+def test_invalid_llm_endpoints_is_a_config_problem_not_a_schema_error() -> None:
+    with pytest.raises(ServeConfigError) as info:
+        _resolve(AGENTCORE_ALLOW_DEMO="1", LLM_ENDPOINTS="{no es json")
+    assert "LLM_ENDPOINTS" in " ".join(info.value.problems)
+
+
+def test_static_config_problems_are_reported_together_before_any_factory_runs(tmp_path: object) -> None:
+    from pathlib import Path
+
+    bad_keys = Path(str(tmp_path)) / "keys.yaml"
+    bad_keys.write_text('{"principal_keys": {}}', encoding="utf-8")
+    CALLS.clear()
+    with pytest.raises(ServeConfigError) as info:
+        _resolve("--identity-keys", str(bad_keys), "--tools",
+                 "tests.composition.test_serve_ports:counting_piece",
+                 AGENTCORE_ALLOW_DEMO="1", LLM_ENDPOINTS="{no es json")
+    text = " ".join(info.value.problems)
+    assert "principal_keys" in text and "LLM_ENDPOINTS" in text
+    assert CALLS == []  # las fábricas no corrieron con la configuración estática rota
+
+
+def test_the_dsn_never_reaches_stderr(capsys: pytest.CaptureFixture[str],
+                                      monkeypatch: pytest.MonkeyPatch) -> None:
+    from agent_core.cli import main
+
+    monkeypatch.delenv("AGENTCORE_ALLOW_DEMO", raising=False)
+    monkeypatch.setenv("LLM_ENDPOINTS", "{no es json")
+    code = main(["serve", "--dsn", "postgresql://user:S3CRETPW@host/db"])
+    assert code == 2
+    assert "S3CRETPW" not in capsys.readouterr().err
+
+
+def test_dsn_help_recommends_the_env_var_over_argv(capsys: pytest.CaptureFixture[str]) -> None:
+    from agent_core.cli import main
+
+    with pytest.raises(SystemExit):
+        main(["serve", "--help"])
+    out = " ".join(capsys.readouterr().out.split())
+    assert "AGENTCORE_REGISTRY_DSN" in out and "lista de procesos" in out
