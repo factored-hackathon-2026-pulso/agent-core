@@ -2,17 +2,27 @@
 
 import argparse
 import importlib
+import logging
 import os
 import sys
 from collections.abc import Sequence
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
 
 import psycopg
 
 from agent_core.actions import ActionManager
-from agent_core.adapters.llm import OpenAICompatGateway, load_endpoints
-from agent_core.adapters.llm.smoke import SMOKE_PROMPT, SmokeRegistry, format_report, run_smoke
+from agent_core.adapters.llm import LLMAgentPort, OpenAICompatGateway, load_endpoints
+from agent_core.adapters.llm.smoke import (
+    SMOKE_PROMPT,
+    AgentStepRunner,
+    AgentStepUsage,
+    SmokeRegistry,
+    format_report,
+    run_smoke,
+    smoke_agent_config,
+)
 from agent_core.adapters.postgres_uow import PostgresStore
 from agent_core.adapters.system_clock import SystemClock
 from agent_core.adapters.system_ids import SystemIds
@@ -36,13 +46,17 @@ from agent_core.domain import (
     DomainError,
     EntityKind,
     EntityRef,
+    Locale,
+    ModelProfile,
     Principal,
     RegistryEntity,
     Release,
+    RunState,
     SchemaError,
 )
 from agent_core.flows import AuthoringRegistry, load_registry
 from agent_core.flows.cli_validate import run_validate
+from agent_core.interpreter import AgentRequest
 from agent_core.ports import Clock
 from agent_core.turn import Sweeper, SweepReport
 
@@ -199,8 +213,34 @@ def _run_sweep(args: argparse.Namespace, sweeper: SweeperLike | None, clock: Clo
     return 0
 
 
+def _smoke_state(locale: Locale, now: datetime) -> RunState:
+    """Estado sintético mínimo: `LLMAgentPort` solo lee el locale."""
+    return RunState.model_validate({
+        "run_id": "llm-smoke", "release": "llm-smoke", "agent": "llm-smoke@0.0.0",
+        "principal": {"type": "service", "id": "llm-smoke", "auth": {"level": "session", "at": now},
+                      "exp": now + timedelta(minutes=30)}, "mode": "conversational", "locale": locale,
+        "created_at": now, "last_activity_at": now, "inactive_after": now + timedelta(minutes=30)})
+
+
+def _agent_step_runner(port: LLMAgentPort, clock: Clock) -> AgentStepRunner:
+    config = smoke_agent_config()
+
+    def run(step: int, locale: Locale) -> AgentStepUsage:
+        result = port.step(AgentRequest(node_id="llm-smoke", config=config, step=step),
+                           _smoke_state(locale, clock.now()))
+        return AgentStepUsage(tokens=result.tokens, cost_usd=result.cost_usd)
+
+    return run
+
+
 def _run_llm_smoke(args: argparse.Namespace) -> int:
     """Prueba de humo del gateway: nunca imprime la clave ni el contenido generado."""
+    # El SDK `openai` registra los cuerpos de request en DEBUG (incluso con OPENAI_LOG=debug): se corta.
+    for name in ("openai", "httpx"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+    if args.n < 1:
+        print("--n debe ser al menos 1", file=sys.stderr)
+        return USAGE_ERROR
     try:
         endpoints = load_endpoints(os.environ)
         if not endpoints:
@@ -214,10 +254,21 @@ def _run_llm_smoke(args: argparse.Namespace) -> int:
     except SchemaError as error:
         print(str(error), file=sys.stderr)
         return USAGE_ERROR
-    registry, _ = load_registry(args.registry)
+    registry, violations = load_registry(args.registry)
+    if violations:
+        print(f"registro con {len(violations)} violaciones (agentcore validate); sigue si el perfil existe",
+              file=sys.stderr)
     agents = _AuthoringAgents(registry)  # solo se usa `get`; ver `build_sweeper`
-    gateway = OpenAICompatGateway(SmokeRegistry(agents, profile), endpoints, os.environ)  # type: ignore[arg-type]
-    report = run_smoke(gateway, SMOKE_PROMPT, SystemClock(), n=args.n)
+    try:
+        agents.get(profile, ModelProfile)
+    except SchemaError:
+        print(f"el perfil {profile} no está en el registro {args.registry}", file=sys.stderr)
+        return USAGE_ERROR
+    smoke_registry = SmokeRegistry(agents, profile)  # type: ignore[arg-type]
+    gateway = OpenAICompatGateway(smoke_registry, endpoints, os.environ)
+    clock = SystemClock()
+    port = LLMAgentPort(gateway, smoke_registry, lambda kind, ref: ref.require_exact())
+    report = run_smoke(gateway, SMOKE_PROMPT, clock, n=args.n, agent_step=_agent_step_runner(port, clock))
     print(format_report(report))
     return 0 if report.ok > 0 else 1
 

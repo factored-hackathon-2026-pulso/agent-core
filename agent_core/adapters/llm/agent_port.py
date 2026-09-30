@@ -64,7 +64,7 @@ class LLMAgentPort:
             cost_usd=result.cost_usd)
 
     def _require_prompted(self, prompt: EntityRef) -> None:
-        """Falla rápido si el perfil es `native`: `STEP_SCHEMA` no cabe en `json_schema` estricto de OpenAI."""
+        """Falla rápido con perfil `native`: `STEP_SCHEMA` no cabe en el `json_schema` estricto de OpenAI."""
         prompt_def = self._registry.get(prompt, Prompt)
         profile_ref = prompt_def.model_profile.require_exact()
         profile = self._registry.get(profile_ref, ModelProfile)
