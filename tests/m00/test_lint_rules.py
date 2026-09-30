@@ -123,8 +123,8 @@ def _contracts() -> dict[str, dict[str, list[str]]]:
     return result
 
 
-# `cli` y `contracts` son raíces de composición/herramienta: pueden importarlo todo.
-_UNCONTRACTED = {"cli", "contracts"}
+# `cli`, `composition` y `contracts` son raíces de composición/herramienta: pueden importarlo todo.
+_UNCONTRACTED = {"cli", "composition", "contracts"}
 
 
 def test_every_subpackage_is_a_contract_source() -> None:
@@ -142,7 +142,8 @@ def test_every_module_contract_forbids_adapters_cli_and_contracts() -> None:
         if name.endswith((":domain_sin_ports", ":adapters", ":telemetry")):  # ya prohíben cli y contracts
             continue
         forbidden = set(contract["forbidden_modules"])
-        assert {"agent_core.adapters", "agent_core.cli", "agent_core.contracts"} <= forbidden, name
+        assert {"agent_core.adapters", "agent_core.cli", "agent_core.composition",
+                "agent_core.contracts"} <= forbidden, name
 
 
 def test_domain_must_not_import_ports() -> None:

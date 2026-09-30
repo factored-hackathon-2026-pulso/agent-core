@@ -1,5 +1,6 @@
 # Fronteras entre módulos (docs/specs/motor/00-indice.md §3).
 # Si un módulo necesita importar otro que no está permitido aquí, es un cambio de interfaz: se decide primero en el spec.
+# `agent_core.composition` es la raíz de composición (con `cli`): nadie la importa; ella puede importar todo.
 [importlinter]
 root_packages =
     agent_core
@@ -26,6 +27,7 @@ forbidden_modules =
     agent_core.api
     agent_core.adapters
     agent_core.cli
+    agent_core.composition
     agent_core.contracts
     agent_core.registry
 
@@ -48,6 +50,7 @@ forbidden_modules =
     agent_core.api
     agent_core.adapters
     agent_core.cli
+    agent_core.composition
     agent_core.contracts
     agent_core.registry
 
@@ -70,6 +73,7 @@ forbidden_modules =
     agent_core.api
     agent_core.adapters
     agent_core.cli
+    agent_core.composition
     agent_core.contracts
     agent_core.registry
 
@@ -92,6 +96,7 @@ forbidden_modules =
     agent_core.api
     agent_core.adapters
     agent_core.cli
+    agent_core.composition
     agent_core.contracts
     agent_core.registry
 
@@ -114,6 +119,7 @@ forbidden_modules =
     agent_core.api
     agent_core.adapters
     agent_core.cli
+    agent_core.composition
     agent_core.contracts
     agent_core.registry
 
@@ -135,6 +141,7 @@ forbidden_modules =
     agent_core.api
     agent_core.adapters
     agent_core.cli
+    agent_core.composition
     agent_core.contracts
     agent_core.registry
 
@@ -154,6 +161,7 @@ forbidden_modules =
     agent_core.api
     agent_core.adapters
     agent_core.cli
+    agent_core.composition
     agent_core.contracts
     agent_core.registry
 
@@ -170,6 +178,7 @@ forbidden_modules =
     agent_core.api
     agent_core.adapters
     agent_core.cli
+    agent_core.composition
     agent_core.contracts
     agent_core.registry
 
@@ -191,6 +200,7 @@ forbidden_modules =
     agent_core.api
     agent_core.adapters
     agent_core.cli
+    agent_core.composition
     agent_core.contracts
     agent_core.registry
 
@@ -212,6 +222,7 @@ forbidden_modules =
     agent_core.api
     agent_core.adapters
     agent_core.cli
+    agent_core.composition
     agent_core.contracts
     agent_core.registry
 
@@ -233,6 +244,7 @@ forbidden_modules =
     agent_core.api
     agent_core.adapters
     agent_core.cli
+    agent_core.composition
     agent_core.contracts
     agent_core.registry
 
@@ -251,6 +263,7 @@ forbidden_modules =
     agent_core.api
     agent_core.adapters
     agent_core.cli
+    agent_core.composition
     agent_core.contracts
     agent_core.registry
 
@@ -270,6 +283,7 @@ forbidden_modules =
     agent_core.knowledge
     agent_core.adapters
     agent_core.cli
+    agent_core.composition
     agent_core.contracts
     agent_core.registry
 
@@ -292,6 +306,7 @@ forbidden_modules =
     agent_core.turn
     agent_core.api
     agent_core.cli
+    agent_core.composition
     agent_core.contracts
     agent_core.registry
 
@@ -314,6 +329,7 @@ forbidden_modules =
     agent_core.api
     agent_core.adapters
     agent_core.cli
+    agent_core.composition
     agent_core.contracts
 
 [importlinter:contract:domain_sin_ports]
