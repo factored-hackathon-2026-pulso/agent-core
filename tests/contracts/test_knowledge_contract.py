@@ -1,4 +1,5 @@
-"""Contrato de `KnowledgeSource` (ADR 0015, m12 §2): lo que toda implementación debe cumplir, la del servicio de
+"""Contrato de `KnowledgeSource` (ADR 0015, m12 §2): lo que toda implementación debe cumplir, la del
+servicio de
 la unidad 7 incluida. T-M12-06: `FileKnowledgeSource` sobre un árbol `knowledge/` pasa la suite.
 
 Dos reglas de seguridad:
@@ -77,7 +78,8 @@ def check_translations_are_linked_in_the_index(source: KnowledgeSource) -> None:
 
 
 def check_paths_that_escape_the_snapshot_are_none(source: KnowledgeSource) -> None:
-    for path in ("../kb-base@1.0.0/faq/cargos.md", "/etc/passwd", "faq/../faq/cargos.md", "faq//cargos.md", ""):
+    escapes = ("../kb-base@1.0.0/faq/cargos.md", "/etc/passwd", "faq/../faq/cargos.md", "faq//cargos.md", "")
+    for path in escapes:
         assert source.read(path, SNAPSHOT, EVERYTHING) is None, path
 
 
@@ -121,7 +123,7 @@ def test_t_m12_06_file_knowledge_source_over_the_knowledge_tree_passes_the_contr
         check(src)
 
 
-# --- sanidad negativa: un doble permisivo debe hacer fallar el chequeo ------------------------------------------
+# --- sanidad negativa: un doble permisivo debe hacer fallar el chequeo ----------------------------
 
 
 def test_a_leaky_source_fails_the_view_check() -> None:
@@ -141,7 +143,7 @@ def test_a_source_that_ignores_the_snapshot_fails_the_snapshot_check() -> None:
         check_another_snapshot_is_none(AnySnapshot(standard_records()))
 
 
-# --- detalles propios del adaptador de archivos -------------------------------------------------------------------
+# --- detalles propios del adaptador de archivos ---------------------------------------------------
 
 
 def test_file_source_reads_the_frontmatter_as_page_metadata() -> None:
@@ -160,14 +162,16 @@ def test_file_source_ignores_a_page_with_a_broken_frontmatter(tmp_path: Path) ->
     (root / "rota.md").write_text("---\ntype: faq\naudience: pública\n---\ntexto\n", encoding="utf-8")
     (root / "sin-frontmatter.md").write_text("solo texto\n", encoding="utf-8")
     src = FileKnowledgeSource(tmp_path)
-    assert src.read("rota.md", SNAPSHOT, EVERYTHING) is None  # falla cerrado: sin metadatos válidos no se sirve
+    # falla cerrado: sin metadatos válidos no se sirve
+    assert src.read("rota.md", SNAPSHOT, EVERYTHING) is None
     assert src.read("sin-frontmatter.md", SNAPSHOT, EVERYTHING) is None
     assert src.index(SNAPSHOT, EVERYTHING) == []
 
 
 def test_file_source_does_not_follow_symlinks_out_of_the_tree(tmp_path: Path) -> None:
     outside = tmp_path / "fuera.md"
-    outside.write_text("---\ntype: faq\naudience: public\nstatus: draft\nlang: es\n---\nsecreto\n", encoding="utf-8")
+    front = "---\ntype: faq\naudience: public\nstatus: draft\nlang: es\n---\nsecreto\n"
+    outside.write_text(front, encoding="utf-8")
     root = tmp_path / "tree" / "kb-base@1.0.0"
     root.mkdir(parents=True)
     try:
