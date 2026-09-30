@@ -218,3 +218,25 @@ def test_knowledge_snapshot_is_immutable_once_published() -> None:
     other = KnowledgeSnapshot.model_validate({"id": "kb-base", "version": "1.0.0", "pages": []})
     with pytest.raises(ValueError):
         reg.add(other)
+
+
+# --- SnapshotRegistry (registry, spec §5.3): las comprobaciones de entidades ----------------------------
+
+@pytest.fixture
+def snapshot_registry() -> RegistryPort:
+    from agent_core.registry.snapshot import SnapshotRegistry
+    return SnapshotRegistry(_release("rel-1"), [
+        Flow.model_validate(EXACT_FLOW), Flow.model_validate(RANGED_FLOW),
+        Template(id="t/saludo", version="1.0.0", locales={"es": "Hola"}), KNOWLEDGE])
+
+
+def test_snapshot_get_exact_entity(snapshot_registry: RegistryPort) -> None:
+    check_get_exact_entity(snapshot_registry)
+
+
+def test_snapshot_get_with_non_exact_content_raises(snapshot_registry: RegistryPort) -> None:
+    check_get_with_non_exact_content_raises(snapshot_registry)
+
+
+def test_snapshot_get_knowledge_snapshot(snapshot_registry: RegistryPort) -> None:
+    check_get_knowledge_snapshot(snapshot_registry)
