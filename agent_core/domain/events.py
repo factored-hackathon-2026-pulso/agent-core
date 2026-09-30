@@ -488,7 +488,7 @@ EVENT_EMITTERS: Mapping[str, frozenset[str]] = MappingProxyType(
         "action_cancelled": frozenset({"M3"}),
         "action_dispatched": frozenset({"M3"}),
         "action_verified": frozenset({"M3"}),
-        "response_emitted": frozenset({"M8"}),
+        "response_emitted": frozenset({"M2", "M8"}),
         "response_failed": frozenset({"M8"}),
         "injection_flagged": frozenset({"M6"}),
         "access_denied": frozenset({"M9", "M2"}),

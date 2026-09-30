@@ -487,7 +487,7 @@ Todo payload está en **vista `audit`**: sin `pii_direct` en claro, sin tokens r
 | `action_dispatched` | `action_id, tool: EntityRef, args_hash` | M3 |
 | `action_verified` | `action_id, result: verified\|failed, readback_call_id` | M3 |
 | `expiry_evaluated` | `now, last_activity_at, ttl, expired: bool` | M4 |
-| `response_emitted` | `node_id?, kind, validator: {ok, failures, regenerations}, fallback_used, claims: list[str], transcript_fp: Fingerprint?, llm: LlmUsage?` | M8 (M4 rellena `transcript_fp`) |
+| `response_emitted` | `node_id?, kind, validator: {ok, failures, regenerations}, fallback_used, claims: list[str], transcript_fp: Fingerprint?, llm: LlmUsage?` | M8 desde `generate`; M2 desde `respond(template_ref)` (D6); M4 rellena `transcript_fp` |
 | `response_failed` | `node_id?, reason_code: "validation_failed", validator: {ok, failures, regenerations}, claims: list[str], llm: LlmUsage?` | M8 (`respond(generate)` terminó en `EscalationRequest`; sin texto de borradores) |
 | `turn_completed` | `client_turn_id?, entry: start_run\|turn, duration_ms, stages: TurnStages, degraded: bool, awaiting: Awaiting` | M4 |
 | `injection_flagged` | `signals, ruleset, scope: user_text\|untrusted_field` | M6 (M4 lo agrega) |
