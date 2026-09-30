@@ -39,6 +39,12 @@
 - El comportamiento de `usage` y `finish_reason` en errores varía entre proveedores. El adaptador trata el uso como opcional en los errores (`cost_known`).
 - Resultado de la prueba de humo: pendiente (se anota aquí al elegir proveedor).
 
+## Enmienda 2026-09-30 (spec rev. 2)
+- **Proveedor de la demo: OpenRouter**, como un alias más de `LLM_ENDPOINTS`. Los perfiles de la demo usan `structured = prompted`: OpenRouter enruta entre proveedores y uno puede ignorar `response_format` sin avisar. `native` sigue soportado; su uso con OpenRouter necesitaría `provider.require_parameters` (campo aparte en `ModelProfile`, fuera de esta rev.).
+- **Validación local sin `jsonschema`:** el gateway reutiliza el validador de subconjunto cerrado de M2 (`check_output`), que pasa a `agent_core.domain`.
+- **Nodo `agent` (ADR 0019):** su adaptador real de `AgentPort` (`LLMAgentPort`) se construye sobre `generate` en modo `prompted`, sin tool-calling nativo de la API. `ToolDef` gana `description` y `args_schema` para el catálogo que ve el modelo.
+- **Resultado de la prueba de humo:** sigue pendiente.
+
 ## Fuentes
 - https://docs.litellm.ai/blog/security-update-march-2026
 - https://www.trendmicro.com/en_us/research/26/c/inside-litellm-supply-chain-compromise.html
