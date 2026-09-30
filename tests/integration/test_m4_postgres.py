@@ -105,3 +105,22 @@ def test_si_el_transcript_falla_no_persiste_nada_del_turno_y_el_lease_se_libera(
         with pg.uow() as uow:
             assert uow.get_turn_result(RUN_ID, "c-1") is None
             uow.acquire_turn(RUN_ID, "turn-siguiente", w.clock.now(), timedelta(seconds=60))  # lease libre
+
+
+def test_dos_escritores_de_la_cadena_de_auditoria_no_pisan_ni_dan_error_crudo() -> None:
+    """Dos UoW encadenan el mismo `seq` sin pasar por `save_run`: la segunda pierde con `VersionConflict`."""
+    from pydantic import TypeAdapter
+
+    from agent_core.domain import AnyEvent
+    from tests.contracts.test_uow_contract import EVENT
+
+    event = TypeAdapter(AnyEvent).validate_python(EVENT.model_dump(mode="json"))
+    other = event.model_copy(update={"event_id": "event-otro"})
+    with postgres_store("m4_chain") as pg:
+        with pg.uow() as first, pg.uow() as second:
+            first.append_events(RUN_ID, [event])
+            second.append_events(RUN_ID, [other])
+            first.commit()
+            with pytest.raises(VersionConflict):
+                second.commit()
+        assert [e.event_id for e in pg.audit().read(RUN_ID)] == [event.event_id]

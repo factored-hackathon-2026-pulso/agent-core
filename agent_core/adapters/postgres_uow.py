@@ -243,6 +243,10 @@ class PostgresUoW:
         try:
             with self._conn.transaction():  # una sola transacción: se aplica completa o no se aplica
                 self._apply()
+        except psycopg.errors.UniqueViolation:
+            # Otro escritor encadenó el mismo `seq` (o repitió el `event_id`) sin pasar por `save_run`: es una
+            # carrera de versión, no un error de base. Se aplica nada y quien llama reintenta.
+            raise VersionConflict("la cadena de auditoría cambió: otro escritor commiteó primero") from None
         finally:
             self._done = True
 
