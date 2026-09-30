@@ -100,7 +100,7 @@ def calibrate(model_def, dev_split: Sequence[DevExample], providers, *, targets:
 - Campos calibrados: `command`, `flow` (solo con `start_flow`), `interrupt` (solo con `interrupt`). Los demás `above_threshold` se omiten (no `false`); `additional_flows` y `slots` nunca llevan umbral.
 - Cadena agotada: `command = clarify` con `above_threshold["command"] = false` (valor neutro; M4 decide qué hacer).
 - Umbrales de `interrupt` se fijan por **recall** (objetivo en `target`); el resto por precisión.
-- Una llamada a JEV por turno para los campos calibrados; los slots se extraen con una segunda llamada a `llm_structured` solo cuando `command = start_flow` (ADR 0005, enmienda 2026-09-29). La 2.ª llamada usa `UnderstandContext.slots_model_ref` (un `DecisionModelDef` con `llm_structured`, sin campos calibrados; lo resuelve M4 y sin él no hay 2.ª llamada); recibe la misma entrada más `flow`, con esquema `{slots: objeto libre}`, y emite su propio `decision_made` (`run` devuelve los dos eventos, el de Understand primero). Si esa llamada falla o agota su cadena, el comando se conserva y `slots = {}` (M2 los pide con `collect`); los slots de la 2.ª llamada reemplazan a los de la 1.ª. El contexto incluye `recent_turns` (unidad 7) en vista `model`, el nodo actual y si hay `confirm` pendiente.
+- Una llamada a JEV por turno para los campos calibrados; los slots se extraen con una segunda llamada a `llm_structured` solo cuando `command = start_flow` (ADR 0005, enmienda 2026-09-29). La 2.ª llamada usa `UnderstandContext.slots_model_ref` (un `DecisionModelDef` con `llm_structured`, sin campos calibrados; lo resuelve M4 y sin él no hay 2.ª llamada); recibe la misma entrada más `flow` (si el `input_view` de ese modelo no está vacío debe incluir `flow`, `text`, `recent_turns`, `current_node` y `confirm_pending`; si no, `DecisionConfigError`), con esquema `{slots: objeto libre}`, y emite su propio `decision_made` (`run` devuelve los dos eventos, el de Understand primero). Si esa llamada falla o agota su cadena, el comando se conserva y `slots = {}` (M2 los pide con `collect`); los slots de la 2.ª llamada reemplazan a los de la 1.ª. El contexto incluye `recent_turns` (unidad 7) en vista `model`, el nodo actual y si hay `confirm` pendiente.
 - Los slots salen como `claimed`; M4/M2 nunca los tratan como hechos.
 
 ### 3.3 Proveedores del MVP
@@ -186,6 +186,7 @@ Con `ScriptedProvider` (salidas y latencias guionadas) y artefactos de calibraci
 | T-M5-08 | `decision_made` trae todos los campos | — |
 | T-M5-09 | `calibrate` reproduce el mismo artefacto con el mismo split (determinista) | — |
 | T-M5-10 | Ningún request capturado hacia `jev` contiene `pii_direct` en claro | 6 |
+| T-M5-11 | Understand: 2.ª llamada de slots solo con `start_flow` (`test_understand.py`, sección "Segunda llamada") | — |
 
 ## 8. Evaluación
 
