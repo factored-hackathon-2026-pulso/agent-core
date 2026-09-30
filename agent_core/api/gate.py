@@ -3,11 +3,9 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from agent_core.api.denials import Denials
 from agent_core.api.protocols import DenialRecorder, SecurityLog
 from agent_core.domain import (
-    AccessDenied,
-    AccessDeniedPayload,
-    AccessDeniedReason,
     CredentialsInvalid,
     EngineError,
     OnBehalfOf,
@@ -15,18 +13,11 @@ from agent_core.domain import (
     ProblemCode,
     RunState,
 )
-from agent_core.ports import Clock, IdentityVerifier, IdKind, IdSource
+from agent_core.ports import Clock, IdentityVerifier, IdSource
 
 # Un principal anónimo no tiene `id`: su identidad de sesión viaja firmada en `attrs` (decisión de producto,
 # M9 §3.1 chequeo 4). Sin ella no hay forma de distinguir a un anónimo de otro, así que se rechaza.
 ANON_SESSION_ATTR = "anon_session"
-
-_CHAIN_REASON = {
-    ProblemCode.principal_expired: AccessDeniedReason.principal_expired,
-    ProblemCode.delegation_expired: AccessDeniedReason.delegation_expired,
-    ProblemCode.delegation_mismatch: AccessDeniedReason.delegation_mismatch,
-    ProblemCode.principal_mismatch: AccessDeniedReason.principal_mismatch,
-}
 
 
 @dataclass(frozen=True)
@@ -35,8 +26,8 @@ class Admitted:
     on_behalf_of: OnBehalfOf | None
 
 
-def _blank(raw: str | None) -> bool:
-    return raw is None or not raw.strip()
+def _blank(raw: str) -> bool:
+    return not raw.strip()
 
 
 def _same_principal(presented: Principal, snapshot: Principal) -> bool:
@@ -58,9 +49,8 @@ class AccessGate:
     ) -> None:
         self._verifier = verifier
         self._clock = clock
-        self._ids = ids
-        self._recorder = recorder
         self._security = security
+        self._denials = Denials(clock, ids, recorder, security)
 
     def admit(
         self,
@@ -75,15 +65,19 @@ class AccessGate:
         principal, obo = self._verify(raw_auth, raw_delegation, trace_id)
         run = load_run()
         now = self._clock.now()
+
+        def deny(code: ProblemCode) -> EngineError:
+            return self._denials.deny(code, run, principal.type, trace_id)
+
         if principal.exp <= now:
-            raise self._deny(ProblemCode.principal_expired, run, principal, trace_id)
+            raise deny(ProblemCode.principal_expired)
         if obo is not None:
             if obo.exp <= now or not self._verifier.grant_active(obo.grant_ref, now):
-                raise self._deny(ProblemCode.delegation_expired, run, principal, trace_id)
+                raise deny(ProblemCode.delegation_expired)
             if obo.grantee != principal.key:
-                raise self._deny(ProblemCode.delegation_mismatch, run, principal, trace_id)
+                raise deny(ProblemCode.delegation_mismatch)
         if run is not None and not _same_principal(principal, run.principal):
-            raise self._deny(ProblemCode.principal_mismatch, run, principal, trace_id)
+            raise deny(ProblemCode.principal_mismatch)
         return Admitted(principal, obo)
 
     def _verify(
@@ -105,22 +99,3 @@ class AccessGate:
             self._security.record(ProblemCode.credentials_invalid.value, None, trace_id)
             raise EngineError(ProblemCode.credentials_invalid) from None
         return principal, obo
-
-    def _deny(
-        self, code: ProblemCode, run: RunState | None, principal: Principal, trace_id: str
-    ) -> EngineError:
-        self._security.record(code.value, principal.type.value, trace_id)
-        if run is not None:
-            event = AccessDenied(
-                event_id=self._ids.new_id(IdKind.event),
-                run_id=run.run_id,
-                session_id=run.session_id,
-                release=run.release,
-                ts=self._clock.now(),
-                payload=AccessDeniedPayload(reason=_CHAIN_REASON[code]),
-            )
-            try:
-                self._recorder.append_standalone(run.run_id, [event])
-            except Exception:  # la denegación no depende de que la auditoría esté disponible
-                self._security.record("audit_write_failed", principal.type.value, trace_id)
-        return EngineError(code)
