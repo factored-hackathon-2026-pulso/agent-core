@@ -1,9 +1,9 @@
 """Contrato de `UnitOfWork`, `AuditSink`, `Outbox` y `CostCounters`: cada `check_*` corre contra cualquier
-backend (hoy el doble en memoria; el adaptador Postgres de M3/M4/M11 se agrega como parámetro de `backend`).
+backend (el doble en memoria y el adaptador Postgres de M4, marcado `integration`).
 Las fallas inyectables y las pruebas de concurrencia propias del doble van al final, fuera del contrato."""
 
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal
@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 from pydantic import TypeAdapter
 
+from agent_core.audit.chain import genesis_hash
 from agent_core.domain import (
     AnyEvent,
     OutboxMessage,
@@ -31,16 +32,22 @@ from testing.fakes.storage import (
     SimulatedCrash,
 )
 from tests.m00.samples import make_event
+from tests.support.pg import postgres_store
 
 _EVENT_ADAPTER: TypeAdapter[Any] = TypeAdapter(AnyEvent)
 HASH_A, HASH_B = "a" * 64, "b" * 64
 _CLOSED = {"outcome": "resolved", "closed_by": "flow"}
+GENESIS = genesis_hash("run-0001")  # `prev_hash` del evento con seq 0 (M11); Postgres lo exige no nulo
 EVENT = _EVENT_ADAPTER.validate_python(
-    {**make_event("run_closed"), "payload": _CLOSED, "seq": 0, "prev_hash": None, "hash": HASH_A}
+    {**make_event("run_closed"), "payload": _CLOSED, "seq": 0, "prev_hash": GENESIS, "hash": HASH_A}
 )
 EVENT_2 = _EVENT_ADAPTER.validate_python(
     {**make_event("run_closed"), "event_id": "event-0002", "payload": _CLOSED,
      "seq": 1, "prev_hash": HASH_A, "hash": HASH_B}
+)
+EVENT_3 = _EVENT_ADAPTER.validate_python(
+    {**make_event("run_closed"), "event_id": "event-0003", "payload": _CLOSED,
+     "seq": 2, "prev_hash": HASH_B, "hash": "c" * 64}
 )
 MSG = OutboxMessage(message_id="message-0001", type="handoff_created", run_id="run-0001", payload={"k": 1},
                     created_at=NOW)
@@ -58,10 +65,14 @@ class Backend:
     costs: CostCounters
 
 
-@pytest.fixture(params=["memory"])
-def backend(request: pytest.FixtureRequest) -> Backend:
+@pytest.fixture(params=["memory", pytest.param("postgres", marks=pytest.mark.integration)])
+def backend(request: pytest.FixtureRequest) -> Iterator[Backend]:
+    if request.param == "postgres":
+        with postgres_store("m4_contract") as pg:
+            yield Backend(pg.uow, pg.audit(), pg.outbox(), pg.costs())
+        return
     store = InMemoryStore()
-    return Backend(store.uow, InMemoryAuditSink(store), InMemoryOutbox(store), InMemoryCostCounters(store))
+    yield Backend(store.uow, InMemoryAuditSink(store), InMemoryOutbox(store), InMemoryCostCounters(store))
 
 
 def _seed(factory: UnitOfWorkFactory, **over: Any) -> None:
@@ -375,8 +386,8 @@ def check_audit_reads_committed_in_order_preserving_chain(b: Backend) -> None:
         uow.commit()
     assert b.audit.read("run-0001") == [EVENT, EVENT_2]
     assert [(e.seq, e.prev_hash, e.hash) for e in b.audit.read("run-0001")] == [
-        (0, None, HASH_A), (1, HASH_A, HASH_B)]
-    b.audit.append_outside_turn("run-0001", [EVENT_2.model_copy(update={"event_id": "event-0003"})])
+        (0, GENESIS, HASH_A), (1, HASH_A, HASH_B)]
+    b.audit.append_outside_turn("run-0001", [EVENT_3])
     assert [e.event_id for e in b.audit.read("run-0001")] == ["event-0001", "event-0002", "event-0003"]
     assert b.audit.read("run-9999") == []
 
