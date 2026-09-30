@@ -14,7 +14,7 @@ def test_domain_exports() -> None:
                  "EscalationRequest", "RejectedDraft", "ConfirmationPrompt", "TurnResult", "SCHEMA_VERSION",
                  "GatewayError", "GatewayErrorKind", "KnowledgePage", "KnowledgeSnapshot"]:
         assert hasattr(domain, name), name
-    assert domain.SCHEMA_VERSION == "0.4.0"
+    assert domain.SCHEMA_VERSION == "0.5.0"
 
 
 def test_ports_exports() -> None:
@@ -125,7 +125,8 @@ def test_tool_result_fields_match_spec() -> None:
 
 def test_id_kinds_match_spec() -> None:
     assert {k.value for k in ports.IdKind} == {
-        "run", "session", "turn", "action", "decision", "fact", "call", "handoff", "event", "message"}
+        "run", "session", "turn", "action", "decision", "fact", "call", "handoff", "event", "message",
+        "proposal", "eval_run"}
     assert {k.value for k in ports.KeyPurpose} == {"fingerprint", "token_map"}
 
 

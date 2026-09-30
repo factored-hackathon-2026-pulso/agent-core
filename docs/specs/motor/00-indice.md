@@ -39,7 +39,9 @@ La spec general describe el motor completo en un solo documento. Aquí se parte 
 | M11 | Auditoría, transcript y replay | `m11-auditoria-transcript-replay.md` | `agent_core.audit` | 2 y 5 | §8.4, §11 | 0003, 0008 |
 | M12 | Conocimiento | `m12-conocimiento.md` | `agent_core.knowledge` | por decidir | ADR 0015 | 0015 |
 
-**Fuera de esta tabla:** el registry (unidad 2) tiene su propia spec, `../2026-09-29-registry-design.md`. Añade `EntityKind.knowledge_snapshot` y `Release.knowledge_snapshot` a M0, y M1 le aporta las funciones puras de validación y `pin_release` (ver §15 de esa spec).
+**Fuera de esta tabla:** el registry (unidad 2) tiene su propia spec, `../2026-09-29-registry-design.md` (rev. 2: alcance de entrega y fase 2). Añade `EntityKind.knowledge_snapshot` y `Release.knowledge_snapshot` a M0, y M1 le aporta las funciones puras de validación y `pin_release` (ver §15 de esa spec).
+
+Paquete `agent_core.registry/` (unidad 2): implementado (rev. 2, entrega). Solo lo importa `composition` (evaluador, servicio y CLI; la API lo monta como extensión `registry_extension`); ningún módulo del motor lo importa.
 
 ## 3. Dependencias
 

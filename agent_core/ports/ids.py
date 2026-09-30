@@ -14,6 +14,8 @@ class IdKind(StrEnum):
     handoff = "handoff"
     event = "event"
     message = "message"
+    proposal = "proposal"
+    eval_run = "eval_run"
 
 
 class IdSource(Protocol):

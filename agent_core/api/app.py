@@ -1,5 +1,6 @@
 """`create_app`: la puerta HTTP del motor (M9 §2). Sin lógica de conversación: valida, autoriza y delega."""
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Annotated
 
@@ -37,6 +38,11 @@ from agent_core.ports import (
     RegistryPort,
     UnitOfWorkFactory,
 )
+
+Authenticate = Callable[[Request, str | None], Principal]
+"""Admisión de M9 (firma, vigencia, límites) expuesta a las extensiones; lanza los mismos errores."""
+ApiExtension = Callable[[FastAPI, Authenticate], None]
+"""Monta rutas adicionales en la app. M9 no conoce a quien la implementa (p. ej. el registry)."""
 
 _MAX_IDEMPOTENCY_KEY = 255
 _PROBLEMS = {
@@ -77,6 +83,7 @@ class ApiDeps:
     security: SecurityLog
     limits: RateLimitConfig = field(default_factory=RateLimitConfig)
     step_up_simulated: bool = True  # el OTP de la demo es simulado (ADR 0010); apagar con un OTP real
+    extensions: tuple[ApiExtension, ...] = ()  # rutas de otros paquetes; vacío = comportamiento previo
 
 
 def _idempotency_key(raw: str | None, principal: Principal) -> str:
@@ -249,4 +256,10 @@ def create_app(deps: ApiDeps) -> FastAPI:
         )
 
     app.include_router(router)
+
+    def authenticate(request: Request, authorization: str | None) -> Principal:
+        return admit(request, authorization, None).principal
+
+    for extension in deps.extensions:
+        extension(app, authenticate)
     return app

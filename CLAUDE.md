@@ -35,6 +35,7 @@ agent_core/
   turn/                      M4   decision/      M5   guards/    M6
   views/                     M7   response/      M8   api/       M9
   handoff/                   M10  audit/         M11  knowledge/ M12
+  registry/                  unidad 2 (spec 2026-09-29-registry-design.md)
 testing/fakes/               dobles en memoria de cada puerto
 tests/mXX/                   pruebas unitarias por módulo (sin red ni Postgres)
 tests/contracts/             suites de contrato de los puertos
