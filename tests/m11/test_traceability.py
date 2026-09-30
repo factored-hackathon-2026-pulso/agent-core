@@ -1,7 +1,8 @@
 """Cada prueba T-M11-NN del spec existe en tests/m11.
 
 T-M11-01 (replay `fixture` con los seis caminos del flow de demo) corre con el motor compuesto en
-`tests/composition/test_replay_fixtures.py`; aquí solo se exige su forma con `StubEngine` (`test_replayer.py`).
+`tests/composition/test_replay_fixtures.py`;
+aquí solo se exige su forma con `StubEngine` (`test_replayer.py`).
 """
 
 from pathlib import Path
