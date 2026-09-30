@@ -47,7 +47,8 @@
   - `InvalidationReason.args_changed` (M3 rev. 3: la propuesta vigente se cancela si el flow repropone con otros args u otra versión de la tool);
   - `action_dispatched`: `args_hash` (sha256 sin clave) sale del evento y entra `args_fp: Fingerprint | None` (HMAC con clave, ADR 0008); `Action.args_hash` sigue en el estado;
   - `action_verified.result` admite `unavailable` (readback que no contestó: no prueba que el efecto falte; la acción no pasa a `failed`);
-  - `EVENT_EMITTERS["response_emitted"] = {M2, M8}` (D6).
+  - `EVENT_EMITTERS["response_emitted"] = {M2, M8}` (D6);
+  - `Agent.slots_model: RefSpec | None = None` (modelo de la 2.ª llamada de Understand; antes era configuración del despliegue) y su sitio de referencia en M1 (`agent_ref_sites`).
 - rev. 6 (2026-09-29), registry (unidad 2, ADR 0017 y 0018; spec `../2026-09-29-registry-design.md` §15). Cambios aditivos:
   - `EntityKind.knowledge_snapshot` y entidad `KnowledgeSnapshot` (manifiesto de páginas, `KnowledgePage`); entra en `RegistryEntity` y en `ENTITY_KIND`;
   - `Release.knowledge_snapshot: EntityRef | None = None` (exacta; `None` = sin conocimiento);
@@ -160,7 +161,7 @@ class Agent:          id: str; version: str; mode: Literal["conversational", "ta
                       entry_flow: RefSpec; invocable_by: list[PrincipalType]; min_auth_level: AuthLevel
                       subject_kinds: list[str]; supported_locales: list[Locale]; default_locale: Locale
                       tools_allowed: list[RefSpec]; budgets: Budgets; inactivity_ttl: timedelta = 30 min
-                      understand: RefSpec | None; templates: EngineTemplates
+                      understand: RefSpec | None; slots_model: RefSpec | None; templates: EngineTemplates
                       max_clarifications: int; on_clarify_exhausted: Literal["end", "escalate"]
                       default_target_queue: str; max_repair_turns_per_run: int = 8
 class Flow:           id: str; version: str; priority: int; nodes: list[Node]     # el primer nodo es la entrada

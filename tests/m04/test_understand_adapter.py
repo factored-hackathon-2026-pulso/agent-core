@@ -24,7 +24,6 @@ from agent_core.domain import (
     DecisionMade,
     DecisionModelDef,
     JsonValue,
-    RefSpec,
     RunState,
     TranscriptEntry,
 )
@@ -63,7 +62,9 @@ ARTIFACT = CalibrationArtifact(
 class Rig:
     def __init__(self, *, slots: bool = True, understand: str | None = "understand@1.0.0",
                  recent_turns: int = 2) -> None:
-        self.w = World(agent_over={"understand": understand}, extra=(UNDERSTAND, SLOTS))
+        self.w = World(agent_over={"understand": understand,
+                                   "slots_model": "understand-slots@1.0.0" if slots else None},
+                       extra=(UNDERSTAND, SLOTS))
         self.classifier = ScriptedProvider("classifier", clock=self.w.clock)
         self.llm = ScriptedProvider("llm_structured", clock=self.w.clock)
         providers: dict[str, DecisionProvider] = {"classifier": self.classifier, "llm_structured": self.llm}
@@ -71,8 +72,7 @@ class Rig:
                                   self.w.clock, self.w.ids)
         self.transcript = InMemoryTranscript()
         self.adapter = DecisionUnderstand(
-            UnderstandService(service), self.transcript, recent_turns=recent_turns,
-            slots_model=RefSpec.parse("understand-slots@1.0.0") if slots else None)
+            UnderstandService(service), self.transcript, recent_turns=recent_turns)
 
     def request(self, text: str = "[model]quiero disputar") -> UnderstandRequest:
         w = self.w

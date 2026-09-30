@@ -1,7 +1,7 @@
 """Adaptadores locales de M4 hacia módulos reales (Fase B)."""
 
 from agent_core.decision import DecisionConfigError, EventScope, UnderstandContext, UnderstandService
-from agent_core.domain import EntityKind, RefSpec
+from agent_core.domain import EntityKind
 from agent_core.ports import TranscriptStore
 from agent_core.turn.ports import UnderstandOutcome, UnderstandRequest
 from agent_core.turn.refs import pinned_ref
@@ -12,15 +12,13 @@ class DecisionUnderstand:
 
     Arma el `UnderstandContext` del turno: `model_ref`, `flows` e `interrupts` salen de la release fijada;
     `recent_turns` de las últimas `recent_turns` entradas del transcript (vista `model`, sin borradores
-    rechazados); el `TokenVault` del run, del `StepContext` del turno. `slots_model` es la configuración del
-    despliegue para la 2.ª llamada de slots (`llm_structured`); sin él M5 no la hace."""
+    rechazados); el `TokenVault` del run, del `StepContext` del turno. `Agent.slots_model` (fijado por la
+    release) es el modelo de la 2.ª llamada de slots (`llm_structured`); sin él M5 no la hace."""
 
-    def __init__(self, service: UnderstandService, transcript: TranscriptStore, *, recent_turns: int,
-                 slots_model: RefSpec | None = None) -> None:
+    def __init__(self, service: UnderstandService, transcript: TranscriptStore, *, recent_turns: int) -> None:
         self._service = service
         self._transcript = transcript
         self._recent_turns = recent_turns
-        self._slots_model = slots_model
 
     def run(self, request: UnderstandRequest) -> UnderstandOutcome:
         agent, release, state = request.agent, request.release, request.state
@@ -38,8 +36,8 @@ class DecisionUnderstand:
             token_vault=request.step.vault,
             scope=EventScope(run_id=state.run_id, release=release.id, turn_id=request.turn_id,
                              session_id=state.session_id),
-            slots_model_ref=(pinned_ref(release, EntityKind.decision_model, self._slots_model)
-                             if self._slots_model is not None else None),
+            slots_model_ref=(pinned_ref(release, EntityKind.decision_model, agent.slots_model)
+                             if agent.slots_model is not None else None),
         )
         result, events = self._service.run(request.text_model, context, request.locale)
         return UnderstandOutcome(

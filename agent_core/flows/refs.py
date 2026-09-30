@@ -91,6 +91,8 @@ def agent_ref_sites(agent: Agent) -> list[RefSite]:
     sites = [RefSite(EntityKind.flow, agent.entry_flow, ("entry_flow",))]
     if agent.understand is not None:
         sites.append(RefSite(EntityKind.decision_model, agent.understand, ("understand",)))
+    if agent.slots_model is not None:
+        sites.append(RefSite(EntityKind.decision_model, agent.slots_model, ("slots_model",)))
     sites += [
         RefSite(EntityKind.tool, ref, ("tools_allowed", i)) for i, ref in enumerate(agent.tools_allowed)
     ]

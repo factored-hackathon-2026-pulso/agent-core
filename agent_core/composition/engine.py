@@ -11,7 +11,7 @@ from agent_core.audit import AuditLog, TurnRecorder
 from agent_core.composition.runtime import EngineRuntimeFactory, RuntimeConfig
 from agent_core.decision import DecisionProvider, DecisionService, UnderstandService
 from agent_core.decision.calibration.artifact import CalibrationSource
-from agent_core.domain import RefSpec, Release
+from agent_core.domain import Release
 from agent_core.guards import GuardService, LangThresholds
 from agent_core.handoff import HandoffService
 from agent_core.interpreter import CircuitBreaker
@@ -38,7 +38,6 @@ class EngineConfig:
 
     turn: TurnConfig = field(default_factory=TurnConfig)
     recent_turns: int = 6                 # entradas del transcript que ve Understand (m04 §14)
-    slots_model: RefSpec | None = None    # 2.ª llamada de slots (ADR 0005); sin él M5 no la hace
     number_format: NumberFormat | None = None
     max_regenerations: int = 1
     priority: str = "normal"
@@ -87,7 +86,7 @@ def build_turn_engine(deps: EngineDeps) -> TurnEngine:
         uow_factory=deps.uow_factory, registry=deps.registry, clock=deps.clock, ids=deps.ids,
         guards=GuardService(deps.registry, deps.clock, deps.ids, dict(cfg.lang_thresholds)),
         understand=DecisionUnderstand(UnderstandService(decisions), deps.transcript,
-                                      recent_turns=cfg.recent_turns, slots_model=cfg.slots_model),
+                                      recent_turns=cfg.recent_turns),
         actions=actions,
         handoff=HandoffService(uow_factory=deps.uow_factory, registry=deps.registry, views=views,
                                authz=deps.authz, keys=deps.keys, clock=deps.clock, ids=deps.ids),

@@ -195,12 +195,13 @@ def test_non_decide_validator_is_not_a_ref_site() -> None:
 
 
 def test_agent_ref_site_pointers_navigate_the_dump() -> None:
-    ag = agent(understand="modelo@1")
+    ag = agent(understand="modelo@1", slots_model="slots@1")
     sites = agent_ref_sites(ag)
     _check_sites(ag, sites)
     kinds = {pointer_str(s.pointer): s.kind for s in sites}
     assert kinds["/entry_flow"] is EntityKind.flow
     assert kinds["/understand"] is EntityKind.decision_model
+    assert kinds["/slots_model"] is EntityKind.decision_model
     assert kinds["/tools_allowed/1"] is EntityKind.tool
     assert kinds["/templates/clarify"] is EntityKind.template
     assert len([s for s in sites if s.pointer[0] == "templates"]) == len(AGENT["templates"])

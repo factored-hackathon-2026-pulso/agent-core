@@ -206,6 +206,17 @@
       "title": "On Clarify Exhausted",
       "type": "string"
     },
+    "slots_model": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RefSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "subject_kinds": {
       "items": {
         "type": "string"

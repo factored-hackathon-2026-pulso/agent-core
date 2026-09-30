@@ -47,7 +47,7 @@
   - Alternativa descartada: JEV para los campos calibrados y el LLM siempre. Duplicaría costo y latencia en turnos que no inician flow.
 - **Versión fijada:** el `DecisionModelDef` usa el ID versionado (`jev-1.13.0`), no el alias `jev-latest`. La calibración es por versión: un cambio de versión exige recalibrar (`model_version` queda en `decision_made`).
 - **Idioma:** JEV queda descartado como segunda opinión de `undetermined` (no cumplió el criterio de la verificación de abajo).
-- **Estado de implementación:** el proveedor y el transporte de JEV están hechos; la segunda llamada a `llm_structured` para slots está implementada en `UnderstandService` (M5, vía `UnderstandContext.slots_model_ref`). Falta en M4 resolver ese modelo desde la release (m04 §14).
+- **Estado de implementación:** el proveedor y el transporte de JEV están hechos; la segunda llamada a `llm_structured` para slots está implementada en `UnderstandService` (M5, vía `UnderstandContext.slots_model_ref`). M4 lo resuelve desde la release: `Agent.slots_model` (2026-09-30).
 - **Resultados:** `docs/informes/2026-09-29-m5-jev-humo.md`. Con `jev-1.13.0` y 110 mensajes sintéticos: `command` 96% (ES) y 94% (PT), `flow` 100%, p50/p95 de 375/453 ms, sin errores ni 429. Con salvedades de muestra y de calibración (aún faltan datos etiquetados reales).
 
 ## Verificación (2026-09-29: ejecutada; ver la enmienda de arriba)

@@ -62,6 +62,7 @@ class Agent(Model):
     budgets: Budgets
     inactivity_ttl: PositiveTimedelta = timedelta(minutes=30)
     understand: RefSpec | None = None
+    slots_model: RefSpec | None = None  # 2.ª llamada de slots (`llm_structured`); sin él no hay
     templates: EngineTemplates
     max_clarifications: NonNegativeInt
     on_clarify_exhausted: Literal["end", "escalate"]
