@@ -35,6 +35,7 @@ from tests.m05.smoke.cases import COMMANDS, FLOWS, Case, all_cases
 from tests.m05.smoke.metrics import accuracy, bucket, nearest_rank, reliability
 
 _NS_PER_MS = 1_000_000
+_TIMING_REPEATS = 20
 _INPUT_USD_PER_MTOK = Decimal("0.042")  # https://docs.typesafe.ai/models (la salida no se cobra)
 _BUCKETS = ("1", "2-3", "4-7", "8+")
 
@@ -142,23 +143,25 @@ def _call(provider: DecisionProvider, spec: ProviderSpec, inputs: dict[str, Json
     return raw, (clock.monotonic_ns() - started) / _NS_PER_MS, None, raw.tokens, raw.cost_usd
 
 
-def evaluate(provider: DecisionProvider, specs: tuple[ProviderSpec, ProviderSpec], clock: Clock,
+def evaluate(provider: DecisionProvider | None, specs: tuple[ProviderSpec, ProviderSpec], clock: Clock,
              cases: Sequence[Case], detect: Detector, *, jev_language: bool = True) -> list[Row]:
     """Corre cada caso (secuencial: la latencia no se mezcla con concurrencia) contra JEV y el detector M6.
 
-    `DecisionConfigError` (configuración inválida) aborta: no tiene sentido seguir."""
+    Sin `provider` solo corre el detector local (sin red). `DecisionConfigError` aborta la corrida."""
     command_spec, lang_spec = specs
     rows: list[Row] = []
     for case in cases:
         row = Row(case)
         locale = case.lang if case.lang in ("es", "pt") else "es"
-        raw, row.latency_ms, row.error, row.tokens, row.cost_usd = _call(
-            provider, command_spec, case.inputs(), SCHEMA, locale, clock)
+        raw = None
+        if provider is not None:
+            raw, row.latency_ms, row.error, row.tokens, row.cost_usd = _call(
+                provider, command_spec, case.inputs(), SCHEMA, locale, clock)
         if raw is not None:
             row.command, row.flow = _str(raw.value.get("command")), _str(raw.value.get("flow"))
             row.p_command, row.p_flow = raw.p_raw.get("command"), raw.p_raw.get("flow")
             row.model_version = raw.model_version
-        if jev_language:
+        if provider is not None and jev_language:
             # locale "xx": el idioma es justo lo que se pregunta, no se le adelanta
             lang_raw, row.jev_lang_ms, row.jev_lang_error, tokens, cost = _call(
                 provider, lang_spec, {"text": case.text}, LANG_SCHEMA, "xx", clock)
@@ -211,6 +214,11 @@ def render(rows: Sequence[Row], retryable: dict[int, int]) -> str:
     out += [f"- Modelo devuelto por la API: {', '.join(models) or 'n/d'}", f"- Casos: {sizes}", ""]
     out += _precision(rows) + _latency(rows) + _errors(rows, retryable) + _calibration(rows) + _language(rows)
     return "\n".join(out)
+
+
+def render_language(rows: Sequence[Row]) -> str:
+    """Solo la parte de idioma (detector local M6; JEV aparece como n/d si no se le preguntó)."""
+    return "\n".join(["# Detección de idioma (datos sintéticos)", "", *_language(rows)])
 
 
 def _precision(rows: Sequence[Row]) -> list[str]:
@@ -346,9 +354,11 @@ def make_detector(clock: Clock) -> Detector:
 
     def detect(text: str) -> LangProbe:
         top = detect_language(text, raw_cfg, UNCALIBRATED, supported, None)
+        # La decisión tarda menos que la resolución del reloj monotónico (~15 ms en Windows): se promedia.
         started = clock.monotonic_ns()
-        decision = detect_language(text, prod_cfg, prod_thresholds, supported, None)
-        elapsed = (clock.monotonic_ns() - started) / _NS_PER_MS
+        for _ in range(_TIMING_REPEATS):
+            decision = detect_language(text, prod_cfg, prod_thresholds, supported, None)
+        elapsed = (clock.monotonic_ns() - started) / _NS_PER_MS / _TIMING_REPEATS
         return LangProbe(top1=top.top2[0][0] if top.top2 else None, decision=decision.decision,
                          locale=decision.locale, letters=decision.letters, ms=elapsed)
 
@@ -363,7 +373,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--out", help="JSON con el detalle por caso (texto sintético incluido)")
     parser.add_argument("--no-jev-language", action="store_true", help="omite la 2ª llamada de idioma a JEV")
     parser.add_argument("--limit", type=int, help="solo los primeros N casos (depuración)")
+    parser.add_argument("--local-only", action="store_true",
+                        help="solo el detector de idioma local (M6): sin red, sin key, sin el flag")
     args = parser.parse_args(argv)
+    if args.local_only:
+        from agent_core.adapters.system_clock import SystemClock
+
+        local_clock = SystemClock()
+        specs = make_specs(args.model, args.timeout_ms)
+        local_rows = evaluate(None, specs, local_clock, all_cases()[: args.limit], make_detector(local_clock))
+        print(render_language(local_rows))
+        _dump(local_rows, args.out)
+        return 0
     if os.environ.get("AGENT_CORE_JEV_SMOKE") != "1":
         print("La prueba de humo llama a JEV por red: actívala con AGENT_CORE_JEV_SMOKE=1.", file=sys.stderr)
         return 2
@@ -382,7 +403,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"configuración inválida: {exc}", file=sys.stderr)
         return 1
     print(render(rows, transport.retryable_responses))
-    if args.out:
-        with open(args.out, "w", encoding="utf-8") as handle:
-            json.dump([asdict(r) for r in rows], handle, ensure_ascii=False, default=str, indent=1)
+    _dump(rows, args.out)
     return 0
+
+
+def _dump(rows: Sequence[Row], path: str | None) -> None:
+    if path:
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump([asdict(r) for r in rows], handle, ensure_ascii=False, default=str, indent=1)

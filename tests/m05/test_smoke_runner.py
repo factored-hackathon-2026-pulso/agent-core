@@ -136,6 +136,15 @@ def test_smoke_specs_build_valid_requests_with_the_real_adapter() -> None:
     assert rows[0].model_version == "jev:jev-9.9.9" and rows[0].tokens == 210 and SCHEMA
 
 
+def test_local_only_mode_needs_neither_key_nor_flag_and_makes_no_jev_calls(
+        monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    monkeypatch.delenv("AGENT_CORE_JEV_SMOKE", raising=False)
+    monkeypatch.delenv("JEV_API_KEY", raising=False)
+    assert main(["--local-only", "--limit", "20"]) == 0
+    out = capsys.readouterr().out
+    assert "## Idioma" in out and "detector top-1" in out and "## Precisión" not in out
+
+
 def test_main_refuses_to_call_out_without_the_smoke_flag(monkeypatch: pytest.MonkeyPatch,
                                                          capsys: pytest.CaptureFixture[str]) -> None:
     monkeypatch.delenv("AGENT_CORE_JEV_SMOKE", raising=False)
