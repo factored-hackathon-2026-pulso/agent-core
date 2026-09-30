@@ -1,6 +1,6 @@
 # Temas abiertos — Motor de decisión (spec 2026-09-28)
 
-- Estado: **9 de 9 temas originales resueltos; #10, #11, #12, #14, #15 y #16 cerrados el 2026-09-30 (decisiones abajo); siguen abiertos #13 (alto), #17 y #18 (medios).** Reemplaza la versión anterior de este documento, cuyo contenido se descartó por basarse en hallazgos incorrectos.
+- Estado: **9 de 9 temas originales resueltos; #10 (`read` construido), #11, #12, #14, #15 y #16 cerrados el 2026-09-30 (decisiones abajo); siguen abiertos #13 (alto), #17 y #18 (medios).** Reemplaza la versión anterior de este documento, cuyo contenido se descartó por basarse en hallazgos incorrectos.
 - Fecha: 2026-09-28
 - Spec: `2026-09-28-motor-de-decision-design.md` (rev. 15)
 - Regla de trabajo: antes de resolver cada tema se lee el ADR que lo gobierna.
@@ -48,12 +48,13 @@ Tampoco eran temas abiertos: la cadena de hash y `reportable_attrs` (ADR 0003), 
 - **#8 (rev. 12):** el ADR de conocimiento pasa a `0015-consumo-de-conocimiento-nodo-knowledge.md`; 0009 queda para políticas protegidas.
 - **#9 (rev. 12):** ADR 0008 enmendado con la clase `untrusted_text`, su catálogo por defecto y su envoltura en la vista `model`.
 
-## 10. Integración del ADR 0015 (conocimiento) — resuelto como diseño
+## 10. Integración del ADR 0015 (conocimiento) — resuelto; `read` construido
 **Decidido el 2026-09-30:** se aprueba M12 (`motor/m12-conocimiento.md`) como la integración del ADR 0015 en el motor; la spec general pasa a apuntar a M12 y deja de contradecir al ADR. La **construcción** va a la fase 2: no entra en el MVP de la demo (el calendario no da para `read` antes del congelamiento del 02/10). `navigate` queda fuera del MVP.
 - **Numeración:** reglas de M1 G0-17…G0-21 y comprobaciones 6 y 7 del validador de respuesta, como propone M12.
 - **Hechos de conocimiento y reclamos de éxito:** una página solo se cita; nunca alimenta un reclamo (los reclamos salen de acciones verificadas, ADR 0011).
 - **Caída del `KnowledgeSource`:** el nodo sale por `not_found` y emite un evento con motivo `source_unavailable`; no cambia el esquema del nodo y la auditoría distingue la causa.
-Pendiente al construir (fase 2): `RunState.pages`, `PageView`, el nodo `knowledge` y `knowledge_from[]`/`purpose` en `respond.generate` (cambio mayor del esquema de flows).
+**Construcción de `read` cerrada el 2026-09-30** (`SCHEMA_VERSION` 1.0.0, cambio mayor por el tipo de nodo nuevo y el reemplazo de `knowledge_refs`): `RunState.pages`, `PageView`, el nodo `knowledge`, `knowledge_from[]`/`purpose` en `respond.generate`, el evento `knowledge_read`, `AuthzPort.knowledge_view`, `FileKnowledgeSource` con su suite de contrato, G0-17…G0-21 y las comprobaciones 6 y 7 (T-M12-01…06 en verde; ver `motor/m12-conocimiento.md` §10).
+Sigue abierto, fuera de esta construcción: el modo `navigate` (esquema y G0-20 listos; el runtime sale por `not_found` con motivo `navigate_unavailable`), la búsqueda, y los puntos de `m12-conocimiento.md` §12 (G0-06 para `not_found`/`denied`, anclas sin verificar al publicar, servicio real de la unidad 7).
 
 ## 11. Capa de analítica — resuelto
 **Decidido el 2026-09-30:**
