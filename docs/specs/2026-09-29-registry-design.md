@@ -91,12 +91,14 @@ Es una envoltura: no forma parte del contenido de la entidad ni del `content_has
 
 ### 3.4 Versionado
 
+- **Cascada:** si una entidad que cambia es referenciada con versión exacta por otra de la base, esa otra sube de patch automáticamente (repetido hasta el punto fijo), con `VersionDocs` generadas. `freeze` las devuelve en `Candidate.auto_bumped`.
 - Quien propone fija `new_version` para cada entidad que cambia. `validate` exige que sea mayor que la versión de esa entidad en la base y que `(kind, id, version)` no exista ya en `entity_versions`. Una entidad nueva puede empezar en cualquier versión.
 - En el borrador se permiten rangos (`^1`, `~1.2`) en las referencias entre entidades. `freeze` los reescribe a versiones exactas con `pin_release` de M1. El motor nunca resuelve rangos.
 
 ### 3.5 Hashes
 
 - `content_hash` = sha256 de `canonical_bytes(entidad)` (M0).
+- `release_id = rel-` + los primeros 16 caracteres de `candidate_hash`.
 - `release_hash` = sha256 de `canonical_bytes` de la `Release` de M0 sin `id` ni `status`.
 - `candidate_hash` = sha256 de `canonical_bytes({release_hash, [(kind, id, version, content_hash)] ordenado})` de la candidata. Todo lo que el evaluador y la persona aprobadora vieron queda atado a este hash.
 
@@ -195,13 +197,16 @@ noise_margin: 0.05             # tolerancia de la métrica principal
 floor: 0.70                    # mínimo cuando no hay release base
 scenarios:
   - id: disputa-cargo-duplicado
-    principal: {...}           # sintético
-    seed: {...}                # estado inicial del sandbox (cliente, cargos, saldos), sintético
-    turns: ["Me cobraron dos veces el mismo cargo", "sí, confirmo"]
-    expect:
-      outcome: resolved        # outcome del nodo `end`
-      actions_verified: [open_dispute]
-      escalated: false
+    principal: {id: cust-001, attrs: {country: CO}}   # sintético; tipo customer
+    steps:
+      - {op: start}
+      - {op: turn, text: "no reconozco un cargo de ciento veinte dólares"}
+      - {op: confirm, answer: "yes"}
+    seed:
+      tools:
+        buscar_transacciones: [{status: ok, result: [{transaction_id: tx-1, amount: "120.50"}]}]
+    sensitive_values: ["4111-1111"]
+    expect: {outcome: resolved, actions_verified: [radicar_pqr], escalated: false}
 ```
 
 Los escenarios de negocio de la demo los escribe otra persona del equipo; este paquete define el formato y su validación.
@@ -210,12 +215,12 @@ Los escenarios de negocio de la demo los escribe otra persona del equipo; este p
 
 Para la candidata y para la base (si existe), con la misma suite congelada:
 
-1. Compone el motor con `composition/`: un `SnapshotRegistry` construido desde la candidata o desde la release base publicada (así la base no depende de que un alias se mueva durante la evaluación), el LLM gateway real y las acciones apuntadas al sandbox (§6.3).
+1. Compone el motor a través de un `ScenarioHarness` (protocolo del paquete) que implementa `agent_core.composition`: un `SnapshotRegistry` construido desde la candidata o desde la release base publicada (así la base no depende de que un alias se mueva durante la evaluación), el LLM gateway real y las tools apuntadas al sandbox (§6.3).
 2. Corre cada escenario `repetitions` veces. Cada corrida recibe su propio entorno de sandbox sembrado con el `seed` del escenario.
 3. **Califica desde los eventos del motor.** Una corrida pasa si cumple todo el `expect`. La métrica principal es la proporción de corridas que pasan.
 4. **Guardarraíles** (conteos sobre los eventos): afirmación de éxito sin `verify`, escritura sin verificación y datos de vista `full` en la respuesta o en un evento. Los emiten M2, M3, M6 y M8.
 5. Corre en paralelo con un tope de concurrencia configurable.
-6. Si el LLM o el sandbox fallan, o vence el tiempo, toda la evaluación queda `failed_infra`. Nunca hay un pase parcial.
+6. Una falla del gateway durante una corrida (la detecta una sonda del harness, porque el motor la absorbe) o del sandbox → `failed_infra`, igual que el tiempo vencido. Toda la evaluación queda `failed_infra`. Nunca hay un pase parcial.
 
 Costo orientativo: 2 releases × N escenarios × k corridas. Con 10 escenarios y k = 3, son 60 conversaciones por evaluación.
 
@@ -225,13 +230,13 @@ Las acciones de la evaluación corren de verdad (incluido el read-back de `verif
 
 ```python
 class SandboxPort(Protocol):                                       # lo implementa la unidad 3
-    def provision(self, seed: SandboxSeed) -> SandboxHandle        # entorno aislado con el estado inicial
-    def action_endpoint(self, h: SandboxHandle) -> ActionsConfig   # a dónde apuntan las tools en esta corrida
+    def provision(self, seed: SandboxSeed, target: EvalTarget) -> SandboxHandle        # entorno aislado con el estado inicial
+    def tools(self, h: SandboxHandle) -> ToolExecutor              # atributo `is_sandbox = True`; las tools de esta corrida
     def teardown(self, h: SandboxHandle) -> None
 ```
 
 - Cada corrida tiene su propio entorno. Base y candidata parten del mismo `seed`.
-- **Barrera dura:** el evaluador se niega a correr si `ActionsConfig.is_sandbox` no es verdadero. El sandbox usa solo datos sintéticos y nunca comparte credenciales ni endpoints con producción.
+- **Barrera dura:** el evaluador se niega a correr si el `ToolExecutor` no tiene el atributo `is_sandbox` verdadero. El sandbox usa solo datos sintéticos y nunca comparte credenciales ni endpoints con producción.
 - **Respaldo de la entrega:** `LocalSandbox` en `agent-core` implementa el puerto sobre un esquema Postgres efímero por corrida. Sustituirlo por el de la unidad 3 no toca el evaluador.
 
 ### 6.4 Veredicto y reporte
@@ -295,7 +300,7 @@ class BlobStore(Protocol):
     def get(self, hash: str) -> bytes                                # verifica el hash; si no coincide, IntegrityError
 
 class EvalPort(Protocol):
-    def run(self, suite: EvalSuite, candidate: Candidate, base: Release | None) -> EvalReport
+    def run(self, suite: EvalSuite, candidate: EvalTarget, base: EvalTarget | None) -> EvalReport
 
 class Judge(Protocol):                                               # opcional
     def score(self, suite: EvalSuite, transcripts: list[ScenarioTranscript]) -> list[JudgeNote]
@@ -450,9 +455,11 @@ Las que necesitan Postgres van en `tests/integration/`; el resto usa dobles en m
 Todos **aditivos**.
 
 - **M0** (aplicado el 2026-09-29, `SCHEMA_VERSION` 0.2.0): `EntityKind.knowledge_snapshot`, `KnowledgeSnapshot` y `Release.knowledge_snapshot`. No cambia `RegistryPort`, `EngineEvent` ni `ProblemCode`.
+- **M0:** `IdKind.proposal` y `IdKind.eval_run` (`SCHEMA_VERSION` 0.5.0).
+- **M1:** exporta `entity_ref_sites`, `RefSite` y `kind_of`.
 - **M1** (aplicado el 2026-09-29, rev. 3): `ReleaseDecl.knowledge`, `pin_release` con snapshot, `load_registry` con manifiestos. **Pendiente de verificar:** que `flows/__init__.py` exporte todo lo que el registry reutiliza (validación de flow, chequeos por agente y de release, `pin_release`, `Violation`, `AuthoringRegistry` construible en memoria) y que exista un volcado a YAML para `export`.
-- **M3:** la configuración de acciones acepta `ActionsConfig` con `is_sandbox` para apuntar a un sandbox por corrida.
-- **M9:** monta el router `/v1/registry` y expone `roles` y el tipo de principal al servicio.
+- **M3:** sin cambios (el sandbox entra como `ToolExecutor`).
+- **M9:** `ApiDeps.extensions`: cada extensión recibe la app y un `authenticate(request, authorization)`.
 - **M11:** expone por su interfaz pública la lectura del `release_id` de un run.
 - **`composition`:** una fábrica que compone el motor con un `RegistryPort` y un `ActionsConfig` dados (la usan el evaluador y la API).
 - **`.importlinter`:** `registry` puede usar `domain`, `ports`, la interfaz pública de `flows` y, solo el submódulo del evaluador, `composition`. Ningún módulo del motor importa `registry`.
