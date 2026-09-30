@@ -297,6 +297,8 @@ class ToolDef(Model):
     untrusted_fields: list[str] = Field(default_factory=list)
     source: str | None = None  # tabla de origen para M7
     confirmation_ttl: PositiveTimedelta = timedelta(minutes=5)
+    description: str | None = None  # qué hace la tool, para el modelo del nodo `agent` (unidad 5)
+    args_schema: dict[str, JsonValue] | None = None  # subconjunto cerrado de JSON Schema (domain.schema)
 
     @property
     def is_write(self) -> bool:

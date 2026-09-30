@@ -121,3 +121,17 @@ def test_pin_fixes_the_agent_node_references() -> None:
     config = next(n for n in pinned_flow.nodes if n.id == "investigar").config
     assert [str(r) for r in config.tools_allowed] == ["leer@1.0.0", "calc@1.0.0"]  # type: ignore[union-attr]
     assert str(config.prompt_ref) == "p/gen@1.0.0"  # type: ignore[union-attr]
+
+
+def test_g0_24_agent_tool_without_documentation() -> None:
+    assert rules(check(with_agent(tools_allowed=["sindoc@1"]))) == {"G0-24"}
+
+
+def test_g0_24_agent_tool_with_args_schema_outside_the_subset() -> None:
+    found = check(with_agent(tools_allowed=["malschema@1"]))
+    assert rules(found) == {"G0-24"}
+    assert "oneOf" in found[0].message
+
+
+def test_g0_24_does_not_apply_to_tools_outside_agent_nodes() -> None:
+    assert "G0-24" not in rules(check(base()))  # `leer@1` sin documentar sería válida fuera de un nodo agent

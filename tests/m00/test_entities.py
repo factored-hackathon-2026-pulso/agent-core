@@ -340,3 +340,12 @@ def test_release_pins_an_optional_exact_knowledge_snapshot() -> None:
     for bad in ("kb-base@^1", "kb-base", "kb-base@1"):
         with pytest.raises(ValidationError):
             Release.model_validate({**base, "knowledge_snapshot": bad})
+
+
+def test_tool_def_documentation_fields_are_optional_and_round_trip() -> None:
+    base = {"id": "leer", "version": "1.0.0", "risk_class": "read", "min_auth_level": "session",
+            "idempotent": True}
+    bare = ToolDef.model_validate(base)
+    assert bare.description is None and bare.args_schema is None
+    doc = ToolDef.model_validate(base | {"description": "Lee un cargo", "args_schema": {"type": "object"}})
+    assert doc.description == "Lee un cargo" and doc.args_schema == {"type": "object"}
