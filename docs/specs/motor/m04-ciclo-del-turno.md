@@ -184,7 +184,7 @@ Tiempos, todos desde el log de auditoría (no dependen del muestreo de trazas):
 
 ## 11. Abiertos
 
-Los dos abiertos originales quedaron resueltos el 2026-09-29 por el usuario (las confirmaciones C1–C15 del plan de implementación siguen pendientes y no se reflejan aquí):
+Los dos abiertos originales quedaron resueltos el 2026-09-29 por el usuario (las confirmaciones C1–C15 del plan de implementación quedaron aprobadas; ver §13):
 
 - **P1 (`deny` ante la oferta de una intención pendiente):** ver 3.3.
 - **P2 (turno que encuentra el run vencido):** ver paso 4 de 3.1.

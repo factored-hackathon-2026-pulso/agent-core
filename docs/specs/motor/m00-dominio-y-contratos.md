@@ -635,4 +635,4 @@ No tiene métricas propias. Los esquemas de eventos son la entrada de la unidad 
 
 - Ninguno bloqueante para la fase 1.
 - **Dependiente del tema #10:** el nodo `knowledge`, `RunState.pages`, `PageView` y la forma final de `KnowledgeSource` entran cuando se apruebe M12 (versión mayor del esquema de flows, versión menor del resto).
-- **Formato de la credencial** (`raw_credential`): JWT u otro. Lo decide M9 junto con `TestIdentityIssuer`; no cambia el puerto.
+- ~~**Formato de la credencial** (`raw_credential`)~~ **Resuelto 2026-09-29 (M9 §3.8):** JWS compacto Ed25519 con `kid`; no cambia el puerto.

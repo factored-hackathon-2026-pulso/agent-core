@@ -71,7 +71,7 @@ Cualquier otra transición lanza `IllegalTransition` (bug, no error de usuario).
 
 ### 3.2 `propose` y reentrada
 
-- Si el `confirm` **no** tiene acción `proposed`: congela `{tool, args}`, calcula `args_hash = sha256(JCS(args))`, crea `action_id` (UUIDv7), token aleatorio de 128 bits (se guarda solo su hash), `token_exp = now + tool_def.confirmation_ttl` (5 min por defecto). Emite el prompt con `summary_template`.
+- Si el `confirm` **no** tiene acción `proposed`: congela `{tool, args}`, calcula `args_hash = sha256(JCS(args))`, crea `action_id` (opaco, de `IdSource.new_id(IdKind.action)`), token aleatorio de 128 bits (se guarda solo su hash), `token_exp = now + tool_def.confirmation_ttl` (5 min por defecto). Emite el prompt con `summary_template`.
 - Si ya tiene una `proposed` con token vigente: **no crea otra**. Conserva `action_id` y `token_exp`, pero **rota el token** (nuevo token, nuevo hash), porque solo se guarda el hash y el anterior no se puede devolver. El token anterior deja de confirmar. Usa `reprompt_template` o, si no hay, `summary_template`.
 - Si la `proposed` tiene el token vencido: la pasa a `cancelled` y congela una nueva.
 - Invariante: nunca hay dos acciones `proposed` del mismo `confirm`.

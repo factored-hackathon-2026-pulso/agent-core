@@ -84,7 +84,7 @@ Las unidades 2–7 aún no existen. El motor habla con ellas solo por estos puer
 | `TranscriptStore` | unidad 7 | `InMemoryTranscript` | M11 | M11, M5 (`recent_turns`) |
 | `KnowledgeSource` | unidad 7 | `FileKnowledgeSource` | M12 (provisional, tema #10) | M12 |
 | `KeyProvider` | gestor de secretos | `FakeKeyProvider` / `EnvKeyProvider` (etiquetado) | M0 | M7 |
-| `CostCounters` | unidad 5 | `InMemoryCounters` | M9 | M9 |
+| `CostCounters` | unidad 5 | `InMemoryCostCounters` | M4 (`UnitOfWork.add_usage`, ADR 0016 punto 4) | M9 |
 
 `DecisionProvider` no es un puerto de M0: es la interfaz de adaptadores internos de M5 (`ScriptedProvider` lo entrega M5).
 
@@ -222,7 +222,7 @@ M0 define el esquema de cada evento; M11 los encadena y persiste. El módulo emi
 | Generalización de `pii_quasi` sin definir (qué hace con la fecha de nacimiento o el código postal) | M7 | **resuelto** en M7 rev. 2: regla como dato (`QuasiRule`: `drop`, `age_bucket`), por defecto `drop` |
 | Formato del token de PII sin definir | M7 | **resuelto** en M7 rev. 2: `⟦tag:n⟧`, contador por tag dentro del run |
 | `request_summary` del handoff: generado o por plantilla | M10 | **resuelto** en M10 rev. 2: plantilla determinista en el MVP; generado (vía M8) queda para producción |
-| Prueba de humo de JEV (bloqueante antes del miércoles 30/09) | M5 | **resuelto (2026-09-29), con salvedades:** contrato real (P0b) cerrado; humo con `jev-1.13.0`: `command` 96% ES / 94% PT, `flow` 100%, p50/p95 375/453 ms, 0 errores, ≈ 0.00002 USD por llamada (n pequeño, datos sintéticos). Decisión: `choice`/`noul` para Understand (`command`/`flow`/`interrupt`), slots por `llm_structured` en una segunda llamada solo con `start_flow` (ADR 0005 **enmendado** el 2026-09-29; falta implementarla en `UnderstandService`); `jev-1.13.0` fijado; JEV no entra como segunda opinión de idioma. Falta calibrar con datos reales (P9). Informe: `docs/informes/2026-09-29-m5-jev-humo.md` |
+| Prueba de humo de JEV (bloqueante antes del miércoles 30/09) | M5 | **resuelto (2026-09-29), con salvedades:** contrato real (P0b) cerrado; humo con `jev-1.13.0`: `command` 96% ES / 94% PT, `flow` 100%, p50/p95 375/453 ms, 0 errores, ≈ 0.00002 USD por llamada (n pequeño, datos sintéticos). Decisión: `choice`/`noul` para Understand (`command`/`flow`/`interrupt`), slots por `llm_structured` en una segunda llamada solo con `start_flow` (ADR 0005 **enmendado** el 2026-09-29; implementada en `UnderstandService` (`decision/understand.py`; solo corre si hay `slots_model`)); `jev-1.13.0` fijado; JEV no entra como segunda opinión de idioma. Falta calibrar con datos reales (P9). Informe: `docs/informes/2026-09-29-m5-jev-humo.md` |
 | Mínimo de muestra PT para calibrar | M5 | pendiente (lo fija la unidad 6); `calibrate` lo exige como `min_samples` sin defecto |
 | Regla de umbral por recall, formato del clasificador, `rule.config`, comando del informe, `EventScope`, `UnderstandContext` | M5 | **resuelto** en M5 rev. 2 (2026-09-29) |
 | Adaptador `DecisionOutput → DecisionResult` (`DecisionPort` de M2) | M2, M4 | **nuevo**, fuera de M5 |
