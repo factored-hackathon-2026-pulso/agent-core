@@ -47,6 +47,8 @@ Dependencias por constructor (solo por nombre): `uow_factory`, `registry`, `cloc
 
 `start_run` hace: crear `RunState` (release fijada, principal sin secretos, `locale` inicial = `lang` del request si es soportado, si no `default_locale`), emitir `run_started` con `reportable_attrs`, arrancar `entry_flow` y, en modo task, avanzar hasta un terminal (M1 G0-16 garantiza que un flow task no tiene nodos que esperan; si aun así M2 devuelve una espera, es un bug y el run escala con `validation_failed`).
 
+`start_run` es **idempotente por `(principal.key, idempotency_key)`** (cambio pedido por M9, 2026-09-29): antes de crear nada busca el registro; con el mismo body (hash JCS del `RunInput` sin la clave) devuelve el `RunResult` guardado y con otro body lanza `409 idempotency_conflict`. El registro se escribe en la misma transacción que el run (`put_run_idempotency` antes del `commit`), así que no hay un run sin su clave ni una clave sin su run. Límite conocido: dos requests concurrentes con la misma clave pueden crear dos runs antes de que exista el registro (gana el primero en commitear; el otro run queda huérfano); cerrarlo exige un candado por clave en el adaptador. El resultado guardado incluye un `confirmation.token` en claro si el primer turno pide confirmación.
+
 ### 3.2 Manejadores globales
 
 Entrada: `UnderstandResult` con `command`, `p_cal` y la marca `below_threshold` por campo (la calcula M5).
@@ -156,6 +158,7 @@ Con todos los dobles, `FakeClock` y un flow de prueba con dos intenciones y una 
 | T-M4-15 | `clarify` agotado → `end(clarify_exhausted)` o `escalate(low_confidence)` según el agente | — |
 | T-M4-16 | Con `FakeClock` que avanza dentro de cada etapa, `turn_completed` reporta `duration_ms` y `stages` exactos; respuesta por botón deja `understand_ms = None` | — |
 | T-M4-17 | Un turno deduplicado, un `409` y un `410` no emiten `turn_completed`; un turno con idioma `unsupported` sí, con `flow_ms = None` | — |
+| T-M4-18 | `start_run` repetido con la misma clave y body devuelve el mismo `RunResult` sin crear otro run; otro body → `409 idempotency_conflict`; la clave es por principal; run y clave se confirman en una transacción (crash en el commit no deja ninguno) | 12 |
 
 ## 8. Evaluación
 
@@ -175,7 +178,7 @@ Tiempos, todos desde el log de auditoría (no dependen del muestreo de trazas):
 
 ## 10. Definición de terminado
 
-- [x] Pipeline completo con dobles, T-M4-01…17 en verde.
+- [x] Pipeline completo con dobles, T-M4-01…18 en verde.
 - [x] Integración con Postgres: bloqueo optimista, `409` con dos conexiones y transacción única por turno (`tests/integration/test_m4_postgres.py`, más la suite de contrato de `UnitOfWork` sobre Postgres y T-M3-03/04 en `tests/integration/`).
 - [x] `sweep` invocable por un comando (`agentcore sweep --dsn … --registry …`) sobre Postgres real (`tests/integration/test_sweep_postgres.py`).
 

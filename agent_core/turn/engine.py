@@ -33,6 +33,8 @@ from agent_core.domain import (
     TurnInProgress,
     TurnInput,
     TurnResult,
+    canonical_bytes,
+    sha256_hex,
 )
 from agent_core.handoff import HandoffService
 from agent_core.interpreter import NO_RESUME, Resume, StepContext, Stop, advance, begin_turn, start_flow
@@ -553,7 +555,19 @@ class TurnEngine:
         self, principal: Principal, on_behalf_of: OnBehalfOf | None, run_input: RunInput
     ) -> RunResult:
         """Crea el run (release fijada), emite `run_started` y arranca `entry_flow`. En modo task avanza
-        hasta un terminal. No toma lease (el `run_id` es nuevo) ni guarda `client_turn_id` (M9)."""
+        hasta un terminal. No toma lease (el `run_id` es nuevo).
+
+        Idempotente por `(principal, idempotency_key)`: el mismo body devuelve el `RunResult` ya creado y otro
+        body con la misma clave es `409 idempotency_conflict`. La clave se guarda en la transacción del run."""
+        body = run_input.model_copy(update={"idempotency_key": ""})
+        body_hash = sha256_hex(canonical_bytes(body))
+        with self._uow_factory() as uow:
+            prior = uow.get_run_idempotency(principal.key, run_input.idempotency_key)
+        if prior is not None:
+            prior_hash, prior_result = prior
+            if prior_hash != body_hash:
+                raise EngineError(ProblemCode.idempotency_conflict)
+            return prior_result
         meter = StageMeter(self._clock)
         release = self._registry.resolve_release(run_input.agent, principal)
         version = release.entities.get(EntityKind.agent, {}).get(run_input.agent.id)
@@ -600,16 +614,18 @@ class TurnEngine:
             frame.state = start_flow(state, self._flow(release, agent.entry_flow))
             self._advance(frame)
             result = self._finish(frame, record=conversational)
+            saved = frame.state
+            run_result = RunResult(
+                run_id=saved.run_id,
+                session_id=saved.session_id,
+                release=saved.release,
+                output=frame.output if not conversational else None,
+                status=saved.status,
+                outcome=saved.outcome,
+                handoff_ref=saved.handoff_ref,
+                first_turn=result if conversational else None,
+                trace_id=result.trace_id,
+            )
+            uow.put_run_idempotency(principal.key, run_input.idempotency_key, body_hash, run_result)
             uow.commit()
-        saved = frame.state
-        return RunResult(
-            run_id=saved.run_id,
-            session_id=saved.session_id,
-            release=saved.release,
-            output=frame.output if not conversational else None,
-            status=saved.status,
-            outcome=saved.outcome,
-            handoff_ref=saved.handoff_ref,
-            first_turn=result if conversational else None,
-            trace_id=result.trace_id,
-        )
+        return run_result
