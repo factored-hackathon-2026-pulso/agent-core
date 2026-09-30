@@ -16,7 +16,6 @@ from agent_core.domain import (
     Flow,
     JsonValue,
     Node,
-    RefSpec,
     RespondNode,
     RuleNode,
     SlotValidator,
@@ -251,13 +250,9 @@ def validator_problems(validator: SlotValidator) -> list[str]:
         strings = [v for v in items if isinstance(v, str)]
         ok = bool(strings) and len(strings) == len(items) and len(set(strings)) == len(strings)
         return [] if ok else ["el enum debe ser una lista no vacía de strings sin repetidos"]
-    if isinstance(value, str):
-        try:
-            RefSpec.parse(value)
-            return []
-        except ValueError:
-            pass
-    return [f"el validador decide necesita una referencia a un decision_model: {clip(value)!r}"]
+    # `decide`: el intérprete aún no lo ejecuta (m02 D14: no se sabe qué campo de la decisión valida); se
+    # rechaza aquí para que una release no se publique con un flow que fallaría en ejecución.
+    return ["el validador decide no está soportado todavía (m02 D14)"]
 
 
 def schema_violations(flow: Flow) -> list[Violation]:

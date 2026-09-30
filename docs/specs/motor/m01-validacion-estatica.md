@@ -167,7 +167,7 @@ campo   := [A-Za-z0-9_]+
 
 | ID | Regla | Algoritmo | Fase |
 |---|---|---|---|
-| G0-01 | Esquema | Lo decide `parse_flow` (y lo repite `validate_flow` para un `Flow` construido a mano). Casos: nodo fuera del catálogo o tipo de producción; `config` inválida; id de nodo duplicado; `knowledge_refs` no vacío; JSON Logic con operador fuera de `JSONLOGIC_OPS` o aridad inválida en `rule.expr`, `verify.predicate` o `escalate.priority_expr`; ruta mal formada; validador inválido (§3.4.1); archivo ilegible o con `id`/`version` distintos del nombre del archivo | 1 |
+| G0-01 | Esquema | Lo decide `parse_flow` (y lo repite `validate_flow` para un `Flow` construido a mano). Casos: nodo fuera del catálogo o tipo de producción; `config` inválida; id de nodo duplicado; `knowledge_refs` no vacío; JSON Logic con operador fuera de `JSONLOGIC_OPS` o aridad inválida en `rule.expr`, `verify.predicate` o `escalate.priority_expr`; ruta mal formada; validador inválido o `decide`, que aún no se ejecuta (§3.4.1, m02 D14); archivo ilegible o con `id`/`version` distintos del nombre del archivo | 1 |
 | G0-02 | Referencia inexistente | `reg.resolve(kind, ref)` sobre cada campo de la tabla §3.4.2 | 1 |
 | G0-03 | Estructura del grafo | (a) todo destino de `next` es un nodo del flow; (b) toda clave de `next` es un resultado del tipo; (c) todo resultado del tipo tiene `next` (terminales: `next` vacío); (d) todo nodo es alcanzable desde el primero (BFS); (e) en `decide`, `branch_on` es una propiedad de primer nivel de `output_schema.properties` con `enum` de strings, ninguno igual a `low_confidence`, y los resultados del tipo son ese enum más `low_confidence` | 1 |
 | G0-04 | Ciclo sin espera | Se quitan los nodos que esperan (`collect`, `confirm`, `respond` con `await: true`) y lo que queda debe ser acíclico, auto-bucles incluidos | 1 |
@@ -194,7 +194,7 @@ campo   := [A-Za-z0-9_]+
 | `type` | uno de `string`, `integer`, `decimal`, `date`, `boolean` |
 | `regex` | string que compila con `re` y tiene 200 caracteres o menos |
 | `enum` | lista no vacía de strings sin repetidos |
-| `decide` | string `RefSpec` de un `decision_model` (G0-02 lo resuelve) |
+| `decide` | **no soportado todavía**: G0-01 lo rechaza (el intérprete no sabe qué campo de la decisión valida, m02 D14). Diseño previsto: string `RefSpec` de un `decision_model` (G0-02 lo resuelve) |
 
 #### 3.4.2 Referencias (G0-02)
 
