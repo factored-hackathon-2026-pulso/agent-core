@@ -274,3 +274,19 @@ def test_slots_from_the_second_call_replace_those_of_the_first() -> None:
     slots_provider.push(_slots_raw({"nuevo": "y"}))
     result, _ = _run(rig, slots_model_ref=SLOTS_REF)
     assert result.slots == {"nuevo": "y"}
+
+
+@pytest.mark.parametrize("p", [{"command": 0.5}, {"flow": 0.5}])
+def test_slots_call_is_skipped_when_command_or_flow_is_below_threshold(p: dict[str, float]) -> None:
+    rig, slots_provider = _slots_rig()
+    rig.providers[CLASSIFIER].push(_raw({"command": "start_flow", "flow": "disputa"}, **p))
+    result, events = _run(rig, slots_model_ref=SLOTS_REF)
+    assert slots_provider.calls == [] and len(events) == 1 and result.model_calls == 1
+    assert result.slots == {} and False in result.above_threshold.values()
+
+
+def test_slots_call_is_skipped_without_a_flow() -> None:
+    rig, slots_provider = _slots_rig()
+    rig.providers[CLASSIFIER].push(_raw({"command": "start_flow"}))
+    _run(rig, slots_model_ref=SLOTS_REF)
+    assert slots_provider.calls == []

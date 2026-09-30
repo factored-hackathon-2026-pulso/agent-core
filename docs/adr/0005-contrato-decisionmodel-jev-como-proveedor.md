@@ -42,7 +42,7 @@
 ## Enmienda 2026-09-29 — Resultado de la prueba de humo y llamadas por turno
 
 - **Qué hace JEV:** solo preguntas tipadas (`choice`, `noul`, `score`) sobre la vista `model`. No extrae valores libres (montos, fechas, identificadores). En Understand responde `command`, `flow` e `interrupt` (`choice`).
-- **Slots por `llm_structured`, en una segunda llamada.** Se reemplaza "una sola llamada por turno" por: **una llamada a JEV por turno** (campos calibrados) **más, solo cuando `command = start_flow`, una llamada a `llm_structured`** para los slots, que salen como `claimed`, sin umbral. Con cualquier otro comando el turno sigue teniendo una sola llamada.
+- **Slots por `llm_structured`, en una segunda llamada.** Se reemplaza "una sola llamada por turno" por: **una llamada a JEV por turno** (campos calibrados) **más, solo cuando `command = start_flow`, una llamada a `llm_structured`** para los slots (solo si `command` y `flow` superan su umbral), que salen como `claimed`, sin umbral. Con cualquier otro comando el turno sigue teniendo una sola llamada.
   - Costo: la latencia del turno con `start_flow` suma la del LLM a los ~375 ms (p50) de JEV. El límite `max_model_calls_per_turn` de la release debe admitir 2 (los agentes de prueba lo fijan en 3).
   - Alternativa descartada: JEV para los campos calibrados y el LLM siempre. Duplicaría costo y latencia en turnos que no inician flow.
 - **Versión fijada:** el `DecisionModelDef` usa el ID versionado (`jev-1.13.0`), no el alias `jev-latest`. La calibración es por versión: un cambio de versión exige recalibrar (`model_version` queda en `decision_made`).

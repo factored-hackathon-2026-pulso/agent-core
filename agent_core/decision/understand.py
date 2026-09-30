@@ -104,9 +104,13 @@ class UnderstandService:
         model_calls, tokens, cost_usd = output.model_calls, output.tokens, output.cost_usd
         slots_value = value.get("slots")
         slots: dict[str, JsonValue] = slots_value if isinstance(slots_value, dict) else {}
-        if command is Command.start_flow and context.slots_model_ref is not None:
-            # Segunda llamada (ADR 0005, enmienda 2026-09-29): JEV no extrae valores libres. Si falla, el
-            # comando se conserva y `slots` queda vacío (M2 pedirá los datos con `collect`).
+        confident = (command is Command.start_flow and isinstance(flow, str)
+                     and output.above_threshold.get("command") is True
+                     and output.above_threshold.get("flow") is True)
+        if confident and context.slots_model_ref is not None:
+            # Segunda llamada (ADR 0005, enmienda 2026-09-29): JEV no extrae valores libres. Solo con
+            # `command` y `flow` sobre umbral: bajo umbral M4 aclara y los slots se descartarían. Si falla,
+            # el comando se conserva y `slots` queda vacío (M2 pedirá los datos con `collect`).
             slots_output, slots_event = self._decisions.decide_with_schema(
                 context.slots_model_ref, _SLOTS_SCHEMA, {**inputs, "flow": flow}, locale,
                 context.token_vault, scope=context.scope)
