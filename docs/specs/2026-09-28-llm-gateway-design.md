@@ -74,12 +74,16 @@ def load_endpoints(env: Mapping[str, str]) -> dict[str, EndpointConfig]  # lee L
 class OpenAICompatGateway(LLMGateway):
     def __init__(self, registry: RegistryPort, endpoints: dict[str, EndpointConfig],
                  env: Mapping[str, str],
-                 client_factory: Callable[[EndpointConfig, str, int], OpenAI] = default_client) -> None
+                 client_factory: Callable[[EndpointConfig, str, int], OpenAI] = default_client,
+                 tracer: Tracer | None = None) -> None                    # `None`: el tracer global de OpenTelemetry
 def price_of(price: ModelPrice, tokens_in: int, tokens_out: int) -> Decimal
 
 class LLMAgentPort(AgentPort):                                           # §3.8
-    def __init__(self, gateway: LLMGateway, registry: RegistryPort, locale: Locale) -> None
+    def __init__(self, gateway: LLMGateway, registry: RegistryPort,
+                 resolve_ref: Callable[[EntityKind, RefSpec], EntityRef]) -> None
 ```
+
+`resolve_ref` traduce una referencia de autoría (`RefSpec`) a la exacta de la release del run, como el de `ResponderContext` (M8); lo arma `composition` por run. El `Locale` sale de `state.locale`.
 
 `env` es el mapa de variables de entorno inyectado; el gateway nunca lee `os.environ` (así las pruebas no dependen del proceso). `client_factory` recibe el endpoint, la key ya leída y el `timeout_s`.
 
@@ -104,7 +108,7 @@ Otros alias posibles sin código: `openai`, `local` (vLLM u Ollama), `litellm-pr
 5. **Tope total:** la llamada corre con un plazo de pared de `profile.timeout_s` segundos, medido por el adaptador con un `Timeout` propio del cliente HTTP (transporte con `read` acotado por el plazo restante). Si el plazo se agota, `timeout`. El SDK solo acota cada fase, así que un endpoint que gotea bytes podría exceder el plazo sin este tope. La implementación elige el mecanismo (hilo con plazo o deadline en el transporte); el criterio de aceptación es T-U5-11.
 6. Lee `usage.prompt_tokens` y `usage.completion_tokens`, y calcula `cost_usd = price_of(profile.price, tokens_in, tokens_out)`.
 7. Interpreta la salida:
-   - con `schema`: parsea el contenido con `agent_core.domain.loads` (los números con decimales quedan como `Decimal`) y lo valida con `check_output(schema, valor)` (§3.7);
+   - con `schema`: parsea el contenido con `agent_core.domain.loads` (los números con decimales quedan como `Decimal`) y lo valida con `check_output(schema, valor)` (§3.7). Si el contenido entero es un único bloque de código (` ```json … ``` ` o ` ``` … ``` `), se extrae su interior antes de parsear: los modelos en modo `prompted` lo hacen con frecuencia y no es una salida inválida. Cualquier otro texto alrededor del JSON sí lo es;
    - sin `schema`: `output` es el texto.
 8. Devuelve `GenerationResult`, con `model` igual al modelo que informó la respuesta (puede diferir del pedido si el endpoint enruta, como hace OpenRouter).
 
@@ -151,7 +155,7 @@ Parámetros del modelo: `max_tokens` y `temperature` se envían tal cual. Un mod
 - M4, en el paso 14 (persistir), suma el costo del turno y llama `uow.add_usage(principal.key, cost, now)` dentro de la misma transacción.
   - El costo es Σ `decision_made.cost_usd` + Σ `response_emitted.llm.cost_usd` del turno. Las llamadas sin uso conocido suman 0.
 - M9 lee con `CostCounters.spent_today` y `hits`.
-- Verificar en la construcción que el costo de las llamadas del nodo `agent` también entra en esa suma (§3.8, T-U5-16).
+- El costo de las llamadas del nodo `agent` ya entra en esa suma: `handle_agent` lo carga con `charge_model` a `budgets_used.run_cost`, y M4 suma el delta del turno. T-U5-16 lo verifica.
 
 ### 3.7 Validación local del esquema (`check_output` pasa a `domain`)
 
@@ -165,14 +169,14 @@ Parámetros del modelo: `max_tokens` y `temperature` se envían tal cual. Un mod
 
 Implementa `AgentPort.step(request, state) -> AgentStepResult` sobre `LLMGateway.generate`, en modo `prompted`. El bucle, los presupuestos, la ejecución de tools, la validación contra `output_schema` y la regeneración con `feedback` son de M2; este adaptador solo hace **un paso**.
 
-1. **Tools del catálogo.** Para cada `ref` de `request.config.tools_allowed`, `registry.get(ref, ToolDef)`. Cada entrada del catálogo es `{tool: "id@version", description, args_schema}`. Si una tool no tiene `description` o `args_schema`, es un error de programación (G0-24 lo impide): lanza `SchemaError`.
+1. **Tools del catálogo.** Para cada `ref` de `request.config.tools_allowed`, `registry.get(resolve_ref(EntityKind.tool, ref), ToolDef)`. Cada entrada del catálogo es `{tool: "id@version", description, args_schema}`. Si una tool no tiene `description` o `args_schema`, es un error de programación (G0-24 lo impide): lanza `SchemaError`.
 2. **Entradas** (`inputs_model_view`):
    ```
    {goal, step, tools: [<catálogo>], observations: [{tool, args, status, result, error}],
     feedback, output_schema}
    ```
    Las `observations` ya vienen en vista `model` (m02 §3.7). `feedback` es el motivo sin datos de la última salida rechazada, o `null`.
-3. **Prompt.** `request.config.prompt_ref` (un `Prompt` con su `model_profile`); el texto describe el bucle y el formato del paso. La llamada es `generate(prompt, inputs, locale, schema=STEP_SCHEMA)` con el `Locale` inyectado.
+3. **Prompt.** `resolve_ref(EntityKind.prompt, request.config.prompt_ref)` (un `Prompt` con su `model_profile`); el texto describe el bucle y el formato del paso. La llamada es `generate(prompt, inputs, state.locale, schema=STEP_SCHEMA)`.
 4. **Esquema del paso** (plano, dentro del subconjunto de §3.7):
    ```json
    {"type": "object", "additionalProperties": false, "required": ["kind"],
@@ -187,8 +191,9 @@ Implementa `AgentPort.step(request, state) -> AgentStepResult` sobre `LLMGateway
    - `kind = "final"` → `AgentFinal(output)`. Si falta `output`, es un paso inválido. La validación de `output` contra `output_schema` y su única regeneración son de M2.
    - `AgentStepResult(action, model_calls=1, tokens=tokens_in + tokens_out, cost_usd=cost_usd)`.
 6. **Paso inválido** (forma que el esquema plano no puede excluir, p. ej. `tool_call` sin `tool`): lanza `GatewayError(invalid_output)` con el uso del `GenerationResult` (tokens y costo). No se reintenta aquí; M2 decide (`gave_up`).
-7. **Errores:** un `GatewayError` del gateway sube tal cual. M2 ya trata la falla del modelo como `gave_up` y lleva la cuenta de presupuestos con lo que informe el puerto.
-8. **Sin estado:** no guarda historial. Cada paso reconstruye su entrada desde `request` y el registro.
+7. **Errores:** un `GatewayError` del gateway sube tal cual. **Cambio de M2:** hoy `handle_agent` no captura excepciones de `AgentPort.step`, así que una falla del modelo escaparía del turno. Debe capturar `GatewayError`, cargar al presupuesto el uso que informe (`charge_model` con `calls=1` y los tokens y costo del error, o 0 si no hay) y terminar el nodo con `gave_up`. Cualquier otra excepción sigue subiendo (error de programación o de cableado).
+8. **Sin estado:** no guarda historial. Cada paso reconstruye su entrada desde `request`, `state` y el registro.
+9. **Cableado:** `EngineRuntimeFactory.open` (composition) inyecta `StepContext.agents = LLMAgentPort(gateway, registry, resolve_ref)`, con el `resolve_ref` de la release del run (el mismo que usa para `ResponderContext`). Sin ese cableado todo nodo `agent` es un error de cableado.
 
 **Dónde vive y qué importa.** `agent_core/adapters/llm/agent_port.py` importa `agent_core.domain`, `agent_core.ports` y la interfaz pública de `agent_core.interpreter` (`AgentPort`, `AgentRequest`, `AgentStepResult`, `AgentToolCall`, `AgentFinal`). Requiere ampliar `.importlinter`: hoy `adapters` no puede importar `interpreter`; la excepción se limita a este módulo.
 
@@ -210,6 +215,7 @@ Implementa `AgentPort.step(request, state) -> AgentStepResult` sobre `LLMGateway
 | Alias del perfil sin configurar | `unavailable` y log de error con el alias (sin secretos). Al arrancar, la demo avisa por cada perfil de la release activa cuyo alias falte |
 | El modelo o proveedor rechaza `max_tokens`/`temperature` | 400 → `unavailable`; se corrige con otro perfil (versión nueva) |
 | OpenRouter enruta a un modelo sin soporte de un parámetro | con `prompted` no se envía `response_format`, así que el riesgo se reduce a `invalid_output` por salida mal formada |
+| Respuesta exitosa sin `usage` | tokens y costo en 0 y un aviso en el log técnico (sin contenido); el turno sigue. La tasa de avisos se vigila en la prueba de humo |
 | Salida truncada por `max_tokens` | `invalid_output` si hay esquema; texto truncado si no (M8 lo valida) |
 | Paso del nodo `agent` con forma inválida | `GatewayError(invalid_output)` con uso; M2 → `gave_up` |
 | Precio desactualizado | el costo reportado difiere de la factura; se corrige publicando otra versión del perfil |
@@ -239,7 +245,9 @@ Sin red: el adaptador se prueba con un transporte HTTP falso (`respx` sobre `htt
 | T-U5-13 | `LLMAgentPort`: un paso `tool_call` válido → `AgentToolCall` con la referencia parseada; un paso `final` → `AgentFinal`; `tokens = tokens_in + tokens_out` y `cost_usd` del resultado |
 | T-U5-14 | `LLMAgentPort`: catálogo en las entradas con `description` y `args_schema` de cada tool de `tools_allowed`; sin ellas → `SchemaError` |
 | T-U5-15 | `LLMAgentPort`: `tool_call` sin `tool`, `args` que no es objeto o `tool` sin referencia válida → `GatewayError(invalid_output)` con uso; una tool fuera de `tools_allowed` pasa tal cual (la rechaza M2) |
-| T-U5-16 | Integración con M2 y M4: un nodo `agent` con `LLMAgentPort` sobre el gateway (transporte falso) llega a `answered`; el costo del bucle entra en `add_usage` del turno |
+| T-U5-16 | Integración con M2: un nodo `agent` con `LLMAgentPort` sobre `OpenAICompatGateway` (transporte falso) llega a `answered`; `budgets_used.run_cost` acumula el costo del bucle |
+| T-U5-17 | M2: un `GatewayError` de `AgentPort.step` termina el nodo en `gave_up` y carga al presupuesto el uso que informe; otra excepción sube |
+| T-U5-18 | Composition: `EngineRuntimeFactory.open` inyecta `agents` y un flow con nodo `agent` corre con gateway guionado |
 | T-M8-12 | M8: `invalid_output` regenera una vez y luego usa la plantilla; los otros `kind` van directo a la plantilla; `cost_known = false` si un error no informa costo (siguiente id libre en m08; ajustar si se ocupa antes) |
 | T-M1-46 | M1 G0-24: una tool en `tools_allowed` sin `description` o `args_schema`, o con `args_schema` fuera del subconjunto, falla la validación estática (siguiente id libre en m01) |
 
@@ -279,7 +287,8 @@ Comparar dos perfiles es comparar dos releases (unidad 6).
 - `check_output` movida a `domain` (T-U5-12).
 
 **Nodo `agent`**
-- `LLMAgentPort` exportado; T-U5-13…16 en verde; excepción de `.importlinter` acotada a su módulo.
+- `LLMAgentPort` exportado; T-U5-13…18 en verde; excepción de `.importlinter` acotada a su módulo (`ignore_imports` de `agent_core.adapters.llm.agent_port -> agent_core.interpreter`).
+- `handle_agent` captura `GatewayError` (T-U5-17) y `composition` inyecta `agents` (T-U5-18).
 - `ToolDef.description` y `args_schema` en M0, con `contracts/` regenerado y la regla G0-24 en M1 con su prueba.
 - m02 §3.7 y §11 actualizados: el abierto del adaptador real queda cerrado y apunta a esta spec.
 
@@ -292,4 +301,4 @@ Comparar dos perfiles es comparar dos releases (unidad 6).
 - **Prompt del bucle del nodo `agent`:** el texto concreto del `Prompt` (instrucciones del formato `kind/tool/args/output`) se escribe en el registro de la demo, no en el código. La spec fija el contrato, no la redacción.
 - **Regla de M1 para `output_schema`:** m02 §11 anota que falta detectar al validar el flow un `output_schema` fuera del subconjunto. G0-24 cubre `args_schema`; extenderla a `output_schema` es trivial pero no está en el alcance de esta rev.
 - **`llm_structured` en M5:** cómo su `ProviderSpec` referencia un `Prompt`. Se resuelve al construir M5; el gateway no cambia.
-- **Mecanismo del tope total (§3.1 paso 5):** hilo con plazo o deadline en el transporte; se decide al implementar, bajo el criterio de T-U5-11.
+- **Mecanismo del tope total (§3.1 paso 5):** decidido en el plan: la llamada corre en un hilo y el adaptador espera con `Future.result(timeout=timeout_s)` (sin leer el reloj, regla de `ruff`). Un hilo abandonado termina por los timeouts por fase del SDK. Criterio de aceptación: T-U5-11.
