@@ -282,6 +282,8 @@ class TurnEngine:
                 cached = uow.get_turn_result(found.run_id, turn.client_turn_id)
                 if cached is not None:  # paso 1: un duplicado devuelve lo guardado aunque el run ya cerró
                     return cached
+                if found.status != "open":  # 410 antes que 409: reintentar no serviría de nada
+                    raise EngineError(ProblemCode.run_closed, "run cerrado")
                 try:
                     uow.acquire_turn(found.run_id, turn_id, self._clock.now(), self._config.lease_ttl)
                 except TurnInProgress as exc:
