@@ -63,6 +63,7 @@ class HttpJevTransport:
         self._backoff_base_s = backoff_base_ms / 1000
         self._sleep = sleep
         self._opener = urllib.request.build_opener(_NoRedirect)
+        self.retryable_responses: dict[int, int] = {}  # 429/529 vistos (para medir la tasa de límite)
 
     def __repr__(self) -> str:
         return "HttpJevTransport()"
@@ -81,6 +82,8 @@ class HttpJevTransport:
             status, retry_after, payload = self._post(body, key, remaining_ns / _NS_PER_S)
             if status == 200:
                 return _decode(payload)
+            if status in _RETRYABLE:
+                self.retryable_responses[status] = self.retryable_responses.get(status, 0) + 1
             if status in _RETRYABLE and attempt < self._max_retries:
                 wait = retry_after if retry_after is not None else self._backoff_base_s * 2**attempt
                 if wait * _NS_PER_S >= deadline - self._clock.monotonic_ns():

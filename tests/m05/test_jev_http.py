@@ -112,6 +112,18 @@ def test_retries_with_exponential_backoff(server: tuple[Script, str], status: in
     assert rig.sleeps == [0.2, 0.4, 0.8] and len(script.received) == 4
 
 
+def test_counts_the_retryable_responses_it_saw(server: tuple[Script, str]) -> None:
+    script, url = server
+    script.push(429)
+    script.push(529)
+    script.push(429)
+    script.push(200, OK_BODY)
+    rig = Rig(url)
+    rig.transport.send(REQUEST, 10_000)
+    assert rig.transport.retryable_responses == {429: 2, 529: 1}
+    assert repr(rig.transport) == "HttpJevTransport()"
+
+
 def test_retry_after_is_respected(server: tuple[Script, str]) -> None:
     script, url = server
     script.push(429, headers={"Retry-After": "2"})

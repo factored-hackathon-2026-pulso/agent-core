@@ -11,9 +11,9 @@ import agent_core.decision.calibration as calibration
 PACKAGE = Path(decision.__file__).parent
 PUBLIC = [
     "ArtifactLoader", "ClassifierProvider", "DecisionConfigError", "DecisionOutput", "DecisionProvider",
-    "DecisionService", "EventScope", "JevProvider", "JevTransport", "LlmStructuredProvider", "ProviderError",
-    "ProviderTimeout", "RawPrediction", "RuleProvider", "UnderstandContext", "UnderstandResult",
-    "UnderstandService",
+    "DecisionService", "EventScope", "HttpJevTransport", "JevProvider", "JevTransport", "JevTransportError",
+    "LlmStructuredProvider", "ProviderError", "ProviderTimeout", "RawPrediction", "RuleProvider",
+    "UnderstandContext", "UnderstandResult", "UnderstandService",
 ]
 OFFLINE = [
     "CalibrationArtifact", "CalibrationSource", "DevExample", "DirectoryCalibrationSource",
