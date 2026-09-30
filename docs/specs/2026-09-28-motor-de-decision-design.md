@@ -144,7 +144,10 @@ POST /v1/runs                         # modo task, o inicio de un run conversaci
   body: {agent: "<id>[@alias|@version]", subject?: {kind, ref}, input?: {...}, lang?}
   → 201 {run_id, session_id?, release, output?, status, outcome?, handoff_ref?, trace_id}
   → 401 {code: credentials_invalid | principal_expired}
-  → 403 {code: subject_forbidden | version_pin_forbidden | delegation_expired}
+  → 403 {code: subject_forbidden | agent_forbidden | version_pin_forbidden | delegation_expired | delegation_mismatch}
+  → 404 {code: not_found}             # agente inexistente en la release
+  → 409 {code: idempotency_conflict}  # misma Idempotency-Key con otro body
+  → 422 {code: invalid_request}       # body inválido o fuera de los límites de tamaño
   → 429 {code: rate_limited | cost_budget_exceeded}
 
 POST /v1/sessions/{session_id}/turns  # modo conversacional
@@ -565,7 +568,7 @@ transcript_ref                             # → GET /v1/runs/{run_id}/transcrip
   - **Respuesta:** `response_emitted`, con el resultado del validador, la huella con clave de la entrada del transcript (§8.1.1), el conjunto de reclamos del `respond` (`claims` declarados y derivados) y el uso del LLM (`llm`: llamadas, latencia, tokens, costo).
   - **Fin de turno:** `turn_completed`, con la duración del turno, el desglose por etapa (guardas, Understand, flow, respuesta), el modo degradado y en qué queda esperando el run.
   - **Campos de medición (rev. 14):** `decision_made.latency_ms`, `tool_called.latency_ms`, `response_emitted.llm` y los tiempos de `turn_completed` se miden con `Clock.monotonic_ns()` o los reporta el proveedor. No son deterministas: ninguna decisión depende de ellos y el replay los excluye de la comparación (M0 §2.10).
-  - **Seguridad:** `injection_flagged`, `access_denied` (con motivo: `subject_forbidden`, `principal_expired`, `delegation_expired`, `principal_mismatch`, `tool_denied`). Una firma inválida no genera evento en la cadena de ningún run.
+  - **Seguridad:** `injection_flagged`, `access_denied` (con motivo: `subject_forbidden`, `principal_expired`, `delegation_expired`, `delegation_mismatch`, `principal_mismatch`, `agent_forbidden`, `tool_denied`). Una firma inválida no genera evento en la cadena de ningún run.
   - **Cierre:** `escalated`, `handoff_resolved`, `run_closed`.
 - **Eventos salientes:** `handoff_created` va al outbox de eventos salientes (unidad 4). La auto-mejora y la plataforma del asesor consumen de ahí o del log.
 - **Replay.** Reconstruye un run desde sus registros con la misma release y el mismo código. No re-ejecuta modelos ni tools externas: no se garantiza que un modelo dé la misma salida, y eso lo mide la variabilidad entre corridas de la unidad 6. Comparar releases distintas no es replay: lo hace el harness de la unidad 6.
