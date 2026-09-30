@@ -558,7 +558,7 @@ class TurnEngine:
         hasta un terminal. No toma lease (el `run_id` es nuevo).
 
         Idempotente por `(principal, idempotency_key)`: el mismo body devuelve el `RunResult` ya creado y otro
-        body con la misma clave es `409 idempotency_conflict`. La clave se guarda en la transacción del run."""
+        body con la misma clave es `409 idempotency_conflict`. La clave va en la transacción del run."""
         body = run_input.model_copy(update={"idempotency_key": ""})
         body_hash = sha256_hex(canonical_bytes(body))
         with self._uow_factory() as uow:
