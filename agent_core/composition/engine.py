@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 
 from agent_core.actions import ActionManager
-from agent_core.audit import AuditLog, TurnRecorder
+from agent_core.audit import AuditLog, TranscriptReader, TurnRecorder
 from agent_core.composition.runtime import EngineRuntimeFactory, RuntimeConfig
 from agent_core.decision import DecisionProvider, DecisionService, UnderstandService
 from agent_core.decision.calibration.artifact import CalibrationSource
@@ -74,7 +74,16 @@ class DerivedTrace:
         return f"trace-{turn_id}"
 
 
-def build_turn_engine(deps: EngineDeps) -> TurnEngine:
+@dataclass(frozen=True)
+class BuiltEngine:
+    """El motor y los lectores que la API necesita de M10 y M11, armados con las mismas piezas."""
+
+    turns: TurnEngine
+    handoffs: HandoffService
+    transcripts: TranscriptReader
+
+
+def build_engine(deps: EngineDeps) -> BuiltEngine:
     cfg = deps.config
     views = ViewService(deps.keys, deps.authz, deps.clock, deps.classifier)
     decisions = DecisionService(deps.registry, deps.providers, deps.calibrations, deps.clock, deps.ids)
@@ -86,14 +95,20 @@ def build_turn_engine(deps: EngineDeps) -> TurnEngine:
         knowledge=None if deps.knowledge is None else KnowledgeService(deps.knowledge, deps.authz),
         config=RuntimeConfig(number_format=cfg.number_format, max_regenerations=cfg.max_regenerations,
                              priority=cfg.priority, lang_thresholds=cfg.lang_thresholds))
-    return TurnEngine(
+    handoffs = HandoffService(uow_factory=deps.uow_factory, registry=deps.registry, views=views,
+                              authz=deps.authz, keys=deps.keys, clock=deps.clock, ids=deps.ids)
+    turns = TurnEngine(
         uow_factory=deps.uow_factory, registry=deps.registry, clock=deps.clock, ids=deps.ids,
         guards=GuardService(deps.registry, deps.clock, deps.ids, dict(cfg.lang_thresholds)),
         understand=DecisionUnderstand(UnderstandService(decisions), deps.transcript,
                                       recent_turns=cfg.recent_turns),
-        actions=actions,
-        handoff=HandoffService(uow_factory=deps.uow_factory, registry=deps.registry, views=views,
-                               authz=deps.authz, keys=deps.keys, clock=deps.clock, ids=deps.ids),
+        actions=actions, handoff=handoffs,
         recorder=TurnRecorder(deps.transcript, deps.keys), chain=AuditLog(deps.audit),
         audit=deps.audit, runtimes=runtimes, trace=deps.trace or DerivedTrace(), config=cfg.turn,
         authz=deps.authz)
+    transcripts = TranscriptReader(deps.transcript, deps.uow_factory, views, deps.keys, deps.ids)
+    return BuiltEngine(turns=turns, handoffs=handoffs, transcripts=transcripts)
+
+
+def build_turn_engine(deps: EngineDeps) -> TurnEngine:
+    return build_engine(deps).turns

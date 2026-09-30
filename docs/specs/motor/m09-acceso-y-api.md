@@ -198,7 +198,7 @@ Fuera de la definición pero hecho: `TableAuthz` (`testing/fakes/authz.py`) como
 ## 11. Abiertos
 
 - **Contrato `api` de `.importlinter`** (decisión del usuario). Con los `Protocol` de `api/protocols.py` el contrato pasa sin `allow_indirect_imports`; importar `TurnEngine`, `HandoffService` o `TranscriptReader` directamente sí lo exigiría.
-- **Cableado real.** No existe aún un `agentcore serve` ni la factoría en `composition` que arme `ApiDeps` (verificador, `TableAuthz`/unidad 3, `TurnEngine`, `HandoffService`, `TranscriptReader`, `AuditLog`, `OtelSecurityLog`, `TraceIds` de M4 con el `trace_id` de OTel).
+- ~~**Cableado real.**~~ **Resuelto 2026-09-30 (tema #13):** `agentcore serve` (`agent_core/composition/serve.py`, `serve_ports.py`) arma `ApiDeps` con el motor real (`build_engine`: `TurnEngine`, `HandoffService`, `TranscriptReader`), `AuditLog` y `OtelSecurityLog`. Claves públicas de identidad: archivo YAML/JSON `{principal_keys: {kid: b64url}, delegation_keys: {kid: b64url}}` (32 bytes Ed25519 por clave; `--identity-keys`). Las piezas de las unidades 3, 6 y 7 son dobles de demo tras `AGENTCORE_ALLOW_DEMO=1`.
 - **Copiloto y constructor (ADR 0019):** el vocabulario de `purpose` para el copiloto y los scopes del `builder` siguen sin definir; la prueba de contrato fija solo las negaciones.
 - **`AuthzPort` sin especificar:** qué significa `subject=None` en `authorize_agent`, las claves de `bind_params`, el vocabulario de `purpose` y los scopes de `service`/`builder` (`TableAuthz` usa `subject:<kind>`/`subject:*` como convención propia del doble).
 - **Anónimos y contadores:** sin límite por sesión anónima en el motor.
