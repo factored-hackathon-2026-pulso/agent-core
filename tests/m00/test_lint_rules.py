@@ -25,6 +25,24 @@ def _ruff(path: Path, *extra: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _toy_package(tmp_path: Path) -> Path:
+    """Paquete de juguete `fixpkg` con la config real (`fix.ini`) y el módulo exceptuado."""
+    config = (ROOT / ".importlinter").read_text(encoding="utf-8")
+    modules = set(re.findall(r"agent_core\.(\w+)", config))
+    pkg = tmp_path / "fixpkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    for name in modules:
+        (pkg / name).mkdir()
+        (pkg / name / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "adapters" / "llm").mkdir()
+    (pkg / "adapters" / "llm" / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "adapters" / "llm" / "agent_port.py").write_text(
+        "from fixpkg import interpreter  # noqa: F401\n", encoding="utf-8")
+    (tmp_path / "fix.ini").write_text(config.replace("agent_core", "fixpkg"), encoding="utf-8")
+    return pkg
+
+
 # T-M0-06
 def test_banned_time_and_randomness_outside_adapters(tmp_path: Path) -> None:
     offender = tmp_path / "offender.py"
@@ -83,15 +101,7 @@ def test_repo_import_contracts_pass() -> None:
 
 def test_m0_boundary_contract_fires_on_a_violation(tmp_path: Path) -> None:
     """Réplica del `.importlinter` real sobre un paquete de juguete donde `domain` importa `flows`."""
-    config = (ROOT / ".importlinter").read_text(encoding="utf-8")
-    modules = set(re.findall(r"agent_core\.(\w+)", config))
-    pkg = tmp_path / "fixpkg"
-    pkg.mkdir()
-    (pkg / "__init__.py").write_text("", encoding="utf-8")
-    for name in modules:
-        (pkg / name).mkdir()
-        (pkg / name / "__init__.py").write_text("", encoding="utf-8")
-    (tmp_path / "fix.ini").write_text(config.replace("agent_core", "fixpkg"), encoding="utf-8")
+    pkg = _toy_package(tmp_path)
 
     def run() -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -153,15 +163,7 @@ def test_domain_must_not_import_ports() -> None:
 
 
 def test_module_cannot_import_adapters_nor_domain_ports(tmp_path: Path) -> None:
-    config = (ROOT / ".importlinter").read_text(encoding="utf-8")
-    modules = set(re.findall(r"agent_core\.(\w+)", config))
-    pkg = tmp_path / "fixpkg"
-    pkg.mkdir()
-    (pkg / "__init__.py").write_text("", encoding="utf-8")
-    for name in modules:
-        (pkg / name).mkdir()
-        (pkg / name / "__init__.py").write_text("", encoding="utf-8")
-    (tmp_path / "fix.ini").write_text(config.replace("agent_core", "fixpkg"), encoding="utf-8")
+    pkg = _toy_package(tmp_path)
     cmd = (_LINT_IMPORTS.replace("lint_imports_command()", "")
            + "sys.argv = ['lint-imports', '--config', 'fix.ini']; lint_imports_command()")
 
@@ -177,3 +179,9 @@ def test_module_cannot_import_adapters_nor_domain_ports(tmp_path: Path) -> None:
     broken = run()
     assert broken.returncode != 0
     assert "BROKEN" in broken.stdout
+    (pkg / "domain" / "bad.py").unlink()
+    # La excepción de `ignore_imports` está acotada: solo `adapters.llm.agent_port` importa interpreter.
+    assert run().returncode == 0
+    (pkg / "adapters" / "otro.py").write_text(
+        "from fixpkg import interpreter  # noqa: F401\n", encoding="utf-8")
+    assert run().returncode != 0
