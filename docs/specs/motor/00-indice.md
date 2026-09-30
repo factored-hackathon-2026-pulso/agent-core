@@ -80,7 +80,8 @@ Las unidades 2–7 aún no existen. El motor habla con ellas solo por estos puer
 | `UnitOfWork` | M4 (Postgres) | `InMemoryUoW` con inyección de fallas | M0 | M3, M4, M9, M10 |
 | `AuditSink` | unidad 4 | `InMemoryAuditSink` | M0 | M9, M11 |
 | `Outbox` | unidad 4 | `InMemoryOutbox` | M0 | unidad 4 |
-| `LLMGateway` | unidad 5 | `ScriptedGateway` | M8 | M8, M5 (`llm_structured`) |
+| `LLMGateway` | unidad 5: `OpenAICompatGateway` (`agent_core.adapters.llm`) | `ScriptedGateway` | M8 | M8, M5 (`llm_structured`) |
+| `AgentPort` | unidad 5: `LLMAgentPort` (sobre `LLMGateway`, `prompted`) | `ScriptedAgent` | M2 | M2 (nodo `agent`) |
 | `TranscriptStore` | unidad 7 | `InMemoryTranscript` | M11 | M11, M5 (`recent_turns`) |
 | `KnowledgeSource` | unidad 7 | `FileKnowledgeSource` | M12 (provisional, tema #10) | M12 |
 | `KeyProvider` | gestor de secretos | `FakeKeyProvider` / `EnvKeyProvider` (etiquetado) | M0 | M7 |
@@ -232,5 +233,5 @@ M0 define el esquema de cada evento; M11 los encadena y persiste. El módulo emi
 | Formato de la credencial (`raw_credential`) | M9 | **Resuelto (2026-09-29)**: JWS compacto Ed25519 con `kid` (m09 §3.8); no cambia el puerto |
 | G0-15 reclamada por el gateway (ADR 0016) y por M12 | M1, M12 | **resuelto** en M1 rev. 2: G0-15 = `model_profile` de prompts, G0-16 = flows task sin nodos que esperan; M12 propone G0-17…G0-21 |
 | Fase 1 "en modo task" con un flow conversacional | M1, M2, M4 | **resuelto** en M1 rev. 2: arnés sobre M2 en la fase 1; G0-16 impide nodos que esperan en flows task |
-| Agentes internos (copiloto del asesor y constructor): nodo `agent` de solo lectura, clase `write_draft`, G0-22, G0-23, AG-02, identidad acotada del constructor | M0, M1, M2, M3, M9; registry (§18) | **nodo `agent` implementado** (M0, M1 con G0-22, M2; ADR 0019). **Pendiente:** clase `write_draft` (G0-23, AG-02, ruta de M3), adaptador real de `AgentPort` y el registry. `AuthzPort` ya tiene su prueba de contrato |
+| Agentes internos (copiloto del asesor y constructor): nodo `agent` de solo lectura, clase `write_draft`, G0-22, G0-23, AG-02, identidad acotada del constructor | M0, M1, M2, M3, M9; registry (§18) | **nodo `agent` implementado** (M0, M1 con G0-22, M2; ADR 0019). **Pendiente:** clase `write_draft` (G0-23, AG-02, ruta de M3), el registry. El adaptador real de `AgentPort` (`LLMAgentPort`) quedó implementado en la unidad 5. `AuthzPort` ya tiene su prueba de contrato |
 | Sintaxis de plantilla y `Template.reads` sin definir | M1, M2, M8 | **resuelto** en M1 rev. 2: `{{ ruta }}` y `reads` derivado al cargar |

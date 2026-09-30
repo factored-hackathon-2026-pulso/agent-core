@@ -11,6 +11,8 @@ from agent_core.domain import (
     EntityKind,
     EntityRef,
     EscalationRequest,
+    GatewayError,
+    GatewayErrorKind,
     GenerateConfig,
     JsonValue,
     Locale,
@@ -103,6 +105,14 @@ class Responder:
                     {"check": f.check, "detail": f.detail} for f in last_failures]
             try:
                 result = meter.call(partial(ctx.gateway.generate, prompt, inputs, ctx.locale, DRAFT_SCHEMA))
+            except GatewayError as error:
+                if error.kind is not GatewayErrorKind.invalid_output:
+                    break  # timeout, unavailable, rate_limited, refused: directo a la plantilla (spec §3.3)
+                failure = Failure(check="format", detail="la salida del gateway no cumple el esquema")
+                rejected.append(RejectedDraft(text_model="", reason=f"{failure.check}: {failure.detail}",
+                                              failures=[failure.check]))
+                last_failures, regenerations = [failure], attempt
+                continue
             except Exception:
                 break
             parsed = parse_draft(result.output)

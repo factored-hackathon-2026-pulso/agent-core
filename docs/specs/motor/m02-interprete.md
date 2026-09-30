@@ -109,7 +109,7 @@ Subconjunto cerrado: `JSONLOGIC_OPS` de M1 (`var`, `==`, `!=`, `>`, `>=`, `<`, `
 
 ### 3.7 Nodo `agent` (ADR 0019; implementado: `handlers/agent.py`)
 
-ReAct acotado de **solo lectura y cálculo**. Lo usan el copiloto del asesor y el agente constructor. El adaptador real del modelo (gateway y prompt) sigue abierto (§11): M2 solo conoce el puerto `AgentPort`.
+ReAct acotado de **solo lectura y cálculo**. Lo usan el copiloto del asesor y el agente constructor. M2 solo conoce el puerto `AgentPort`; su adaptador real es `LLMAgentPort` (unidad 5, spec del gateway §3.8).
 
 **Configuración** (M0, m00 §2.5): `tools_allowed`, `max_steps`, `prompt_ref`, `goal`, `save_as` (nombre del hecho donde entra la salida) y `output_schema` (JSON Schema de la respuesta final).
 
@@ -117,7 +117,9 @@ ReAct acotado de **solo lectura y cálculo**. Lo usan el copiloto del asesor y e
 
 **Bucle.** Hasta `max_steps` pasos. Antes de cada uno se revisan los presupuestos (modelo, tokens, costo y tiempo de pared): agotados → `EscalationRequest(budget_exceeded)`. Cada paso descuenta lo que informa el puerto.
 - **Tool.** Se ejecuta solo si está en `tools_allowed` (referencia exacta de la release) y es `read` o `compute`; si no, `access_denied` (`tool_denied`) y el modelo recibe `denied`. Los argumentos que son exactamente un token del run (`⟦tag:n⟧`) vuelven a su valor antes de ejecutar: la tool nunca ve el token y el modelo nunca ve el valor. Usa el circuit breaker como el nodo `tool`. La autorización por llamada es de `ToolExecutor` (ADR 0006). El resultado vuelve al modelo en vista `model`. Un `error`, `timeout` o `denied` vuelve como resultado y cuenta como paso; `step_up_required` se trata como `denied` (no se puede elevar el nivel a mitad del bucle).
-- **Respuesta final.** Se valida contra `output_schema` (subconjunto cerrado en `interpreter/schema.py`: `type`, `enum`, `properties`, `required`, `additionalProperties` booleano e `items`; una palabra clave fuera de la lista rechaza la salida). Si no cumple, **una** regeneración con el motivo (ruta y regla, nunca el valor); una segunda salida inválida → `gave_up`. La regeneración cuenta como paso.
+- **Respuesta final.** Se valida contra `output_schema` (subconjunto cerrado en `agent_core.domain.schema`, función `check_output`: `type`, `enum`, `properties`, `required`, `additionalProperties` booleano e `items`; una palabra clave fuera de la lista rechaza la salida). Si no cumple, **una** regeneración con el motivo (ruta y regla, nunca el valor); una segunda salida inválida → `gave_up`. La regeneración cuenta como paso.
+
+**Falla del gateway.** Un `GatewayError` de `AgentPort.step` termina el nodo en `gave_up` y carga al presupuesto el uso que informe el error (la llamada cuenta aunque no informe tokens ni costo); cualquier otra excepción sube. Esta ruta no deja evento en el log (ver gateway spec §11).
 
 **Resultados.** `answered`: `facts[save_as] = {value, source: {kind: agent, ref: <id del nodo>, inputs: <call_id de las tools del bucle>}}`. `gave_up`: se agotó `max_steps`, no hubo una salida válida, o el turno está en modo degradado.
 
@@ -135,7 +137,7 @@ ReAct acotado de **solo lectura y cálculo**. Lo usan el copiloto del asesor y e
 - G0-22 impide que esa salida alimente una escritura, una `rule` o un `verify`.
 - Los campos de la salida se clasifican por nombre en M7 (origen `agent`); los que no estén clasificados se tokenizan.
 
-**Pruebas:** `tests/m02/test_agent.py` (16) y `tests/m02/test_output_schema.py`.
+**Pruebas:** `tests/m02/test_agent.py` (16, más T-U5-17 para el `GatewayError`) y `tests/m02/test_output_schema.py`.
 
 ## 4. Invariantes
 
@@ -233,7 +235,7 @@ Vía `tool_called` (lectura y `compute`), por `tool@v`: latencia p50/p95, tasa p
 - Validador `decide` de `collect`: no se sabe qué campo de la decisión valida (hoy `NotImplementedError`, D14).
 - Quién llena `open_questions` (índice §10).
 - **Nodo `agent` (§3.7, ADR 0019):**
-  - Falta el **adaptador real de `AgentPort`**: el formato del prompt del bucle (spec del gateway) y cómo se serializa `output_schema` para el modelo.
+  - ~~Falta el **adaptador real de `AgentPort`**~~ **Resuelto 2026-09-30:** `LLMAgentPort` (unidad 5), en `docs/specs/2026-09-28-llm-gateway-design.md` §3.8. El texto del prompt del bucle vive en el registro de la demo (gateway spec §11).
   - No se aplica la regla numérica de M8 a la salida: M2 no puede importar M8. La salida solo llega a la persona por un `respond`, que tiene su propio validador, y G0-22 impide que decida o escriba.
   - Un `output_schema` con palabras clave fuera del subconjunto rechaza toda salida en runtime; falta una regla de M1 que lo detecte al validar el flow.
   - Falta decidir si la salida debe marcarse como `untrusted` cuando el bucle leyó campos `untrusted_text`.

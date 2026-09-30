@@ -4,6 +4,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 
 from agent_core.actions import ActionManager
+from agent_core.adapters.llm import LLMAgentPort
 from agent_core.composition.decision import DecisionAdapter
 from agent_core.composition.responder import ResponderAdapter
 from agent_core.decision import DecisionService, EventScope
@@ -75,6 +76,19 @@ class EngineRuntime:
         return self.step.vault.seal()
 
 
+def release_resolver(registry: RegistryPort, release: Release) -> Callable[[EntityKind, RefSpec], EntityRef]:
+    """`resolve_ref` de la release del run: referencia de autoría → referencia exacta (M8 y nodo agent)."""
+    view = release_view(registry, release)
+
+    def resolve_ref(kind: EntityKind, ref: RefSpec) -> EntityRef:
+        entity = view.resolve(kind, ref)
+        if entity is None:
+            raise InvalidRuntimeRef(f"{kind.value} {ref} no está en la release {release.id}")
+        return EntityRef(id=entity.id, version=entity.version)
+
+    return resolve_ref
+
+
 class EngineRuntimeFactory:
     def __init__(self, *, clock: Clock, ids: IdSource, keys: KeyProvider, registry: RegistryPort,
                  releases: Callable[[str], Release], tools: ToolExecutor, gateway: LLMGateway,
@@ -105,7 +119,8 @@ class EngineRuntimeFactory:
             actions=self._actions, responder=responder,
             views=self._views, vault=vault, ids=self._ids, uow_factory=self._uow_factory,
             bound_params=self._authz.bind_params(principal, on_behalf_of, state.subject),
-            breaker=self._breaker)
+            breaker=self._breaker,
+            agents=LLMAgentPort(self._gateway, self._registry, release_resolver(self._registry, release)))
         holder.append(step)
         return EngineRuntime(step, principal, on_behalf_of)
 
@@ -117,14 +132,7 @@ class EngineRuntimeFactory:
             path = parse_path(f"facts.{name}.value")
             assert path is not None  # los nombres de hechos ya cumplen la gramática de M1
             by_name[name] = {"value": projector.model_value(path)}
-        view = release_view(step.registry, step.release)
-
-        def resolve_ref(kind: EntityKind, ref: RefSpec) -> EntityRef:
-            entity = view.resolve(kind, ref)
-            if entity is None:
-                raise InvalidRuntimeRef(f"{kind.value} {ref} no está en la release {step.release.id}")
-            return EntityRef(id=entity.id, version=entity.version)
-
+        resolve_ref = release_resolver(step.registry, step.release)
         lang_cfg = step.registry.get(step.release.language_detection, LanguageDetection)
         facts_full = {name: fact.value for name, fact in state.facts.items()}
         validation = ValidationContext(

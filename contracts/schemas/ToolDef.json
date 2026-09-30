@@ -11,6 +11,41 @@
       "title": "AuthLevel",
       "type": "string"
     },
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "RiskClass": {
       "description": "Clase de riesgo de una tool; determina si escribe y qué confirmación exige (M0 §2.4).",
       "enum": [
@@ -27,11 +62,38 @@
   "additionalProperties": false,
   "description": "Definición versionada de una tool: riesgo, nivel de autenticación e idempotencia (M0 §2.4).",
   "properties": {
+    "args_schema": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Args Schema"
+    },
     "confirmation_ttl": {
       "default": "PT5M",
       "format": "duration",
       "title": "Confirmation Ttl",
       "type": "string"
+    },
+    "description": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Description"
     },
     "id": {
       "pattern": "^[a-z0-9][a-z0-9_/-]*$",

@@ -27,6 +27,7 @@ from agent_core.domain import (
     ToolNode,
     VerifyNode,
     is_declarable,
+    unsupported_keyword,
 )
 from agent_core.flows.context import Ctx
 from agent_core.flows.graph import end_modes, flow_mode, is_waiting
@@ -273,6 +274,25 @@ _AGENT_OUTPUT_SITES = frozenset({
     "/config/generate/fallback_template_ref",
     "/config/input_view",
 })
+
+
+def g0_24(ctx: Ctx) -> Iterator[Violation]:
+    """Toda tool de un nodo `agent` se documenta para el modelo: `description` y un `args_schema` válido."""
+    for node in ctx.flow.nodes:
+        if not isinstance(node, AgentNode):
+            continue
+        for i, ref in enumerate(node.config.tools_allowed):
+            tool = ctx.tool(ref)
+            if tool is None:
+                continue
+            sub = f"/config/tools_allowed/{i}"
+            if not (tool.description or "").strip() or tool.args_schema is None:
+                text = f"la tool {clip(ref.id)} de un nodo agent necesita description y args_schema"
+                yield ctx.v("G0-24", node.id, text, sub)
+                continue
+            problem = unsupported_keyword(tool.args_schema)
+            if problem is not None:
+                yield ctx.v("G0-24", node.id, f"args_schema de {clip(ref.id)}: {clip(problem)}", sub)
 
 
 def g0_22(ctx: Ctx) -> Iterator[Violation]:
