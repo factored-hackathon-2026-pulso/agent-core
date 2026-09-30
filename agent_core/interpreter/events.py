@@ -9,6 +9,8 @@ from agent_core.domain import (
     JsonValue,
     NodeEntered,
     NodeEnteredPayload,
+    ResponseEmitted,
+    ResponseEmittedPayload,
     RuleEvaluated,
     RuleEvaluatedPayload,
     RunState,
@@ -16,6 +18,7 @@ from agent_core.domain import (
     StepUpRequestedPayload,
     ToolCalled,
     ToolCalledPayload,
+    ValidatorOutcome,
 )
 from agent_core.interpreter.context import ResumeKind, StepContext
 from agent_core.ports import IdKind
@@ -58,3 +61,11 @@ class Events:
     def access_denied(self, state: RunState, tool: EntityRef) -> AccessDenied:
         payload = AccessDeniedPayload(reason=AccessDeniedReason.tool_denied, tool=tool)
         return AccessDenied.model_validate({**self._envelope(state), "payload": payload})
+
+    def response_emitted_template(self, state: RunState, node_id: str, claims: frozenset[str],
+                                  *, fallback_used: bool) -> ResponseEmitted:
+        """D6: una plantilla no pasa por el validador ni el LLM; `transcript_fp` lo rellena M4."""
+        payload = ResponseEmittedPayload(
+            node_id=node_id, kind="template", validator=ValidatorOutcome(ok=True),
+            fallback_used=fallback_used, claims=sorted(claims), transcript_fp=None, llm=None)
+        return ResponseEmitted.model_validate({**self._envelope(state), "payload": payload})

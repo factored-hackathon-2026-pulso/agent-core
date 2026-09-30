@@ -4,6 +4,7 @@ from agent_core.domain import Flow, GenerateConfig, IllegalTransition, NodeId, R
 from agent_core.flows import derive_claims, release_view
 from agent_core.interpreter.budgets import charge_model, model_budget_exhausted
 from agent_core.interpreter.context import Resume, StepContext, Stop
+from agent_core.interpreter.events import Events
 from agent_core.interpreter.handlers.base import NodeResult, escalate_now
 from agent_core.interpreter.ports import GenerateRequest
 from agent_core.interpreter.resolve import MissingPath
@@ -20,7 +21,9 @@ def _generate(node: RespondNode, config: GenerateConfig, state: RunState, ctx: S
     """Resultado del nodo: terminal (escalamiento) o con el mensaje ya entregado."""
     if ctx.degraded:  # sin llamar al modelo (T-M2-10)
         message = render_message(state, ctx, config.fallback_template_ref)
-        return NodeResult(state, result_key="next", messages=[message])
+        emitted = Events(ctx).response_emitted_template(state, node.id, _claims(state, ctx, node.id),
+                                                        fallback_used=True)
+        return NodeResult(state, result_key="next", messages=[message], events=[emitted])
     if model_budget_exhausted(state, ctx):
         return escalate_now(state, ctx, "budget_exceeded")
     request = GenerateRequest(node_id=node.id, config=config, claims=_claims(state, ctx, node.id))
@@ -40,7 +43,9 @@ def handle_respond(node: RespondNode, state: RunState, ctx: StepContext, resume:
     try:
         if cfg.template_ref is not None:
             message = render_message(state, ctx, cfg.template_ref)
-            result = NodeResult(state, result_key="next", messages=[message])
+            emitted = Events(ctx).response_emitted_template(state, node.id, _claims(state, ctx, node.id),
+                                                            fallback_used=False)
+            result = NodeResult(state, result_key="next", messages=[message], events=[emitted])
         else:
             assert cfg.generate is not None
             result = _generate(node, cfg.generate, state, ctx)

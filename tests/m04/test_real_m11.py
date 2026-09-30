@@ -46,3 +46,14 @@ def test_los_eventos_del_turno_quedan_encadenados_por_el_audit_log_real() -> Non
     w.turn("quiero un resumen")
     check = AuditLog(w.audit).verify_chain(RUN_ID)
     assert check.ok, check.reason
+
+
+def test_una_plantilla_de_m2_lleva_transcript_fp_y_encadena_con_el_audit_log_real() -> None:
+    """D6: `respond(template_ref)` emite `response_emitted` (M2); M4 le rellena la huella."""
+    w, _ = _real_world()
+    prompt = w.at_confirm().confirmation
+    assert prompt is not None
+    w.turn_confirm(prompt.token, "no")  # `fin_cancelado` responde con la plantilla t-cancelado
+    (event,) = [e for e in w.events() if isinstance(e, ResponseEmitted)]
+    assert event.payload.kind == "template" and event.payload.transcript_fp is not None
+    assert AuditLog(w.audit).verify_chain(RUN_ID).ok

@@ -21,7 +21,7 @@ def test_respond_template_then_end() -> None:
     out = w.step(w.state(f, facts={"saldo": fact({"amount": Decimal("10.50")})}))
     assert (out.stop, out.end_outcome, out.escalation) == (Stop.terminal, Outcome.resolved, None)
     assert [m.text for m in out.messages] == ["Total 10.50"]
-    assert [e.type for e in out.events] == ["node_entered", "node_entered"]  # type: ignore[attr-defined]
+    assert [e.type for e in out.events] == ["node_entered", "response_emitted", "node_entered"]  # type: ignore[attr-defined]
     assert out.state.active_flow is not None and out.state.active_flow.node_id == "fin"
 
 

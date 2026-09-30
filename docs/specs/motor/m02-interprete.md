@@ -89,7 +89,7 @@ Rutas permitidas en `args`, plantillas y `rule`: `slots.<x>`, `facts.<x>.value[.
 | `tool` escritura | Delega en `ctx.actions.execute_write(state, node, action_ctx)` (M3), con el `ActionContext` que arma desde `StepContext`: sus ganchos de plantillas, JSON Logic, `release_view`, el `EventRecorder` de M4 y la vista `audit` de M7 (los eventos los persiste M3; M2 no los duplica). Resultado `ok`/`denied`/`uncertain`, o `step_up_required` (la acción vuelve a `confirmed` y aplica §3.4) |
 | `confirm` | Sin `resume`: `ctx.actions.propose(...)` → para en `awaiting_confirmation` con el `ConfirmationPrompt`. Con `confirm_answer`: `ctx.actions.answer(...)` → `yes`/`no`/`unclear`/`max_attempts` |
 | `verify` | `ctx.actions.verify(...)` → `verified`/`failed`; guarda el readback en `facts[save_as]` |
-| `respond` | `template_ref`: M2 renderiza la plantilla del `locale` con los hechos (vista `model`); en la fase 1 no emite `response_emitted` (D6). `generate`: `ctx.responder.generate(...)`; en modo degradado usa `fallback_template_ref` sin llamar al modelo. Si `await: true`, avanza el puntero a `next` y para en `awaiting_user` (D16); si no, sigue por `next` |
+| `respond` | `template_ref`: M2 renderiza la plantilla del `locale` con los hechos (vista `model`); emite `response_emitted` con `kind=template` (`validator.ok`, `llm=None`, `claims` de M1; D6 resuelto 2026-09-30); M4 rellena `transcript_fp`. `generate`: `ctx.responder.generate(...)`; en modo degradado usa `fallback_template_ref` sin llamar al modelo. Si `await: true`, avanza el puntero a `next` y para en `awaiting_user` (D16); si no, sigue por `next` |
 | `escalate` | Devuelve `EscalationRequest{reason_code, target_queue = agent.default_target_queue, priority: priority_expr evaluada o "normal"}` (D13); `stop = terminal` |
 | `end` | `end_outcome = config.outcome`; aplica `output_map` en modo task; `stop = terminal` |
 
@@ -186,7 +186,7 @@ Vía `tool_called` (lectura y `compute`), por `tool@v`: latencia p50/p95, tasa p
 | D3 | `Resume.token`; `StepOutcome.output` y `rejected_drafts` |
 | D4 | `begin_turn(state, clock)` reinicia contadores por turno (lo llama M4): `turn_nodes`, `turn_model_calls` y, desde la rev. 3, `turn_understand_calls` (que suma M4, no M2) |
 | D5 | `start_flow(state, flow)`: entrada = `flow.nodes[0]`; reinicia `node_attempts` |
-| D6 | El render de plantillas vive en M2; `ResponderPort` solo `generate`; sin `response_emitted` en fase 1 |
+| D6 | El render de plantillas vive en M2; `ResponderPort` solo `generate`; M2 emite `response_emitted` (`kind=template`) al renderizar, también en modo degradado con `fallback_used=true` (2026-09-30) |
 | D7 | Un slot `claimed` cuenta como ausente en toda resolución; ruta ausente → `error` o `escalate(validation_failed)` |
 | D8 | Para `decide` un slot se proyecta como `untrusted_text`; para plantillas, vista `model` normal |
 | D9 | Step-up: cada `step_up_required` suma un intento; al superar `step_up_max_attempts` → `auth_insufficient` |
@@ -202,7 +202,6 @@ Vía `tool_called` (lectura y `compute`), por `tool@v`: latencia p50/p95, tasa p
 
 - Validador `decide` de `collect`: no se sabe qué campo de la decisión valida (hoy `NotImplementedError`, D14).
 - Quién llena `open_questions` (índice §10).
-- Quién emite `response_emitted` de las plantillas que renderiza M2 (M8 o M4 al cablearse, D6).
 - Parámetros del circuit breaker por `tool_def` (hoy por constructor, D10).
 - Reinicio de `node_attempts` al terminar un flow (hoy solo lo reinicia `start_flow`).
 - (a) Step-up de escritura: M3 `execute_write` devuelve solo `"step_up_required"`, sin el nivel requerido; M2 usa `min_auth_level` de la tool. Requiere que M3 lo transporte.
