@@ -1,6 +1,6 @@
 # Spec — Registry (unidad 2: entidades, versionado y publicación)
 
-- Estado: **rev. 2 implementada (entrega), 2026-09-30.** Pendientes en §14: composición del motor con `PostgresRegistry` (raíz de composición del servidor, con el LLM gateway)
+- Estado: **rev. 2 implementada (entrega), 2026-09-30.** Pendiente en §14: composición del motor con `PostgresRegistry` (raíz de composición del servidor, con el LLM gateway)
 - Fecha: 2026-09-29 (rev. 1) · 2026-09-30 (rev. 2)
 - Repo: `agent-core`
 - Paquete: `agent_core.registry`
@@ -37,7 +37,7 @@ Clientes:
 
 | # | Decisión | Detalle |
 |---|---|---|
-| 1 | **Postgres es la única fuente de verdad** | Esquema `registry`. Git no interviene. El YAML de M1 sirve para importar y exportar. ADR 0017. |
+| 1 | **Postgres es la única fuente de verdad** | Tablas `reg_*` en el `search_path` de la conexión (no hay un esquema `registry` aparte). Git no interviene. El YAML de M1 sirve para importar y exportar. ADR 0017. |
 | 2 | **Contenido detrás de `BlobStore`** | Direccionado por hash. Adaptador único sobre Postgres; S3 es fase 2. |
 | 3 | **Entidad versionada + release** | Cada entidad tiene su semver. Publicar crea una release que fija todas las versiones exactas. La traza guarda solo el `release_id`. |
 | 4 | **Una sola vía de cambio** | Toda modificación es una *propuesta* con el mismo ciclo, venga de una persona, del constructor o del detector (`origin`). |
@@ -54,7 +54,9 @@ Clientes:
 - **`knowledge_snapshot`:** manifiesto inmutable de páginas (`path`, `hash`, `audience`, `status`, `lang`, vigencia, `source_refs`; ADR 0015). El manifiesto es una entidad normal y el texto de cada página vive en el `BlobStore`. **En la entrega** una release fija un snapshot sembrado por `import`, y las propuestas **no** crean ni modifican snapshots (lo rechaza `validate`).
 - **`eval_suite`** (propio del paquete; no entra en M0 ni en una `Release`): suite de escenarios versionada y ligada a un agente (§6.1). Se guarda en `entity_versions` como las demás entidades y se crea o cambia por propuesta.
 
-### 3.2 Tablas (esquema `registry`)
+### 3.2 Tablas (prefijo `reg_`)
+
+En el código cada tabla lleva el prefijo `reg_` (`reg_blobs`, `reg_aliases`, …) y vive en el `search_path` de la conexión; los nombres de abajo van sin prefijo.
 
 **Inmutables** (el rol de la aplicación solo tiene `INSERT` y `SELECT`, y un trigger rechaza `UPDATE` y `DELETE`):
 
@@ -68,7 +70,7 @@ Clientes:
 | `eval_runs` | `eval_run_id` PK, `proposal_id`, `candidate_hash`, `base_release_id`, `suite_ref`, `report` (JSON, §6.4), `verdict` (`pass`, `fail` o `failed_infra`), `at` |
 | `registry_events` | bitácora de auditoría (§12) |
 
-**Mutables y controladas:**
+**Mutables y controladas** (el rol de la aplicación nunca tiene `DELETE`; `release_status` y `aliases` tienen `SELECT`, `INSERT` y `UPDATE`, `publish_keys` solo `SELECT` e `INSERT`):
 
 | Tabla | Qué cambia |
 |---|---|
@@ -165,8 +167,9 @@ Es la implementación de `RegistryPort` en memoria y de solo lectura, construida
 
 ### 5.4 `publish` (una transacción)
 
+0. `pg_advisory_xact_lock(hashtext(agent_id))` (`RegistryTx.lock_agent`): `FOR UPDATE` sobre un alias que aún no existe no bloquea, así que sin este lock dos primeras publicaciones (o importaciones) del mismo agente correrían a la vez. `import` toma el mismo lock.
 1. `SELECT … FOR UPDATE` sobre `aliases(agent_id, 'staging')`. Si no apunta a `base_release_id` → `proposal_stale`, y la propuesta vuelve a `draft` con la base actualizada (hay que congelar y evaluar de nuevo).
-2. Rearma la candidata y verifica que su hash sea igual a `candidate_hash`; si no, `candidate_changed`.
+2. Rearma la candidata y verifica que su hash sea igual a `candidate_hash`; si no, `candidate_changed`. Si al rearmarla ya no es válida (p. ej. otra publicación ocupó una versión del borrador, `REG-VERSION-TAKEN`), también es `candidate_changed`, con las violaciones en el detalle (sin valores de entrada). Lo mismo vale en `evaluate`.
 3. Verifica que exista una aprobación vigente para ese hash.
 4. Inserta los blobs y las `entity_versions` nuevas, `releases`, `release_entities` y `release_status = active`.
 5. Mueve `staging`, escribe `alias_log` y `registry_events`, y la propuesta pasa a `published`.
@@ -237,7 +240,7 @@ class SandboxPort(Protocol):                                       # lo implemen
 
 - Cada corrida tiene su propio entorno. Base y candidata parten del mismo `seed`.
 - **Barrera dura:** el evaluador se niega a correr si el `ToolExecutor` no tiene el atributo `is_sandbox` verdadero. El sandbox usa solo datos sintéticos y nunca comparte credenciales ni endpoints con producción.
-- **Respaldo de la entrega:** `LocalSandbox` en `agent-core` implementa el puerto sobre un esquema Postgres efímero por corrida. Sustituirlo por el de la unidad 3 no toca el evaluador.
+- **Respaldo de la entrega:** `LocalSandbox` en `agent-core` implementa el puerto **en memoria**: respuestas sembradas por tool (`seed.tools`), un entorno aislado por corrida y sin Postgres. Sustituirlo por el de la unidad 3 no toca el evaluador.
 
 ### 6.4 Veredicto y reporte
 
@@ -493,12 +496,12 @@ Todos **aditivos**.
 - **M0** (aplicado el 2026-09-29, `SCHEMA_VERSION` 0.2.0): `EntityKind.knowledge_snapshot`, `KnowledgeSnapshot` y `Release.knowledge_snapshot`. No cambia `RegistryPort`, `EngineEvent` ni `ProblemCode`.
 - **M0:** `IdKind.proposal` y `IdKind.eval_run` (`SCHEMA_VERSION` 0.5.0).
 - **M1:** exporta `entity_ref_sites`, `RefSite` y `kind_of`.
-- **M1** (aplicado el 2026-09-29, rev. 3): `ReleaseDecl.knowledge`, `pin_release` con snapshot, `load_registry` con manifiestos. **Pendiente de verificar:** que `flows/__init__.py` exporte todo lo que el registry reutiliza (validación de flow, chequeos por agente y de release, `pin_release`, `Violation`, `AuthoringRegistry` construible en memoria) y que exista un volcado a YAML para `export`.
+- **M1** (aplicado el 2026-09-29, rev. 3): `ReleaseDecl.knowledge`, `pin_release` con snapshot, `load_registry` con manifiestos. **Verificado:** `flows/__init__.py` exporta todo lo que el registry reutiliza (validación de flow, chequeos por agente y de release, `pin_release`, `Violation`, `AuthoringRegistry` construible en memoria) y existe un volcado a YAML para `export`.
 - **M3:** sin cambios (el sandbox entra como `ToolExecutor`).
 - **M9:** `ApiDeps.extensions`: cada extensión recibe la app y un `authenticate(request, authorization)`.
 - **M11:** expone por su interfaz pública la lectura del `release_id` de un run.
 - **`composition`:** una fábrica que compone el motor con un `RegistryPort` y un `ToolExecutor` dados (la usan el evaluador y la API).
-- **`.importlinter`:** `registry` puede usar `domain`, `ports`, la interfaz pública de `flows` y, solo el submódulo del evaluador, `composition`. Ningún módulo del motor importa `registry`.
+- **`.importlinter`:** `registry` solo usa `domain`, `ports` y la interfaz pública de `flows`; **no** importa `composition`. La dependencia va al revés: `registry.evaluation.ports` define `ScenarioHarness` y `composition` lo implementa (y cablea el servicio), por lo que `composition` importa `registry`. Ningún módulo del motor importa `registry`.
 - **M12:** el `KnowledgeSource` respaldado por el registry sustituye a `FileKnowledgeSource`.
 - **Unidad 3:** implementa `SandboxPort`. Hasta entonces se usa `LocalSandbox`.
 - **Unidad 6 / otra persona del equipo:** escenarios de negocio de la demo y `Judge`.
