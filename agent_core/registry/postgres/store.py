@@ -176,6 +176,9 @@ class _PgTx:
         return row[0] if row else None
 
     # alias
+    def lock_agent(self, agent_id: str) -> None:
+        self._c.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (agent_id,))
+
     def get_alias(self, agent_id: str, alias: str, *, for_update: bool = False) -> str | None:
         lock = " FOR UPDATE" if for_update else ""
         row = self._one("SELECT release_id FROM reg_aliases WHERE agent_id = %s AND alias = %s" + lock,

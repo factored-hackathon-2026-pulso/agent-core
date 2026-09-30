@@ -98,6 +98,9 @@ class _Tx:
         found = [r for r in self._s.releases.values() if (r.agent_id, r.agent_version) == (agent_id, version)]
         return max(found, key=lambda r: r.published_at).release.id if found else None
 
+    def lock_agent(self, agent_id: str) -> None:
+        """Sin efecto: el lock global de la transacción ya serializa todo."""
+
     def get_alias(self, agent_id: str, alias: str, *, for_update: bool = False) -> str | None:
         return self._s.aliases.get((agent_id, alias))
 

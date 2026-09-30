@@ -335,6 +335,7 @@ class RegistryService:
                 return self._detail(tx, prior[1])
             p = self._proposal(tx, proposal_id)
             self._expect(p, ProposalState.approved)
+            tx.lock_agent(p.agent_id)  # la primera publicación no tiene alias que bloquear con FOR UPDATE
             current = tx.get_alias(p.agent_id, "staging", for_update=True)
             if current != p.base_release_id:
                 self._save(tx, p, state=ProposalState.draft, candidate_hash=None, base_release_id=current,
@@ -512,6 +513,8 @@ class RegistryService:
         pinned_list, suites = load_seed(root)
         details: list[ReleaseDetail] = []
         with self._store.transaction() as tx:
+            for agent_id in sorted({a for pinned in pinned_list for a in pinned.aliases}):
+                tx.lock_agent(agent_id)  # orden fijo: dos importaciones a la vez no se bloquean entre sí
             now, who = self._clock.now(), actor_id(actor)
             seed_docs = VersionDocs(description="Importado desde YAML", rationale="semilla", changelog="")
             # Las suites se guardan como versiones, pero no entran en la release (spec §3.1).

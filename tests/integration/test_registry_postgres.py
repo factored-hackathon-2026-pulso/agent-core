@@ -194,3 +194,95 @@ def test_end_to_end_prompt_change(registry_store: PgRegistryStore) -> None:  # T
     changed = {e.ref.id: e.docs for e in lineage.entities if e.changed_vs_base}
     assert changed["p/resumen_radicado"].description == "cambio de prueba"
     assert lineage.approved_by == "ana" and lineage.eval_verdict == "pass"
+
+
+def _first_publication_approved(service: RegistryService, text: str) -> str:
+    """Propuesta sobre un agente sin alias: el borrador trae todas las entidades del agente (sin base)."""
+    from agent_core.flows import kind_of
+    from agent_core.registry import EntityDraft
+    from tests.registry.helpers import demo_pinned, docs
+
+    drafts = []
+    for entity in demo_pinned().entities:
+        if kind_of(entity) == "injection_ruleset":  # sin base, la release candidata no lo referencia
+            continue
+        content = entity.model_dump(mode="json", by_alias=True)
+        if kind_of(entity) == "prompt":
+            content["locales"] = {**content["locales"], "es": text}
+        drafts.append(EntityDraft(kind=kind_of(entity), content=content, docs=docs()))
+    p = service.create_proposal(ANA, AGENT, Origin.manual, text)
+    assert p.base_release_id is None
+    service.put_draft(ANA, p.proposal_id, [*drafts, SUITE], expected_rev=0)
+    service.freeze(ANA, p.proposal_id)
+    service.evaluate(ANA, p.proposal_id, "disputas-suite")
+    h = service.get_proposal(p.proposal_id).proposal.candidate_hash or ""
+    service.approve(ANA, p.proposal_id, h)
+    return p.proposal_id
+
+
+def test_concurrent_first_publications_without_alias_one_wins(
+        registry_store: PgRegistryStore) -> None:
+    """Revisión final I2: `FOR UPDATE` sobre un alias inexistente no bloquea; lo serializa el lock."""
+    import threading
+    import time
+
+    service = _service(registry_store)
+    pids = [_first_publication_approved(service, "Texto A."),
+            _first_publication_approved(service, "Texto B.")]
+
+    def slow_get_alias(name: str) -> bool:  # ensancha la ventana de la carrera entre leer y escribir el alias
+        if name == "get_alias":
+            time.sleep(0.4)
+        return False
+
+    registry_store.fail_on = slow_get_alias
+    outcomes: dict[str, str] = {}
+
+    def run(pid: str) -> None:
+        try:
+            outcomes[pid] = service.publish(ANA, pid, f"key-{pid}").release_id
+        except RegistryError as exc:
+            outcomes[pid] = exc.code.value
+        except Exception as exc:  # la prueba reporta cualquier falla no tipada
+            outcomes[pid] = f"{type(exc).__name__}"
+
+    threads = [threading.Thread(target=run, args=(pid,)) for pid in pids]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(30)
+    registry_store.fail_on = None
+    results = sorted(v if not v.startswith("rel-") else "published" for v in outcomes.values())
+    assert results == ["proposal_stale", "published"], outcomes
+
+
+def test_concurrent_seed_imports_of_same_agent_one_wins(registry_store: PgRegistryStore) -> None:
+    import threading
+    import time
+
+    service = _service(registry_store)
+
+    def slow_get_alias(name: str) -> bool:
+        if name == "get_alias":
+            time.sleep(0.4)
+        return False
+
+    registry_store.fail_on = slow_get_alias
+    outcomes: list[str] = []
+
+    def run() -> None:
+        try:
+            service.import_seed(ANA, REGISTRY_DEMO)
+            outcomes.append("imported")
+        except RegistryError as exc:
+            outcomes.append(exc.code.value)
+        except Exception as exc:  # la prueba reporta cualquier falla no tipada
+            outcomes.append(type(exc).__name__)
+
+    threads = [threading.Thread(target=run) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(30)
+    registry_store.fail_on = None
+    assert sorted(outcomes) == ["illegal_transition", "imported"], outcomes
