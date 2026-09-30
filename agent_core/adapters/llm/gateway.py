@@ -1,5 +1,6 @@
 """`OpenAICompatGateway`: `LLMGateway` sobre el SDK `openai` (spec del gateway §3)."""
 
+import contextvars
 import logging
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
@@ -125,13 +126,19 @@ def _request(profile: ModelProfile, text: str, inputs: dict[str, JsonValue],
 
 def _create(client: OpenAI, kwargs: dict[str, Any], profile: ModelProfile, alias: str) -> Any:
     """Una request con plazo total de `timeout_s` y errores traducidos (spec §3.1 paso 5 y §3.2)."""
-    # El hilo del plazo total sigue vivo hasta que el timeout por fase del SDK lo corte
-    # (acotado por timeout_s).
+    # Los timeouts por fase del SDK son por chunk: un endpoint que gotea mantendría vivo el hilo. Al
+    # vencer el plazo total se cierra el cliente desde el hilo que espera; la lectura bloqueada falla y
+    # el hilo abandonado termina (los workers de ThreadPoolExecutor no son daemon y se unen al salir).
     pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="llm-gateway")
-    future = pool.submit(lambda: client.chat.completions.create(**kwargs))
+    context = contextvars.copy_context()  # el contexto de OpenTelemetry sigue al hilo
+    future = pool.submit(context.run, lambda: client.chat.completions.create(**kwargs))
     try:
         return future.result(timeout=profile.timeout_s)
     except FutureTimeout:
+        try:
+            client.close()
+        except Exception:  # el hilo está abandonado; un fallo al cerrar no cambia el error
+            pass
         raise _error(GatewayErrorKind.timeout, alias, profile, "plazo total") from None
     except openai.APITimeoutError:
         raise _error(GatewayErrorKind.timeout, alias, profile, "timeout") from None
