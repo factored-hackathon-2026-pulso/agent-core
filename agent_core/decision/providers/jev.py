@@ -16,6 +16,15 @@ from agent_core.decision.types import DecisionConfigError, ProviderError, Provid
 from agent_core.domain import JsonValue, Locale, ProviderSpec
 
 
+class JevTransportError(Exception):
+    """Falla del transporte HTTP. Lleva solo el código HTTP (`None` = sin respuesta); nunca el request, el
+    cuerpo de la respuesta ni la key."""
+
+    def __init__(self, status: int | None = None) -> None:
+        super().__init__(f"jev: HTTP {status}" if status is not None else "jev: sin respuesta HTTP")
+        self.status = status
+
+
 class JevTransport(Protocol):
     """Envía el request y devuelve la respuesta ya decodificada. `TimeoutError` = se agotó `timeout_ms`."""
 
