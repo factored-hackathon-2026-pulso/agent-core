@@ -19,12 +19,15 @@ from tests.m07.helpers import make_vault
 NAME = "Anabela Sintetica"
 DOC = "1098765432"
 CLEAR = [NAME, DOC]
-SCHEMA: dict[str, JsonValue] = {"type": "object", "additionalProperties": True}
+SCHEMA: dict[str, JsonValue] = {"type": "object", "additionalProperties": True,
+                                "properties": {"command": {"type": "string", "enum": ["affirm", "deny"]}}}
 
 
 class CapturingTransport:
     def send(self, request: dict[str, JsonValue], timeout_ms: int) -> dict[str, JsonValue]:
-        return {"value": {"command": "affirm"}, "probabilities": {"command": 0.9}}
+        return {"model": "jev-1.13.0", "usage": {"input_tokens": 1, "output_tokens": 1},
+                "answers": {"command": {"type": "choice", "choice": "affirm", "confidence": 0.8,
+                                        "probabilities": {"affirm": 0.9, "deny": 0.1}}}}
 
 
 class CapturingGateway:

@@ -10,10 +10,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from agent_core.decision.providers.jev import JevTransport, JevTransportError
+from agent_core.decision.providers.jev import JevProvider, JevTransport, JevTransportError
 from agent_core.decision.providers.jev_http import HttpJevTransport
-from agent_core.decision.types import DecisionConfigError
-from agent_core.domain import JsonValue
+from agent_core.decision.types import DecisionConfigError, ProviderError
+from agent_core.domain import JsonValue, ProviderSpec
+from testing.capture import RequestCapture
 from testing.fakes.clock import FakeClock
 
 KEY = "sk-sintetica-CLAVE-NO-FILTRAR"
@@ -207,6 +208,28 @@ def test_key_and_body_never_appear_in_repr_or_errors(server: tuple[Script, str])
         text = f"{exc!s} {exc!r} {exc.args!r}"
         assert KEY not in text and leaked not in text and "Bearer" not in text
         assert exc.__cause__ is None and exc.__suppress_context__
+
+
+def test_key_never_reaches_the_request_capture_nor_the_provider_errors(server: tuple[Script, str]) -> None:
+    script, url = server
+    schema: dict[str, JsonValue] = {"type": "object", "additionalProperties": False, "properties": {
+        "command": {"type": "string", "enum": ["affirm", "deny"]}}}
+    spec = ProviderSpec(provider="jev", config={"model": "jev-latest", "timeout_ms": 2000})
+    capture = RequestCapture()
+    provider = JevProvider(Rig(url).transport, capture)
+    script.push(200, {"model": "jev-1.13.0", "usage": {"input_tokens": 5, "output_tokens": 1},
+                      "answers": {"command": {"type": "choice", "choice": "affirm", "confidence": 0.9,
+                                              "probabilities": {"affirm": 0.9, "deny": 0.1}}}})
+    raw = provider.predict(spec, {"text": "sí"}, schema, "es")
+    assert raw.model_version == "jev:jev-1.13.0" and raw.value == {"command": "affirm"}
+    script.push(401, {"error": KEY})
+    with pytest.raises(ProviderError) as info:
+        provider.predict(spec, {"text": "sí"}, schema, "es")
+    assert "401" in str(info.value) and KEY not in f"{info.value!s} {info.value!r} {provider!r}"
+    assert len(capture.requests) == 2 and all(KEY not in request for request in capture.requests)
+    assert capture.leaks([KEY]) == []  # y la contraprueba: el detector sí ve una key si estuviera
+    capture.record({"Authorization": f"Bearer {KEY}"})
+    assert capture.leaks([KEY]) != []
 
 
 def test_empty_key_is_a_config_error_and_sends_nothing(server: tuple[Script, str]) -> None:
