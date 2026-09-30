@@ -11,10 +11,8 @@ from agent_core.decision.types import DecisionProvider
 from agent_core.domain import EntityRef, JsonValue, Locale, ProviderSpec
 from agent_core.ports import GenerationResult
 from testing.capture import RequestCapture
-from testing.fakes.keys import FakeKeyProvider
 from tests.m05.helpers import make_service, model_def, ref, scope
-from tests.m07.helpers import make_service as make_view_service
-from tests.m07.helpers import make_vault
+from tests.support.views import synthetic_views
 
 NAME = "Anabela Sintetica"
 DOC = "1098765432"
@@ -52,11 +50,8 @@ def _providers(capture: RequestCapture) -> dict[str, tuple[DecisionProvider, Pro
 
 def _views() -> tuple[JsonValue, JsonValue]:
     """`(model, full)` de un cliente sintético con `pii_direct` y un reclamo con el documento en el texto."""
-    service = make_view_service(keys=FakeKeyProvider.default())
-    vault = make_vault(keys=FakeKeyProvider.default())
-    row = {"first_name": NAME, "document_number": DOC, "amount": Decimal("10.50"), "currency": "COP"}
-    projected = service.project([row], "transactions", [], vault)
-    return projected.model, projected.full
+    return synthetic_views({"first_name": NAME, "document_number": DOC, "amount": Decimal("10.50"),
+                            "currency": "COP"})
 
 
 @pytest.mark.parametrize("provider_name", ["jev", "llm_structured"])
