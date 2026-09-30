@@ -291,7 +291,7 @@ class RegistryService:
         require_approver(actor)
         with self._store.transaction() as tx:
             p = self._proposal(tx, proposal_id)
-            self._expect(p, ProposalState.evaluated, ProposalState.approved)
+            self._expect(p, ProposalState.evaluated)  # spec §4; para deshacer una aprobación, `reopen`
             tx.insert_approval(Approval(proposal_id=proposal_id, candidate_hash=p.candidate_hash or "",
                                         actor=actor_id(actor), decision="rejected", reason=reason[:2000],
                                         at=self._clock.now()))

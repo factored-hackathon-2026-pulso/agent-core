@@ -5,13 +5,18 @@ import pytest
 from agent_core.registry.entities import content_hash, encode_entity, version_ref
 from agent_core.registry.errors import RegistryError, RegistryErrorCode
 from agent_core.registry.evaluation.report import EvalReport, SuiteMetrics
-from agent_core.registry.models import AliasChange, Origin, ProposalState, StoredVersion
+from agent_core.registry.models import AliasChange, Origin, ProposalState, StoredVersion, VersionRef
 from agent_core.registry.suite import EvalSuite
 from testing.builders import NOW
 from tests.registry.helpers import AGENT, bot, docs, human, prompt_draft, suite_content
 from tests.registry.service_world import SUITE, ZERO, World
 
 ANA = human()
+# Versiones que agrega la propuesta de `_frozen`: prompt del borrador, cascada (flow y agente) y suite.
+NEW_REFS = (VersionRef(kind="prompt", id="p/resumen_radicado", version="1.1.0"),
+            VersionRef(kind="flow", id="disputa-cargo", version="1.0.1"),
+            VersionRef(kind="agent", id=AGENT, version="1.0.1"),
+            VersionRef(kind="eval_suite", id="disputas-suite", version="1.0.0"))
 
 
 def _frozen(w: World) -> str:
@@ -134,6 +139,16 @@ def test_reject_returns_to_draft_with_reason() -> None:
     assert a is not None and (a.decision, a.reason) == ("rejected", "el tono es muy seco")
 
 
+def test_reject_after_approval_is_illegal() -> None:  # spec §4: reject solo desde evaluated
+    w = World()
+    pid, h = _evaluated(w)
+    w.service.approve(ANA, pid, h)
+    with pytest.raises(RegistryError) as info:
+        w.service.reject(ANA, pid, "mejor no")
+    assert _code(info) is RegistryErrorCode.illegal_transition
+    assert w.service.get_proposal(pid).proposal.state is ProposalState.approved
+
+
 def test_publish_with_moved_staging_is_stale_and_rebases() -> None:  # T-REG-15
     w = World()
     pid, h = _evaluated(w)
@@ -152,16 +167,23 @@ def test_publish_failure_mid_way_leaves_nothing() -> None:  # T-REG-02 (memoria)
     w = World()
     pid, h = _evaluated(w)
     w.service.approve(ANA, pid, h)
+    with w.store.transaction() as tx:
+        events_before = len(tx.events())
     w.store.fail_on = lambda name: name == "set_alias"
     with pytest.raises(RuntimeError):
         w.service.publish(ANA, pid, "k")
     w.store.fail_on = None
     with w.store.transaction() as tx:
         assert tx.get_release("rel-" + h[:16]) is None
-        assert tx.get_version(next(iter(tx.release_refs("rel-demo")))) is not None
+        assert all(tx.get_version(ref) is None for ref in NEW_REFS)
         assert tx.get_alias(AGENT, "staging") == "rel-demo"
+        assert len(tx.events()) == events_before
+        assert tx.get_publish_key("k") is None
     assert w.service.get_proposal(pid).proposal.state is ProposalState.approved
     assert w.service.publish(ANA, pid, "k").release_id == "rel-" + h[:16]
+    with w.store.transaction() as tx:  # las mismas refs sí existen tras el reintento: la prueba no es vacía
+        assert all(tx.get_version(ref) is not None for ref in NEW_REFS)
+        assert tx.get_alias(AGENT, "staging") == "rel-" + h[:16]
 
 
 def test_publish_retry_with_same_key_is_idempotent_after_success() -> None:  # Review Focus 3
