@@ -59,7 +59,9 @@ class UnderstandService:
             ) -> tuple[UnderstandResult, list[DecisionMade]]
 
 # Proveedores (agent_core.decision): RuleProvider(), ClassifierProvider(loader: ArtifactLoader),
-# LlmStructuredProvider(gateway: LLMGateway), JevProvider(transport: JevTransport, capture=None)
+# LlmStructuredProvider(gateway: LLMGateway), JevProvider(transport: JevTransport, capture=None),
+# HttpJevTransport(api_key: Callable[[], str], clock: Clock, *, base_url, max_retries, backoff_base_ms, sleep),
+# JevTransportError(status: int | None)
 
 # Offline (paquete agent_core.decision.calibration)
 class CalibrationArtifact: run_id; split_hash; method
@@ -103,12 +105,31 @@ def calibrate(model_def, dev_split: Sequence[DevExample], providers, *, targets:
 
 | Proveedor | Uso en el MVP | Notas |
 |---|---|---|
-| `jev` | preferido si pasa la prueba de humo | adaptador sobre transporte inyectable (`JevTransport`); la key la pone el transporte real (variable `JEV_API_KEY` vía `KeyProvider`), nunca el adaptador; forma del request/response **provisional** hasta el contrato real; captura del request para medir fugas (M7) |
+| `jev` | preferido si pasa la prueba de humo | adaptador sobre transporte inyectable (`JevTransport`) con el contrato real de `POST /v1/systemone` (§3.3.1); `HttpJevTransport` (stdlib) recibe la key como `Callable[[], str]` que inyecta la composición (única que lee `JEV_API_KEY`); el adaptador nunca la ve; captura del request para medir fugas (M7) |
 | `classifier` | respaldo y baseline | artefacto JSON `tfidf-logreg-v1` (ref + hash de datos) que exporta el científico de datos; TF-IDF + regresión logística evaluados en Python puro (sin `scikit-learn`); ver §3.5 |
 | `rule` | decisiones triviales | p ∈ {0, 1}; `config` en §3.5 |
 | `llm_structured` | **solo baseline en evaluación**, sin umbral | vía `LLMGateway`; `p_cal = null` salvo logprobs |
 
 Cambiar de proveedor o de orden es un cambio de datos (`DecisionModelDef`), no de código.
+
+#### 3.3.1 JEV: esquema → preguntas tipadas
+
+Request `{"state": {"locale", "input": <vista model>}, "model", "questions"}`; respuesta `{"model", "answers", "usage"}` (https://docs.typesafe.ai/api). JEV no extrae valores libres: solo responde preguntas tipadas.
+
+| Propiedad del `output_schema` | Pregunta | `RawPrediction` |
+|---|---|---|
+| `string` + `enum` (1–255 strings distintos) | `choice`; `criteria` de `config.questions.<campo>.criteria` (debe cubrir el enum) o `null` por opción | `value` = opción; `p_raw` = `probabilities[opción]`; `top_k` = 5 mayores, orden `(-p, etiqueta)` |
+| `boolean` | `noul` | `value = noul ≥ 0.5`; `p_raw` = probabilidad del valor elegido |
+| escala declarada (`config.questions.<campo> = {type: "score", levels: [{value, description}]}`, 2–10 niveles) | `score` | `value` = nivel del argmax de `probabilities` (no el `score` ponderado); `p_raw` = su probabilidad |
+| `array` de enum, con `config.multi_flow = true` | un `noul` por opción (`<campo>__<opción>`) | lista de opciones con `noul ≥ 0.5`; `p_raw = None` (sin umbral); por defecto se omite |
+| `object` libre (`slots`) u otros | ninguna | se omite del `value` |
+
+- El `confidence` de JEV se descarta: no es `p_cal` ni `p_raw`; la calibración de M5 va encima de `p_raw`.
+- `config`: `model` (alias o ID; `model_version` = `"jev:" + model devuelto`), `timeout_ms` (obligatorio), `questions`, `multi_flow`, `input_usd_per_mtok` (coste = tokens de entrada; la salida no se cobra).
+- `instructions` sale de `config.questions.<campo>.instructions`, o de `description`/`title` del esquema, o de un texto por defecto. Sin ningún campo preguntable es `DecisionConfigError`.
+- `latency_ms = 0` (lo mide `decide`); `tokens = input + output`. Una respuesta sin `usage`, con tipo distinto al pedido, opción fuera del enum o probabilidad fuera de [0, 1] es `ProviderError` (con el uso parcial si se pudo leer).
+- `HttpJevTransport`: `timeout_ms` es el presupuesto total con reintentos; backoff exponencial en 429/529 (respeta `Retry-After`); sin reintento en 401/422 ni otros errores; no sigue redirects; `https` obligatorio salvo `localhost`; los errores llevan solo el código HTTP.
+- Límites de `jev-1.13.0` (`/models`): 40 req/s, 100K tokens/s, contexto de 64k.
 
 ### 3.4 Calibración offline
 
@@ -185,7 +206,10 @@ Con `ScriptedProvider` (salidas y latencias guionadas) y artefactos de calibraci
 
 ## 11. Abiertos
 
-- Resultado de la prueba de humo de JEV (bloqueante antes del miércoles 30/09) y contrato real de su request/response (P0/P0b). Falta la API key (`JEV_API_KEY`): el transporte HTTP no está construido.
+- **P0b (contrato real de JEV): cerrado el 2026-09-29.** Adaptador y `HttpJevTransport` implementados contra la doc oficial (§3.3.1); informe en `docs/informes/2026-09-29-m5-jev-humo.md`.
+- **P0 (resultado de la prueba de humo de JEV, bloqueante antes del miércoles 30/09): abierto.** El script está listo (`AGENT_CORE_JEV_SMOKE=1 uv run python -m tests.m05.smoke`, 50 ES + 50 PT + 10 portuñol sintéticos) pero no se ha corrido contra JEV porque falta `JEV_API_KEY` en el entorno. La parte local de idioma (M6) sí se midió (informe §4).
+- Decisión provisional sobre JEV en Understand: `choice`/`noul` sí (`command`, `flow`, `interrupt`); slots libres por `llm_structured`; `additional_flows` apagado por defecto. Definitiva tras el humo. **Choca con "una sola llamada a modelo por turno" (§3.2, ADR 0005):** hay que enmendar ambos y decidir en M4/`UnderstandService` cuándo se hace la segunda llamada (solo con `start_flow`).
+- Región de procesamiento y período de retención de JEV: no figuran en la doc pública ni en el DPA (pedirlos por escrito).
 - Mínimo de muestra PT (lo fija la unidad 6): `calibrate` lo exige como parámetro `min_samples`, sin valor por defecto.
 - Artefactos reales de Understand ES (y PT si llega la muestra) y del clasificador: los produce otro equipo (P9).
 - Adaptador `DecisionOutput → DecisionResult` de M2 (P1): lo escribe M2 o la composición de M4.
