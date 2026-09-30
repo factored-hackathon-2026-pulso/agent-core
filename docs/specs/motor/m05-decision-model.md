@@ -202,9 +202,10 @@ Con `ScriptedProvider` (salidas y latencias guionadas) y artefactos de calibraci
 
 ## 10. Definición de terminado
 
-- `decide` y Understand con `classifier` + `rule`; JEV conectado si pasa la prueba de humo.
-- Artefacto de calibración real para Understand en ES (y PT si llega la muestra).
-- T-M5-01…10 en verde; reporte de métricas generado por un comando.
+- [x] `decide` y Understand con `classifier` + `rule`; JEV conectado (adaptador sobre el contrato real y `HttpJevTransport`, probados sin red con transportes falsos; humo ejecutado el 2026-09-29). Falta solo el punto de composición que lee `JEV_API_KEY` (M9/app; no existe aún).
+- [x] Segunda llamada de slots por `llm_structured` en `UnderstandService` (ADR 0005, enmienda 2026-09-29).
+- [ ] Artefacto de calibración real para Understand en ES (y PT si llega la muestra): la herramienta (`calibrate`, `report`) y los fixtures sintéticos están; faltan los datos etiquetados reales (P9). No se inventan.
+- [x] T-M5-01…10 en verde; reporte de métricas generado por un comando.
 
 ## 11. Abiertos
 
