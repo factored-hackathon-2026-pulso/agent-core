@@ -310,7 +310,7 @@ Más `SandboxPort` (§6.3) y, para el linaje, la lectura del `release_id` de un 
 
 ### 7.4 API REST (`/v1/registry`)
 
-Se monta en la app FastAPI de M9 con la misma autenticación JWS, `problem+json` y `trace_id` en toda respuesta.
+Se monta en la app FastAPI de M9 como `ApiExtension` (`ApiDeps.extensions`, por defecto vacío) con la misma autenticación JWS (la función `authenticate` que M9 entrega a la extensión), `problem+json` y `trace_id` en toda respuesta.
 
 | Método y ruta | Operación |
 |---|---|
@@ -321,7 +321,7 @@ Se monta en la app FastAPI de M9 con la misma autenticación JWS, `problem+json`
 | `POST /proposals/{id}/approve` · `/reject` | decidir |
 | `POST /proposals/{id}/publish` | `publish` (exige `Idempotency-Key`) |
 | `POST /aliases/{agent}/{alias}` · `POST /releases/{id}/revoke` | promover · revocar |
-| `GET /entities/{kind}/{id}` · `GET /entities/{kind}/{id}/{version}` | leer entidades |
+| `GET /entities/{kind}/{id}` (`?version=` opcional) | leer entidades; el `id` admite `/` (p. ej. `t/saludo`), por eso la versión va como query |
 | `GET /releases/{id}` · `GET /releases/{a}/diff/{b}` | leer releases |
 | `GET /runs/{id}/lineage` | linaje |
 
