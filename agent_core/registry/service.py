@@ -5,10 +5,10 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict
 
-from agent_core.domain import EntityKind, Principal, RegistryEntity, Release
+from agent_core.domain import EntityKind, Principal, RegistryEntity, Release, loads
 from agent_core.flows import Violation
 from agent_core.ports import Clock, IdKind, IdSource
-from agent_core.registry.candidate import Candidate, CandidateError, build_candidate
+from agent_core.registry.candidate import Candidate, CandidateError, build_candidate, parse_semver
 from agent_core.registry.entities import AnyEntity, content_hash, decode_entity, encode_entity, version_ref
 from agent_core.registry.errors import RegistryError, RegistryErrorCode
 from agent_core.registry.evaluation.ports import EvalPort, EvalTarget
@@ -16,17 +16,22 @@ from agent_core.registry.evaluation.report import EvalReport
 from agent_core.registry.models import (
     AliasChange,
     Approval,
+    ChangedRef,
     EntityDraft,
     EntityInRelease,
+    EntityVersion,
     EvalRun,
     Origin,
     Proposal,
     ProposalState,
     RegistryEvent,
     ReleaseDetail,
+    ReleaseDiff,
+    RunLineage,
     StoredRelease,
     StoredVersion,
     VersionRef,
+    VersionSummary,
 )
 from agent_core.registry.roles import actor_id, require_approver, require_constructor
 from agent_core.registry.snapshot import SnapshotRegistry
@@ -413,3 +418,69 @@ class RegistryService:
     def get_release(self, release_id: str) -> ReleaseDetail:
         with self._store.transaction() as tx:
             return self._detail(tx, release_id)
+
+    # --- lecturas, diff y linaje ---------------------------------------------------------------------------
+
+    def _sorted_versions(self, tx: RegistryTx, kind: str, entity_id: str) -> list[StoredVersion]:
+        found = tx.list_versions(kind, entity_id)
+        return sorted(found, key=lambda v: parse_semver(v.ref.version) or (0, 0, 0))
+
+    def get_entity(self, kind: str, entity_id: str, version: str | None = None) -> EntityVersion:
+        with self._store.transaction() as tx:
+            ordered = self._sorted_versions(tx, kind, entity_id)
+            versions = [v for v in ordered if version in (None, v.ref.version)]
+            if not versions:
+                raise RegistryError(RegistryErrorCode.not_found, "la entidad o su versión no existe")
+            v = versions[-1]
+            content = loads(tx.blobs.get(v.content_hash))
+            assert isinstance(content, dict)
+            return EntityVersion(ref=v.ref, content=content, content_hash=v.content_hash, docs=v.docs,
+                                 created_by=v.created_by, created_at=v.created_at)
+
+    def list_versions(self, kind: str, entity_id: str) -> list[VersionSummary]:
+        with self._store.transaction() as tx:
+            return [
+                VersionSummary(ref=v.ref, content_hash=v.content_hash, docs=v.docs, created_by=v.created_by,
+                               created_at=v.created_at)
+                for v in self._sorted_versions(tx, kind, entity_id)]
+
+    def diff_releases(self, a: str, b: str) -> ReleaseDiff:
+        with self._store.transaction() as tx:
+            for rid in (a, b):
+                if tx.get_release(rid) is None:
+                    raise RegistryError(RegistryErrorCode.not_found, "la release no existe")
+            left = {(r.kind, r.id): r for r in tx.release_refs(a)}
+            right = {(r.kind, r.id): r for r in tx.release_refs(b)}
+            changed = []
+            for key in sorted(left.keys() & right.keys()):
+                if left[key] != right[key]:
+                    stored = tx.get_version(right[key])
+                    assert stored is not None
+                    changed.append(ChangedRef(before=left[key], after=right[key], docs=stored.docs))
+            added = [right[k] for k in sorted(right.keys() - left.keys())]
+            removed = [left[k] for k in sorted(left.keys() - right.keys())]
+            return ReleaseDiff(a=a, b=b, added=added, removed=removed, changed=changed)
+
+    def lineage_for_run(self, actor: Principal, run_id: str) -> RunLineage:
+        actor_id(actor)
+        release_id = self._runs.release_of(run_id) if self._runs is not None else None
+        if release_id is None:
+            raise RegistryError(RegistryErrorCode.not_found, "el run no existe")
+        with self._store.transaction() as tx:
+            detail = self._detail(tx, release_id)
+            stored = tx.get_release(release_id)
+            assert stored is not None
+            verdict = built_by = approved_by = None
+            if stored.proposal_id is not None:
+                p = tx.get_proposal(stored.proposal_id)
+                built_by = p.created_by if p else None
+                h = p.candidate_hash if p else None
+                if h is not None:
+                    run = tx.latest_eval_run(stored.proposal_id, h)
+                    approval = tx.latest_approval(stored.proposal_id, h)
+                    verdict = run.verdict if run else None
+                    approved_by = approval.actor if approval and approval.decision == "approved" else None
+            return RunLineage(run_id=run_id, release_id=release_id, entities=detail.entities,
+                              knowledge_snapshot=detail.knowledge_snapshot, proposal_id=stored.proposal_id,
+                              eval_verdict=verdict, built_by=built_by, approved_by=approved_by,
+                              published_at=stored.published_at)
