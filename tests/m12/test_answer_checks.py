@@ -6,7 +6,7 @@ T-M12-03: una cita a una página de un `save_as` no listado se rechaza (comproba
 from datetime import date, datetime
 from typing import Any
 
-from agent_core.domain import GenerateConfig, PageView, page_ref
+from agent_core.domain import GenerateConfig, PageView, page_ref, parse_page_ref
 from agent_core.response import CHECKS, Draft, Responder, validate
 from agent_core.response.checks import check_page_audience, check_page_citations
 from testing.fakes.gateway import gen
@@ -144,8 +144,11 @@ PAGE_CONFIG = GenerateConfig.model_validate({
     "fallback_template_ref": "respaldo@1.0.0", "knowledge_from": ["kb"]})
 
 
-def _view(ref: str = PUBLIC, content: str = "Respondemos tu disputa en 15 días hábiles.", **over: Any) -> PageView:
-    return PageView(ref=ref, meta=meta(anchor="plazos", **over), content_model=content)
+def _view(ref: str = PUBLIC, content: str = "Respondemos tu disputa en 15 días hábiles.",
+          **over: Any) -> PageView:
+    parsed = parse_page_ref(ref)
+    assert parsed is not None
+    return PageView(ref=ref, meta=meta(parsed.path, anchor=parsed.anchor, **over), content_model=content)
 
 
 def _world(script: Any, pages: dict[str, list[PageView]], **kwargs: Any) -> World:
@@ -157,17 +160,18 @@ def _world(script: Any, pages: dict[str, list[PageView]], **kwargs: Any) -> Worl
 def test_generate_lets_the_model_cite_a_page_of_a_listed_save_as() -> None:
     cited = gen("Respondemos tu disputa en 15 días hábiles.", [PUBLIC])
     w = _world([cited], {"kb": [_view()]})
-    message, rejected, events = Responder(w.registry).generate(PAGE_CONFIG, w.state, w.ctx)
+    message, rejected, _ = Responder(w.registry).generate(PAGE_CONFIG, w.state, w.ctx)
     assert message.kind == "generated" and rejected == []  # type: ignore[union-attr]
     (call,) = w.gateway.calls
-    assert call.inputs["pages"] == {"kb": [{"ref": PUBLIC, "content": "Respondemos tu disputa en 15 días hábiles."}]}
+    content = "Respondemos tu disputa en 15 días hábiles."
+    assert call.inputs["pages"] == {"kb": [{"ref": PUBLIC, "content": content}]}
 
 
 def test_generate_rejects_a_page_of_a_save_as_not_listed_and_falls_back() -> None:
     other = _view(page_ref("faq/otra.md", SNAPSHOT), "Otra página de 15 días.")
     text = gen("Respondemos en 15 días.", [other.ref])
     w = _world([text, text], {"kb": [_view()], "otro": [other]})
-    message, rejected, events = Responder(w.registry).generate(PAGE_CONFIG, w.state, w.ctx)
+    message, rejected, _ = Responder(w.registry).generate(PAGE_CONFIG, w.state, w.ctx)
     assert message.kind == "template"  # type: ignore[union-attr]
     assert "page_citations" in rejected[0].failures
 
@@ -189,7 +193,8 @@ def test_generate_judges_the_vigencia_with_the_clock_of_its_context() -> None:
 
 
 def test_generate_applies_the_customer_rule_to_every_answer_of_a_customer_run() -> None:
-    """Un `respond` que se declara `advisor_view` en un run de cliente sigue sin poder citar páginas internas."""
+    """Un `respond` que se declara `advisor_view` en un run de cliente sigue sin poder citar páginas
+    internas."""
     internal = _view(INTERNAL, "Reverso de 4 pasos.", audience="internal")
     config = PAGE_CONFIG.model_copy(update={"purpose": "advisor_view"})
     text = gen("Reverso de 4 pasos.", [internal.ref])

@@ -10,8 +10,9 @@ ES = "Quiero consultar el saldo de mi cuenta y revisar los últimos movimientos 
 FACTS = {"f1": make_fact("f1", {"monto": "100.00"}), "f2": make_fact("f2", {"otro": 5})}
 
 
-def test_checks_list_has_the_five_ids_in_order() -> None:
-    assert [cid for cid, _ in CHECKS] == ["format", "citations", "numbers", "tokens_pii", "language"]
+def test_checks_list_has_the_seven_ids_in_order() -> None:
+    assert [cid for cid, _ in CHECKS] == [
+        "format", "citations", "numbers", "tokens_pii", "language", "page_citations", "page_audience"]
     assert set(typing.get_args(CheckId)) == {cid for cid, _ in CHECKS}
 
 
@@ -42,4 +43,4 @@ def test_a_new_check_runs_in_its_position_without_touching_the_global_list() -> 
     custom: tuple[tuple[CheckId, Check], ...] = (*CHECKS[:2], ("format", fake), *CHECKS[2:])  # type: ignore[arg-type]
     ctx = make_ctx(FACTS, {"f1"}, number_format=DOT_COMMA)
     result = validate(Draft(text=ES, citations=["f1"]), ctx, checks=custom)
-    assert [f.detail for f in result.failures] == ["falsa"] and len(CHECKS) == 5
+    assert [f.detail for f in result.failures] == ["falsa"] and len(CHECKS) == 7

@@ -18,6 +18,8 @@ from agent_core.domain import (
     Locale,
     Message,
     NodeId,
+    PageView,
+    PrincipalType,
     RefSpec,
     RejectedDraft,
     ResponseEmitted,
@@ -91,10 +93,20 @@ class Responder:
             return self._fallback(node_config, state, ctx, UsageMeter(ctx.clock), [], [], 0, degraded=True)
         names = _allowed_names(node_config, state)
         allowed_ids = frozenset(state.facts[name].fact_id for name in names)
-        validation = replace(ctx.validation, allowed=allowed_ids)
+        pages = _listed_pages(node_config, state)
+        validation = replace(
+            ctx.validation, allowed=allowed_ids, page_refs=frozenset(p.ref for p in pages),
+            pages_meta={p.ref: p.meta for p in pages},
+            pages_model_view={p.ref: p.content_model for p in pages},
+            # una respuesta a un cliente solo cita lo público y aprobado, se declare como se declare el nodo
+            customer_facing=(node_config.purpose == "customer_answer"
+                             or state.principal.type is PrincipalType.customer),
+            now=ctx.clock.now())
         prompt = ctx.resolve_ref(EntityKind.prompt, node_config.prompt_ref)
         meter = UsageMeter(ctx.clock)
         base_inputs = _inputs(names, state, ctx)
+        if pages:
+            base_inputs["pages"] = _page_inputs(node_config, state)
         rejected: list[RejectedDraft] = []
         last_failures: list[Failure] = []
         regenerations = 0
@@ -161,6 +173,22 @@ def _allowed_names(node_config: GenerateConfig, state: RunState) -> list[str]:
         if match is not None and match.group(1) in state.facts and match.group(1) not in names:
             names.append(match.group(1))
     return names
+
+
+def _listed_pages(node_config: GenerateConfig, state: RunState) -> list[PageView]:
+    """Las páginas de los `save_as` de `knowledge_from` (M12): lo único que el nodo permite citar."""
+    return [page for name in dict.fromkeys(node_config.knowledge_from) for page in state.pages.get(name, [])]
+
+
+def _page_inputs(node_config: GenerateConfig, state: RunState) -> dict[str, JsonValue]:
+    """Páginas en vista `model`, con su `ref` para que el modelo pueda citarlas."""
+    listed: dict[str, JsonValue] = {}
+    for name in dict.fromkeys(node_config.knowledge_from):
+        entries: list[JsonValue] = [
+            {"ref": p.ref, "content": p.content_model} for p in state.pages.get(name, [])]
+        if entries:
+            listed[name] = entries
+    return listed
 
 
 def _inputs(names: list[str], state: RunState, ctx: ResponderContext) -> dict[str, JsonValue]:
