@@ -2299,6 +2299,161 @@
       "title": "ResponseEmittedPayload",
       "type": "object"
     },
+    "ResponseFailed": {
+      "additionalProperties": false,
+      "description": "Evento `response_failed` de la cadena de auditoría (M0 §2.10).",
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/ResponseFailedPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "response_failed",
+          "default": "response_failed",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "ResponseFailed",
+      "type": "object"
+    },
+    "ResponseFailedPayload": {
+      "additionalProperties": false,
+      "description": "Payload del evento `response_failed` (vista audit, M0 §2.10): `respond(generate)` terminó en\n`EscalationRequest` y no hubo `response_emitted`. Deja auditado el uso del LLM de esa cadena.\nNunca lleva el texto de los borradores.",
+      "properties": {
+        "claims": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Claims",
+          "type": "array"
+        },
+        "llm": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LlmUsage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "node_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Node Id"
+        },
+        "reason_code": {
+          "const": "validation_failed",
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "validator": {
+          "$ref": "#/$defs/ValidatorOutcome"
+        }
+      },
+      "required": [
+        "reason_code",
+        "validator"
+      ],
+      "title": "ResponseFailedPayload",
+      "type": "object"
+    },
     "RuleEvaluated": {
       "additionalProperties": false,
       "description": "Evento `rule_evaluated` de la cadena de auditoría (M0 §2.10).",
@@ -3456,6 +3611,7 @@
       "injection_flagged": "#/$defs/InjectionFlagged",
       "node_entered": "#/$defs/NodeEntered",
       "response_emitted": "#/$defs/ResponseEmitted",
+      "response_failed": "#/$defs/ResponseFailed",
       "rule_evaluated": "#/$defs/RuleEvaluated",
       "run_closed": "#/$defs/RunClosed",
       "run_started": "#/$defs/RunStarted",
@@ -3508,6 +3664,9 @@
     },
     {
       "$ref": "#/$defs/ResponseEmitted"
+    },
+    {
+      "$ref": "#/$defs/ResponseFailed"
     },
     {
       "$ref": "#/$defs/TurnCompleted"

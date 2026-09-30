@@ -20,6 +20,8 @@ from agent_core.domain import (
     RejectedDraft,
     ResponseEmitted,
     ResponseEmittedPayload,
+    ResponseFailed,
+    ResponseFailedPayload,
     RunState,
     Template,
     ValidatorOutcome,
@@ -134,9 +136,9 @@ class Responder:
             ref = ctx.resolve_ref(EntityKind.template, node_config.fallback_template_ref)
             message = self.template(ref, ctx.locale, ctx.facts_model_view_by_name)
         except TemplateUnavailable:
-            return escalation, rejected, []
+            return escalation, rejected, [_failed_event(state, ctx, failures, regenerations, meter)]
         if check_tokens_pii(Draft(text=message.text, citations=[]), ctx.validation):
-            return escalation, rejected, []
+            return escalation, rejected, [_failed_event(state, ctx, failures, regenerations, meter)]
         outcome = ValidatorOutcome(ok=degraded, failures=list(dict.fromkeys(f.check for f in failures)),
                                    regenerations=regenerations)
         return message, rejected, [_event(state, ctx, "template", True, outcome, meter)]
@@ -161,6 +163,19 @@ def _inputs(names: list[str], state: RunState, ctx: ResponderContext) -> dict[st
             entry.update(view)
         facts[name] = entry
     return {"facts": facts}
+
+
+def _failed_event(state: RunState, ctx: ResponderContext, failures: list[Failure], regenerations: int,
+                  meter: UsageMeter) -> EngineEvent:
+    """`response_failed`: la cadena escala y el uso del LLM (también el fallido) queda en la auditoría."""
+    outcome = ValidatorOutcome(ok=False, failures=list(dict.fromkeys(f.check for f in failures)),
+                               regenerations=regenerations)
+    payload = ResponseFailedPayload.model_validate({
+        "node_id": ctx.node_id, "reason_code": "validation_failed", "validator": outcome,
+        "claims": sorted(ctx.claims), "llm": meter.usage()})
+    return ResponseFailed.model_validate({
+        "event_id": ctx.ids.new_id(IdKind.event), "run_id": state.run_id, "turn_id": ctx.turn_id,
+        "session_id": state.session_id, "release": ctx.release, "ts": ctx.clock.now(), "payload": payload})
 
 
 def _event(state: RunState, ctx: ResponderContext, kind: str, fallback_used: bool, outcome: ValidatorOutcome,

@@ -23,7 +23,7 @@
   - dobles de prueba por consumidor.
 - rev. 3 (2026-09-28), métricas de eficiencia y tiempos:
   - `Clock.monotonic_ns()` para medir duraciones (nunca para decidir);
-  - `latency_ms` en `tool_called`; uso del LLM (`llm`) en `response_emitted`;
+  - `latency_ms` en `tool_called`; uso del LLM (`llm`) en `response_emitted` y `response_failed`;
   - evento nuevo `turn_completed` con la duración del turno y el desglose por etapa;
   - `MEASURED_FIELDS`: campos de medición, que el replay excluye de la comparación.
 - rev. 4 (2026-09-28), precisiones para implementar:
@@ -485,6 +485,7 @@ Todo payload está en **vista `audit`**: sin `pii_direct` en claro, sin tokens r
 | `action_verified` | `action_id, result: verified\|failed, readback_call_id` | M3 |
 | `expiry_evaluated` | `now, last_activity_at, ttl, expired: bool` | M4 |
 | `response_emitted` | `node_id?, kind, validator: {ok, failures, regenerations}, fallback_used, claims: list[str], transcript_fp: Fingerprint?, llm: LlmUsage?` | M8 (M4 rellena `transcript_fp`) |
+| `response_failed` | `node_id?, reason_code: "validation_failed", validator: {ok, failures, regenerations}, claims: list[str], llm: LlmUsage?` | M8 (`respond(generate)` terminó en `EscalationRequest`; sin texto de borradores) |
 | `turn_completed` | `client_turn_id?, entry: start_run\|turn, duration_ms, stages: TurnStages, degraded: bool, awaiting: Awaiting` | M4 |
 | `injection_flagged` | `signals, ruleset, scope: user_text\|untrusted_field` | M6 (M4 lo agrega) |
 | `access_denied` | `reason: principal_expired\|delegation_expired\|delegation_mismatch\|principal_mismatch\|subject_forbidden\|agent_forbidden\|tool_denied, tool?` | M9, M2 (`tool_denied`) |
@@ -497,7 +498,7 @@ Evento saliente (outbox, no va a la cadena): `handoff_created {handoff_ref, run_
 **Reglas:**
 
 - Los eventos son inmutables. Única excepción: M4 rellena `response_emitted.payload.transcript_fp` con `model_copy` después de `record_turn` y antes de pasarlos a M11. El orden del turno se mantiene.
-- **Campos de medición** (`MEASURED_FIELDS`): `decision_made.latency_ms`, `tool_called.latency_ms`, `response_emitted.llm`, `turn_completed.duration_ms` y `turn_completed.stages`.
+- **Campos de medición** (`MEASURED_FIELDS`): `decision_made.latency_ms`, `tool_called.latency_ms`, `response_emitted.llm`, `response_failed.llm`, `turn_completed.duration_ms` y `turn_completed.stages`.
   - Se miden con `Clock.monotonic_ns()` (o los reporta el proveedor) y no son deterministas.
   - Ninguna decisión del motor (transición, regla, vencimiento, reintento) puede depender de ellos: solo se registran.
   - `llm` es `None` si la respuesta no llamó al gateway (plantilla o modo degradado); `calls` cuenta generación + regeneraciones.

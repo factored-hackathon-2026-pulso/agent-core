@@ -85,3 +85,23 @@ def test_turno_sin_response_emitted_no_falla() -> None:
     result = w.turn("hola")
     assert result.messages and "response_emitted" not in w.event_types()
     assert len(w.recorder.calls) == 1  # plantillas del motor (C10): solo transcript, sin response_emitted
+
+
+def test_response_failed_de_una_cadena_que_escala_llega_a_la_auditoria_antes_del_cierre() -> None:
+    from agent_core.domain import EscalationRequest, LlmUsage, ResponseFailed, ResponseFailedPayload
+
+    w = World()
+    start_generar(w)
+    usage = LlmUsage(calls=2, latency_ms=10, tokens_in=30, tokens_out=13, cost_usd="0.003", cost_known=True)
+    failed = ResponseFailed(
+        event_id="event-fail-1", run_id=RUN_ID, turn_id="turn-0001", release=RELEASE_ID, ts=w.clock.now(),
+        payload=ResponseFailedPayload(node_id="g", reason_code="validation_failed",
+                                      validator=ValidatorOutcome(ok=False, failures=["citations"],
+                                                                 regenerations=1), llm=usage))
+    request = EscalationRequest(reason_code="validation_failed", target_queue="general", priority="normal")
+    w.responder.push(GenerateResult(escalation=request, events=[failed], model_calls=2, tokens=43))
+    w.turn("quiero un resumen")
+    types = w.event_types()
+    assert "response_failed" in types and "escalated" in types
+    assert types.index("response_failed") < types.index("escalated") < types.index("run_closed")
+    assert "response_emitted" not in types

@@ -1,4 +1,4 @@
-from agent_core.domain import ResponseEmitted
+from agent_core.domain import EscalationRequest, ResponseEmitted, ResponseFailed
 from testing.fakes.gateway import gen
 from tests.m08.helpers import GOOD, World
 
@@ -17,3 +17,13 @@ def test_event_never_contains_the_draft_text() -> None:
     w = World([gen(GOOD, ["f-pqr"])])
     _, _, (event,) = w.run()
     assert "radicada" not in event.model_dump_json()
+
+
+def test_response_failed_envelope_and_no_draft_text() -> None:
+    w = World([gen(GOOD, ["f-nada"]), gen(GOOD, ["f-nada"])], fallback_locales={"pt": "Olá"})
+    message, _, (event,) = w.run()
+    assert isinstance(message, EscalationRequest) and isinstance(event, ResponseFailed)
+    assert event.event_id == "event-0001" and event.run_id == w.state.run_id and event.turn_id == "turn-0001"
+    assert event.ts == w.clock.now() and event.release == w.state.release
+    assert (event.seq, event.prev_hash, event.hash) == (None, None, None)
+    assert GOOD not in event.model_dump_json()

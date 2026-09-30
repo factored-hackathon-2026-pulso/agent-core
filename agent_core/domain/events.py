@@ -219,6 +219,17 @@ class ResponseEmittedPayload(Model):
     llm: LlmUsage | None = None
 
 
+class ResponseFailedPayload(Model):
+    """Payload del evento `response_failed` (vista audit, M0 §2.10): `respond(generate)` terminó en
+    `EscalationRequest` y no hubo `response_emitted`. Deja auditado el uso del LLM de esa cadena.
+    Nunca lleva el texto de los borradores."""
+    node_id: NodeId | None = None
+    reason_code: Literal["validation_failed"]
+    validator: ValidatorOutcome
+    claims: list[str] = Field(default_factory=list)
+    llm: LlmUsage | None = None
+
+
 class TurnStages(Model):
     """Duración por etapa del turno, en milisegundos (M0 §2.10)."""
     guards_ms: NonNegativeInt | None = None
@@ -382,6 +393,12 @@ class ResponseEmitted(EngineEvent):
     payload: ResponseEmittedPayload
 
 
+class ResponseFailed(EngineEvent):
+    """Evento `response_failed` de la cadena de auditoría (M0 §2.10)."""
+    type: Literal["response_failed"] = "response_failed"
+    payload: ResponseFailedPayload
+
+
 class TurnCompleted(EngineEvent):
     """Evento `turn_completed` de la cadena de auditoría (M0 §2.10)."""
     type: Literal["turn_completed"] = "turn_completed"
@@ -433,6 +450,7 @@ AnyEvent = Annotated[
     | ActionVerified
     | ExpiryEvaluated
     | ResponseEmitted
+    | ResponseFailed
     | TurnCompleted
     | InjectionFlagged
     | AccessDenied
@@ -445,7 +463,8 @@ AnyEvent = Annotated[
 _EVENT_CLASSES: tuple[type[EngineEvent], ...] = (
     RunStarted, TurnStarted, CommandEmitted, NodeEntered, DecisionMade, RuleEvaluated, ToolCalled,
     StepUpRequested, ActionConfirmed, ActionCancelled, ActionDispatched, ActionVerified, ExpiryEvaluated,
-    ResponseEmitted, TurnCompleted, InjectionFlagged, AccessDenied, Escalated, HandoffResolved, RunClosed,
+    ResponseEmitted, ResponseFailed, TurnCompleted, InjectionFlagged, AccessDenied, Escalated,
+    HandoffResolved, RunClosed,
 )
 
 EVENT_TYPES: Mapping[str, type[EngineEvent]] = MappingProxyType(
@@ -470,6 +489,7 @@ EVENT_EMITTERS: Mapping[str, frozenset[str]] = MappingProxyType(
         "action_dispatched": frozenset({"M3"}),
         "action_verified": frozenset({"M3"}),
         "response_emitted": frozenset({"M8"}),
+        "response_failed": frozenset({"M8"}),
         "injection_flagged": frozenset({"M6"}),
         "access_denied": frozenset({"M9", "M2"}),
         "escalated": frozenset({"M10"}),
@@ -482,6 +502,7 @@ MEASURED_FIELDS: Mapping[str, frozenset[str]] = MappingProxyType(
         "decision_made": frozenset({"latency_ms"}),
         "tool_called": frozenset({"latency_ms"}),
         "response_emitted": frozenset({"llm"}),
+        "response_failed": frozenset({"llm"}),
         "turn_completed": frozenset({"duration_ms", "stages"}),
     }
 )
