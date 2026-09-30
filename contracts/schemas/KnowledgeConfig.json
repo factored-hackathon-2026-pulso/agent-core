@@ -32,31 +32,24 @@
     }
   },
   "additionalProperties": false,
-  "description": "Configuración del nodo `generate` (M0 §2.5).\n\n`knowledge_from` lista los `save_as` de nodos `knowledge` cuyas páginas puede citar la respuesta, y\n`purpose` dice para quién es (M12 §2: reemplaza a `knowledge_refs`). El defecto es el más estricto.",
+  "description": "Configuración del nodo `knowledge` (M0 §2.5, M12, ADR 0015).\n\n`read`: `pages` fijas (`ruta` o `ruta#ancla`), resueltas contra el snapshot de la release.\n`navigate`: `scope` (un directorio del snapshot) y `selector` (un `decision_model` sobre las rutas del\nscope); el modo está en el esquema, pero M12 todavía no lo ejecuta (sale por `not_found`).",
   "properties": {
-    "allowed_facts": {
+    "mode": {
+      "enum": [
+        "read",
+        "navigate"
+      ],
+      "title": "Mode",
+      "type": "string"
+    },
+    "pages": {
       "items": {
         "type": "string"
       },
-      "title": "Allowed Facts",
+      "title": "Pages",
       "type": "array"
-    },
-    "fallback_template_ref": {
-      "$ref": "#/$defs/RefSpec"
-    },
-    "knowledge_from": {
-      "items": {
-        "pattern": "^[a-z][a-z0-9_]*$",
-        "type": "string"
-      },
-      "title": "Knowledge From",
-      "type": "array"
-    },
-    "prompt_ref": {
-      "$ref": "#/$defs/RefSpec"
     },
     "purpose": {
-      "default": "customer_answer",
       "enum": [
         "customer_answer",
         "advisor_view",
@@ -64,12 +57,42 @@
       ],
       "title": "Purpose",
       "type": "string"
+    },
+    "save_as": {
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "title": "Save As",
+      "type": "string"
+    },
+    "scope": {
+      "anyOf": [
+        {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_./-]{0,254}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scope"
+    },
+    "selector": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RefSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     }
   },
   "required": [
-    "prompt_ref",
-    "fallback_template_ref"
+    "mode",
+    "purpose",
+    "save_as"
   ],
-  "title": "GenerateConfig",
+  "title": "KnowledgeConfig",
   "type": "object"
 }

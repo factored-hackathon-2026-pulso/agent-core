@@ -1,4 +1,5 @@
-"""Tipos de M12 que viven en M0 (m12 §2, m00 §2.5–§2.10): páginas, vista, nodo `knowledge`, `pages` y evento."""
+"""Tipos de M12 que viven en M0 (m12 §2, m00 §2.5–§2.10): páginas, vista, nodo `knowledge`, `pages` y
+evento."""
 
 from datetime import date
 from typing import Any
@@ -54,7 +55,8 @@ def test_page_ref_round_trip() -> None:
     assert whole is not None and whole.anchor is None
 
 
-@pytest.mark.parametrize("text", ["", "f_1234", "page:1", "a@b#", "../x@s#a", "x@", "@s#a", "x@s#a b", "x@s#a#b"])
+@pytest.mark.parametrize(
+    "text", ["", "f_1234", "page:1", "a@b#", "../x@s#a", "x@", "@s#a", "x@s#a b", "x@s#a#b"])
 def test_parse_page_ref_rejects_what_is_not_a_page_ref(text: str) -> None:
     assert parse_page_ref(text) is None
 
