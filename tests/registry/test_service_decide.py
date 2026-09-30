@@ -254,3 +254,40 @@ def test_published_suite_of_other_agent_is_rejected() -> None:  # spec §5.2.6
         w.service.evaluate(ANA, pid, "otra-suite")
     assert _code(info) is RegistryErrorCode.validation_failed
     assert w.evaluator.calls == []
+
+
+def _occupy_prompt_version(w: World) -> None:
+    """Otra publicación ocupa p/resumen_radicado@1.1.0 distinto (REG-VERSION-TAKEN al rearmar)."""
+    from agent_core.domain import Prompt
+    other = Prompt.model_validate({**prompt_draft(text="Otro contenido.").content})
+    with w.store.transaction() as tx:
+        tx.blobs.put(encode_entity(other))
+        tx.insert_version(StoredVersion(ref=version_ref(other), content_hash=content_hash(other), docs=docs(),
+                                        proposal_id=None, created_by="x", created_at=NOW))
+
+
+def _assert_candidate_changed(info: pytest.ExceptionInfo[RegistryError]) -> None:
+    assert _code(info) is RegistryErrorCode.candidate_changed
+    assert isinstance(info.value.payload, list)
+    assert info.value.payload[0]["rule"] == "REG-VERSION-TAKEN"  # type: ignore[call-overload]
+
+
+def test_publish_with_version_taken_is_candidate_changed_not_500() -> None:  # revisión final I1
+    w = World()
+    pid, h = _evaluated(w)
+    w.service.approve(ANA, pid, h)
+    _occupy_prompt_version(w)
+    with pytest.raises(RegistryError) as info:
+        w.service.publish(ANA, pid, "k")
+    _assert_candidate_changed(info)
+    assert w.service.get_proposal(pid).proposal.state is ProposalState.approved
+    w.service.reopen(ANA, pid)  # no queda atascada
+
+
+def test_evaluate_with_version_taken_is_candidate_changed_not_500() -> None:  # revisión final I1
+    w = World()
+    pid = _frozen(w)
+    _occupy_prompt_version(w)
+    with pytest.raises(RegistryError) as info:
+        w.service.evaluate(ANA, pid, "disputas-suite")
+    _assert_candidate_changed(info)

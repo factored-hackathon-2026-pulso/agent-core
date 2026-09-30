@@ -153,6 +153,16 @@ class RegistryService:
             raise CandidateError(problems)
         return cand
 
+    def _rebuild(self, tx: RegistryTx, p: Proposal, detail: str) -> Candidate:
+        """Rearma la candidata congelada; si ya no es válida (p. ej. otra publicación ocupó una versión del
+        borrador) es `candidate_changed` (spec §5.4.2), con las violaciones (sin valores de entrada)."""
+        try:
+            return self._candidate(tx, p)
+        except CandidateError as exc:
+            raise RegistryError(RegistryErrorCode.candidate_changed,
+                                f"{detail}: {len(exc.violations)} violaciones",
+                                payload=_violations_payload(exc.violations)) from exc  # type: ignore[arg-type]
+
     # --- construcción (rol constructor) ------------------------------------------------------------------
 
     def create_proposal(self, actor: Principal, agent_id: str, origin: Origin, title: str) -> Proposal:
@@ -252,7 +262,7 @@ class RegistryService:
         with self._store.transaction() as tx:
             p = self._proposal(tx, proposal_id, for_update=False)
             self._expect(p, ProposalState.candidate)
-            cand = self._candidate(tx, p)
+            cand = self._rebuild(tx, p, "la candidata cambió desde freeze")
             if cand.candidate_hash != p.candidate_hash:
                 raise RegistryError(RegistryErrorCode.candidate_changed, "la candidata cambió desde freeze")
             suite = self._suite(tx, cand, suite_id, suite_version)
@@ -340,7 +350,7 @@ class RegistryService:
                             "staging cambió desde que se creó la propuesta; congela y evalúa de nuevo")
 
     def _publish_in_tx(self, tx: RegistryTx, actor: Principal, p: Proposal) -> str:
-        cand = self._candidate(tx, p)
+        cand = self._rebuild(tx, p, "la candidata cambió desde la aprobación")
         if cand.candidate_hash != p.candidate_hash:
             raise RegistryError(RegistryErrorCode.candidate_changed,
                                 "la candidata cambió desde la aprobación")
