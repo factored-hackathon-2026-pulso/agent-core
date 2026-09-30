@@ -158,6 +158,11 @@ def _error(kind: GatewayErrorKind, alias: str, profile: ModelProfile, why: str) 
     return GatewayError(kind, model=profile.model)
 
 
+def _clip(text: str, limit: int = 80) -> str:
+    """Acota el motivo antes de registrarlo: puede incluir nombres de propiedad elegidos por el modelo."""
+    return text if len(text) <= limit else text[:limit] + "..."
+
+
 def _result(response: Any, profile: ModelProfile, schema: dict[str, JsonValue] | None) -> GenerationResult:
     """Traduce la respuesta del proveedor a `GenerationResult` o a `GatewayError` con el uso informado."""
     usage = response.usage
@@ -187,7 +192,7 @@ def _result(response: Any, profile: ModelProfile, schema: dict[str, JsonValue] |
         try:
             output = parse_output(content, schema)
         except OutputError as error:
-            raise fail(GatewayErrorKind.invalid_output, error.reason) from None
+            raise fail(GatewayErrorKind.invalid_output, _clip(error.reason)) from None
     if cost is None:
         _LOG.warning("respuesta sin usage model=%s", model)
     return GenerationResult(output=output, tokens_in=tokens_in or 0, tokens_out=tokens_out or 0,

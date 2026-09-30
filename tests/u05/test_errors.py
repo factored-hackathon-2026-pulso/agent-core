@@ -132,3 +132,12 @@ def test_a_failing_client_factory_is_unavailable(respx_mock: MockRouter) -> None
 
     error = _fail(make_world(client_factory=boom))
     assert error.kind is GatewayErrorKind.unavailable and respx_mock.calls.call_count == 0
+
+
+def test_a_long_model_chosen_key_is_clipped_in_the_log(respx_mock: MockRouter, caplog) -> None:  # type: ignore[no-untyped-def]
+    key = "CLAVE-ELEGIDA-POR-EL-MODELO-" + "x" * 300
+    respx_mock.post(CHAT).respond(200, json=completion(f'{{"text": "a", "citations": [], "{key}": 1}}'))
+    with caplog.at_level("WARNING", logger="agent_core.adapters.llm"):
+        error = _fail(make_world(), DRAFT)
+    assert error.kind is GatewayErrorKind.invalid_output
+    assert "CLAVE-ELEGIDA-POR-EL-MODELO-" in caplog.text and key not in caplog.text
