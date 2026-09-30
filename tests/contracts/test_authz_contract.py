@@ -10,7 +10,7 @@ from datetime import timedelta
 
 import pytest
 
-from agent_core.domain import OnBehalfOf, Principal, SubjectRef
+from agent_core.domain import KnowledgeView, OnBehalfOf, Principal, Purpose, SubjectRef
 from agent_core.ports import AuthzDecision, AuthzPort
 from testing.builders import NOW, advisor_with_delegation, principal
 from testing.fakes.authz import TableAuthz
@@ -107,6 +107,41 @@ def check_denials_carry_no_subject_reference(authz: AuthzPort) -> None:
         assert OTHER_CUSTOMER.ref not in (decision.reason or "")
 
 
+PUBLIC_ONLY = KnowledgeView(audiences=frozenset({"public"}), approved_only=True)
+EVERYTHING = KnowledgeView(audiences=frozenset({"public", "internal", "agent_only"}), approved_only=False)
+
+
+def _purposes() -> tuple[Purpose, ...]:
+    return ("customer_answer", "advisor_view", "agent_guidance")
+
+
+def check_customer_answer_is_public_and_approved_for_every_principal(authz: AuthzPort) -> None:
+    """M12 §3.1: solo lo `public` y `approved` puede citarse al cliente, sea quien sea el que pregunta."""
+    advisor, _ = advisor_with_delegation()
+    for reader in (principal(), advisor, _builder(), _admin()):
+        assert authz.knowledge_view(reader, "customer_answer") == PUBLIC_ONLY
+
+
+def check_advisor_view_never_reaches_a_customer(authz: AuthzPort) -> None:
+    advisor, _ = advisor_with_delegation()
+    assert authz.knowledge_view(principal(), "advisor_view").audiences == frozenset()
+    view = authz.knowledge_view(advisor, "advisor_view")
+    assert view.audiences == frozenset({"public", "internal"})
+
+
+def check_agent_only_is_reachable_only_through_agent_guidance(authz: AuthzPort) -> None:
+    advisor, _ = advisor_with_delegation()
+    for reader in (principal(), advisor, _builder()):
+        for purpose in ("customer_answer", "advisor_view"):
+            assert "agent_only" not in authz.knowledge_view(reader, purpose).audiences
+        assert "agent_only" in authz.knowledge_view(reader, "agent_guidance").audiences
+
+
+def check_knowledge_view_is_deterministic_and_total(authz: AuthzPort) -> None:
+    for purpose in _purposes():
+        assert authz.knowledge_view(principal(), purpose) == authz.knowledge_view(principal(), purpose)
+
+
 CHECKS = [
     check_builder_never_gets_a_customer_subject,
     check_builder_never_reads_fields,
@@ -118,6 +153,10 @@ CHECKS = [
     check_denials_carry_no_subject_reference,
     check_only_the_platform_admin_reaches_customer_data,
     check_the_admin_needs_a_human_step_up_and_a_scope,
+    check_customer_answer_is_public_and_approved_for_every_principal,
+    check_advisor_view_never_reaches_a_customer,
+    check_agent_only_is_reachable_only_through_agent_guidance,
+    check_knowledge_view_is_deterministic_and_total,
 ]
 
 
@@ -154,11 +193,14 @@ class _Permissive:
     def can_read_field(self, reader: Principal, obo: OnBehalfOf | None, field: str, purpose: str) -> bool:
         return True
 
+    def knowledge_view(self, principal: Principal, purpose: Purpose) -> KnowledgeView:
+        return EVERYTHING
+
     def reportable_attrs(self) -> frozenset[str]:
         return frozenset()
 
 
-@pytest.mark.parametrize("check", CHECKS[:6] + CHECKS[7:], ids=lambda c: c.__name__)
+@pytest.mark.parametrize("check", CHECKS[:6] + CHECKS[7:-1], ids=lambda c: c.__name__)
 def test_a_permissive_authz_fails_the_contract(check: object) -> None:
     with pytest.raises(AssertionError):
         check(_Permissive())  # type: ignore[operator,arg-type]

@@ -525,7 +525,7 @@
     },
     "GenerateConfig": {
       "additionalProperties": false,
-      "description": "Configuración del nodo `generate` (M0 §2.5).",
+      "description": "Configuración del nodo `generate` (M0 §2.5).\n\n`knowledge_from` lista los `save_as` de nodos `knowledge` cuyas páginas puede citar la respuesta, y\n`purpose` dice para quién es (M12 §2: reemplaza a `knowledge_refs`). El defecto es el más estricto.",
       "properties": {
         "allowed_facts": {
           "items": {
@@ -537,15 +537,26 @@
         "fallback_template_ref": {
           "$ref": "#/$defs/RefSpec"
         },
-        "knowledge_refs": {
+        "knowledge_from": {
           "items": {
+            "pattern": "^[a-z][a-z0-9_]*$",
             "type": "string"
           },
-          "title": "Knowledge Refs",
+          "title": "Knowledge From",
           "type": "array"
         },
         "prompt_ref": {
           "$ref": "#/$defs/RefSpec"
+        },
+        "purpose": {
+          "default": "customer_answer",
+          "enum": [
+            "customer_answer",
+            "advisor_view",
+            "agent_guidance"
+          ],
+          "title": "Purpose",
+          "type": "string"
         }
       },
       "required": [
@@ -589,6 +600,106 @@
           "type": "null"
         }
       ]
+    },
+    "KnowledgeConfig": {
+      "additionalProperties": false,
+      "description": "Configuración del nodo `knowledge` (M0 §2.5, M12, ADR 0015).\n\n`read`: `pages` fijas (`ruta` o `ruta#ancla`), resueltas contra el snapshot de la release.\n`navigate`: `scope` (un directorio del snapshot) y `selector` (un `decision_model` sobre las rutas del\nscope); el modo está en el esquema, pero M12 todavía no lo ejecuta (sale por `not_found`).",
+      "properties": {
+        "mode": {
+          "enum": [
+            "read",
+            "navigate"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "pages": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Pages",
+          "type": "array"
+        },
+        "purpose": {
+          "enum": [
+            "customer_answer",
+            "advisor_view",
+            "agent_guidance"
+          ],
+          "title": "Purpose",
+          "type": "string"
+        },
+        "save_as": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Save As",
+          "type": "string"
+        },
+        "scope": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_./-]{0,254}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scope"
+        },
+        "selector": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RefSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "mode",
+        "purpose",
+        "save_as"
+      ],
+      "title": "KnowledgeConfig",
+      "type": "object"
+    },
+    "KnowledgeNode": {
+      "additionalProperties": false,
+      "description": "Nodo `knowledge` de un flow (M0 §2.5, M12).",
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/KnowledgeConfig"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "next": {
+          "additionalProperties": {
+            "pattern": "^[a-z0-9][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Next",
+          "type": "object"
+        },
+        "type": {
+          "const": "knowledge",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "config"
+      ],
+      "title": "KnowledgeNode",
+      "type": "object"
     },
     "Outcome": {
       "description": "Resultado final de un run (M0 §2.7).",
@@ -1090,6 +1201,9 @@
     },
     {
       "$ref": "#/$defs/EndNode"
+    },
+    {
+      "$ref": "#/$defs/KnowledgeNode"
     },
     {
       "$ref": "#/$defs/AgentNode"

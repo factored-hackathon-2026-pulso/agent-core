@@ -15,12 +15,14 @@ from agent_core.domain import Release
 from agent_core.guards import GuardService, LangThresholds
 from agent_core.handoff import HandoffService
 from agent_core.interpreter import CircuitBreaker
+from agent_core.knowledge import KnowledgeService
 from agent_core.ports import (
     AuditSink,
     AuthzPort,
     Clock,
     IdSource,
     KeyProvider,
+    KnowledgeSource,
     LLMGateway,
     RegistryPort,
     ToolExecutor,
@@ -61,6 +63,7 @@ class EngineDeps:
     authz: AuthzPort
     classifier: FieldClassifier | None = None
     trace: TraceIds | None = None
+    knowledge: KnowledgeSource | None = None  # M12: sin fuente, un nodo `knowledge` es un error de cableado
     config: EngineConfig = field(default_factory=EngineConfig)
 
 
@@ -80,6 +83,7 @@ def build_turn_engine(deps: EngineDeps) -> TurnEngine:
         clock=deps.clock, ids=deps.ids, keys=deps.keys, registry=deps.registry, releases=deps.releases,
         tools=deps.tools, gateway=deps.gateway, decisions=decisions, actions=actions, views=views,
         uow_factory=deps.uow_factory, authz=deps.authz, breaker=CircuitBreaker(),
+        knowledge=None if deps.knowledge is None else KnowledgeService(deps.knowledge, deps.authz),
         config=RuntimeConfig(number_format=cfg.number_format, max_regenerations=cfg.max_regenerations,
                              priority=cfg.priority, lang_thresholds=cfg.lang_thresholds))
     return TurnEngine(

@@ -1,10 +1,24 @@
 from collections.abc import Collection
 from typing import TYPE_CHECKING
 
-from agent_core.domain import Agent, AuthLevel, OnBehalfOf, Principal, PrincipalType, SubjectRef
+from agent_core.domain import (
+    Agent,
+    AuthLevel,
+    KnowledgeView,
+    OnBehalfOf,
+    Principal,
+    PrincipalType,
+    Purpose,
+    SubjectRef,
+)
 from agent_core.ports import AuthzDecision
 
 _ALLOW = AuthzDecision(allowed=True)
+# Vistas de conocimiento (M12): solo lo público y aprobado puede citarse al cliente (ADR 0015).
+_CITABLE = KnowledgeView(audiences=frozenset({"public"}), approved_only=True)
+_ADVISOR = KnowledgeView(audiences=frozenset({"public", "internal"}), approved_only=False)
+_GUIDANCE = KnowledgeView(audiences=frozenset({"public", "internal", "agent_only"}), approved_only=False)
+_NOTHING = KnowledgeView(audiences=frozenset(), approved_only=False)
 
 
 def _deny(reason: str) -> AuthzDecision:
@@ -96,6 +110,17 @@ class TableAuthz:
         if reader.type is PrincipalType.builder and not is_platform_admin(reader):
             return False  # ADR 0006, ADR 0019: solo el administrador lee datos de clientes, y con concesión
         return reader.id is not None and (field, purpose) in self._grants
+
+    def knowledge_view(self, principal: Principal, purpose: Purpose) -> KnowledgeView:
+        match purpose:
+            case "customer_answer":
+                # sea quien sea el que pregunta: lo que se cita al cliente es público y aprobado
+                return _CITABLE
+            case "advisor_view":
+                return _NOTHING if principal.type is PrincipalType.customer else _ADVISOR
+            case "agent_guidance":
+                return _GUIDANCE
+        return _NOTHING  # pragma: no cover
 
     def reportable_attrs(self) -> frozenset[str]:
         return self._reportable

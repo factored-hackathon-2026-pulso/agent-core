@@ -276,12 +276,6 @@ def schema_violations(flow: Flow) -> list[Violation]:
         if node_kind(node) in PRODUCTION_NODE_KINDS:
             add("tipo de producción no habilitado")
             continue
-        if (
-            isinstance(node, RespondNode)
-            and node.config.generate is not None
-            and node.config.generate.knowledge_refs
-        ):
-            add("conocimiento no habilitado (tema #10)", "/config/generate/knowledge_refs")
         for sub, expr in _jsonlogic_fields(node):
             for problem in jsonlogic_problems(expr):
                 add(f"JSON Logic {clip(problem, 2 * MAX_ECHO)}", sub)

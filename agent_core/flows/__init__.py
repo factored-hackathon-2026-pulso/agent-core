@@ -11,7 +11,7 @@ from agent_core.flows.pin import PinnedRelease, pin_release
 from agent_core.flows.refs import RefSite, entity_ref_sites
 from agent_core.flows.registry import AuthoringRegistry, ReleaseDecl, kind_of, load_registry
 from agent_core.flows.schema import parse_flow
-from agent_core.flows.validate import validate_flow, validate_registry
+from agent_core.flows.validate import validate_flow, validate_flow_for_release, validate_registry
 from agent_core.flows.view import RegistryView, release_view
 from agent_core.flows.violations import FlowSchemaError, Violation
 from agent_core.flows.yaml_loader import load_yaml
@@ -40,6 +40,7 @@ __all__ = [
     "validate_agent",
     "validate_flow",
     "validate_flow_for_agent",
+    "validate_flow_for_release",
     "validate_registry",
     "value_paths",
 ]

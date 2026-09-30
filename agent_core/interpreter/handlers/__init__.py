@@ -7,6 +7,7 @@ from agent_core.interpreter.handlers.agent import handle_agent
 from agent_core.interpreter.handlers.base import NodeHandler, NodeResult
 from agent_core.interpreter.handlers.collect import handle_collect
 from agent_core.interpreter.handlers.decide import handle_decide
+from agent_core.interpreter.handlers.knowledge import handle_knowledge
 from agent_core.interpreter.handlers.respond import handle_respond
 from agent_core.interpreter.handlers.rule import handle_rule
 from agent_core.interpreter.handlers.terminal import handle_end, handle_escalate
@@ -25,6 +26,7 @@ HANDLERS: Mapping[str, NodeHandler] = MappingProxyType({
     "tool_write": handle_write,
     "verify": handle_verify,
     "agent": handle_agent,
+    "knowledge": handle_knowledge,
 })
 
 __all__ = ["HANDLERS", "NodeHandler", "NodeResult"]

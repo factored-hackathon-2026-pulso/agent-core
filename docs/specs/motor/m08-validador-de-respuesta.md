@@ -1,10 +1,10 @@
 # M8 — Validador de respuesta y `respond(generate)`
 
-- Estado: borrador · rev. 2 (2026-09-29: decisiones P1–P7 aprobadas) · Fase 4
+- Estado: borrador · rev. 3 (2026-09-30: comprobaciones 6 y 7 de M12) · rev. 2 (2026-09-29: decisiones P1–P7 aprobadas) · Fase 4
 - Paquete: `agent_core.response`
 - Origen: spec general §8.3, §5 (`respond`), §4.8, §10 (fallas del validador), §13.7
 - ADRs: 0011 (validación numérica por locale, hechos `compute`), 0012 (idioma del texto), 0008 (validador sobre vista `model`)
-- Usa: M0, M6 (`detect_language`), M7 (tokens, PII en claro) · Lo usan: M2 (`respond`), M10 (resumen del handoff, si es generado)
+- Usa: M0, M6 (`detect_language`), M7 (tokens, PII en claro), M12 (solo sus tipos de M0; M8 no importa `agent_core.knowledge`) · Lo usan: M2 (`respond`), M10 (resumen del handoff, si es generado)
 
 ## 1. Propósito y límites
 
@@ -21,8 +21,8 @@ class NumberFormat:     thousands: str; decimal: str               # p. ej. ("."
 class ValidationContext:
     facts_model_view: Mapping[str, JsonValue]    # por fact_id, ya en vista model
     fact_sources: Mapping[str, FactSource]       # por fact_id
-    allowed: frozenset[str]                      # fact_ids/page_refs que el nodo permite citar
-    pages_model_view: Mapping[str, JsonValue]    # vacío hasta M12 (PageView no existe aún)
+    allowed: frozenset[str]                      # fact_ids que el nodo permite citar (las páginas van en `page_refs`)
+    pages_model_view: Mapping[str, JsonValue]    # `page_ref` → contenido en vista model (M12)
     vault: TokenVault
     locale: str
     lang_cfg: LanguageDetection
@@ -30,7 +30,11 @@ class ValidationContext:
     supported_locales: tuple[str, ...]
     find_clear_pii: Callable[[str], list[str]]   # cierre ViewService + hechos full; devuelve rutas, nunca valores
     number_format: NumberFormat | None = None    # dato opcional producido fuera de M8 (3.3)
-class Failure:          check: Literal["format", "citations", "numbers", "tokens_pii", "language"]; detail: str
+    page_refs: frozenset[str] = frozenset()      # M12: `ruta@snapshot#ancla` de los `save_as` de `knowledge_from`
+    pages_meta: Mapping[str, PageMeta] = {}      # M12: metadatos de esas páginas
+    customer_facing: bool = False                # M12: la lee un cliente (comprobación 7)
+    now: datetime | None = None                  # M12: instante del `Clock` para la vigencia
+class Failure:          check: Literal["format", "citations", "numbers", "tokens_pii", "language", "page_citations", "page_audience"]; detail: str
 class ValidationResult: ok: bool; failures: list[Failure]
 
 def parse_draft(output: JsonValue) -> Draft | Failure                            # comprobación 1
@@ -52,16 +56,19 @@ class Responder:
 ### 3.1 Comprobaciones (en orden; se reportan todas las que fallan)
 
 1. **Formato:** la salida del gateway parsea como `{text, citations}`.
-2. **Citas:** cada cita existe en `facts` o en páginas recuperadas en el run **y** está en `allowed`. Las citas y `allowed` van por `fact_id`; `Responder` traduce `generate.allowed_facts` (rutas de autoría `facts.<nombre>[.value…]`) a `{state.facts[nombre].fact_id}`. Las páginas de M12 no existen aún: toda `page_ref` falla hasta entonces.
+2. **Citas a hechos:** cada cita existe en `facts` **y** está en `allowed`. Las citas y `allowed` van por `fact_id`; `Responder` traduce `generate.allowed_facts` (rutas de autoría `facts.<nombre>[.value…]`) a `{state.facts[nombre].fact_id}`. Una cita con forma de página (`ruta@snapshot#ancla`, `parse_page_ref` de M0) no se juzga aquí: es de la 6 y la 7.
 3. **Cifras:**
    - Se extraen del texto números, montos, porcentajes y fechas con el parser del `number_format` del contexto (`1.234,56` o `1,234.56`); sin `number_format`, ver 3.3.
    - Cada cifra debe ser **numéricamente igual** a un valor de un hecho o página citados, con la precisión de la moneda (`Decimal`, sin tolerancia relativa).
    - Si la cifra no aparece en ningún hecho de origen `tool`/`identity`, debe venir de un hecho `compute`. Una cifra calculada sin su `compute` falla.
    - Se ignoran los dígitos dentro de tokens de M7.
    - `ValidationContext.fact_sources` se conserva en el contexto pero esta comprobación no lo usa: el criterio es de origen del número (aparece o no en un hecho citado), no de su tipo. Un hecho `compute` respalda cifras como cualquier otro, y una cifra calculada sin su `compute` citado falla porque no está en ningún hecho citado. Filtrar por `source.kind` no cambiaría ningún resultado y dejaría sin definir el caso `knowledge` (M12).
+   - Las cifras del texto de una página citada cuentan como las de un hecho (M12): el texto de la página se lee con el mismo parser de cifras, con el `number_format` del contexto.
    - Todo número del texto cuenta igual ("paso 2", "24 horas"): debe estar en un hecho citado. Una cifra ambigua sin `number_format` se rechaza aunque un hecho la respalde. Las fechas se comparan con valores ISO (`aaaa-mm-dd`) de los hechos; los valores de hecho numéricos son `int`, `Decimal` o cadenas `-?dígitos(.dígitos)?`.
 4. **Tokens y PII:** todo token del texto existe en el `token_map`; `ViewService.find_clear_pii` no encuentra identificadores `pii_direct` en claro.
 5. **Idioma:** `detect_language(text)` con la configuración, los umbrales y los idiomas soportados de M6 (`prior = locale`). Si la decisión es `short` o `undetermined` no rechaza; en otro caso rechaza si el idioma de mayor puntaje (`top2[0]`) difiere del `locale` del turno. No depende de los umbrales de cambio (con `UNCALIBRATED` igual compara `top2[0]`). Un idioma no soportado también rechaza.
+6. **`page_citations` (M12):** cada cita con forma de página está en `page_refs` (las páginas de los `save_as` listados en `generate.knowledge_from`). Una falla por cita, con su posición y sin su texto (`página_no_listada`).
+7. **`page_audience` (M12):** en una respuesta al cliente, cada página citada es `public` + `approved` y vigente al instante `now` del `Clock` (`valid_from`/`valid_to` inclusivos); una falla por cita (`página_no_aprobada`, `audiencia_no_pública`, `página_no_vigente`). Falla cerrado: sin metadatos (`página_desconocida`) o sin `now` (`sin_reloj`). Una respuesta es **al cliente** si el nodo declara `purpose: customer_answer` **o** el principal del run es `customer` (así un `respond` que se declara `advisor_view` en un run de cliente no cita una página interna). No se aplica a las respuestas para asesores.
 
 ### 3.2 Cadena de `respond(generate)`
 
@@ -83,6 +90,7 @@ si la plantilla no puede renderizarse → EscalationRequest(validation_failed)
   | `invalid_output` | falla de la comprobación de formato: **1 regeneración** y luego la plantilla de respaldo |
   | `timeout`, `unavailable`, `rate_limited`, `refused` | directo a la plantilla de respaldo, sin regenerar |
   | otra excepción (p. ej. del cliente HTTP) | como `unavailable` |
+- **Páginas de M12:** `Responder.generate` arma `page_refs`, `pages_meta` y `pages_model_view` desde `RunState.pages` de los `save_as` de `knowledge_from`, `customer_facing` (regla de la comprobación 7) y `now = Clock.now()`, y agrega a la entrada del modelo `pages: {save_as: [{ref, content}]}` en vista `model`. Sin `knowledge_from` no hay `pages` en la entrada.
 - `Responder.template` trae un renderizador mínimo propio de `{{ facts.<nombre>.value(.campo)* }}` (M8 no importa `flows`); una ruta ausente, un locale ausente o una ruta que no sea de hechos lanza `TemplateUnavailable`, que la cadena traduce a `validation_failed`.
 - Las plantillas (`respond.template_ref`) no pasan por las comprobaciones 2 y 3 (son texto fijo con variables de hechos), pero sí por la 4.
 
@@ -132,6 +140,9 @@ M8 **no** se acopla a teléfono, canal ni `principal.attrs.country`, y no contie
 | T-M8-10 | Dígitos dentro de tokens no cuentan como cifras | — |
 | T-M8-11 | Generación rechazada + regeneración rechazada + plantilla: `llm.calls = 2` con tokens y costo sumados; modo degradado: `llm = None` | — |
 | T-M8-12 | Errores del gateway por `kind`: `invalid_output` regenera una vez y luego usa la plantilla; `timeout`, `unavailable`, `rate_limited` y `refused` van directo a la plantilla; `cost_known = false` si el error no informa costo (`tests/m08/test_responder_generate.py`) | — |
+| T-M8-13 | Comprobación 6: una cita a una página de un `save_as` no listado se rechaza; una listada pasa; los `fact_id` y las cadenas sin forma de página se ignoran (T-M12-03, `tests/m12/test_answer_checks.py`) | — |
+| T-M8-14 | Comprobación 7: en una respuesta al cliente, `draft`, `internal`, `agent_only`, vencida o futura se rechazan y la pública aprobada vigente pasa; falla cerrado sin metadatos ni reloj; no aplica a respuestas de asesor (T-M12-02) | — |
+| T-M8-15 | Las cifras de una página citada respaldan el texto; `Responder.generate` cablea las páginas desde `RunState.pages` y aplica la regla de cliente a todo run de un `customer` | — |
 
 ## 8. Evaluación
 
@@ -150,7 +161,8 @@ M8 **no** se acopla a teléfono, canal ni `principal.attrs.country`, y no contie
 - [x] `validate` con las cinco comprobaciones y la cadena de `generate` con T-M8-01…11 en verde (`uv run pytest tests/m08`).
 - [x] Conjunto de 30+ respuestas etiquetadas (ES y PT) para medir falsos rechazos: `tests/m08/labeled_set.py` (34 casos sintéticos). Falso rechazo del conjunto principal: 0/26 (ES 0, PT 0). Sondeo de números que no son cifras de negocio (P2): 8/8 rechazados por la comprobación `numbers` (ES 4/4, PT 4/4); se mide y no se relaja la regla.
 - [x] `ScriptedGateway` y su suite de contrato en `tests/contracts/test_gateway_contract.py`; `RequestCapture` conectado.
-- [x] `pages_model_view` vacío hasta M12 y sin importar `agent_core.knowledge`.
+- [x] `pages_model_view` vacío hasta M12 y sin importar `agent_core.knowledge`. **rev. 3:** lo llena `Responder.generate` desde `RunState.pages`; M8 sigue sin importar `agent_core.knowledge` (solo tipos de M0).
+- [x] Comprobaciones 6 y 7 (rev. 3): T-M8-13…15 en verde.
 - [x] Interfaz pública exportada y tipada (`mypy` strict), `import-linter` y `ruff` en verde.
 - [x] Reglas duras: sin hora, aleatoriedad, `float()` ni `json.loads` en `agent_core/response`; sin PII en `Failure.detail`, `RejectedDraft.reason` ni eventos.
 - [x] Abiertos de M8 resueltos (§11); quedan fuera de M8 los de M2 y M12.
@@ -168,6 +180,6 @@ Notas de la implementación (rev. 2): si `generate` termina en `EscalationReques
 - ~~**Semántica de idioma**~~ **Resuelto 2026-09-29:** compara `top2[0]` con `locale` (§3.1.5).
 - ~~**`allowed_facts` frente a `fact_id`**~~ **Resuelto 2026-09-29:** `Responder` traduce (§3.1.2).
 - ~~**Renderizado de plantillas**~~ **Resuelto 2026-09-29:** renderizador mínimo propio (§3.2).
-- **Abiertos que siguen fuera de M8:** ~~quién emite `response_emitted` para `respond(template_ref)`~~ (resuelto: M2, D6); `PageView`, `knowledge_from` y su comprobación de citas de páginas (M12, tema #10).
+- **Abiertos que siguen fuera de M8:** ~~quién emite `response_emitted` para `respond(template_ref)`~~ (resuelto: M2, D6); ~~`PageView`, `knowledge_from` y su comprobación de citas de páginas (M12, tema #10)~~ **resuelto 2026-09-30:** comprobaciones 6 y 7 (rev. 3).
 - ~~**Uso del LLM cuando `generate` escala**~~ **Resuelto 2026-09-29 (opción A):** evento nuevo `response_failed` (M0 §2.10; `contracts/` regenerado). El adaptador de M2 debe tomar `model_calls`, `tokens` y `cost_usd` de `response_emitted.llm` o de `response_failed.llm`.
 - **Nota (`.importlinter`):** el contrato `response` se llama "M8 (response) solo usa domain, ports y guards, views, knowledge". Es exacto como lista de dependencias permitidas (el contrato solo prohíbe el resto); M8 hoy no importa `knowledge`. No se toca.

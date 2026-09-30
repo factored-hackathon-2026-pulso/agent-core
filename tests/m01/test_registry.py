@@ -90,7 +90,7 @@ def test_unreadable_yaml_and_invalid_flow(tmp_path: Path) -> None:
     root = _copy(tmp_path)
     _write(root, "tools/roto@1.0.0.yaml", "id: roto\nversion: [1\n")
     _write(root, "flows/malo@1.0.0.yaml", "id: malo\nversion: 1.0.0\npriority: 1\nnodes:\n"
-                                          "  - {id: k, type: knowledge, config: {}}\n")
+                                          "  - {id: k, type: inventado, config: {}}\n")
     _, violations = load_registry(root)
     assert sorted((v.rule, (v.path or "").split("#")[0]) for v in violations) == [
         ("G0-01", "flows/malo@1.0.0.yaml"), ("G0-01", "tools/roto@1.0.0.yaml")]

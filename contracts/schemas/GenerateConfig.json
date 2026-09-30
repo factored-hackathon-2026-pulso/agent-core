@@ -32,7 +32,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "Configuración del nodo `generate` (M0 §2.5).",
+  "description": "Configuración del nodo `generate` (M0 §2.5).\n\n`knowledge_from` lista los `save_as` de nodos `knowledge` cuyas páginas puede citar la respuesta, y\n`purpose` dice para quién es (M12 §2: reemplaza a `knowledge_refs`). El defecto es el más estricto.",
   "properties": {
     "allowed_facts": {
       "items": {
@@ -44,15 +44,26 @@
     "fallback_template_ref": {
       "$ref": "#/$defs/RefSpec"
     },
-    "knowledge_refs": {
+    "knowledge_from": {
       "items": {
+        "pattern": "^[a-z][a-z0-9_]*$",
         "type": "string"
       },
-      "title": "Knowledge Refs",
+      "title": "Knowledge From",
       "type": "array"
     },
     "prompt_ref": {
       "$ref": "#/$defs/RefSpec"
+    },
+    "purpose": {
+      "default": "customer_answer",
+      "enum": [
+        "customer_answer",
+        "advisor_view",
+        "agent_guidance"
+      ],
+      "title": "Purpose",
+      "type": "string"
     }
   },
   "required": [

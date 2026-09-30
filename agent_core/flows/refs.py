@@ -10,6 +10,7 @@ from agent_core.domain import (
     DecideNode,
     EntityKind,
     Flow,
+    KnowledgeNode,
     Node,
     Prompt,
     RefSpec,
@@ -79,6 +80,8 @@ def node_ref_sites(node: Node, index: int) -> list[RefSite]:
                 add(EntityKind.prompt, node.config.generate.prompt_ref, "generate", "prompt_ref")
                 add(EntityKind.template, node.config.generate.fallback_template_ref, "generate",
                     "fallback_template_ref")
+        case KnowledgeNode():
+            add(EntityKind.decision_model, node.config.selector, "selector")
         case AgentNode():
             for i, ref in enumerate(node.config.tools_allowed):
                 sites.append(RefSite(EntityKind.tool, ref, (*base, "tools_allowed", i), node.id))

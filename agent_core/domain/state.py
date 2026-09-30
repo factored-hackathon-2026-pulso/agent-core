@@ -7,9 +7,19 @@ from typing import Any, Literal, Self
 
 from pydantic import Field, NonNegativeInt, model_validator
 
-from agent_core.domain.base import Locale, Model, MutableModel, NodeId, Probability, Sha256Hex, UtcDatetime
+from agent_core.domain.base import (
+    Locale,
+    Model,
+    MutableModel,
+    NodeId,
+    Probability,
+    SaveAs,
+    Sha256Hex,
+    UtcDatetime,
+)
 from agent_core.domain.identity import OnBehalfOf, Principal, SubjectRef
 from agent_core.domain.json import JsonValue
+from agent_core.domain.knowledge import PageView
 from agent_core.domain.outcomes import Awaiting, Mode, Outcome
 from agent_core.domain.refs import EntityRef
 
@@ -146,6 +156,7 @@ class RunState(MutableModel):
     slots: dict[str, Slot] = Field(default_factory=dict)
     facts: dict[str, Fact] = Field(default_factory=dict)
     decisions: dict[str, Decision] = Field(default_factory=dict)
+    pages: dict[SaveAs, list[PageView]] = Field(default_factory=dict)  # páginas de conocimiento; solo M12
     actions: list[Action] = Field(default_factory=list)
     token_map: EncryptedBlob | None = None
     open_questions: list[str] = Field(default_factory=list)
