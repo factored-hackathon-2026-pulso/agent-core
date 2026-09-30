@@ -9,6 +9,8 @@ from typing import Any
 
 import openai
 from openai import OpenAI
+from opentelemetry import trace
+from opentelemetry.trace import Span, Tracer
 
 from agent_core.adapters.llm.config import EndpointConfig, default_client
 from agent_core.adapters.llm.cost import price_of
@@ -39,11 +41,12 @@ class OpenAICompatGateway:
     """Gateway de generación sobre cualquier endpoint compatible con la API de OpenAI."""
 
     def __init__(self, registry: RegistryPort, endpoints: dict[str, EndpointConfig], env: Mapping[str, str],
-                 client_factory: ClientFactory = default_client) -> None:
+                 client_factory: ClientFactory = default_client, tracer: Tracer | None = None) -> None:
         self._registry = registry
         self._endpoints = endpoints
         self._env = env
         self._client_factory = client_factory
+        self._tracer = tracer or trace.get_tracer("agent_core.adapters.llm")
 
     def generate(self, prompt: EntityRef, inputs_model_view: dict[str, JsonValue], locale: Locale,
                  schema: dict[str, JsonValue] | None = None) -> GenerationResult:
@@ -53,6 +56,25 @@ class OpenAICompatGateway:
         text = prompt_def.locales.get(locale)
         if text is None:
             raise SchemaError(f"el prompt {prompt} no tiene el locale {locale}")
+        with self._tracer.start_as_current_span("chat") as span:
+            span.set_attribute("gen_ai.operation.name", "chat")
+            span.set_attribute("gen_ai.provider.name", profile.endpoint_alias)
+            span.set_attribute("gen_ai.request.model", profile.model)
+            span.set_attribute("agentcore.prompt", str(prompt))
+            span.set_attribute("agentcore.model_profile", str(prompt_def.model_profile.require_exact()))
+            try:
+                result = self._call(profile, text, inputs_model_view, schema)
+            except GatewayError as error:
+                # Solo tipo y uso; nunca `record_exception` (guardaría el mensaje de la excepción).
+                span.set_attribute("agentcore.gateway.error_kind", error.kind.value)
+                _set_usage(span, error.model, error.tokens_in, error.tokens_out)
+                raise
+            _set_usage(span, result.model, result.tokens_in, result.tokens_out)
+            return result
+
+    def _call(self, profile: ModelProfile, text: str, inputs: dict[str, JsonValue],
+              schema: dict[str, JsonValue] | None) -> GenerationResult:
+        """Resuelve endpoint y key, hace la request y traduce el resultado (spec §3.1)."""
         endpoint = self._endpoints.get(profile.endpoint_alias)
         if endpoint is None:
             _LOG.error("alias de endpoint sin configurar alias=%s", profile.endpoint_alias)
@@ -63,7 +85,7 @@ class OpenAICompatGateway:
             raise GatewayError(GatewayErrorKind.unavailable, model=profile.model)
         try:
             client = self._client_factory(endpoint, api_key, profile.timeout_s)
-            kwargs = _request(profile, text, inputs_model_view, schema)
+            kwargs = _request(profile, text, inputs, schema)
             response = _create(client, kwargs, profile, endpoint.alias)
             return _result(response, profile, schema)
         except GatewayError:
@@ -71,6 +93,14 @@ class OpenAICompatGateway:
         except Exception as error:  # nada más sale del adaptador; nunca se registra `str(error)`
             why = type(error).__name__
             raise _error(GatewayErrorKind.unavailable, endpoint.alias, profile, why) from None
+
+
+def _set_usage(span: Span, model: str | None, tokens_in: int | None, tokens_out: int | None) -> None:
+    """Deja en el span el modelo real y el uso, cuando se conocen."""
+    for name, value in (("gen_ai.response.model", model), ("gen_ai.usage.input_tokens", tokens_in),
+                        ("gen_ai.usage.output_tokens", tokens_out)):
+        if value is not None:
+            span.set_attribute(name, value)
 
 
 def _request(profile: ModelProfile, text: str, inputs: dict[str, JsonValue],
