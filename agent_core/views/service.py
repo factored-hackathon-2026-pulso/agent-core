@@ -16,7 +16,7 @@ from agent_core.views.detector import EMAIL_RE, MIN_DIGITS, digit_runs
 from agent_core.views.fingerprints import fingerprint
 from agent_core.views.quasi import Dropped, apply_quasi
 from agent_core.views.tokens import MASK, TOKEN_RE, mask, neutralize
-from agent_core.views.untrusted import wrap_untrusted
+from agent_core.views.untrusted import tokenize_free_text, wrap_untrusted
 from agent_core.views.vault import TokenVault
 
 _STRICT = ("pii_direct", "pii_quasi")
@@ -121,6 +121,10 @@ class ViewService:
             audit=_present(self._walk(data_full, source, ctx, self._audit_leaf)),
             fingerprint=fingerprint(data_full, self._keys),
         )
+
+    def tokenize_text(self, text: str, vault: TokenVault) -> str:
+        """Vista `model` del texto libre del usuario: la PII detectada pasa a tokens del run (sin envoltura)."""
+        return tokenize_free_text(text, vault)
 
     def render(self, text_model_view: str, vault: TokenVault, reader: Principal, purpose: str,
                on_behalf_of: OnBehalfOf | None = None) -> Rendered:

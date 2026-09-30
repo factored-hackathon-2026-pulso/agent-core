@@ -1,6 +1,6 @@
 # M7 — Vistas de datos y tokenización
 
-- Estado: rev. 2 (2026-09-29) · Fase 3
+- Estado: rev. 3 (2026-09-29) · Fase 3
 - Paquete: `agent_core.views`
 - Origen: spec general §8.1, §8.1.1, §4.8 (renderer), §12 (fugas), §13.6
 - ADRs: 0008 (vistas, `untrusted_text`, huellas con clave), 0003 (huellas del transcript)
@@ -41,6 +41,7 @@ class Rendered:  text: str; unknown_tokens: list[str]
 class ViewService:
     def __init__(self, keys: KeyProvider, authz: AuthzPort, clock: Clock, classifier: FieldClassifier | None = None)
     def project(self, data_full: JsonValue, source: str, untrusted_fields: list[str], vault: TokenVault) -> Views
+    def tokenize_text(self, text: str, vault: TokenVault) -> str        # texto libre del usuario → vista model
     def render(self, text_model_view: str, vault: TokenVault, reader: Principal, purpose: str,
                on_behalf_of: OnBehalfOf | None = None) -> Rendered
     def find_clear_pii(self, text: str, facts_full: Mapping[str, JsonValue]) -> list[str]  # M8, check 4
@@ -67,6 +68,8 @@ def verify_fingerprint(data: Any, fp: Fingerprint, keys: KeyProvider) -> bool
 | `pii_quasi` | operación de su `QuasiRule`: `drop` elimina el campo; `age_bucket` convierte una fecha `AAAA-MM-DD` en un rango de `width` años (`"30-39"`) con la fecha del `Clock`; una fecha inválida o futura se elimina |
 | `untrusted_text` | NFKC, neutralización de `⟦`/`⟧`, escape de toda etiqueta `<datos_no_confiables` o `</datos_no_confiables` (sin distinguir mayúsculas) como `&lt;…`, PII interna tokenizada con el detector de patrones (documento, teléfono, email, cuenta) y envoltura `<datos_no_confiables fuente="tabla.campo">…</datos_no_confiables>` |
 | `financial`, `public` | pasan, con `⟦`/`⟧` neutralizados en textos y claves para que nadie falsifique un token |
+
+**Texto libre del usuario (`tokenize_text`):** el mensaje del usuario a vista `model` para M6, M5 y el transcript (`TurnRuntime.model_text`, M4). Aplica lo mismo que `untrusted_text` (NFKC, neutralización de `⟦`/`⟧`, escape de etiquetas `<datos_no_confiables`, PII detectada → tokens del vault) pero **sin** la envoltura `<datos_no_confiables>`. Sin PII el texto sale igual (salvo NFKC).
 
 **Formato del token:** `⟦<tag>:<n>⟧`, p. ej. `⟦doc:1⟧`, `⟦tx:3⟧`; `n` es un contador por tag dentro del run. Regex: `⟦([a-z]{1,12}):([1-9][0-9]*)⟧`.
 
@@ -143,6 +146,7 @@ Ninguno propio. Sus vistas `audit` y huellas van dentro de los eventos de otros 
 | T-M7-08 | Con la huella y los campos visibles de `audit`, probar todos los documentos de un rango no recupera el valor sin la clave | 6 |
 | T-M7-09 | Campo sin clasificar → tokenizado | — |
 | T-M7-10 | `seal`/`open` del `token_map` hace round-trip | — |
+| T-M7-11 | `tokenize_text` cambia la PII del texto por tokens del vault, sin envoltura; mismo valor, mismo token; token o etiqueta falsos se neutralizan | 6 |
 
 ## 8. Evaluación
 
@@ -167,4 +171,5 @@ Ninguno. Resueltos en rev. 2 (2026-09-29): formato del token (§3.2) y generaliz
 
 ## Cambios
 
+- rev. 3 (2026-09-29): `ViewService.tokenize_text(text, vault)` (T-M7-11), pedido por el cableado del motor: `TurnRuntime.model_text` no tenía API pública en M7 (el detector solo se usaba dentro de `untrusted_text`).
 - rev. 2 (2026-09-29): formato `⟦tag:n⟧` adoptado; `pii_quasi` como regla de datos (`QuasiRule`, por defecto `drop`); catálogo por defecto solo §8.1 + override; `TokenVault(run_id, keys, ids)`, `tokenize(value, field, tag)`, `lookup`, `open(blob, run_id, keys, ids)`; `Views.fingerprint`; `render(..., on_behalf_of) -> Rendered`; `find_clear_pii` definido (§3.7); detector definido (§3.2); AES-GCM con HKDF y AAD por run (§3.4).

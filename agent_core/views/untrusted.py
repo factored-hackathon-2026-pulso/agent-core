@@ -17,7 +17,8 @@ def escape_tags(text: str) -> str:
     return _FAKE_TAG_RE.sub(r"&lt;\1", text)
 
 
-def wrap_untrusted(text: str, source: str, vault: TokenVault) -> str:
+def tokenize_free_text(text: str, vault: TokenVault) -> str:
+    """NFKC, neutraliza `⟦`/`⟧`, escapa etiquetas falsas y cambia la PII detectada por tokens del vault."""
     # NFKC primero: convierte dígitos y signos de ancho completo antes de escapar y detectar.
     clean = escape_tags(neutralize(unicodedata.normalize("NFKC", text)))
     parts: list[str] = []
@@ -27,5 +28,9 @@ def wrap_untrusted(text: str, source: str, vault: TokenVault) -> str:
         parts.append(vault.tokenize(hit.value, hit.field, hit.tag))
         cursor = hit.end
     parts.append(clean[cursor:])
+    return "".join(parts)
+
+
+def wrap_untrusted(text: str, source: str, vault: TokenVault) -> str:
     fuente = html.escape(neutralize(source), quote=True)
-    return f'<{TAG} fuente="{fuente}">{"".join(parts)}</{TAG}>'
+    return f'<{TAG} fuente="{fuente}">{tokenize_free_text(text, vault)}</{TAG}>'
