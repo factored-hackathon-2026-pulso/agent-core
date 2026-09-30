@@ -339,7 +339,11 @@ Se monta en la app FastAPI de M9 con la misma autenticación JWS, `problem+json`
 
 ### 7.5 CLI (`agentcore registry …`)
 
-`import`, `export`, `propose`, `draft <propuesta> <archivos-o-carpeta>` (YAML con el formato de M1), `validate`, `freeze`, `evaluate`, `approve`, `reject`, `publish`, `promote`, `revoke`, `diff` y `lineage`. Es un cliente delgado sobre `RegistryService`, sin lógica propia. El ciclo manual queda así: `export` → editar en el editor → `draft` → `freeze` → `evaluate` → `approve` → `publish`.
+`import`, `export`, `propose`, `draft <propuesta> <archivos-o-carpeta>` (YAML con el formato de M1), `validate`, `freeze`, `evaluate`, `approve`, `reject`, `publish`, `promote`, `revoke`, `diff` y `lineage`. Es un cliente delgado sobre `RegistryService`, sin lógica propia.
+
+Formato de cada archivo de `draft` (una entidad por archivo YAML; una carpeta se recorre de forma recursiva): `{kind, docs: {description, rationale, changelog}, content: {...}}`, donde `content` es la entidad en el formato de M1. Las opciones globales son `--dsn` (o `AGENTCORE_REGISTRY_DSN`), `--credential` (o `AGENTCORE_CREDENTIAL`, el JWS del principal), `--verifier` y `--harness` (rutas `modulo:atributo`; por defecto las de `testing.registry_demo`, que son dobles de PRUEBA). `lineage` por CLI construye el servicio sin `RunReleaseReader` y responde `not_found` hasta que se cablee un lector de runs.
+
+El ciclo manual queda así: `export` → editar en el editor → `draft` → `freeze` → `evaluate` → `approve` → `publish`.
 
 ## 8. Roles y seguridad
 

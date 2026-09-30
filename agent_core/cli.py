@@ -225,7 +225,12 @@ def main(
     record.add_argument("--registry", type=Path, default=None,
                         help="directorio del registro de autoría sobre el que se graba")
     record.add_argument("--catalog", type=Path, default=None, help="catálogo de datos de prueba")
+    from agent_core.composition.registry import add_registry_parser, run_registry_cli
+
+    add_registry_parser(sub)
     args = parser.parse_args(argv)
+    if args.command == "registry":
+        return run_registry_cli(args, clock=SystemClock(), ids=SystemIds(), env=os.environ.get)
     if args.command == "sweep":
         return _run_sweep(args, sweeper, clock)
     if args.command == "contracts":

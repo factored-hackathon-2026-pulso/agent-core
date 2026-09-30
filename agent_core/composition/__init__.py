@@ -2,10 +2,13 @@
 
 from agent_core.composition.decision import DecisionAdapter
 from agent_core.composition.engine import DerivedTrace, EngineConfig, EngineDeps, build_turn_engine
+from agent_core.composition.evaluation import EngineScenarioHarness, EvalStorage
+from agent_core.composition.registry import UowRunReleases, build_registry_service
 from agent_core.composition.responder import ContextFactory, ResponderAdapter
 from agent_core.composition.runtime import EngineRuntime, EngineRuntimeFactory, RuntimeConfig
 
 __all__ = [
     "ContextFactory", "DecisionAdapter", "DerivedTrace", "EngineConfig", "EngineDeps", "EngineRuntime",
-    "EngineRuntimeFactory", "ResponderAdapter", "RuntimeConfig", "build_turn_engine",
+    "EngineRuntimeFactory", "EngineScenarioHarness", "EvalStorage", "ResponderAdapter", "RuntimeConfig",
+    "UowRunReleases", "build_registry_service", "build_turn_engine",
 ]
