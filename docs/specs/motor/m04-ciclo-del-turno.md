@@ -243,3 +243,13 @@ Detalles de implementación que el spec no fijaba (revisar):
 - **Cadena de auditoría concurrente:** si dos UoW encadenan el mismo `seq` sin pasar por `save_run` (p. ej. `append_standalone` de M9 contra un turno), la segunda falla con `VersionConflict` (mapeo de `UniqueViolation`), no con un error crudo de psycopg.
 - **Revisión (2026-09-29), no aplicado:** `Outbox.mark_delivered` usa `now()` de SQL (el puerto no recibe hora); `apply_schema` solo da GRANT sobre `audit_events`; el barrido aborta entero si el registro no tiene el agente de un run (`SchemaError`), y ese lease queda hasta su TTL.
 - **Pendiente:** un turno que falla deja el lease hasta su TTL si la liberación también falla (ver §13); el barrido lo deja igual si el registro no tiene el agente (exit 1).
+
+## 16. Composición del motor (2026-09-29)
+
+- **Dónde vive:** `agent_core/composition/` (decisión del usuario, opción A). `build_turn_engine(EngineDeps)` arma `TurnEngine` con M2, M3, M5, M6, M7, M8, M10 y M11 reales; todo lo del mundo exterior (almacenamiento, LLM, proveedores, tools, autorización, reloj, IDs) entra por `EngineDeps`. `agent_core.turn` sigue sin importar `response`, `views`, `flows` ni `adapters`.
+- **`EngineRuntimeFactory`** (`RuntimeFactory` real, C1): la release fijada sale de `EngineDeps.releases` (el `RegistryPort` no lee una release por id); el vault se abre desde `state.token_map`; `model_text` usa `ViewService.tokenize_text` (M7 rev. 3); `render` usa `ViewService.render` con el principal y propósito `respond`; `sealed_token_map` sella solo si el turno agregó tokens; `bound_params` salen de `AuthzPort.bind_params`.
+- **`ResponderAdapter`** arma el `ResponderContext` por nodo: hechos en vista `model` con `Projector` (M2 rev. 3), cierre `find_clear_pii`, `lang_cfg` de la release y umbrales de `EngineConfig.lang_thresholds`. `number_format` es un dato de despliegue (`EngineConfig`, m08 §3.3).
+- **`turn_id` de los eventos de M2:** `DecisionPort` y `ResponderPort` no reciben `turn_id`, así que `decision_made` y `response_emitted` de esos nodos llegaban con `turn_id = None`. `EventBuffer(turn_id)` lo completa al agregar (solo si viene `None`).
+- **Los eventos de M2 no pasan por el sink** sino por `EventBuffer.add` (vía `Closer.apply_outcome`); el sink solo recibe los de M3.
+- **No resuelto aquí:** `respond(template_ref)` sigue sin emitir `response_emitted` (D6, decidido fuera de este cambio); `Rendered.unknown_tokens` de `render` no se registra; el cobro de `run_tokens`/`run_cost` de Understand (M4 solo suma `cost_usd` a su contador de costo) es aparte del contador de llamadas.
+- Pruebas: `tests/composition/` (`EngineWorld` con puertos externos guionados y el registro demo `tests/composition/fixtures/registry`).

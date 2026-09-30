@@ -54,3 +54,14 @@ def test_sin_reserva_no_llama_a_ensure_y_vuelca_pendientes_primero() -> None:
     assert calls == []
     assert types(store, store.events[state.run_id]) == ["expiry_evaluated", "run_closed"]
     assert buf.peek() == []
+
+
+def test_el_buffer_completa_el_turn_id_de_los_eventos_que_llegan_sin_el() -> None:
+    """Los puertos de M2 (`DecisionPort`, `ResponderPort`) no reciben `turn_id`: sus eventos traen `None`."""
+    ev, _, _, _ = setup()
+    state = run_state()
+    buf = EventBuffer(turn_id="turn-7")
+    sin_turno = ev.run_closed(state, None, Outcome.abandoned, "abandonment")
+    con_turno = ev.run_closed(state, "turn-1", Outcome.abandoned, "abandonment")
+    buf.add(sin_turno, con_turno)
+    assert [e.turn_id for e in buf.peek()] == ["turn-7", "turn-1"]

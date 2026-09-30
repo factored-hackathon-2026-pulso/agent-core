@@ -61,6 +61,8 @@ Un módulo solo importa `agent_core.domain`, `agent_core.ports` y la **interfaz 
 | M9 | M0, M4, M10, M11 | apps |
 | M12 | M0, M7 | M2 (nodo `knowledge`), M8 |
 
+**Raíces de composición (2026-09-29):** `agent_core.cli` y `agent_core.composition` no son módulos: cablean M2–M11 con adaptadores y pueden importarlo todo; ningún módulo puede importarlas (`.importlinter` las prohíbe en todos los contratos y `test_lint_rules` lo exige). `composition` contiene `build_turn_engine`, el `RuntimeFactory` real sobre M7 y los adaptadores M5 → `DecisionPort` y M8 → `ResponderPort`.
+
 Orden de construcción sin dependencias rotas: M0 → M1 → M7 → M3 → M2 → M11 → M10 → M4 → M9 → M6 → M5 → M8 → M12.
 
 ## 4. Puertos (M0) y sus dobles de prueba

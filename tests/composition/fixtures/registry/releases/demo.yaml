@@ -1,0 +1,7 @@
+id: demo
+agents:
+  - {agent: "atencion@^1", aliases: [prod]}
+flows: ["disputa-cargo@^1"]
+interrupts: []
+language_detection: "lang-es-pt@1"
+injection_ruleset: "injection-rules@1"

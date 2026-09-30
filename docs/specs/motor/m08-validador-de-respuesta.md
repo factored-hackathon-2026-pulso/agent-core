@@ -43,7 +43,7 @@ class Responder:
 ```
 
 - `LlmUsage` es el de M0: `calls, latency_ms, tokens_in, tokens_out, cost_usd, cost_known, models`. `cost_known = false` si alguna llamada falló con `GatewayError` sin costo.
-- M8 no importa `agent_core.interpreter`: el adaptador hacia el `ResponderPort`/`GenerateResult` de M2 (que toma `model_calls`, `tokens` y `cost_usd` de `response_emitted.llm`) vive fuera de M8 (M2 o el cableado de M4); ese adaptador toma el uso de `response_emitted.llm` o de `response_failed.llm`.
+- M8 no importa `agent_core.interpreter`: el adaptador hacia el `ResponderPort`/`GenerateResult` de M2 (que toma `model_calls`, `tokens` y `cost_usd` de `response_emitted.llm`) vive fuera de M8, en `agent_core.composition.ResponderAdapter` (implementado 2026-09-29; recibe una fábrica que arma el `ResponderContext` de cada nodo); ese adaptador toma el uso de `response_emitted.llm` o de `response_failed.llm`.
 - `ResponderContext` (puertos `LLMGateway`, `Clock`, `IdSource`, `RegistryPort`, `resolve_ref` inyectado por M2, `ValidationContext` armado por quien llama, `claims`, `max_regenerations`) lo construye quien cablea; M8 no lee hora ni aleatoriedad.
 - `M8` emite `response_emitted` solo desde `generate`; quién lo emite para `respond(template_ref)` directo sigue abierto en M2.
 

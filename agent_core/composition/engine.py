@@ -1,0 +1,96 @@
+"""`build_turn_engine`: compone `TurnEngine` con M2, M3, M5, M6, M7, M8, M10 y M11 reales (m04 §15).
+
+Todo lo que toca el mundo (Postgres, LLM, tools, autorización, reloj, IDs) entra por `EngineDeps`: con dobles
+guionados es el motor de las pruebas y del replay `fixture`; con adaptadores reales, el de `agentcore`."""
+
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
+
+from agent_core.actions import ActionManager
+from agent_core.audit import AuditLog, TurnRecorder
+from agent_core.composition.runtime import EngineRuntimeFactory, RuntimeConfig
+from agent_core.decision import DecisionProvider, DecisionService, UnderstandService
+from agent_core.decision.calibration.artifact import CalibrationSource
+from agent_core.domain import RefSpec, Release
+from agent_core.guards import GuardService, LangThresholds
+from agent_core.handoff import HandoffService
+from agent_core.interpreter import CircuitBreaker
+from agent_core.ports import (
+    AuditSink,
+    AuthzPort,
+    Clock,
+    IdSource,
+    KeyProvider,
+    LLMGateway,
+    RegistryPort,
+    ToolExecutor,
+    TranscriptStore,
+    UnitOfWorkFactory,
+)
+from agent_core.response import NumberFormat
+from agent_core.turn import DecisionUnderstand, TraceIds, TurnConfig, TurnEngine
+from agent_core.views import FieldClassifier, ViewService
+
+
+@dataclass(frozen=True)
+class EngineConfig:
+    """Datos de despliegue: nada de esto sale de la release."""
+
+    turn: TurnConfig = field(default_factory=TurnConfig)
+    recent_turns: int = 6                 # entradas del transcript que ve Understand (m04 §14)
+    slots_model: RefSpec | None = None    # 2.ª llamada de slots (ADR 0005); sin él M5 no la hace
+    number_format: NumberFormat | None = None
+    max_regenerations: int = 1
+    priority: str = "normal"
+    lang_thresholds: Mapping[str, LangThresholds] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class EngineDeps:
+    clock: Clock
+    ids: IdSource
+    keys: KeyProvider
+    uow_factory: UnitOfWorkFactory
+    audit: AuditSink
+    registry: RegistryPort
+    releases: Callable[[str], Release]    # release fijada del run por id (el `RegistryPort` no la lee)
+    tools: ToolExecutor
+    gateway: LLMGateway
+    providers: Mapping[str, DecisionProvider]
+    calibrations: CalibrationSource
+    transcript: TranscriptStore
+    authz: AuthzPort
+    classifier: FieldClassifier | None = None
+    trace: TraceIds | None = None
+    config: EngineConfig = field(default_factory=EngineConfig)
+
+
+class DerivedTrace:
+    """`TraceIds` por defecto: el `trace_id` se deriva del turno (M9 lo reemplaza con el del request)."""
+
+    def current(self, turn_id: str) -> str:
+        return f"trace-{turn_id}"
+
+
+def build_turn_engine(deps: EngineDeps) -> TurnEngine:
+    cfg = deps.config
+    views = ViewService(deps.keys, deps.authz, deps.clock, deps.classifier)
+    decisions = DecisionService(deps.registry, deps.providers, deps.calibrations, deps.clock, deps.ids)
+    actions = ActionManager(deps.ids, deps.clock)
+    runtimes = EngineRuntimeFactory(
+        clock=deps.clock, ids=deps.ids, keys=deps.keys, registry=deps.registry, releases=deps.releases,
+        tools=deps.tools, gateway=deps.gateway, decisions=decisions, actions=actions, views=views,
+        uow_factory=deps.uow_factory, authz=deps.authz, breaker=CircuitBreaker(),
+        config=RuntimeConfig(number_format=cfg.number_format, max_regenerations=cfg.max_regenerations,
+                             priority=cfg.priority, lang_thresholds=cfg.lang_thresholds))
+    return TurnEngine(
+        uow_factory=deps.uow_factory, registry=deps.registry, clock=deps.clock, ids=deps.ids,
+        guards=GuardService(deps.registry, deps.clock, deps.ids, dict(cfg.lang_thresholds)),
+        understand=DecisionUnderstand(UnderstandService(decisions), deps.transcript,
+                                      recent_turns=cfg.recent_turns, slots_model=cfg.slots_model),
+        actions=actions,
+        handoff=HandoffService(uow_factory=deps.uow_factory, registry=deps.registry, views=views,
+                               authz=deps.authz, keys=deps.keys, clock=deps.clock, ids=deps.ids),
+        recorder=TurnRecorder(deps.transcript, deps.keys), chain=AuditLog(deps.audit),
+        audit=deps.audit, runtimes=runtimes, trace=deps.trace or DerivedTrace(), config=cfg.turn,
+        authz=deps.authz)

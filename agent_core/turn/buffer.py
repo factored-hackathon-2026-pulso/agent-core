@@ -11,7 +11,8 @@ from agent_core.turn.ports import EventChain
 
 
 class EventBuffer:
-    def __init__(self) -> None:
+    def __init__(self, turn_id: str | None = None) -> None:
+        self._turn_id = turn_id
         self._events: list[EngineEvent] = []
         self._reserved = False
         self._turn_started: EngineEvent | None = None
@@ -25,7 +26,13 @@ class EventBuffer:
         return self._turn_started is not None
 
     def add(self, *events: EngineEvent) -> None:
-        self._events.extend(events)
+        # Los puertos de M2 (`DecisionPort`, `ResponderPort`) no reciben `turn_id`: sus eventos llegan sin él.
+        self._events.extend(self._with_turn(event) for event in events)
+
+    def _with_turn(self, event: EngineEvent) -> EngineEvent:
+        if event.turn_id is not None or self._turn_id is None:
+            return event
+        return event.model_copy(update={"turn_id": self._turn_id})
 
     def reserve_turn_started(self) -> None:
         self._reserved = True

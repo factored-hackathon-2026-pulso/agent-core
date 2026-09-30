@@ -139,7 +139,7 @@ class TurnEngine:
         meter: StageMeter,
         release: Any,
     ) -> TurnFrame:
-        buffer = EventBuffer()
+        buffer = EventBuffer(turn_id)
         frame = TurnFrame(
             uow=uow,
             state=state,
