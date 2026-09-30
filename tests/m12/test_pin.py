@@ -19,8 +19,8 @@ LANG = LanguageDetection.model_validate(
 def _registry(d: dict[str, Any], *extra: Any, knowledge: str | None = "kb-base@1") -> AuthoringRegistry:
     d["id"] = "base"
     decl = ReleaseDecl.model_validate({
-        "id": "r", "agents": [{"agent": "atencion@1"}], "flows": ["base@1.0.0"], "language_detection": "lang@1",
-        **({"knowledge": knowledge} if knowledge else {})})
+        "id": "r", "agents": [{"agent": "atencion@1"}], "flows": ["base@1.0.0"],
+        "language_detection": "lang@1", **({"knowledge": knowledge} if knowledge else {})})
     return AuthoringRegistry.from_entities([*ENTITIES, flow(d), agent(), LANG, *extra], [decl])
 
 
