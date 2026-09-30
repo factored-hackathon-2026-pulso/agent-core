@@ -2,16 +2,21 @@
 
 import logging
 from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from decimal import Decimal
 from typing import Any
 
+import openai
 from openai import OpenAI
 
 from agent_core.adapters.llm.config import EndpointConfig, default_client
 from agent_core.adapters.llm.cost import price_of
-from agent_core.adapters.llm.output import parse_output
+from agent_core.adapters.llm.output import OutputError, parse_output
 from agent_core.domain import (
     EntityRef,
+    GatewayError,
+    GatewayErrorKind,
     JsonValue,
     Locale,
     ModelProfile,
@@ -42,16 +47,23 @@ class OpenAICompatGateway:
 
     def generate(self, prompt: EntityRef, inputs_model_view: dict[str, JsonValue], locale: Locale,
                  schema: dict[str, JsonValue] | None = None) -> GenerationResult:
-        """Genera una respuesta del modelo del perfil del prompt (camino feliz; errores en la Task 4)."""
+        """Genera una respuesta del modelo del perfil del prompt; solo lanza `GatewayError` (spec §3.2)."""
         prompt_def = self._registry.get(prompt, Prompt)
         profile = self._registry.get(prompt_def.model_profile.require_exact(), ModelProfile)
         text = prompt_def.locales.get(locale)
         if text is None:
             raise SchemaError(f"el prompt {prompt} no tiene el locale {locale}")
-        endpoint = self._endpoints[profile.endpoint_alias]  # los errores de alias llegan en la Task 4
-        client = self._client_factory(endpoint, self._env["OPENROUTER_API_KEY"], profile.timeout_s)
+        endpoint = self._endpoints.get(profile.endpoint_alias)
+        if endpoint is None:
+            _LOG.error("alias de endpoint sin configurar alias=%s", profile.endpoint_alias)
+            raise GatewayError(GatewayErrorKind.unavailable, model=profile.model)
+        api_key = self._env.get(endpoint.api_key_env, "").strip()
+        if not api_key:
+            _LOG.error("variable de key vacía alias=%s", endpoint.alias)
+            raise GatewayError(GatewayErrorKind.unavailable, model=profile.model)
+        client = self._client_factory(endpoint, api_key, profile.timeout_s)
         kwargs = _request(profile, text, inputs_model_view, schema)
-        response = client.chat.completions.create(**kwargs)
+        response = _create(client, kwargs, profile, endpoint.alias)
         return _result(response, profile, schema)
 
 
@@ -73,17 +85,60 @@ def _request(profile: ModelProfile, text: str, inputs: dict[str, JsonValue],
     return kwargs
 
 
+def _create(client: OpenAI, kwargs: dict[str, Any], profile: ModelProfile, alias: str) -> Any:
+    """Una request con plazo total de `timeout_s` y errores traducidos (spec §3.1 paso 5 y §3.2)."""
+    pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="llm-gateway")
+    future = pool.submit(lambda: client.chat.completions.create(**kwargs))
+    try:
+        return future.result(timeout=profile.timeout_s)
+    except FutureTimeout:
+        raise _error(GatewayErrorKind.timeout, alias, profile, "plazo total") from None
+    except openai.APITimeoutError:
+        raise _error(GatewayErrorKind.timeout, alias, profile, "timeout") from None
+    except openai.RateLimitError:
+        raise _error(GatewayErrorKind.rate_limited, alias, profile, "429") from None
+    except openai.APIStatusError as error:
+        raise _error(GatewayErrorKind.unavailable, alias, profile, f"http {error.status_code}") from None
+    except Exception as error:  # conexión, transporte o algo no previsto: nada más sale del adaptador
+        raise _error(GatewayErrorKind.unavailable, alias, profile, type(error).__name__) from None
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+
+
+def _error(kind: GatewayErrorKind, alias: str, profile: ModelProfile, why: str) -> GatewayError:
+    """Registra solo alias, tipo y motivo corto (nunca el mensaje de la excepción) y arma el error."""
+    _LOG.warning("gateway %s alias=%s model=%s causa=%s", kind.value, alias, profile.model, why)
+    return GatewayError(kind, model=profile.model)
+
+
 def _result(response: Any, profile: ModelProfile, schema: dict[str, JsonValue] | None) -> GenerationResult:
-    choice = response.choices[0]
-    content = choice.message.content or ""
-    output: JsonValue = parse_output(content, schema) if schema is not None else content
+    """Traduce la respuesta del proveedor a `GenerationResult` o a `GatewayError` con el uso informado."""
     usage = response.usage
+    tokens_in = usage.prompt_tokens if usage is not None else None
+    tokens_out = usage.completion_tokens if usage is not None else None
+    cost = (price_of(profile.price, usage.prompt_tokens, usage.completion_tokens)
+            if usage is not None else None)
+    model = response.model or profile.model
+
+    def fail(kind: GatewayErrorKind, why: str) -> GatewayError:
+        _LOG.warning("gateway %s model=%s causa=%s", kind.value, model, why)
+        return GatewayError(kind, tokens_in=tokens_in, tokens_out=tokens_out, cost_usd=cost, model=model)
+
+    if not response.choices:
+        raise fail(GatewayErrorKind.invalid_output, "sin choices")
+    choice = response.choices[0]
+    if choice.finish_reason == "content_filter" or getattr(choice.message, "refusal", None):
+        raise fail(GatewayErrorKind.refused, "rechazo del modelo")
+    content = choice.message.content or ""
+    output: JsonValue = content
+    if schema is not None:
+        if choice.finish_reason == "length":
+            raise fail(GatewayErrorKind.invalid_output, "salida truncada")
+        try:
+            output = parse_output(content, schema)
+        except OutputError as error:
+            raise fail(GatewayErrorKind.invalid_output, error.reason) from None
     if usage is None:
-        _LOG.warning("respuesta sin usage model=%s", response.model)
-        tokens_in = tokens_out = 0
-        cost = Decimal("0")
-    else:
-        tokens_in, tokens_out = usage.prompt_tokens, usage.completion_tokens
-        cost = price_of(profile.price, tokens_in, tokens_out)
-    return GenerationResult(output=output, tokens_in=tokens_in, tokens_out=tokens_out, cost_usd=cost,
-                            model=response.model or profile.model)
+        _LOG.warning("respuesta sin usage model=%s", model)
+    return GenerationResult(output=output, tokens_in=tokens_in or 0, tokens_out=tokens_out or 0,
+                            cost_usd=cost if cost is not None else Decimal("0"), model=model)

@@ -91,7 +91,6 @@ def test_a_single_code_block_around_the_json_is_accepted(respx_mock: MockRouter)
     assert output == {"text": "hola", "citations": []}
 
 
-@pytest.mark.skip(reason="Task 4")
 def test_text_around_the_json_is_invalid_output_even_with_a_code_block(respx_mock: MockRouter) -> None:
     respx_mock.post(CHAT).respond(200, json=completion("Aquí va:\n```json\n" + GOOD_JSON + "\n```"))
     with pytest.raises(GatewayError) as caught:
