@@ -96,7 +96,7 @@ def calibrate(model_def, dev_split: Sequence[DevExample], providers, *, targets:
 ### 3.2 Understand
 
 - Esquema cerrado, armado por release (no muta el `DecisionModelDef` del registro): `command` (enum de `Command`), `flow` (enum de flows de la release), `interrupt` (enum de interrupciones de la release), `additional_flows` (lista del enum de flows), `slots` (único objeto libre).
-- Entrada al proveedor (vista `model`): `{text, recent_turns, current_node, confirm_pending}`.
+- Entrada al proveedor (vista `model`): `{text, recent_turns, current_node, confirm_pending}`. `recent_turns` sigue la política del tema #12 (n fijo de 6 turnos, truncado sin resumen; m04, cableado de M5).
 - Campos calibrados: `command`, `flow` (solo con `start_flow`), `interrupt` (solo con `interrupt`). Los demás `above_threshold` se omiten (no `false`); `additional_flows` y `slots` nunca llevan umbral.
 - Cadena agotada: `command = clarify` con `above_threshold["command"] = false` (valor neutro; M4 decide qué hacer).
 - Umbrales de `interrupt` se fijan por **recall** (objetivo en `target`); el resto por precisión.

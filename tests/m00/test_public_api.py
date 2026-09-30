@@ -14,7 +14,7 @@ def test_domain_exports() -> None:
                  "EscalationRequest", "RejectedDraft", "ConfirmationPrompt", "TurnResult", "SCHEMA_VERSION",
                  "GatewayError", "GatewayErrorKind", "KnowledgePage", "KnowledgeSnapshot"]:
         assert hasattr(domain, name), name
-    assert domain.SCHEMA_VERSION == "0.5.0"
+    assert domain.SCHEMA_VERSION == "0.7.0"
 
 
 def test_ports_exports() -> None:
@@ -113,7 +113,7 @@ def test_every_port_is_a_protocol_with_exactly_the_spec_methods() -> None:
 
 def test_generation_result_reports_tokens_in_and_out() -> None:
     fields = set(ports.GenerationResult.model_fields)
-    assert fields == {"output", "tokens_in", "tokens_out", "cost_usd", "model"}
+    assert fields == {"output", "tokens_in", "tokens_out", "cost_usd", "model", "usage_known"}
 
 
 def test_tool_result_fields_match_spec() -> None:

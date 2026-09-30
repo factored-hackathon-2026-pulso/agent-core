@@ -1,7 +1,7 @@
 # ADR 0015 — Consumo de conocimiento: nodo `knowledge`, páginas OKF y puerto `KnowledgeSource`
 
 - Estado: aceptado (2026-09-28). **Renumerado desde 0009** el 2026-09-28 (tema #8 de la auto-revisión: el número 0009 ya correspondía a políticas protegidas).
-- **Integración pendiente:** la spec del motor todavía no refleja esta decisión (nodo `knowledge`, `knowledge_from[]`, `purpose`, reglas de validación y comprobaciones del validador). Ver tema #10 de `TEMAS-ABIERTOS-PENDIENTES.md`.
+- **Integración:** aprobada como diseño el 2026-09-30 en `docs/specs/motor/m12-conocimiento.md` (nodo `knowledge`, `knowledge_from[]`, `purpose`, reglas de validación y comprobaciones del validador); la construcción va a la fase 2. Ver tema #10 de `TEMAS-ABIERTOS-PENDIENTES.md`.
 - Unidad: 1 · Motor de decisión (contrato compartido con las unidades 3 y 7)
 - Origen: hallazgo U11 de la revisión externa (el catálogo de nodos no tenía mecanismo de recuperación de conocimiento)
 - Spec: `docs/specs/2026-09-28-motor-de-decision-design.md` §8.4

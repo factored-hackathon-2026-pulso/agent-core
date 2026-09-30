@@ -1,6 +1,6 @@
 # Spec — Motor de decisión (unidad 1: orquestación + JEV)
 
-- Estado: **borrador para revisión final**. Todos los hallazgos de la revisión externa quedaron resueltos (§16). Los temas de la auto-revisión posterior se siguen en `TEMAS-ABIERTOS-PENDIENTES.md`.
+- Estado: **borrador para revisión final**. El nodo `knowledge` del ADR 0015 se integra en `motor/m12-conocimiento.md` (diseño aprobado el 2026-09-30, construcción en fase 2); esta spec no lo repite. Todos los hallazgos de la revisión externa quedaron resueltos (§16). Los temas de la auto-revisión posterior se siguen en `TEMAS-ABIERTOS-PENDIENTES.md`.
 - Fecha: 2026-09-28
   - rev. 2: resoluciones C1, C2 y C7.
   - rev. 3: resoluciones de severidad alta y corte MVP.

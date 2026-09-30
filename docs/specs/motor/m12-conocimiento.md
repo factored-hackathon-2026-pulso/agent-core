@@ -1,6 +1,6 @@
 # M12 — Conocimiento (nodo `knowledge`)
 
-- Estado: **propuesta de integración del ADR 0015; cierra el tema #10 cuando se apruebe.** Fase por decidir.
+- Estado: **diseño aprobado el 2026-09-30 (cierra el tema #10); construcción en fase 2, fuera del MVP de la demo.**
 - Paquete: `agent_core.knowledge`
 - Origen: ADR 0015 (la spec general todavía no lo refleja), spec general §8.3 (citas de páginas), §14 (unidad 7)
 - ADRs: 0015 (nodo `knowledge`, páginas OKF, `purpose`, snapshot, `KnowledgeSource`), 0008 (vistas), 0007 (reclamos)
@@ -123,12 +123,12 @@ Respuestas con citas a páginas no aprobadas que escapan (objetivo 0), tasa de `
 
 ## 10. Definición de terminado
 
-- Decisiones de la sección 11 aprobadas y la spec general actualizada (cierra el tema #10).
+- Decisiones de la sección 11 aprobadas (2026-09-30) y la spec general apuntando a este documento (cierra el tema #10).
 - `read` + filtros + comprobaciones 6 y 7 + G0-17…G0-21 con T-M12-01…06 en verde.
 
-## 11. Abiertos (decisiones para cerrar el tema #10)
+## 11. Decisiones (2026-09-30, cierran el tema #10)
 
-1. ¿Entra `read` en el MVP de construcción (30/09–02/10)? ADR 0015 dice que sí; el calendario está apretado.
-2. Numeración propuesta: G0-17…G0-21 y comprobaciones 6–7.
-3. Hechos de conocimiento fuera de los reclamos (3.5).
-4. Resultado ante caída del `KnowledgeSource`: `not_found` o un `error` propio.
+1. **`read` en el MVP de construcción:** no. El calendario (congelamiento 02/10) no lo permite; se construye en la fase 2 y `navigate` queda fuera del MVP.
+2. **Numeración:** G0-17…G0-21 y comprobaciones 6 y 7 del validador de respuesta, como se propone en esta spec.
+3. **Hechos de conocimiento fuera de los reclamos (3.5):** una página solo se cita; nunca alimenta un reclamo de éxito.
+4. **Caída del `KnowledgeSource`:** el nodo sale por `not_found` y emite un evento con motivo `source_unavailable`; no se añade una salida `error` al esquema del nodo.

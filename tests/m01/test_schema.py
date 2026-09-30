@@ -108,7 +108,7 @@ def _type(d: dict[str, Any]) -> None:
 
 
 def _decide_validator(d: dict[str, Any]) -> None:
-    node(d, "pedir")["config"]["validator"] = {"kind": "decide", "value": "no valido@@"}
+    node(d, "pedir")["config"]["validator"] = {"kind": "decide", "value": "modelo@1"}
 
 
 # T-M1-38, T-M1-37 (id duplicado)

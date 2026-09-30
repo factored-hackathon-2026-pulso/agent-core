@@ -10,6 +10,7 @@ from typing import Annotated, Literal
 from pydantic import Field, NonNegativeInt, PositiveInt
 
 from agent_core.domain.base import Locale, Model, NodeId, Probability, Sha256Hex, UtcDatetime
+from agent_core.domain.errors import GatewayErrorKind
 from agent_core.domain.identity import AuthLevel, PrincipalType
 from agent_core.domain.json import JsonValue
 from agent_core.domain.outcomes import Awaiting, Command, Mode, Outcome, ReasonCodeStr
@@ -153,14 +154,16 @@ class AgentStepPayload(Model):
     """Payload del evento `agent_step` (vista audit, M0 §2.10, ADR 0019).
 
     Un paso del nodo `agent`. Los argumentos y el resultado de una tool van en su `tool_called` (`call_id`
-    los enlaza); el texto de la respuesta final solo como huella con clave, nunca razonamiento intermedio."""
+    los enlaza); el texto de la respuesta final solo como huella con clave, nunca razonamiento intermedio.
+    `kind = "failed"`: el gateway falló en ese paso y el nodo terminó en `gave_up`."""
     node_id: NodeId
     step: PositiveInt
-    kind: Literal["tool", "final"]
+    kind: Literal["tool", "final", "failed"]
     tool: EntityRef | None = None
     call_id: str | None = None
     status: ToolStatus | None = None
     text_fp: Fingerprint | None = None
+    error_kind: GatewayErrorKind | None = None  # solo con `kind = "failed"`: la falla del gateway
     latency_ms: NonNegativeInt
 
 

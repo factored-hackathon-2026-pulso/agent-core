@@ -8,10 +8,11 @@ from agent_core.registry.evaluation.report import EvalReport, SuiteMetrics
 from agent_core.registry.models import AliasChange, Origin, ProposalState, StoredVersion, VersionRef
 from agent_core.registry.suite import EvalSuite
 from testing.builders import NOW
-from tests.registry.helpers import AGENT, bot, docs, human, prompt_draft, suite_content
+from tests.registry.helpers import AGENT, admin, bot, docs, human, prompt_draft, suite_content
 from tests.registry.service_world import SUITE, ZERO, World
 
 ANA = human()
+ROOT = admin()
 # Versiones que agrega la propuesta de `_frozen`: prompt del borrador, cascada (flow y agente) y suite.
 NEW_REFS = (VersionRef(kind="prompt", id="p/resumen_radicado", version="1.1.0"),
             VersionRef(kind="flow", id="disputa-cargo", version="1.0.1"),
@@ -217,11 +218,11 @@ def test_promote_and_revoke() -> None:  # T-REG-20 (registro)
     w.service.approve(ANA, pid, h)
     rel = w.service.publish(ANA, pid, "k").release_id
     with pytest.raises(RegistryError) as info:
-        w.service.revoke(ANA, "rel-demo", "apunta prod")
+        w.service.revoke(ROOT, "rel-demo", "apunta prod")
     assert _code(info) is RegistryErrorCode.illegal_transition
     change = w.service.promote(ANA, AGENT, "prod", rel, "sale a prod")
     assert (change.before, change.after) == ("rel-demo", rel)
-    assert w.service.revoke(ANA, "rel-demo", "reemplazada").status == "revoked"
+    assert w.service.revoke(ROOT, "rel-demo", "reemplazada").status == "revoked"
     with pytest.raises(RegistryError) as info:
         w.service.promote(ANA, AGENT, "prod", "rel-demo")
     assert _code(info) is RegistryErrorCode.illegal_transition

@@ -18,7 +18,7 @@ from testing.builders import principal
 from testing.fakes.clock import FakeClock
 from testing.fakes.ids import FakeIds
 from tests.contracts.test_registry_contract import CHECKS, EXACT_FLOW, KNOWLEDGE, RANGED_FLOW
-from tests.registry.helpers import AGENT, REGISTRY_DEMO, human, prompt_draft
+from tests.registry.helpers import AGENT, REGISTRY_DEMO, admin, human, prompt_draft
 from tests.registry.service_world import SUITE, FakeEvaluator
 
 pytestmark = pytest.mark.integration
@@ -42,7 +42,7 @@ def _publish(service: RegistryService, key: str = "k", version: str = "1.1.0") -
 
 def test_immutable_tables_reject_update_and_delete(registry_store: PgRegistryStore,
                                                    admin_conn: "psycopg.Connection[Any]") -> None:  # T-REG-01
-    _service(registry_store).import_seed(ANA, REGISTRY_DEMO)
+    _service(registry_store).import_seed(admin(), REGISTRY_DEMO)
     with registry_store.connect() as conn:  # rol de aplicación: sin permiso
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             conn.execute("UPDATE reg_entity_versions SET created_by = 'x'")
@@ -55,7 +55,7 @@ def test_immutable_tables_reject_update_and_delete(registry_store: PgRegistrySto
 
 def test_publish_failure_mid_way_leaves_nothing(registry_store: PgRegistryStore) -> None:  # T-REG-02
     service = _service(registry_store)
-    service.import_seed(ANA, REGISTRY_DEMO)
+    service.import_seed(admin(), REGISTRY_DEMO)
     registry_store.fail_on = lambda name: name == "set_alias"
     with pytest.raises(RuntimeError):
         _publish(service)
@@ -66,7 +66,7 @@ def test_publish_failure_mid_way_leaves_nothing(registry_store: PgRegistryStore)
 
 def test_second_publish_on_same_agent_is_stale(registry_store: PgRegistryStore) -> None:  # T-REG-16
     service = _service(registry_store)
-    service.import_seed(ANA, REGISTRY_DEMO)
+    service.import_seed(admin(), REGISTRY_DEMO)
     late = service.create_proposal(ANA, AGENT, Origin.manual, "tardía")  # base: la release importada
     service.put_draft(ANA, late.proposal_id, [prompt_draft(version="1.2.0", text="Otra."), SUITE],
                       expected_rev=0)
@@ -114,7 +114,7 @@ def test_postgres_registry_passes_contract(pg_registry: PostgresRegistry,
 
 def test_candidates_and_drafts_are_invisible(registry_store: PgRegistryStore) -> None:  # T-REG-18
     service = _service(registry_store)
-    service.import_seed(ANA, REGISTRY_DEMO)
+    service.import_seed(admin(), REGISTRY_DEMO)
     p = service.create_proposal(ANA, AGENT, Origin.manual, "t")
     service.put_draft(ANA, p.proposal_id, [prompt_draft()], expected_rev=0)
     service.freeze(ANA, p.proposal_id)
@@ -127,7 +127,7 @@ def test_candidates_and_drafts_are_invisible(registry_store: PgRegistryStore) ->
 
 def test_tampered_blob_raises_integrity_error(registry_store: PgRegistryStore,
                                               admin_conn: "psycopg.Connection[Any]") -> None:  # T-REG-19
-    _service(registry_store).import_seed(ANA, REGISTRY_DEMO)
+    _service(registry_store).import_seed(admin(), REGISTRY_DEMO)
     admin_conn.execute("ALTER TABLE reg_blobs DISABLE TRIGGER USER")
     admin_conn.execute("UPDATE reg_blobs SET bytes = 'x'::bytea")
     admin_conn.execute("ALTER TABLE reg_blobs ENABLE TRIGGER USER")
@@ -139,12 +139,12 @@ def test_tampered_blob_raises_integrity_error(registry_store: PgRegistryStore,
 
 def test_revoked_release_not_resolved_for_new_runs(registry_store: PgRegistryStore) -> None:  # T-REG-20, RF 5
     service = _service(registry_store)
-    service.import_seed(ANA, REGISTRY_DEMO)
+    service.import_seed(admin(), REGISTRY_DEMO)
     rel = _publish(service)
     clock = FakeClock()
     reg = PostgresRegistry(registry_store, clock, status_ttl=timedelta(seconds=5))
     assert reg.resolve_release(AgentSelector.parse(f"{AGENT}@staging"), principal()).id == rel
-    service.revoke(ANA, rel, "falla en producción")
+    service.revoke(admin(), rel, "falla en producción")
     clock.advance(timedelta(seconds=6))
     assert reg.release_status(rel) == "revoked"
     with pytest.raises(KeyError):
@@ -164,7 +164,7 @@ def test_end_to_end_prompt_change(registry_store: PgRegistryStore) -> None:  # T
             return runs.get(run_id)
 
     service = RegistryService(registry_store, evaluator, clock, ids, runs=Runs())
-    service.import_seed(ANA, REGISTRY_DEMO)
+    service.import_seed(admin(), REGISTRY_DEMO)
 
     suite = EntityDraft(kind="eval_suite", content=demo_suite().model_dump(mode="json"),
                         docs=VersionDocs(description="suite de disputas", rationale="gate",
@@ -267,7 +267,7 @@ def test_concurrent_seed_imports_of_same_agent_one_wins(registry_store: PgRegist
 
     def run() -> None:
         try:
-            service.import_seed(ANA, REGISTRY_DEMO)
+            service.import_seed(admin(), REGISTRY_DEMO)
             outcomes.append("imported")
         except RegistryError as exc:
             outcomes.append(exc.code.value)
@@ -286,7 +286,7 @@ def test_concurrent_seed_imports_of_same_agent_one_wins(registry_store: PgRegist
 @pytest.mark.parametrize("table", ["reg_release_status", "reg_aliases", "reg_publish_keys", "reg_proposals",
                                    "reg_proposal_changes", "reg_releases", "reg_events"])
 def test_app_role_cannot_delete_from_any_table(registry_store: PgRegistryStore, table: str) -> None:
-    _service(registry_store).import_seed(ANA, REGISTRY_DEMO)
+    _service(registry_store).import_seed(admin(), REGISTRY_DEMO)
     with registry_store.connect() as conn:
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             conn.execute(f"DELETE FROM {table}")
@@ -319,7 +319,7 @@ def test_cli_cycle_on_postgres_with_export_to_disk(registry_store: PgRegistrySto
     from tests.composition.test_registry_cli import Cli
 
     cli = Cli(capsys, registry_store)
-    [seed] = cli.ok("import", str(REGISTRY_DEMO))  # type: ignore[misc]
+    [seed] = cli.ok("import", str(REGISTRY_DEMO), actor="admin")  # type: ignore[misc]
     assert cli.ok("show", cli.ok("propose", AGENT, "t")["proposal_id"])["proposal"]["state"] == "draft"  # type: ignore[index]
     assert cli.ok("export", seed["release_id"], str(tmp_path)) is None
     assert any(tmp_path.rglob("*.yaml"))

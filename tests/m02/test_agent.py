@@ -201,6 +201,16 @@ def test_t_u5_17_a_gateway_error_without_usage_charges_the_call_only() -> None:
     assert (used.turn_model_calls, used.run_tokens, used.run_cost) == (1, 0, Decimal("0"))
 
 
+def test_a_gateway_error_leaves_a_failed_agent_step_that_explains_the_gave_up() -> None:
+    w, _, state = _world()
+    out = w.step(state, agents=FailingAgent(GatewayError(GatewayErrorKind.timeout)))
+    steps = [e for e in out.events if e.type == "agent_step"]
+    assert len(steps) == 1
+    payload = steps[0].payload
+    assert (payload.kind, payload.error_kind, payload.step) == ("failed", GatewayErrorKind.timeout, 1)
+    assert payload.tool is None and payload.text_fp is None
+
+
 def test_t_u5_17_any_other_exception_still_goes_up() -> None:
     w, _, state = _world()
     with pytest.raises(RuntimeError):

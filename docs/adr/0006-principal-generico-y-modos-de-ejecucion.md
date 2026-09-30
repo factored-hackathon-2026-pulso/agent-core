@@ -22,7 +22,7 @@
   | `customer` | El suyo, derivado del servidor | `principal.id` |
   | `advisor` | `on_behalf_of.subject`, con grant vigente | `on_behalf_of.subject.ref` |
   | `service` | Según scopes | Subject autorizado por scope |
-  | `builder` | Entidades del registro; nunca datos de clientes | `principal.id` para sus borradores |
+  | `builder` | Entidades del registro; datos de clientes solo si es administrador (enmienda 2026-09-30) | `principal.id` para sus borradores |
 
 - **Principal de la sesión (auto-revisión #2):** un run pertenece al principal que lo inició. Cada turno exige que `(principal.type, principal.id)` coincida con el snapshot del run; si no, `403 principal_mismatch` y `access_denied`, antes de cargar el estado.
 - **Modos de ejecución:** hay dos sobre el mismo motor:
@@ -47,5 +47,12 @@
 ## Enmienda 2026-09-30 (ADR 0019)
 - **Agentes internos:** el principal del constructor es `builder` (no existe `PrincipalType.agent`; la línea del registry que lo decía se corrige). El constructor son dos agentes, uno `conversational` y uno `task`.
 - **Identidad hacia el registry:** el adaptador de tools del registry decide por su propia credencial con rol `constructor`; el principal del run solo viaja como actor de auditoría.
-- **`builder` sin datos de clientes:** además de la tabla, es una prueba de contrato de `AuthzPort` (subject, campos y parámetros vinculados).
+- **`builder` sin datos de clientes:** además de la tabla, es una prueba de contrato de `AuthzPort` (subject, campos y parámetros vinculados). La única excepción es el administrador de la plataforma (enmienda 2026-09-30, abajo).
 - **Copiloto:** principal `advisor`, run propio sobre el subject de la delegación, solo lectura y cálculo en su primera versión.
+
+## Enmienda 2026-09-30 (tema #14: quién consume el sistema)
+- **Perfiles:** usuario con un problema (`customer`), asesor (`advisor`, con el copiloto), supervisor (`builder` con `constructor` y `aprobador`, usa el agente constructor) y administrador (`builder` con `constructor`, `aprobador` y `admin`). No se crea un `PrincipalType` nuevo.
+- **El administrador sí accede a datos de clientes**, a diferencia de cualquier otro `builder`. Condiciones, todas a la vez: rol `admin`, `attrs.actor = "human"`, `auth.level = step_up` y un scope `subject:<kind>` o `subject:*`. Con eso `authorize_subject` lo autoriza (y `authorize_read` de M9 le deja leer runs y transcripts ajenos), `bind_params` le entrega el `subject_ref` y `can_read_field` lo permite por concesión `(campo, purpose)`. El supervisor y el bot constructor siguen sin ningún acceso.
+- **Prueba de contrato:** `tests/contracts/test_authz_contract.py` exige ambas cosas: un `builder` sin `admin` nunca obtiene subject, campos ni parámetros de cliente, y el administrador con sus condiciones sí.
+- **Pendiente:** registrar como evento de auditoría cada lectura de datos de clientes del administrador (tema #18).
+

@@ -127,7 +127,7 @@ ReAct acotado de **solo lectura y cálculo**. Lo usan el copiloto del asesor y e
 
 **Presupuestos.** El nodo cuenta como un nodo (`max_nodes_per_turn`).
 
-**Eventos.** Cada tool ejecutada emite su `tool_called` (argumentos y resultado en vista `audit`), y cada paso un `agent_step` (M0): `node_id`, `step`, `kind` (`tool`/`final`), `tool`, `call_id` (enlaza con su `tool_called`), `status`, `text_fp` (huella con clave de la respuesta final) y `latency_ms`. Nunca el razonamiento intermedio.
+**Eventos.** Cada tool ejecutada emite su `tool_called` (argumentos y resultado en vista `audit`), y cada paso un `agent_step` (M0): `node_id`, `step`, `kind` (`tool`/`final`/`failed`), `tool`, `call_id` (enlaza con su `tool_called`), `status`, `text_fp` (huella con clave de la respuesta final), `error_kind` (solo con `failed`: el `GatewayErrorKind` que llevó a `gave_up`) y `latency_ms`. Nunca el razonamiento intermedio.
 
 **Determinismo y replay.** El bucle usa solo puertos inyectados: con un `AgentPort` guionado produce los mismos eventos. El replay `audit` verifica la cadena de `agent_step` sin volver a llamar al modelo.
 
@@ -226,13 +226,13 @@ Vía `tool_called` (lectura y `compute`), por `tool@v`: latencia p50/p95, tasa p
 | D11 | El evaluador registra las rutas que lee (`reads`) para `rule_evaluated.inputs` |
 | D12 | Nodos sin rama `error`: `escalate(validation_failed)`; `decide` → `low_confidence`; `rule` → `null` |
 | D13 | Escalamientos del motor: cola por defecto del agente y prioridad `normal`; `priority_expr` no string → `normal` |
-| D14 | Validadores de `collect`: `type`, `regex` (`fullmatch`), `enum` (sin mayúsculas); `decide` pendiente |
+| D14 | Validadores de `collect`: `type`, `regex` (`fullmatch`), `enum` (sin mayúsculas); `decide` pendiente: M1 lo rechaza en G0-01 (2026-09-30) para que ninguna release llegue a ejecutarlo |
 | D15 | `repair_turns_used` lo suma M2 (`collect`); M4 lo lee (y suma en `confirm`) |
 | D16 | `respond(await)` avanza el puntero antes de parar en `awaiting_user` |
 
 ## 11. Abiertos
 
-- Validador `decide` de `collect`: no se sabe qué campo de la decisión valida (hoy `NotImplementedError`, D14).
+- ~~Validador `decide` de `collect`~~ **Decidido 2026-09-30 (tema #15):** no se soporta hasta la fase 2; M1 lo rechaza en G0-01 y `NotImplementedError` queda como defensa (D14). Contrato previsto: el `decision_model` declara un campo calibrado `valid` (booleano); el slot se acepta si es verdadero y supera el umbral, y si no cuenta como intento fallido.
 - Quién llena `open_questions` (índice §10).
 - **Nodo `agent` (§3.7, ADR 0019):**
   - ~~Falta el **adaptador real de `AgentPort`**~~ **Resuelto 2026-09-30:** `LLMAgentPort` (unidad 5), en `docs/specs/2026-09-28-llm-gateway-design.md` §3.8. El texto del prompt del bucle vive en el registro de la demo (gateway spec §11).

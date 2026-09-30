@@ -104,3 +104,12 @@ def test_non_gateway_exception_is_counted_as_a_call_with_unknown_cost_and_rerais
         meter.call(boom)
     usage = meter.usage()
     assert usage is not None and usage.calls == 1 and usage.cost_known is False and usage.latency_ms == 20
+
+
+def test_a_success_without_reported_usage_marks_cost_unknown() -> None:
+    meter = UsageMeter(FakeClock())
+    unreported = GenerationResult(output="a", tokens_in=0, tokens_out=0, cost_usd=Decimal("0"), model="m",
+                                  usage_known=False)
+    meter.call(lambda: unreported)
+    usage = meter.usage()
+    assert usage is not None and usage.cost_known is False and usage.cost_usd == Decimal("0")

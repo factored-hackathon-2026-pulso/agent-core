@@ -49,6 +49,18 @@
       "title": "Fingerprint",
       "type": "object"
     },
+    "GatewayErrorKind": {
+      "description": "Clases de falla del gateway de LLM (M0 §2.11).",
+      "enum": [
+        "timeout",
+        "unavailable",
+        "rate_limited",
+        "invalid_output",
+        "refused"
+      ],
+      "title": "GatewayErrorKind",
+      "type": "string"
+    },
     "ToolStatus": {
       "description": "Estado del resultado de una tool (M0 §2.8).",
       "enum": [
@@ -64,7 +76,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "Payload del evento `agent_step` (vista audit, M0 §2.10, ADR 0019).\n\nUn paso del nodo `agent`. Los argumentos y el resultado de una tool van en su `tool_called` (`call_id`\nlos enlaza); el texto de la respuesta final solo como huella con clave, nunca razonamiento intermedio.",
+  "description": "Payload del evento `agent_step` (vista audit, M0 §2.10, ADR 0019).\n\nUn paso del nodo `agent`. Los argumentos y el resultado de una tool van en su `tool_called` (`call_id`\nlos enlaza); el texto de la respuesta final solo como huella con clave, nunca razonamiento intermedio.\n`kind = \"failed\"`: el gateway falló en ese paso y el nodo terminó en `gave_up`.",
   "properties": {
     "call_id": {
       "anyOf": [
@@ -78,10 +90,22 @@
       "default": null,
       "title": "Call Id"
     },
+    "error_kind": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GatewayErrorKind"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "kind": {
       "enum": [
         "tool",
-        "final"
+        "final",
+        "failed"
       ],
       "title": "Kind",
       "type": "string"

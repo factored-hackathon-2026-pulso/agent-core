@@ -1,6 +1,6 @@
 # Temas abiertos — Motor de decisión (spec 2026-09-28)
 
-- Estado: **9 de 9 temas originales resueltos; 3 temas nuevos abiertos (#10, alta; #11 y #12, media).** Reemplaza la versión anterior de este documento, cuyo contenido se descartó por basarse en hallazgos incorrectos.
+- Estado: **9 de 9 temas originales resueltos; #10, #11, #12, #14, #15 y #16 cerrados el 2026-09-30 (decisiones abajo); siguen abiertos #13 (alto), #17 y #18 (medios).** Reemplaza la versión anterior de este documento, cuyo contenido se descartó por basarse en hallazgos incorrectos.
 - Fecha: 2026-09-28
 - Spec: `2026-09-28-motor-de-decision-design.md` (rev. 15)
 - Regla de trabajo: antes de resolver cada tema se lee el ADR que lo gobierna.
@@ -27,9 +27,15 @@ Tampoco eran temas abiertos: la cadena de hash y `reportable_attrs` (ADR 0003), 
 | 7 | `end(abandoned)` declarable; outcome vs modo sin validar | Baja | **Resuelto (rev. 12)** |
 | 8 | Dos ADR con número 0009 | Baja | **Resuelto (rev. 12)** |
 | 9 | `untrusted_text` falta en ADR 0008 | Baja | **Resuelto (rev. 12)** |
-| 10 | ADR de conocimiento (0015) aceptado pero no integrado en la spec | **Alta** | **Abierto** |
-| 11 | Capa de analítica (cálculo y visualización de métricas) sin spec | Media | **Abierto** |
-| 12 | Política del contexto conversacional (`recent_turns`) sin definir | Media | **Abierto** |
+| 10 | ADR de conocimiento (0015) aceptado pero no integrado en la spec | Alta | **Resuelto como diseño (2026-09-30); construcción en fase 2** |
+| 11 | Capa de analítica (cálculo y visualización de métricas) sin spec | Media | **Resuelto (2026-09-30)** |
+| 12 | Política del contexto conversacional (`recent_turns`) sin definir | Media | **Resuelto (2026-09-30)** |
+| 13 | Servidor arrancable: faltan las piezas externas del cableado | **Alta** | **Abierto** |
+| 14 | Emisión y firma de los roles `constructor`/`aprobador` y de `attrs.actor` | Alta | **Resuelto (2026-09-30)** |
+| 15 | Validador `decide` de `collect`: qué campo de la decisión valida | Media | **Resuelto: no soportado hasta la fase 2 (2026-09-30)** |
+| 16 | Límites, retención y topes del agente autónomo (registry) | Media | **Resuelto salvo los topes, que esperan a activar el constructor `task` (2026-09-30)** |
+| 17 | Clase `write_draft` y dependencias del constructor sobre el registry | Media | **Abierto** |
+| 18 | Auditoría de las lecturas de datos de clientes del administrador | Media | **Abierto** |
 
 ## Resueltos
 - **#1 (rev. 6):** `respond.claims` declarado + derivado; invariante por camino hasta `verified`; `respond` seguro = sin reclamos. Spec §2, §5, §6.1, §8.2, §11, §13.3, §14, §15; ADR 0007.
@@ -42,33 +48,71 @@ Tampoco eran temas abiertos: la cadena de hash y `reportable_attrs` (ADR 0003), 
 - **#8 (rev. 12):** el ADR de conocimiento pasa a `0015-consumo-de-conocimiento-nodo-knowledge.md`; 0009 queda para políticas protegidas.
 - **#9 (rev. 12):** ADR 0008 enmendado con la clase `untrusted_text`, su catálogo por defecto y su envoltura en la vista `model`.
 
-## 10. Integración del ADR 0015 (conocimiento) — abierto
-Encontrado al renumerar (#8). ADR 0015 está aceptado y declara cambios que la spec no tiene:
-- **Catálogo (§5):** no existe el nodo `knowledge` (`read` / `navigate`), aunque el ADR lo agrega como cambio mayor del esquema.
-- **Corte MVP (§0):** el ADR dice que en el MVP se construyen `read`, los filtros y el validador; §0 no menciona conocimiento.
-- **`respond.generate`:** la spec sigue con `knowledge_refs[]`; el ADR lo reemplaza por `knowledge_from[]` + `purpose`.
-- **Validador (§8.3):** cita "páginas recuperadas en este run", pero ningún nodo de la spec las recupera; faltan las comprobaciones de `audience: public` + `status: approved` para respuestas al cliente.
-- **Validación estática (§6.1):** el ADR habla de "reglas 10–14" y "comprobaciones 5 y 6", numeración que ya choca con la spec actual; hay que definirlas y numerarlas de nuevo.
-- **Dependencias (§14):** faltan `knowledge_view(principal, purpose)` (unidad 3), `knowledge_snapshot` en la release (unidad 2) y el puerto `KnowledgeSource` (unidad 7).
-- **Reclamos de éxito (#1):** hay que decidir si un hecho de conocimiento puede alimentar un reclamo (probablemente no).
+## 10. Integración del ADR 0015 (conocimiento) — resuelto como diseño
+**Decidido el 2026-09-30:** se aprueba M12 (`motor/m12-conocimiento.md`) como la integración del ADR 0015 en el motor; la spec general pasa a apuntar a M12 y deja de contradecir al ADR. La **construcción** va a la fase 2: no entra en el MVP de la demo (el calendario no da para `read` antes del congelamiento del 02/10). `navigate` queda fuera del MVP.
+- **Numeración:** reglas de M1 G0-17…G0-21 y comprobaciones 6 y 7 del validador de respuesta, como propone M12.
+- **Hechos de conocimiento y reclamos de éxito:** una página solo se cita; nunca alimenta un reclamo (los reclamos salen de acciones verificadas, ADR 0011).
+- **Caída del `KnowledgeSource`:** el nodo sale por `not_found` y emite un evento con motivo `source_unavailable`; no cambia el esquema del nodo y la auditoría distingue la causa.
+Pendiente al construir (fase 2): `RunState.pages`, `PageView`, el nodo `knowledge` y `knowledge_from[]`/`purpose` en `respond.generate` (cambio mayor del esquema de flows).
 
-Por qué es alta: quien implemente desde la spec no construiría el nodo `knowledge`, y el validador de respuesta no tendría cómo comprobar citas de páginas.
+## 11. Capa de analítica — resuelto
+**Decidido el 2026-09-30:**
+- **Cálculo:** vistas SQL sobre el log de eventos en Postgres; sin componentes nuevos.
+- **Consumo en la demo:** Phoenix para latencia y costo (ya hay spans OTel `agentcore.*`) y una vista SQL con las métricas de negocio (contención, resolución segura, `abandoned`, aclaraciones por run, modo degradado). No se construye un dashboard propio.
+- **Comparación entre releases:** no hay una regla nueva. El gate del registry (guardarraíles y margen de ruido, registry §6) decide las promociones; la analítica solo informa.
+- **Retención:** sin purga en el MVP (las tablas son inmutables y pequeñas); se revisa en la fase 2 junto con la retención del registry (#16).
+Pendiente de construcción: las vistas SQL y la conexión a Phoenix; no bloquean la fase 1 porque los eventos ya capturan los datos.
 
-## 11. Capa de analítica — abierto
-Encontrado al agregar las métricas de eficiencia (spec rev. 14). Los eventos ya llevan los datos (latencias, uso del LLM, `turn_completed`) y §12 y cada módulo listan las métricas, pero ningún documento define cómo se calculan ni dónde se ven. Se delega a la unidad 6, que no tiene spec en este repo. Falta decidir:
-- **Cálculo:** vistas SQL sobre el log en Postgres, o una exportación por release (`agentcore export`) que procese el harness de eval.
-- **Consumo:** dashboard para la demo (Phoenix, un notebook o una página) y el formato que lee la auto-mejora.
-- **Comparación entre releases:** qué diferencia de latencia o costo bloquea una promoción, con qué tamaño de muestra.
-- **Retención:** cuánto tiempo se guardan los eventos para calcular tendencias.
+## 12. Política del contexto conversacional — resuelto
+**Decidido el 2026-09-30** (ratifica lo que ya implementa `EngineConfig.recent_turns`; ver m04 §15 y m05 §3.2):
+- **Tamaño:** `n` fijo de 6 turnos, por despliegue; se mide en turnos, no en tokens, y no es configurable por agente.
+- **Conversaciones largas:** se trunca a las últimas `n` entradas; no hay resumen en el MVP (un resumen es texto generado por un modelo y arrastra la duda de `untrusted_text` y del replay).
+- **Contenido:** mensaje del cliente y respuesta del agente, en vista `model`, sin borradores rechazados. Los hechos siguen saliendo solo de acciones verificadas, nunca del historial.
+- **Entre runs:** nada; un asunto retomado es un run nuevo con contexto limpio.
 
-Por qué es media: no bloquea la fase 1 porque los eventos ya capturan los datos, pero sin esto las métricas no se pueden mostrar en la demo del 03–05/10.
+## 13. Servidor arrancable — abierto
+Encontrado en la auditoría del 2026-09-30. `create_app` existe y el registry se monta como extensión, pero ningún proceso compone el motor con adaptadores reales (no hay `agentcore serve`; registry §14, m09 §201). No es solo la unidad 3: para servir la release de demo con un modelo real faltan:
+- **`ToolExecutor` real (unidad 3):** adaptadores a los backends con el punto de control de políticas (riesgo de la tool, parámetros ligados, `step_up_required` antes de cualquier efecto, idempotencia de escrituras; ADR 0007, 0009, 0010). Hoy solo `FakeToolExecutor` y `LocalSandboxTools` (respuestas sembradas).
+- **`AuthzPort` real (unidad 3):** hoy solo `TableAuthz`, una tabla provisional de `testing/`.
+- **`TranscriptStore` persistente (unidad 7):** solo `InMemoryTranscript`; el transcript se pierde al reiniciar.
+- **Identidad:** `JwsIdentityVerifier` recibe las claves públicas por constructor y nadie las carga desde configuración; falta definir de dónde salen (servicio de identidad) y qué implementa `grant_active`.
+- **Proveedores de decisión:** la release de demo usa `jev` (servicio externo con key; `HttpJevTransport` existe) y `classifier` (falta un `ArtifactLoader` real y sus artefactos).
+- **Calibración:** `CalibrationSource` real con artefactos etiquetados (m05 §8, dato pendiente P9).
+- **Lectores de la API:** `HandoffService` y `TranscriptReader` quedan dentro de `build_turn_engine`; habría que exponerlos para armar `ApiDeps`.
+- **Dependencia de ejecución:** `uvicorn` no está declarado en `pyproject.toml`.
+- **Arranque:** el aviso por alias de endpoint sin configurar (gateway §5) y por proveedores sin configurar depende de este comando.
 
-## 12. Política del contexto conversacional — abierto
-M5 (`m05-decision-model.md` §3.2) incluye `recent_turns` (unidad 7, vista `model`) en su única llamada por turno, y `TranscriptStore.recent_turns(run_id, n)` está en M0. Pero ningún documento define cómo se arma ese contexto. Falta decidir:
-- **Tamaño:** valor de `n`, y si se mide en turnos o en tokens; si es fijo por release o configurable por agente.
-- **Conversaciones largas:** truncar, resumir o ambos. Un resumen es texto generado por un modelo: hay que decidir si cuenta como `untrusted_text` (ADR 0008) y cómo lo trata el replay (§11).
-- **Contenido del turno:** qué entra por turno (mensaje del cliente, respuesta del agente, resultados de acciones) y en qué clase de vista; los hechos siguen viniendo de acciones verificadas, nunca del historial.
-- **Entre runs:** un asunto retomado es un run nuevo sobre el mismo subject (spec §1); si M5 recibe algo del run anterior queda para la unidad 7 y no tiene spec en este repo.
-- **Fase 1:** con `InMemoryTranscript` basta un `n` fijo; el resto no bloquea, pero debe cerrarse antes de implementar M5 con un proveedor real.
+Por qué es alta: sin esto la demo no corre de punta a punta sobre adaptadores reales. Decidir antes: si la demo usa un servidor con dobles etiquetados (`AGENTCORE_ALLOW_DEMO=1`, como el verificador de demo del registry) o espera a la unidad 3.
 
-Por qué es media: no bloquea la fase 1, pero afecta al costo por turno, a la calibración de umbrales de M5 y al determinismo del replay.
+## 14. Roles del registry y `attrs.actor` — resuelto
+**Decidido el 2026-09-30.** Implementado en `agent_core/registry/roles.py`, `testing/fakes/authz.py` y `testing/fakes/identity.py`; el detalle de permisos está en registry §8 y la enmienda de datos de clientes en ADR 0006.
+
+| Perfil | Principal | Registry | Datos de clientes |
+|---|---|---|---|
+| Usuario con un problema | `customer` | Ninguno | Solo los propios |
+| Asesor | `advisor` con delegación firmada | Ninguno (por ahora) | Solo el subject delegado |
+| Supervisor | `builder`, persona, `constructor` + `aprobador` | Construye, aprueba, publica y promueve a `staging` y a `prod` | Ninguno |
+| Administrador | `builder`, persona, `constructor` + `aprobador` + `admin` | Todo, y además revoca releases e importa la semilla | Sí, con `step_up` y un scope |
+| Agente constructor | `builder` con credencial de servicio, sin `actor` | Solo `constructor` | Ninguno |
+
+- **Solo un `builder` opera el registry**, lecturas incluidas; la lista de roles es cerrada.
+- **`aprobador` y `admin` exigen persona y `step_up`** (código `step_up_required`).
+- **Emisores:** el staff tiene su propio emisor y su propia clave; la API del registry solo verifica esas claves (`TestStaffIssuer` en la demo; `testing/demo_identities.py` emite supervisor, administrador y bot).
+- **Roles:** salen de los grupos del proveedor de identidad del staff; el núcleo solo los valida.
+- **Autoaprobación:** se mantiene permitida, registrada en `approvals`. La aprobación de cuatro ojos sigue siendo de la fase 2 (registry §16).
+- **Datos de clientes del administrador:** ADR 0006 enmendado; contrato de `AuthzPort` actualizado.
+
+## 15. Validador `decide` de `collect` — resuelto: no soportado hasta la fase 2
+**Decidido el 2026-09-30:** M1 lo rechaza en G0-01 y queda así para la demo; para validar un slot bastan `type`, `regex` y `enum`. Contrato previsto para la fase 2: el `decision_model` declara un campo calibrado `valid` (booleano); el slot se acepta si `valid` es verdadero y supera el umbral calibrado, y si queda bajo el umbral cuenta como intento fallido y repregunta. El texto del slot se proyecta como `untrusted_text` (m02 D8).
+
+## 16. Límites, retención y topes del agente autónomo — resuelto salvo los topes
+**Decidido el 2026-09-30:**
+- **Límites:** se ratifican los valores que ya aplica `registry/validation.py`: 50 cambios por propuesta, 262 144 bytes por entidad y 200 nodos por flow.
+- **Retención:** se conserva todo en el MVP. Fase 2: purgar propuestas abandonadas de más de 90 días y conservar las últimas N evaluaciones por propuesta.
+- **Topes del constructor autónomo:** se difieren; el constructor en modo `task` no se activa en la demo. Al activarlo hay que fijar propuestas por día, evaluaciones por propuesta y costo máximo por propuesta (punto de partida a discutir: 10, 20 y un tope de costo).
+
+## 17. `write_draft` y dependencias del constructor — abierto
+Registry §18: clase de riesgo `write_draft` (G0-23, AG-02, ruta de M3), regla G0-25 del gateway (el prompt del nodo `agent` debe ser `structured: prompted`), adaptador de `ToolExecutor` del constructor con su propia credencial, `readback_by` de borradores y catálogo de campos y plantillas de handoff como entidades versionadas. Nada de esto está construido; el constructor solo puede correr de solo lectura.
+
+## 18. Auditoría de las lecturas de datos de clientes del administrador — abierto
+El administrador puede leer runs, transcripts y campos de clientes (ADR 0006, enmienda 2026-09-30), pero una lectura autorizada no deja hoy ningún evento: solo se registran los rechazos (`access_denied`). Decidir el evento (por ejemplo `privileged_read` con principal, subject, propósito y `trace_id`, sin el contenido), en qué cadena se anota cuando la lectura es de un run y dónde cuando no lo es, y si el motivo de la lectura es obligatorio. Es un cambio de M0 (evento nuevo, versión menor) y de M9.

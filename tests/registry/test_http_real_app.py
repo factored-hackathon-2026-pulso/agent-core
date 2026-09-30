@@ -10,7 +10,7 @@ from agent_core.registry.http import registry_extension
 from testing.builders import principal
 from tests.m09.conftest import api_deps
 from tests.m09.helpers import StubVerifier
-from tests.registry.helpers import AGENT, bot, human
+from tests.registry.helpers import AGENT, admin, bot
 from tests.registry.service_world import World
 
 ANON = principal(type="customer", id=None, attrs={"anon_session": "sesion-anonima-1"},
@@ -21,9 +21,11 @@ def _client() -> tuple[TestClient, dict[str, str]]:
     world = World()
     deps, _ = api_deps()
     verifier = StubVerifier()
-    tokens = {"ana": verifier.register("tok-ana", human()),
+    tokens = {"ana": verifier.register("tok-ana", admin()),
               "bot": verifier.register("tok-bot", bot("constructor", "aprobador")),
-              "anon": verifier.register("tok-anon", ANON)}
+              "anon": verifier.register("tok-anon", ANON),
+              "customer": verifier.register("tok-customer", principal(roles=["constructor", "aprobador"])),
+              "advisor": verifier.register("tok-advisor", principal(type="advisor", id="adv-7", attrs={}))}
     app = create_app(replace(deps, verifier=verifier, extensions=(registry_extension(world.service),)))
     return TestClient(app, raise_server_exceptions=False), tokens
 
@@ -90,4 +92,15 @@ def test_human_with_roles_passes_authentication_and_authorization() -> None:
     # autorizada pero la release no existe: 404 del registry, no 403
     assert client.post("/v1/registry/releases/rel-x/revoke", json={"reason": "x"}, headers=headers
                        ).status_code == 404
+
+
+@pytest.mark.parametrize("who", ["customer", "advisor"])
+def test_customers_and_advisors_cannot_even_read_the_registry(who: str) -> None:
+    client, tokens = _client()
+    headers = _auth(tokens[who])
+    for path in ("/v1/registry/releases/rel-demo", "/v1/registry/entities/template/t/acuse"):
+        r = client.get(path, headers=headers)
+        assert r.status_code == 403, (path, r.text)
+        assert r.json()["code"] == "forbidden_role"
+    assert client.post("/v1/registry/proposals", json=WRITES[0][2], headers=headers).status_code == 403
 
