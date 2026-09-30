@@ -61,10 +61,16 @@ class OpenAICompatGateway:
         if not api_key:
             _LOG.error("variable de key vacía alias=%s", endpoint.alias)
             raise GatewayError(GatewayErrorKind.unavailable, model=profile.model)
-        client = self._client_factory(endpoint, api_key, profile.timeout_s)
-        kwargs = _request(profile, text, inputs_model_view, schema)
-        response = _create(client, kwargs, profile, endpoint.alias)
-        return _result(response, profile, schema)
+        try:
+            client = self._client_factory(endpoint, api_key, profile.timeout_s)
+            kwargs = _request(profile, text, inputs_model_view, schema)
+            response = _create(client, kwargs, profile, endpoint.alias)
+            return _result(response, profile, schema)
+        except GatewayError:
+            raise
+        except Exception as error:  # nada más sale del adaptador; nunca se registra `str(error)`
+            why = type(error).__name__
+            raise _error(GatewayErrorKind.unavailable, endpoint.alias, profile, why) from None
 
 
 def _request(profile: ModelProfile, text: str, inputs: dict[str, JsonValue],
@@ -87,6 +93,8 @@ def _request(profile: ModelProfile, text: str, inputs: dict[str, JsonValue],
 
 def _create(client: OpenAI, kwargs: dict[str, Any], profile: ModelProfile, alias: str) -> Any:
     """Una request con plazo total de `timeout_s` y errores traducidos (spec §3.1 paso 5 y §3.2)."""
+    # El hilo del plazo total sigue vivo hasta que el timeout por fase del SDK lo corte
+    # (acotado por timeout_s).
     pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="llm-gateway")
     future = pool.submit(lambda: client.chat.completions.create(**kwargs))
     try:
@@ -114,10 +122,13 @@ def _error(kind: GatewayErrorKind, alias: str, profile: ModelProfile, why: str) 
 def _result(response: Any, profile: ModelProfile, schema: dict[str, JsonValue] | None) -> GenerationResult:
     """Traduce la respuesta del proveedor a `GenerationResult` o a `GatewayError` con el uso informado."""
     usage = response.usage
-    tokens_in = usage.prompt_tokens if usage is not None else None
-    tokens_out = usage.completion_tokens if usage is not None else None
-    cost = (price_of(profile.price, usage.prompt_tokens, usage.completion_tokens)
-            if usage is not None else None)
+    tokens_in: int | None = getattr(usage, "prompt_tokens", None)
+    tokens_out: int | None = getattr(usage, "completion_tokens", None)
+    cost: Decimal | None = None
+    if tokens_in is None or tokens_out is None:  # uso ausente o incompleto = no informado
+        tokens_in = tokens_out = None
+    else:
+        cost = price_of(profile.price, tokens_in, tokens_out)
     model = response.model or profile.model
 
     def fail(kind: GatewayErrorKind, why: str) -> GatewayError:
@@ -138,7 +149,7 @@ def _result(response: Any, profile: ModelProfile, schema: dict[str, JsonValue] |
             output = parse_output(content, schema)
         except OutputError as error:
             raise fail(GatewayErrorKind.invalid_output, error.reason) from None
-    if usage is None:
+    if cost is None:
         _LOG.warning("respuesta sin usage model=%s", model)
     return GenerationResult(output=output, tokens_in=tokens_in or 0, tokens_out=tokens_out or 0,
                             cost_usd=cost if cost is not None else Decimal("0"), model=model)

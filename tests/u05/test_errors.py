@@ -100,3 +100,35 @@ def test_default_client_is_built_without_retries() -> None:  # T-U5-06
     endpoint = EndpointConfig("openrouter", "https://openrouter.test/api/v1", "K")
     client = default_client(endpoint, ENV["OPENROUTER_API_KEY"], 8)
     assert client.max_retries == 0
+
+
+def test_usage_without_token_fields_is_treated_as_not_reported(respx_mock: MockRouter) -> None:
+    body = completion('{"text": 5}')
+    body["usage"] = {}
+    respx_mock.post(CHAT).respond(200, json=body)
+    error = _fail(make_world(), DRAFT)
+    assert error.kind is GatewayErrorKind.invalid_output
+    assert error.tokens_in is None and error.cost_usd is None
+
+
+def test_success_with_usage_without_token_fields_reports_zero(respx_mock: MockRouter) -> None:
+    body = completion("hola")
+    body["usage"] = {}
+    respx_mock.post(CHAT).respond(200, json=body)
+    result = make_world().gateway.generate(PROMPT, INPUTS, "es")
+    assert (result.tokens_in, result.tokens_out, result.cost_usd) == (0, 0, Decimal("0"))
+
+
+@pytest.mark.parametrize("body", [[1, 2], "texto", {"choices": "no-es-lista"}])
+def test_a_200_that_is_not_a_chat_completion_never_leaks_a_raw_exception(
+        respx_mock: MockRouter, body: object) -> None:
+    respx_mock.post(CHAT).respond(200, json=body)
+    assert _fail(make_world()).kind in (GatewayErrorKind.unavailable, GatewayErrorKind.invalid_output)
+
+
+def test_a_failing_client_factory_is_unavailable(respx_mock: MockRouter) -> None:
+    def boom(*_: object) -> None:
+        raise RuntimeError("SECRETO")
+
+    error = _fail(make_world(client_factory=boom))
+    assert error.kind is GatewayErrorKind.unavailable and respx_mock.calls.call_count == 0
