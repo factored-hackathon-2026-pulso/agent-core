@@ -9,7 +9,7 @@ from agent_core.decision import JevProvider, ProviderError, ProviderTimeout, Raw
 from agent_core.domain import JsonValue, ProviderSpec
 from testing.fakes.clock import FakeClock
 from tests.m05.smoke.cases import COMMANDS, FLOWS, all_cases
-from tests.m05.smoke.run import SCHEMA, LangProbe, Row, evaluate, main, make_specs, render
+from tests.m05.smoke.run import PINNED_MODEL, SCHEMA, LangProbe, Row, evaluate, main, make_specs, render
 
 CASES = all_cases()
 
@@ -134,6 +134,12 @@ def test_smoke_specs_build_valid_requests_with_the_real_adapter() -> None:
     kinds = [set(r["questions"]) for r in transport.requests]  # type: ignore[call-overload]
     assert kinds == [{"command", "flow"}, {"language"}] * 5
     assert rows[0].model_version == "jev:jev-9.9.9" and rows[0].tokens == 210 and SCHEMA
+
+
+def test_smoke_default_model_is_a_pinned_version_not_an_alias() -> None:
+    assert re.fullmatch(r"jev-\d+\.\d+\.\d+", PINNED_MODEL) and PINNED_MODEL == "jev-1.13.0"
+    command_spec, lang_spec = make_specs(PINNED_MODEL, 5000)
+    assert command_spec.config["model"] == lang_spec.config["model"] == PINNED_MODEL
 
 
 def test_local_only_mode_needs_neither_key_nor_flag_and_makes_no_jev_calls(

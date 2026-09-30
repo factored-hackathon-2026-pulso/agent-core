@@ -2,7 +2,7 @@
 
 Se activa con `AGENT_CORE_JEV_SMOKE=1` y `JEV_API_KEY` en el entorno:
 
-    AGENT_CORE_JEV_SMOKE=1 uv run python -m tests.m05.smoke [--model jev-latest] [--out res.json]
+    AGENT_CORE_JEV_SMOKE=1 uv run python -m tests.m05.smoke [--model jev-1.13.0] [--out res.json]
 
 Este módulo es el punto de composición: solo aquí se enlaza la key (vía entorno) con el transporte. Mide
 precisión por idioma, latencia p50/p95 desde este entorno, errores y 429/529, coste, calibración cruda de
@@ -36,6 +36,7 @@ from tests.m05.smoke.metrics import accuracy, bucket, nearest_rank, reliability
 
 _NS_PER_MS = 1_000_000
 _TIMING_REPEATS = 20
+PINNED_MODEL = "jev-1.13.0"  # la calibración es por versión: se mide y se calibra con un ID fijo
 _INPUT_USD_PER_MTOK = Decimal("0.042")  # https://docs.typesafe.ai/models (la salida no se cobra)
 _BUCKETS = ("1", "2-3", "4-7", "8+")
 
@@ -367,8 +368,9 @@ def make_detector(clock: Clock) -> Detector:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m tests.m05.smoke", description=__doc__)
-    parser.add_argument("--model", default="jev-latest",
-                        help="alias o ID versionado (se reporta el devuelto)")
+    parser.add_argument("--model", default=PINNED_MODEL,
+                        help="ID versionado (por defecto el fijado); un alias como jev-latest se acepta y se "
+                             "reporta el ID que devuelve la API")
     parser.add_argument("--timeout-ms", type=int, default=15_000)
     parser.add_argument("--out", help="JSON con el detalle por caso (texto sintético incluido)")
     parser.add_argument("--no-jev-language", action="store_true", help="omite la 2ª llamada de idioma a JEV")
