@@ -79,3 +79,20 @@ def test_invalid_proposal_fields_are_validation_failed_problem_not_500() -> None
         r = c.post("/v1/registry/proposals", json=body, headers=_h("ana"))
         assert r.status_code == 422, body
         assert r.json()["code"] == "validation_failed" and r.json()["violations"][0]["rule"] == "REG-PROPOSAL"
+
+
+def test_get_entity_with_slash_in_id_and_version_query() -> None:  # T15-5
+    c, _ = _client()
+    r = c.get("/v1/registry/entities/template/t/acuse", headers=_h("ana"))
+    assert r.status_code == 200, r.text
+    assert r.json()["ref"] == {"kind": "template", "id": "t/acuse", "version": "1.0.0"}
+    pinned = c.get("/v1/registry/entities/template/t/acuse?version=1.0.0", headers=_h("ana"))
+    assert pinned.status_code == 200 and pinned.json()["content_hash"] == r.json()["content_hash"]
+    assert c.get("/v1/registry/entities/template/t/acuse?version=9.9.9", headers=_h("ana")).status_code == 404
+    assert c.get("/v1/registry/entities/template/t/nada", headers=_h("ana")).status_code == 404
+
+
+def test_idempotency_key_longer_than_255_is_rejected() -> None:  # T15-3
+    c, _ = _client()
+    assert c.post("/v1/registry/proposals/x/publish", headers=_h("ana", "k" * 256)).status_code == 422
+    assert c.post("/v1/registry/proposals/x/publish", headers=_h("ana", "k" * 255)).status_code == 404

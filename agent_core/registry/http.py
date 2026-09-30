@@ -137,7 +137,7 @@ def registry_extension(service: RegistryService) -> Callable[[FastAPI, Authentic
         def publish(
             request: Request,
             pid: str,
-            idempotency_key: Annotated[str, Header()],
+            idempotency_key: Annotated[str, Header(max_length=255)],
             authorization: Auth = None,
         ) -> Response:
             return _json(service.publish(who(request, authorization), pid, idempotency_key))
