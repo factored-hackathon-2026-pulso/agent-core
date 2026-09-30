@@ -14,6 +14,7 @@ from agent_core.actions import ActionManager
 from agent_core.adapters.postgres_uow import PostgresStore
 from agent_core.adapters.system_clock import SystemClock
 from agent_core.adapters.system_ids import SystemIds
+from agent_core.api.openapi import check_openapi, write_openapi
 from agent_core.audit import (
     AuditLog,
     EngineRunner,
@@ -229,12 +230,13 @@ def main(
         return _run_sweep(args, sweeper, clock)
     if args.command == "contracts":
         if args.check:
-            diffs = check_contracts(args.out)
+            diffs = sorted({*check_contracts(args.out), *check_openapi(args.out)})
             for rel in diffs:
                 print(f"contracts desactualizado: {rel} (corre `uv run agentcore contracts`)",
                       file=sys.stderr)
             return 1 if diffs else 0
         write_contracts(args.out)
+        write_openapi(args.out)
         return 0
     if args.command == "validate":
         clock = SystemClock()

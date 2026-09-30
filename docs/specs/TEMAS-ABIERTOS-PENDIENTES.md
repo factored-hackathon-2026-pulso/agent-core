@@ -2,7 +2,7 @@
 
 - Estado: **9 de 9 temas originales resueltos; 3 temas nuevos abiertos (#10, alta; #11 y #12, media).** Reemplaza la versión anterior de este documento, cuyo contenido se descartó por basarse en hallazgos incorrectos.
 - Fecha: 2026-09-28
-- Spec: `2026-09-28-motor-de-decision-design.md` (rev. 12)
+- Spec: `2026-09-28-motor-de-decision-design.md` (rev. 15)
 - Regla de trabajo: antes de resolver cada tema se lee el ADR que lo gobierna.
 
 ## Descartado de la iteración anterior
