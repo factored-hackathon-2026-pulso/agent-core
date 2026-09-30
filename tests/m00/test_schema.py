@@ -1,11 +1,11 @@
-"""`check_output`: subconjunto cerrado de JSON Schema para la salida del nodo `agent` (m02 §3.7)."""
+"""`check_output` y `unsupported_keyword`: subconjunto cerrado de JSON Schema (spec del gateway §3.7)."""
 
 from decimal import Decimal
 from typing import Any
 
 import pytest
 
-from agent_core.interpreter.schema import check_output
+from agent_core.domain import check_output, unsupported_keyword
 
 OBJ = {"type": "object", "properties": {"n": {"type": "integer"}, "tags": {"type": "array",
        "items": {"type": "string"}}, "kind": {"enum": ["a", "b"]}}, "required": ["n"],
@@ -50,3 +50,28 @@ def test_annotations_are_ignored_but_unknown_keywords_fail_closed() -> None:
 def test_type_may_be_a_list() -> None:
     assert check_output({"type": ["string", "null"]}, None) is None
     assert check_output({"type": ["string", "null"]}, 3) is not None
+
+
+def test_unsupported_keyword_accepts_the_closed_subset() -> None:
+    schema = {"type": "object", "additionalProperties": False, "required": ["a"],
+              "properties": {"a": {"type": "array", "items": {"type": "string", "description": "x"}}}}
+    assert unsupported_keyword(schema) is None
+
+
+def test_unsupported_keyword_finds_a_top_level_keyword() -> None:
+    assert unsupported_keyword({"oneOf": []}) == "/: palabra clave no soportada 'oneOf'"
+
+
+def test_unsupported_keyword_finds_a_nested_keyword_with_its_path() -> None:
+    schema = {"type": "object", "properties": {"a": {"anyOf": []}}}
+    assert unsupported_keyword(schema) == "/a: palabra clave no soportada 'anyOf'"
+
+
+def test_a_property_named_like_a_keyword_is_not_a_keyword() -> None:
+    schema = {"type": "object", "properties": {"type": {"type": "string"}, "enum": {"type": "string"}}}
+    assert unsupported_keyword(schema) is None
+
+
+def test_unsupported_keyword_looks_inside_items() -> None:
+    schema = {"type": "array", "items": {"$ref": "#/x"}}
+    assert unsupported_keyword(schema) == "/items: palabra clave no soportada '$ref'"

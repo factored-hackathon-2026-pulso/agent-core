@@ -22,6 +22,7 @@ from agent_core.domain import (
     RunState,
     ToolCalledPayload,
     ToolDef,
+    check_output,
 )
 from agent_core.interpreter.audit import ViewsAudit
 from agent_core.interpreter.budgets import charge_model, run_budget_exhausted
@@ -32,7 +33,6 @@ from agent_core.interpreter.handlers.base import NodeResult, escalate_now
 from agent_core.interpreter.handlers.tool import call_tool
 from agent_core.interpreter.ports import AgentFinal, AgentObservation, AgentRequest, AgentToolCall
 from agent_core.interpreter.refs import exact_ref
-from agent_core.interpreter.schema import check_output
 from agent_core.ports import IdKind, ToolStatus
 from agent_core.views import TOKEN_PATTERN, TokenVault
 

@@ -187,6 +187,7 @@ from agent_core.domain.refs import (
     iter_refspecs,
     require_exact_refs,
 )
+from agent_core.domain.schema import check_output, unsupported_keyword
 from agent_core.domain.shared import (
     EscalationRequest,
     Fingerprint,
@@ -259,7 +260,7 @@ __all__ = [
     "ToolCalled", "ToolCalledPayload", "ToolConfig", "ToolDef", "ToolNode", "ToolStatus", "TranscriptEntry",
     "TranscriptRef", "TurnCompleted", "TurnCompletedPayload", "TurnInProgress", "TurnInput", "TurnResult",
     "TurnStages", "TurnStarted", "TurnStartedPayload", "UtcDatetime", "ValidatorOutcome", "VerifyConfig",
-    "VerifyNode", "VersionConflict", "WriteToolConfig", "WriteToolNode", "canonical_bytes", "dumps",
-    "is_declarable", "iter_refspecs", "loads", "node_kind", "require_exact_refs", "sha256_hex",
-    "to_jsonable",
+    "VerifyNode", "VersionConflict", "WriteToolConfig", "WriteToolNode", "canonical_bytes", "check_output",
+    "dumps",    "is_declarable", "iter_refspecs", "loads", "node_kind", "require_exact_refs", "sha256_hex",
+    "to_jsonable", "unsupported_keyword",
 ]
