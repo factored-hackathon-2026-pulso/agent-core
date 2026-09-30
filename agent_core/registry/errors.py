@@ -14,6 +14,7 @@ class RegistryErrorCode(StrEnum):
     candidate_changed = "candidate_changed"
     illegal_transition = "illegal_transition"
     forbidden_role = "forbidden_role"
+    step_up_required = "step_up_required"
     integrity_error = "integrity_error"
     not_found = "not_found"
 
@@ -25,6 +26,7 @@ HTTP_STATUS: Mapping[RegistryErrorCode, int] = MappingProxyType({
     RegistryErrorCode.candidate_changed: 409,
     RegistryErrorCode.illegal_transition: 409,
     RegistryErrorCode.forbidden_role: 403,
+    RegistryErrorCode.step_up_required: 403,
     RegistryErrorCode.integrity_error: 500,
     RegistryErrorCode.not_found: 404,
 })

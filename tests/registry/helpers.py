@@ -6,7 +6,7 @@ from typing import Any
 from agent_core.domain import Principal
 from agent_core.flows import PinnedRelease, load_registry, pin_release
 from agent_core.registry.models import EntityDraft, VersionDocs
-from testing.builders import principal
+from testing.builders import NOW, principal
 
 REGISTRY_DEMO = Path(__file__).parents[1] / "fixtures" / "registry-demo"
 AGENT = "atencion"
@@ -22,9 +22,17 @@ def docs(text: str = "cambio de prueba") -> VersionDocs:
     return VersionDocs(description=text, rationale="mejorar la resolución", changelog=text)
 
 
-def human(*roles: str, pid: str = "ana") -> Principal:
+STEP_UP = {"level": "step_up", "at": NOW}
+
+
+def human(*roles: str, pid: str = "ana", level: str = "step_up") -> Principal:
+    """Un supervisor por defecto: persona con `constructor` y `aprobador`, con autenticación reforzada."""
     return principal(type="builder", id=pid, roles=list(roles or ("constructor", "aprobador")),
-                     attrs={"actor": "human"})
+                     attrs={"actor": "human"}, auth={"level": level, "at": NOW})
+
+
+def admin(pid: str = "root") -> Principal:
+    return human("constructor", "aprobador", "admin", pid=pid)
 
 
 def bot(*roles: str) -> Principal:

@@ -12,34 +12,35 @@ from typing import Any, Literal
 from agent_core.composition import EngineScenarioHarness, EvalStorage
 from agent_core.decision import DecisionProvider, RawPrediction
 from agent_core.decision.calibration.artifact import InMemoryCalibrationSource
-from agent_core.domain import GatewayError, Principal
+from agent_core.domain import GatewayError
 from agent_core.ports import IdentityVerifier
 from agent_core.registry import EvalSuite
 from agent_core.views import FieldClassifier
 from testing.engine_world import CATALOG, CitingGateway, SyntheticAuthz, demo_calibration
 from testing.fakes.clock import FakeClock
-from testing.fakes.identity import TestIdentityIssuer
+from testing.fakes.identity import TestStaffIssuer
 from testing.fakes.ids import FakeIds
 from testing.fakes.keys import FakeKeyProvider
 from testing.fakes.provider import ScriptedProvider
 from testing.fakes.storage import InMemoryAuditSink, InMemoryStore
 from testing.fakes.transcript import InMemoryTranscript
 
-_ISSUER = TestIdentityIssuer(FakeClock(), ttl=timedelta(days=3650))
+_ISSUER = TestStaffIssuer(FakeClock(), ttl=timedelta(days=3650))
 
 
 def demo_verifier() -> IdentityVerifier:
     return _ISSUER.verifier()
 
 
-def issue(actor: Literal["human", "bot"]) -> str:
-    now = FakeClock().now()
-    who = Principal.model_validate({
-        "type": "builder", "id": "ana" if actor == "human" else "constructor-bot",
-        "roles": ["constructor", "aprobador"] if actor == "human" else ["constructor"],
-        "attrs": {"actor": "human"} if actor == "human" else {},
-        "auth": {"level": "session", "at": now}, "exp": now + timedelta(days=3650)})
-    return _ISSUER.issue(who)
+def issue(actor: Literal["human", "admin", "bot"]) -> str:
+    """`human` es el supervisor (constructor y aprobador); `admin` suma `admin`; `bot` es el constructor."""
+    match actor:
+        case "human":
+            return _ISSUER.supervisor()
+        case "admin":
+            return _ISSUER.admin()
+        case "bot":
+            return _ISSUER.constructor_bot()
 
 
 def _script_resuelto(jev: ScriptedProvider, classifier: ScriptedProvider) -> None:
@@ -102,4 +103,5 @@ def build_harness(gateway_error: GatewayError | None = None) -> EngineScenarioHa
 
 if __name__ == "__main__":
     if sys.argv[1:] == ["credentials"]:
-        print(json.dumps({"_note": "PRUEBA", "human": issue("human"), "bot": issue("bot")}, indent=2))
+        print(json.dumps({"_note": "PRUEBA", "supervisor": issue("human"), "admin": issue("admin"),
+                          "bot": issue("bot")}, indent=2))

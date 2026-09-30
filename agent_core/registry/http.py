@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from agent_core.domain import CredentialsInvalid, Principal, dumps
 from agent_core.registry.errors import HTTP_STATUS, RegistryError, RegistryErrorCode
 from agent_core.registry.models import EntityDraft, Origin
+from agent_core.registry.roles import require_builder
 from agent_core.registry.service import RegistryService
 
 Authenticate = Callable[[Request, str | None], Principal]
@@ -92,7 +93,9 @@ def registry_extension(service: RegistryService) -> Callable[[FastAPI, Authentic
                 return _Problem(dumps(body), status_code=401)
 
         def who(request: Request, authorization: str | None) -> Principal:
-            return authenticate(request, authorization)
+            principal = authenticate(request, authorization)
+            require_builder(principal)  # incluye las lecturas
+            return principal
 
         @router.post("/proposals", status_code=201)
         def create(request: Request, body: _Create, authorization: Auth = None) -> Response:

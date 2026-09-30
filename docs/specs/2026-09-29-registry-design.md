@@ -283,7 +283,7 @@ class RegistryService:
     def revoke(self, actor, release_id, reason: str) -> ReleaseDetail
     def import_seed(self, actor, root: Path) -> list[ReleaseDetail]
 
-    # Lecturas (cualquier principal autenticado)
+    # Lecturas (cualquier builder autenticado)
     def get_proposal(self, proposal_id) -> ProposalDetail            # cambios, violaciones, candidata, último reporte
     def get_entity(self, kind, entity_id, version: str | None) -> EntityVersion
     def list_versions(self, kind, entity_id) -> list[VersionSummary]
@@ -323,7 +323,8 @@ Se monta en la app FastAPI de M9 como `ApiExtension` (`ApiDeps.extensions`, por 
 | `POST /proposals/{id}/evaluate` | `evaluate` (síncrono; devuelve `EvalReport`) |
 | `POST /proposals/{id}/approve` · `/reject` | decidir |
 | `POST /proposals/{id}/publish` | `publish` (exige `Idempotency-Key`) |
-| `POST /aliases/{agent}/{alias}` · `POST /releases/{id}/revoke` | promover · revocar |
+| `POST /aliases/{agent}/{alias}` | promover (`aprobador`) |
+| `POST /releases/{id}/revoke` | revocar (`admin`) |
 | `GET /entities/{kind}/{id}` (`?version=` opcional) | leer entidades; el `id` admite `/` (p. ej. `t/saludo`), por eso la versión va como query |
 | `GET /releases/{id}` · `GET /releases/{a}/diff/{b}` | leer releases |
 | `GET /runs/{id}/lineage` | linaje |
@@ -337,7 +338,8 @@ Se monta en la app FastAPI de M9 como `ApiExtension` (`ApiDeps.extensions`, por 
 | `proposal_stale` | 409 | `expected_rev` desactualizado o `staging` movido antes de publicar |
 | `candidate_changed` | 409 | el hash aprobado o evaluado no es el de la candidata vigente |
 | `illegal_transition` | 409 | operación no permitida en el estado actual |
-| `forbidden_role` | 403 | falta el rol o el principal no es humano donde se exige |
+| `forbidden_role` | 403 | falta el rol, el principal no es `builder` o no es humano donde se exige |
+| `step_up_required` | 403 | una operación de `aprobador` o `admin` sin autenticación reforzada |
 | `integrity_error` | 500 | el hash de un contenido no coincide |
 
 ### 7.5 CLI (`agentcore registry …`)
@@ -352,12 +354,18 @@ El ciclo manual queda así: `export` → editar en el editor → `draft` → `fr
 
 | Rol | Puede |
 |---|---|
-| (cualquier principal autenticado) | leer entidades, releases, diffs, propuestas y reportes |
-| `constructor` | crear propuestas, editar borradores, validar, congelar, evaluar y reabrir |
-| `aprobador` | aprobar, rechazar, publicar, promover, revocar e importar la semilla |
+| (cualquier `builder` autenticado) | leer entidades, releases, diffs, propuestas y reportes. Un `customer`, un `advisor` o un `service` no consultan el registry |
+| `constructor` | crear propuestas, editar borradores, validar, congelar, evaluar, reabrir y leer el linaje de un run |
+| `aprobador` | aprobar, rechazar, publicar y promover (a `staging` y a `prod`) |
+| `admin` | revocar una release e importar la semilla |
+
+Quién es quién (decisión 2026-09-30, tema #14): el **supervisor** es una persona con `constructor` y `aprobador`; el **administrador** es una persona con `constructor`, `aprobador` y `admin`; el **agente constructor** autentica con una credencial de servicio propia que solo puede traer `constructor` y nunca `attrs.actor = "human"`. Todos son `builder`: no hay un tipo de principal nuevo.
 
 - **Los roles son acumulables.** Una persona con `constructor` y `aprobador` recorre el ciclo completo sola y puede aprobar su propia propuesta. `approvals` y el linaje lo registran ("construido por X, aprobado por X").
 - **Barrera de actor humano, verificada en el servidor:** las operaciones de `aprobador` exigen además un principal humano. En M0 no existe un tipo `agent` (ADR 0006): el agente constructor autentica como `builder` con su **propia credencial** de rol `constructor`, y el principal del run viaja solo como actor de auditoría, nunca como fuente de permisos (ADR 0019). Una persona con rol `aprobador` que chatea con el constructor no le presta ese rol. Un principal es humano solo si su credencial firmada trae `attrs.actor = "human"`; si falta o tiene otro valor, se trata como no humano (falla cerrado) y recibe `forbidden_role` aunque tenga el rol. Nunca se confía en el prompt del agente.
+- **Solo un `builder`:** `require_builder` se aplica a toda ruta y operación, lecturas incluidas; un principal de otro tipo recibe `forbidden_role` aunque su credencial traiga los roles. La lista de roles es cerrada (`constructor`, `aprobador`, `admin`): un rol desconocido no concede nada.
+- **`admin` y `aprobador` exigen persona y autenticación reforzada:** además de `attrs.actor = "human"`, el principal debe traer `auth.level = step_up` (ADR 0010; el OTP de la demo es simulado). Con un nivel menor el servicio responde `step_up_required`. Construir (`constructor`) solo exige una sesión.
+- **Quién firma:** las credenciales del staff (supervisor, administrador y bot) las emite un emisor propio, con una clave y un `kid` distintos de los del emisor de clientes y asesores. La API del registry se monta con un `authenticate` construido solo con esas claves, así que una credencial de cliente ni siquiera verifica. Los roles salen de los grupos del proveedor de identidad del staff al emitir la credencial; el núcleo solo los valida. En la demo los emite `TestStaffIssuer`, etiquetado como de prueba.
 - **Contenido no confiable:** todo lo que propone un agente o un LLM se valida contra el esquema estricto, nunca se ejecuta y tiene límites de tamaño y cantidad.
 - **Lo que el constructor lee** (trazas, documentación, páginas) es dato, no instrucción (ADR 0008, M12).
 - **Datos:** las suites y los `seed` del sandbox usan solo datos sintéticos.
@@ -446,6 +454,7 @@ Las que necesitan Postgres van en `tests/integration/`; el resto usa dobles en m
 | T-REG-25 | Calificación: `expect` se evalúa desde los eventos, y los guardarraíles se cuentan bien con eventos sintéticos |
 | T-REG-26 | `import` de la carpeta YAML de la demo crea releases publicadas; `export` seguido de `import` conserva los `content_hash` |
 | T-REG-27 | **E2E:** `import` → propuesta (cambio de prompt) → `freeze` → `evaluate` (`LocalSandbox`, LLM falso determinista) → `approve` → `publish` → un run nuevo usa la release nueva → el linaje muestra la entidad cambiada con su `VersionDocs` |
+| T-REG-28 | Matriz de permisos por perfil: solo un `builder` opera el registry (lecturas incluidas); el bot construye pero nunca decide aunque su credencial traiga los roles; el supervisor construye, aprueba, publica y promueve a `prod` pero no revoca ni importa; el administrador hace todo; aprobar y revocar exigen `step_up`; el verificador del staff rechaza credenciales del emisor de clientes |
 
 ## 14. Definición de terminado
 
@@ -488,6 +497,7 @@ Las que necesitan Postgres van en `tests/integration/`; el resto usa dobles en m
 | 25 | `tests/registry/test_scoring.py::test_resolved_with_verified_action_passes` |
 | 26 | `tests/registry/test_yaml_io.py::test_import_demo_creates_published_release_with_both_aliases`, `::test_export_then_load_keeps_content_hashes` |
 | 27 | `tests/integration/test_registry_postgres.py::test_end_to_end_prompt_change` |
+| 28 | `tests/registry/test_roles_matrix.py`, `tests/registry/test_http_real_app.py::test_customers_and_advisors_cannot_even_read_the_registry`, `tests/registry/test_staff_issuer.py` |
 
 ## 15. Cambios en otros módulos
 
@@ -530,8 +540,8 @@ Diseño conservado de la rev. 1, que no se construye antes del 05/10:
 
 1. **Calibración de la suite de la demo:** `repetitions`, `noise_margin` y `floor` se fijan con corridas reales contra el LLM.
 2. **Entrega del `SandboxPort` real** por la unidad 3 (fecha y forma del `seed`). Mientras tanto, `LocalSandbox`.
-3. **Límites concretos** de tamaño y cantidad por entidad y por propuesta.
-4. **Retención** de `registry_events`, `eval_runs` y propuestas.
+3. ~~**Límites concretos**~~ **Decidido 2026-09-30 (tema #16):** 50 cambios por propuesta, 262 144 bytes por entidad y 200 nodos por flow (`registry/validation.py`, `Limits`).
+4. ~~**Retención**~~ **Decidido 2026-09-30 (tema #16):** se conserva todo en el MVP; fase 2: purgar propuestas abandonadas de más de 90 días y conservar las últimas N evaluaciones por propuesta.
 
 ## 18. Dependencias del motor y de los agentes internos (ADR 0019)
 

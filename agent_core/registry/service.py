@@ -42,7 +42,7 @@ from agent_core.registry.models import (
     VersionRef,
     VersionSummary,
 )
-from agent_core.registry.roles import actor_id, require_approver, require_constructor
+from agent_core.registry.roles import actor_id, require_admin, require_approver, require_constructor
 from agent_core.registry.snapshot import SnapshotRegistry
 from agent_core.registry.store import RegistryStore, RegistryTx
 from agent_core.registry.suite import EvalSuite
@@ -416,7 +416,7 @@ class RegistryService:
             return change
 
     def revoke(self, actor: Principal, release_id: str, reason: str) -> ReleaseDetail:
-        require_approver(actor)
+        require_admin(actor)
         with self._store.transaction() as tx:
             if tx.get_release(release_id) is None:
                 raise RegistryError(RegistryErrorCode.not_found, "la release no existe")
@@ -526,7 +526,7 @@ class RegistryService:
     # --- importación y exportación YAML ----------------------------------------------------------------
 
     def import_seed(self, actor: Principal, root: Path) -> list[ReleaseDetail]:
-        require_approver(actor)
+        require_admin(actor)
         pinned_list, suites = load_seed(root)
         details: list[ReleaseDetail] = []
         with self._store.transaction() as tx:

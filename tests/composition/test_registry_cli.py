@@ -60,7 +60,7 @@ def _write_draft(directory: Path, name: str, kind: str, content: dict[str, objec
 
 def test_full_cycle_through_the_cli(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     cli = Cli(capsys)
-    [seed] = cli.ok("import", str(REGISTRY_DEMO))  # type: ignore[misc]
+    [seed] = cli.ok("import", str(REGISTRY_DEMO), actor="admin")  # type: ignore[misc]
     base = seed["release_id"]
     proposal = cli.ok("propose", AGENT, "Confirmación más clara")
     pid = proposal["proposal_id"]  # type: ignore[index]
@@ -86,7 +86,7 @@ def test_full_cycle_through_the_cli(tmp_path: Path, capsys: pytest.CaptureFixtur
     assert any(c["after"]["id"] == "p/resumen_radicado" for c in diff["changed"])  # type: ignore[index]
 
     assert cli.ok("promote", AGENT, "prod", new)["after"] == new  # type: ignore[index]
-    assert cli.ok("revoke", base, "reemplazada")["status"] == "revoked"  # type: ignore[index]
+    assert cli.ok("revoke", base, "reemplazada", actor="admin")["status"] == "revoked"  # type: ignore[index]
 
     out = tmp_path / "export"
     assert cli.ok("export", new, str(out)) is None
@@ -97,7 +97,7 @@ def test_full_cycle_through_the_cli(tmp_path: Path, capsys: pytest.CaptureFixtur
 
 def test_reject_and_reopen_through_the_cli(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     cli = Cli(capsys)
-    cli.ok("import", str(REGISTRY_DEMO))
+    cli.ok("import", str(REGISTRY_DEMO), actor="admin")
     pid = cli.ok("propose", AGENT, "t")["proposal_id"]  # type: ignore[index]
     drafts = tmp_path / "d"
     drafts.mkdir()
@@ -124,7 +124,7 @@ def test_errors_are_reported_with_exit_code_1(capsys: pytest.CaptureFixture[str]
 def test_malformed_draft_file_is_a_typed_error_not_a_traceback(tmp_path: Path,
                                                                capsys: pytest.CaptureFixture[str]) -> None:
     cli = Cli(capsys)
-    cli.ok("import", str(REGISTRY_DEMO))
+    cli.ok("import", str(REGISTRY_DEMO), actor="admin")
     pid = cli.ok("propose", AGENT, "t")["proposal_id"]  # type: ignore[index]
     (tmp_path / "lista.yaml").write_text("- uno\n- dos\n", encoding="utf-8")
     code, _, err = cli.run("draft", pid, str(tmp_path / "lista.yaml"), "--rev", "0")

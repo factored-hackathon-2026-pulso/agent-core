@@ -46,6 +46,33 @@ def check_builder_binds_no_customer_reference(authz: AuthzPort) -> None:
     assert CUSTOMER.ref not in bound.values()
 
 
+def _admin(**over: object) -> Principal:
+    base: dict[str, object] = {
+        "type": "builder", "id": "root", "attrs": {"actor": "human"}, "scopes": ["subject:*"],
+        "roles": ["constructor", "aprobador", "admin"], "auth": {"level": "step_up", "at": NOW}}
+    return principal(**(base | over))
+
+
+def check_only_the_platform_admin_reaches_customer_data(authz: AuthzPort) -> None:
+    assert authz.authorize_subject(_admin(), None, CUSTOMER).allowed
+    assert authz.can_read_field(_admin(), None, FIELD, PURPOSE)
+    assert authz.bind_params(_admin(), None, CUSTOMER)["subject_ref"] == CUSTOMER.ref
+    supervisor = _admin(roles=["constructor", "aprobador"])
+    bot = _admin(roles=["constructor"], attrs={})
+    for other in (supervisor, bot):
+        assert not authz.authorize_subject(other, None, CUSTOMER).allowed
+        assert not authz.can_read_field(other, None, FIELD, PURPOSE)
+        assert "subject_ref" not in authz.bind_params(other, None, CUSTOMER)
+
+
+def check_the_admin_needs_a_human_step_up_and_a_scope(authz: AuthzPort) -> None:
+    weak_auth = _admin(auth={"level": "session", "at": NOW})
+    not_human = _admin(attrs={})
+    no_scope = _admin(scopes=[])
+    for admin in (weak_auth, not_human, no_scope):
+        assert not authz.authorize_subject(admin, None, CUSTOMER).allowed
+
+
 def check_advisor_only_on_the_delegated_subject(authz: AuthzPort) -> None:
     advisor, obo = advisor_with_delegation()
     assert authz.authorize_subject(advisor, obo, CUSTOMER).allowed
@@ -89,6 +116,8 @@ CHECKS = [
     check_advisor_params_come_from_the_delegation,
     check_customer_only_its_own_subject,
     check_denials_carry_no_subject_reference,
+    check_only_the_platform_admin_reaches_customer_data,
+    check_the_admin_needs_a_human_step_up_and_a_scope,
 ]
 
 

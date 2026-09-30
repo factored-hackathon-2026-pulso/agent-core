@@ -23,7 +23,7 @@
    - Todo lo que no sea borrador (`write_reversible`, `write_irreversible`, `money_movement`) conserva `confirm → act → verify` sin cambios.
 6. **G0-16 no se relaja.** Un flow `task` sigue sin nodos que esperan; escribe con `write_draft` o no escribe.
 7. **El copiloto del asesor es solo lectura y cálculo en su primera versión.** Principal `advisor`, run propio sobre el subject de su delegación (un traspaso entre asesores es un run nuevo, ADR 0006). No escribe, así que no usa `write_draft`.
-8. **Un `builder` nunca obtiene datos de clientes**: ni subject, ni campos, ni parámetros vinculados. Es una prueba de contrato de `AuthzPort` (`tests/contracts/test_authz_contract.py`), no solo una convención del doble.
+8. **Un `builder` nunca obtiene datos de clientes**: ni subject, ni campos, ni parámetros vinculados. Es una prueba de contrato de `AuthzPort` (`tests/contracts/test_authz_contract.py`), no solo una convención del doble. **Excepción (2026-09-30, ADR 0006):** el administrador de la plataforma (`builder` con rol `admin`, persona y `step_up`) sí accede a datos de clientes; el supervisor y el agente constructor no.
 
 ## Alternativas
 - **Todo guionado, sin `agent` (opción A):** no exige cambios de motor, pero un copiloto abierto se abstendría a menudo y el contenido de un borrador tendría que salir de un `decide` con esquema estricto.
