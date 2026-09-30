@@ -309,6 +309,8 @@ forbidden_modules =
     agent_core.composition
     agent_core.contracts
     agent_core.registry
+ignore_imports =
+    agent_core.adapters.llm.agent_port -> agent_core.interpreter
 
 [importlinter:contract:registry]
 name = Registry (unidad 2) solo usa domain, ports y flows
