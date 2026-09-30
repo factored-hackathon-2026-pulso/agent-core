@@ -80,7 +80,9 @@ agent_core/
   handoff/  audit/    escalamiento y traspaso; auditoría, transcript y replay
   adapters/           adaptadores reales (reloj, IDs, claves, identidad, Postgres)
   composition/        raíz de composición que cablea los módulos
-  registry/  knowledge/   pendientes: solo spec
+  registry/           registry de entidades: propuestas, gate de evaluación, publicación y linaje (unidad 2)
+  knowledge/          pendiente: solo spec (M12)
+  adapters/llm/       gateway de LLM compatible con OpenAI y adaptador del nodo `agent` (unidad 5)
 agent_telemetry/      trazas OpenTelemetry
 testing/fakes/        dobles en memoria de cada puerto
 tests/                pruebas por módulo, contratos e integración
@@ -102,9 +104,9 @@ docs/                 ADR, specs y planes
 El motor y sus módulos están implementados y probados con dobles y, donde aplica, sobre Postgres. Lo que **todavía no existe**:
 
 - **Servidor HTTP arrancable:** la API está implementada (`agent_core/api`), pero falta un comando `agentcore serve`.
-- **Registry** (unidad 2): solo hay spec (`docs/specs/2026-09-29-registry-design.md`); hoy el registro es un directorio de YAML.
+- **Composición del servidor con `PostgresRegistry`:** el registry (unidad 2) está implementado (`agent_core/registry`, `agentcore registry …`), pero ningún proceso lo compone aún con el motor real.
 - **Conocimiento:** solo hay propuesta de spec (`docs/specs/motor/m12-conocimiento.md`).
-- **Adaptadores reales** para tools, autorización, gateway de LLM y transcript: hoy solo hay dobles en `testing/fakes/`.
+- **Adaptadores reales** para tools, autorización y transcript: hoy solo hay dobles en `testing/fakes/`. El gateway de LLM sí es real (`agent_core/adapters/llm`); falta correr `agentcore llm-smoke` contra OpenRouter.
 
 ## Cómo contribuir
 

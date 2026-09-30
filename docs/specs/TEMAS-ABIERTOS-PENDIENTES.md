@@ -1,6 +1,6 @@
 # Temas abiertos — Motor de decisión (spec 2026-09-28)
 
-- Estado: **9 de 9 temas originales resueltos; 3 temas nuevos abiertos (#10, alta; #11 y #12, media).** Reemplaza la versión anterior de este documento, cuyo contenido se descartó por basarse en hallazgos incorrectos.
+- Estado: **9 de 9 temas originales resueltos; 8 temas abiertos: #10 (alta), #11 y #12 (media) y, desde la auditoría del 2026-09-30, #13 a #17.** Reemplaza la versión anterior de este documento, cuyo contenido se descartó por basarse en hallazgos incorrectos.
 - Fecha: 2026-09-28
 - Spec: `2026-09-28-motor-de-decision-design.md` (rev. 15)
 - Regla de trabajo: antes de resolver cada tema se lee el ADR que lo gobierna.
@@ -30,6 +30,11 @@ Tampoco eran temas abiertos: la cadena de hash y `reportable_attrs` (ADR 0003), 
 | 10 | ADR de conocimiento (0015) aceptado pero no integrado en la spec | **Alta** | **Abierto** |
 | 11 | Capa de analítica (cálculo y visualización de métricas) sin spec | Media | **Abierto** |
 | 12 | Política del contexto conversacional (`recent_turns`) sin definir | Media | **Abierto** |
+| 13 | Servidor arrancable: faltan las piezas externas del cableado | **Alta** | **Abierto** |
+| 14 | Emisión y firma de los roles `constructor`/`aprobador` y de `attrs.actor` | **Alta** | **Abierto** |
+| 15 | Validador `decide` de `collect`: qué campo de la decisión valida | Media | **Abierto** |
+| 16 | Límites, retención y topes del agente autónomo (registry) | Media | **Abierto** |
+| 17 | Clase `write_draft` y dependencias del constructor sobre el registry | Media | **Abierto** |
 
 ## Resueltos
 - **#1 (rev. 6):** `respond.claims` declarado + derivado; invariante por camino hasta `verified`; `respond` seguro = sin reclamos. Spec §2, §5, §6.1, §8.2, §11, §13.3, §14, §15; ADR 0007.
@@ -72,3 +77,29 @@ M5 (`m05-decision-model.md` §3.2) incluye `recent_turns` (unidad 7, vista `mode
 - **Fase 1:** con `InMemoryTranscript` basta un `n` fijo; el resto no bloquea, pero debe cerrarse antes de implementar M5 con un proveedor real.
 
 Por qué es media: no bloquea la fase 1, pero afecta al costo por turno, a la calibración de umbrales de M5 y al determinismo del replay.
+
+## 13. Servidor arrancable — abierto
+Encontrado en la auditoría del 2026-09-30. `create_app` existe y el registry se monta como extensión, pero ningún proceso compone el motor con adaptadores reales (no hay `agentcore serve`; registry §14, m09 §201). No es solo la unidad 3: para servir la release de demo con un modelo real faltan:
+- **`ToolExecutor` real (unidad 3):** adaptadores a los backends con el punto de control de políticas (riesgo de la tool, parámetros ligados, `step_up_required` antes de cualquier efecto, idempotencia de escrituras; ADR 0007, 0009, 0010). Hoy solo `FakeToolExecutor` y `LocalSandboxTools` (respuestas sembradas).
+- **`AuthzPort` real (unidad 3):** hoy solo `TableAuthz`, una tabla provisional de `testing/`.
+- **`TranscriptStore` persistente (unidad 7):** solo `InMemoryTranscript`; el transcript se pierde al reiniciar.
+- **Identidad:** `JwsIdentityVerifier` recibe las claves públicas por constructor y nadie las carga desde configuración; falta definir de dónde salen (servicio de identidad) y qué implementa `grant_active`.
+- **Proveedores de decisión:** la release de demo usa `jev` (servicio externo con key; `HttpJevTransport` existe) y `classifier` (falta un `ArtifactLoader` real y sus artefactos).
+- **Calibración:** `CalibrationSource` real con artefactos etiquetados (m05 §8, dato pendiente P9).
+- **Lectores de la API:** `HandoffService` y `TranscriptReader` quedan dentro de `build_turn_engine`; habría que exponerlos para armar `ApiDeps`.
+- **Dependencia de ejecución:** `uvicorn` no está declarado en `pyproject.toml`.
+- **Arranque:** el aviso por alias de endpoint sin configurar (gateway §5) y por proveedores sin configurar depende de este comando.
+
+Por qué es alta: sin esto la demo no corre de punta a punta sobre adaptadores reales. Decidir antes: si la demo usa un servidor con dobles etiquetados (`AGENTCORE_ALLOW_DEMO=1`, como el verificador de demo del registry) o espera a la unidad 3.
+
+## 14. Roles del registry y `attrs.actor` — abierto
+La barrera de "solo una persona aprueba" (`registry/roles.py`) se apoya en `Principal.roles` y `attrs["actor"] == "human"`, ambos leídos de la credencial. Falta definir quién emite y firma esas credenciales, con qué claves y cómo se impide que un servicio o un cliente obtenga el rol `aprobador` o `actor = human` (registry §18 #5, ADR 0006). Por qué es alta: es la única defensa contra una autoaprobación automática.
+
+## 15. Validador `decide` de `collect` — abierto
+Hoy M1 lo rechaza en G0-01 (2026-09-30) porque el intérprete no sabe qué campo de la decisión valida (m02 D14, §11). Decidir: qué campo del `decision_model` decide si el slot es válido, con qué umbral y cómo se proyecta el texto del slot (`untrusted_text`, D8). Hasta entonces ningún flow puede usarlo.
+
+## 16. Límites, retención y topes del agente autónomo — abierto
+Registry §17.3 y §17.4 y §18 #10: límites de tamaño y cantidad por entidad y por propuesta, retención de `registry_events`, `eval_runs` y propuestas, y topes de borradores, evaluaciones y costo por propuesta para el constructor. Sin los topes, el constructor en modo `task` no debería activarse.
+
+## 17. `write_draft` y dependencias del constructor — abierto
+Registry §18: clase de riesgo `write_draft` (G0-23, AG-02, ruta de M3), regla G0-25 del gateway (el prompt del nodo `agent` debe ser `structured: prompted`), adaptador de `ToolExecutor` del constructor con su propia credencial, `readback_by` de borradores y catálogo de campos y plantillas de handoff como entidades versionadas. Nada de esto está construido; el constructor solo puede correr de solo lectura.
