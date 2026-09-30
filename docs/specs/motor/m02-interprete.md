@@ -232,7 +232,7 @@ Vía `tool_called` (lectura y `compute`), por `tool@v`: latencia p50/p95, tasa p
 
 ## 11. Abiertos
 
-- Validador `decide` de `collect`: no se sabe qué campo de la decisión valida (M1 lo rechaza en G0-01 mientras no se decida; `NotImplementedError` queda como defensa, D14).
+- ~~Validador `decide` de `collect`~~ **Decidido 2026-09-30 (tema #15):** no se soporta hasta la fase 2; M1 lo rechaza en G0-01 y `NotImplementedError` queda como defensa (D14). Contrato previsto: el `decision_model` declara un campo calibrado `valid` (booleano); el slot se acepta si es verdadero y supera el umbral, y si no cuenta como intento fallido.
 - Quién llena `open_questions` (índice §10).
 - **Nodo `agent` (§3.7, ADR 0019):**
   - ~~Falta el **adaptador real de `AgentPort`**~~ **Resuelto 2026-09-30:** `LLMAgentPort` (unidad 5), en `docs/specs/2026-09-28-llm-gateway-design.md` §3.8. El texto del prompt del bucle vive en el registro de la demo (gateway spec §11).
