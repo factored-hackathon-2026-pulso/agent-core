@@ -4,6 +4,8 @@ from agent_core.domain import (
     AccessDenied,
     AccessDeniedPayload,
     AccessDeniedReason,
+    AgentStep,
+    AgentStepPayload,
     AuthLevel,
     EntityRef,
     JsonValue,
@@ -52,6 +54,9 @@ class Events:
 
     def tool_called(self, state: RunState, payload: ToolCalledPayload) -> ToolCalled:
         return ToolCalled.model_validate({**self._envelope(state), "payload": payload})
+
+    def agent_step(self, state: RunState, payload: AgentStepPayload) -> AgentStep:
+        return AgentStep.model_validate({**self._envelope(state), "payload": payload})
 
     def step_up_requested(self, state: RunState, node_id: str, required_level: AuthLevel,
                           attempt: int) -> StepUpRequested:

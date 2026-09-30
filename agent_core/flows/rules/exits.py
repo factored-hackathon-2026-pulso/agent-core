@@ -21,6 +21,7 @@ FAILURES: Mapping[str, frozenset[str]] = MappingProxyType(
         "tool_write": frozenset({"denied"}),
         "confirm": frozenset({"max_attempts"}),
         "verify": frozenset({"failed"}),
+        "agent": frozenset({"gave_up"}),
     }
 )
 SAFE_ENDS = frozenset({Outcome.abstained, Outcome.clarify_exhausted})

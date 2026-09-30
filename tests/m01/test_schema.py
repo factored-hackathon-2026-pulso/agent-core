@@ -33,16 +33,10 @@ def test_unknown_type_is_g0_01_with_location() -> None:
     assert violation.path == "flows/base@1.0.0.yaml#/nodes/9"
 
 
-# T-M1-07 (en el MVP un nodo agent es G0-01)
+# T-M1-07 (subflow y await_approval siguen siendo G0-01; el nodo agent se habilitó con el ADR 0019)
 def test_production_type_rejected() -> None:
     d = base()
-    d["nodes"].append(
-        {
-            "id": "ag",
-            "type": "agent",
-            "config": {"tools_allowed": ["leer@1"], "max_steps": 3, "prompt_ref": "p/gen", "goal": "x"},
-        }
-    )
+    d["nodes"].append({"id": "ag", "type": "subflow", "config": {"flow": "otro@1"}})
     with pytest.raises(FlowSchemaError) as info:
         parse_flow(d)
     assert [(v.rule, v.message) for v in info.value.violations] == [

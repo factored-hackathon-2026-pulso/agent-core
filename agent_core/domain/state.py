@@ -25,7 +25,7 @@ class Slot(Model):
 
 class FactSource(Model):
     """Origen de un hecho: tipo, referencia y entradas (M0 §2.6)."""
-    kind: Literal["tool", "compute", "identity", "knowledge"]
+    kind: Literal["tool", "compute", "identity", "knowledge", "agent"]
     ref: str
     inputs: list[str] = Field(default_factory=list)
 

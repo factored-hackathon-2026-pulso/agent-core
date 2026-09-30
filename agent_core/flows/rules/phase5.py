@@ -235,17 +235,25 @@ def g0_14(ctx: Ctx) -> Iterator[Violation]:
         yield ctx.v("G0-14", None, "los end del flow mezclan outcomes de modo conversacional y de modo task")
 
 
+def _prompt_sites(node: object) -> Iterator[tuple[RefSpec, str]]:
+    """Los prompts que un nodo envía a un modelo: `respond.generate` y `agent`."""
+    if isinstance(node, RespondNode) and node.config.generate is not None:
+        yield node.config.generate.prompt_ref, "/config/generate/prompt_ref"
+    elif isinstance(node, AgentNode):
+        yield node.config.prompt_ref, "/config/prompt_ref"
+
+
 def g0_15(ctx: Ctx) -> Iterator[Violation]:
     for node in ctx.flow.nodes:
-        if isinstance(node, RespondNode) and node.config.generate is not None:
-            prompt = ctx.prompt(node.config.generate.prompt_ref)
+        for ref, sub in _prompt_sites(node):
+            prompt = ctx.prompt(ref)
             if prompt is not None and ctx.reg.resolve(EntityKind.model_profile, prompt.model_profile) is None:
                 yield ctx.v(
                     "G0-15",
                     node.id,
                     f"el prompt {clip(prompt.id)} referencia el model_profile "
                     f"{clip(prompt.model_profile.id)}, que no existe",
-                    "/config/generate/prompt_ref",
+                    sub,
                 )
 
 
@@ -255,3 +263,33 @@ def g0_16(ctx: Ctx) -> Iterator[Violation]:
     for node in ctx.flow.nodes:
         if is_waiting(node):
             yield ctx.v("G0-16", node.id, "un flow de modo task no tiene nodos que esperan al principal")
+
+
+# Los únicos lugares donde la salida de un `agent` puede leerse: lo que se le muestra a la persona o lo que
+# alimenta a un modelo de decisión (que ya valida su propia salida). Ninguno decide ni escribe (ADR 0019).
+_AGENT_OUTPUT_SITES = frozenset({
+    "/config/template_ref",
+    "/config/generate/allowed_facts",
+    "/config/generate/fallback_template_ref",
+    "/config/input_view",
+})
+
+
+def g0_22(ctx: Ctx) -> Iterator[Violation]:
+    """Lo que el modelo genera no alimenta decisiones ni escrituras (m01 §3.13)."""
+    produced = {n.config.save_as for n in ctx.flow.nodes if isinstance(n, AgentNode)}
+    if not produced:
+        return
+    for node in ctx.flow.nodes:
+        for site in _read_sites(ctx, node):
+            if site.sub in _AGENT_OUTPUT_SITES:
+                continue
+            for path in site.paths:
+                if path.ns == "facts" and path.name in produced:
+                    yield ctx.v(
+                        "G0-22",
+                        node.id,
+                        f"{clip(path.raw)} es salida de un nodo agent: solo puede leerla un respond o el "
+                        "input_view de un decide",
+                        site.sub,
+                    )

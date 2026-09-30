@@ -173,7 +173,7 @@ campo   := [A-Za-z0-9_]+
 | G0-04 | Ciclo sin espera | Se quitan los nodos que esperan (`collect`, `confirm`, `respond` con `await: true`) y lo que queda debe ser acíclico, auto-bucles incluidos | 1 |
 | G0-05 | Invariante de escritura | §3.5 | 1 |
 | G0-06 | Rama de fallo sin salida segura | §3.7 | 1 |
-| G0-07 | `agent` con tool que no es `read`/`compute` | Solo producción; en el MVP un nodo `agent` ya es G0-01. `write_draft` tampoco es `read`/`compute` (§3.13) | 5 |
+| G0-07 | `agent` con tool que no es `read`/`compute` | `write_draft` tampoco lo es (§3.13) | 5 |
 | G0-08 | `rule.expr` con literales de negocio | §3.9 | 5 |
 | G0-09 | `respond.generate` sin `fallback_template_ref` | Lo detecta el esquema; `parse_flow` lo reporta como **G0-09**, no como G0-01 | 5 |
 | G0-10 | Lectura fuera de su espacio de nombres | Tabla §3.2. En particular, `decisions.*` fuera de una tool `compute`, incluidos `confirm.action.args` y `rule.expr` | 5 |
@@ -390,28 +390,24 @@ Cualquier error de `load_yaml` es una sola `Violation` G0-01 con la ruta del arc
 
 **Códigos de salida:** `0` sin violaciones; `1` con violaciones; `2` error de uso o raíz inexistente. El tiempo de validación se mide con `SystemClock.monotonic_ns()` y sale solo en la salida de texto.
 
-### 3.13 Agentes internos (diseño, ADR 0019; no implementado)
+### 3.13 Agentes internos (ADR 0019)
 
-Nada de esta sección está en el código: describe qué cambia en M1 cuando se construyan el nodo `agent` y la clase `write_draft`. Hasta entonces G0-01 sigue rechazando `agent` (§3.1) y `RiskClass` no tiene `write_draft`.
+**Implementado (nodo `agent`, solo lectura y cálculo):**
+- G0-01 ya no rechaza `agent` (`PRODUCTION_NODE_KINDS` = `subflow`, `await_approval`).
+- **Referencias:** `tools_allowed` y `prompt_ref` son sitios de referencia (G0-02) y `pin_release` los fija.
+- **G0-07** es alcanzable. **G0-15** cubre también el `prompt_ref` del `agent`. **G0-12** (locales) alcanza al prompt por ser un sitio de plantilla. **G0-06** trata `gave_up` como rama de fallo.
+- **G0-22:** ninguna ruta `facts.<save_as>` de un nodo `agent` se lee en `rule.expr`, `verify.predicate`, `tool.args`, `confirm.action.args`, `escalate.priority_expr` ni `end.output_map`. Solo `respond` (plantilla, `allowed_facts` y su plantilla de respaldo) y el `input_view` de un `decide` pueden leerla. Para que un valor del agente llegue a una escritura debe pasar por un `collect` (la persona lo da) o por un `decide` con esquema.
+- Pruebas: `tests/m01/test_agent_node.py`.
 
-**Reglas nuevas** (siguen a G0-21 de M12, §11):
+**Diseñado, no implementado (clase `write_draft`, constructor por señal):** depende de que el registry garantice borradores reversibles (registry §18) y de especificar la ruta sin `confirm` en M3.
 
 | Regla | Qué comprueba | Fase |
 |---|---|---|
-| G0-22 | Lo que el modelo genera no alimenta decisiones ni escrituras: ninguna ruta `facts.<save_as>` de un nodo `agent` (`save_as` de su config) se lee en `rule.expr`, `verify.predicate`, `tool.args`, `confirm.action.args`, `escalate.priority_expr` ni `end.output_map`. Solo `respond` (plantilla y `allowed_facts`) y `decide.input_view` pueden leerla. Para que un valor del agente llegue a una escritura debe pasar por un `collect` (la persona lo da) o por un `decide` con esquema | producción |
-| G0-23 | Un `write_draft` se invoca solo con un nodo `tool_write`, con `verify` enlazado como en G0-05.7 (`ok` y `uncertain` al mismo `verify`), `readback` de clase `read` y `idempotency_key`; no exige `confirm`. Todas las demás condiciones de G0-05 valen igual | producción |
-| AG-02 | Un agente cuyos flows usan un `write_draft` tiene `invocable_by ⊆ {builder}` y `subject_kinds` sin datos de clientes | producción |
+| G0-23 | Un `write_draft` se invoca con un nodo `tool_write` con `verify` enlazado como en G0-05.7, `readback` de clase `read` e `idempotency_key`; no exige `confirm` | pendiente |
+| AG-02 | Un agente cuyos flows usan un `write_draft` tiene `invocable_by ⊆ {builder}` y `subject_kinds` sin datos de clientes | pendiente |
 
-**Enmiendas a reglas existentes al construirse:**
-- G0-01: quitar `agent` de la lista de tipos de producción.
-- G0-05: una escritura de clase `write_draft` no necesita `confirm` (`action_from` pasa a ser opcional solo para esa clase). Las demás clases no cambian.
-- G0-07: sin cambio de texto; pasa a ser alcanzable.
-
-**Pruebas previstas** (numeración a continuar cuando se implementen):
-- Flow con `agent` y una lectura de `facts.<save_as>` en `rule.expr` → G0-22; en `respond.allowed_facts` → sin violación.
-- Flow `task` con `write_draft` y sin `confirm` → sin G0-05 ni G0-16; el mismo flow con una tool `write_reversible` sin `confirm` → G0-05.
-- `write_draft` sin `verify` enlazado → G0-23.
-- Agente con `invocable_by` que incluye `customer` y un flow con `write_draft` → AG-02.
+- G0-05 pasará a aceptar `write_draft` sin `confirm` (`action_from` opcional solo para esa clase). Las demás clases no cambian.
+- `RiskClass` aún no tiene `write_draft`: mientras tanto, cualquier tool de escritura exige `confirm`, así que **falla cerrado**.
 
 ## 4. Invariantes
 
@@ -512,7 +508,7 @@ Sin métricas de runtime. Se reportan:
 ## 11. Abiertos
 
 - **Numeración de las reglas de conocimiento** (tema #10): con G0-15 (gateway) y G0-16 (modo task) tomadas, M12 pasa a proponer G0-17 a G0-21. Las reglas de agentes internos (§3.13) empiezan en G0-22.
-- **Agentes internos (ADR 0019):** G0-22, G0-23 y AG-02 están solo especificadas. Falta decidir al construir si G0-22 debe cubrir también los `facts` de un `tool` `compute` que reciba una salida del agente.
+- **Agentes internos (ADR 0019):** G0-23 y AG-02 están solo especificadas. Falta decidir si G0-22 debe cubrir también los `facts` de un `tool` `compute` que reciba una salida del agente, y si un `collect.prompt_ref` puede mostrar la salida del `agent` (hoy lo rechaza G0-22).
 - **Formato de `decide.input_view`:** lo define M5. M1 lo trata como una lista de rutas (§3.2); si M5 cambia la forma, cambia la tabla de productores de §3.6.
 
 ## 12. Apéndice: nodos omitidos de `disputa-cargo`

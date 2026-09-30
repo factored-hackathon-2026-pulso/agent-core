@@ -53,6 +53,9 @@ class Projector:
         return views
 
     def _source(self, fact: Fact) -> tuple[str, list[str]]:
+        if fact.source.kind == "agent":
+            # Salida del modelo: sus campos se clasifican por nombre (M7); los que no lo estén se tokenizan.
+            return "agent", []
         if fact.source.kind in ("tool", "compute"):
             definition = self._tool_def(fact.source.ref)
             if definition is not None:

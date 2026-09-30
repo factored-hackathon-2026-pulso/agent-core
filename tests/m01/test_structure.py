@@ -123,9 +123,7 @@ def test_confirm_self_loop_is_fine() -> None:
 # T-M1-07 vía validate_flow: un Flow con nodo de producción construido a mano da solo G0-01
 def test_validate_flow_repeats_g0_01() -> None:
     d = base()
-    d["nodes"].append({"id": "ag", "type": "agent",
-                       "config": {"tools_allowed": ["leer@1"], "max_steps": 3,
-                                  "prompt_ref": "p/gen", "goal": "x"}})
+    d["nodes"].append({"id": "ag", "type": "subflow", "config": {"flow": "otro@1"}})
     assert rules(check(d)) == {"G0-01"}
 
 

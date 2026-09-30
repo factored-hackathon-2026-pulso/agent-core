@@ -30,7 +30,7 @@ _BRANCH = {ToolStatus.ok: "ok", ToolStatus.error: "error", ToolStatus.timeout: "
 _NS_PER_MS = 1_000_000
 
 
-def _call(ctx: StepContext, tool: EntityRef, args: dict[str, JsonValue],
+def call_tool(ctx: StepContext, tool: EntityRef, args: dict[str, JsonValue],
           call: ToolCallContext) -> tuple[ToolResult, int, bool]:
     """`(resultado, latency_ms, cortado_por_el_breaker)`. Nunca propaga `Exception` de la tool."""
     if ctx.breaker.is_open(tool, ctx.clock.now()):
@@ -60,7 +60,7 @@ def handle_tool(node: ToolNode, state: RunState, ctx: StepContext, resume: Resum
     emitted: list[EngineEvent] = []
     retries = MAX_RETRIES if definition.idempotent else 0
     for attempt in range(1, retries + 2):
-        result, latency_ms, cut = _call(ctx, tool, args, call)
+        result, latency_ms, cut = call_tool(ctx, tool, args, call)
         ok = result.status is ToolStatus.ok
         shown, fingerprint = audit.result(result.result_full, definition) if ok else (None, None)
         payload = ToolCalledPayload(

@@ -152,6 +152,21 @@ def task_base() -> dict[str, Any]:
     )
 
 
+def agent_node(node_id: str = "investigar", **config: Any) -> dict[str, Any]:
+    """Nodo `agent` válido (ADR 0019): lee y calcula; su salida entra como `facts.hallazgo`."""
+    cfg = {"tools_allowed": ["leer@1", "calc@1"], "max_steps": 3, "prompt_ref": "p/gen", "goal": "x",
+           "save_as": "hallazgo", "output_schema": {"type": "object"}} | config
+    return {"id": node_id, "type": "agent", "config": cfg, "next": {"answered": "buscar", "gave_up": "esc"}}
+
+
+def with_agent(**config: Any) -> dict[str, Any]:
+    """`base()` con un `agent` entre el `collect` y la lectura."""
+    d = base()
+    node(d, "pedir")["next"]["ok"] = "investigar"
+    d["nodes"].append(agent_node(**config))
+    return d
+
+
 def node(d: dict[str, Any], node_id: str) -> dict[str, Any]:
     found: dict[str, Any] = next(n for n in d["nodes"] if n["id"] == node_id)
     return found

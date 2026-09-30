@@ -372,7 +372,8 @@
             "tool",
             "compute",
             "identity",
-            "knowledge"
+            "knowledge",
+            "agent"
           ],
           "title": "Kind",
           "type": "string"

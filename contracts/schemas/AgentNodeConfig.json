@@ -1,6 +1,41 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "$defs": {
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "RefSpec": {
       "additionalProperties": false,
       "description": "Referencia de autoría: exacta, rango (`^1`, `~1.2`, `1`) o sin versión.",
@@ -32,7 +67,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "Configuración del nodo `agent` (M0 §2.5).",
+  "description": "Configuración del nodo `agent` (M0 §2.5, ADR 0019).\n\n`save_as` nombra el hecho donde entra la salida; `output_schema` es el JSON Schema de esa salida.",
   "properties": {
     "goal": {
       "title": "Goal",
@@ -43,8 +78,20 @@
       "title": "Max Steps",
       "type": "integer"
     },
+    "output_schema": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Output Schema",
+      "type": "object"
+    },
     "prompt_ref": {
       "$ref": "#/$defs/RefSpec"
+    },
+    "save_as": {
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "title": "Save As",
+      "type": "string"
     },
     "tools_allowed": {
       "items": {
@@ -58,7 +105,9 @@
     "tools_allowed",
     "max_steps",
     "prompt_ref",
-    "goal"
+    "goal",
+    "save_as",
+    "output_schema"
   ],
   "title": "AgentNodeConfig",
   "type": "object"

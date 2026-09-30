@@ -151,11 +151,15 @@ class EndConfig(Model):
 
 
 class AgentNodeConfig(Model):
-    """Configuración del nodo `agent` (M0 §2.5)."""
+    """Configuración del nodo `agent` (M0 §2.5, ADR 0019).
+
+    `save_as` nombra el hecho donde entra la salida; `output_schema` es el JSON Schema de esa salida."""
     tools_allowed: list[RefSpec]
     max_steps: PositiveInt
     prompt_ref: RefSpec
     goal: str
+    save_as: SaveAs
+    output_schema: dict[str, JsonValue]
 
 
 class SubflowConfig(Model):
@@ -311,5 +315,6 @@ RESULTS: Mapping[str, frozenset[str]] = MappingProxyType(
 )
 TERMINAL: frozenset[str] = frozenset({"escalate", "end"})
 WAITING: frozenset[str] = frozenset({"collect", "confirm"})  # más respond con await: true
-PRODUCTION_NODE_KINDS: frozenset[str] = frozenset({"agent", "subflow", "await_approval"})
+# `agent` se habilitó con el ADR 0019 (solo lectura y cálculo); los otros dos siguen sin habilitar.
+PRODUCTION_NODE_KINDS: frozenset[str] = frozenset({"subflow", "await_approval"})
 MVP_NODE_KINDS: frozenset[str] = frozenset(RESULTS) - PRODUCTION_NODE_KINDS

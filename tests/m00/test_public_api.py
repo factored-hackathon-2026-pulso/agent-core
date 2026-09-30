@@ -14,7 +14,7 @@ def test_domain_exports() -> None:
                  "EscalationRequest", "RejectedDraft", "ConfirmationPrompt", "TurnResult", "SCHEMA_VERSION",
                  "GatewayError", "GatewayErrorKind", "KnowledgePage", "KnowledgeSnapshot"]:
         assert hasattr(domain, name), name
-    assert domain.SCHEMA_VERSION == "0.3.0"
+    assert domain.SCHEMA_VERSION == "0.4.0"
 
 
 def test_ports_exports() -> None:

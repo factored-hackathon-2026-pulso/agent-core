@@ -149,6 +149,21 @@ class ToolCalledPayload(Model):
     latency_ms: NonNegativeInt
 
 
+class AgentStepPayload(Model):
+    """Payload del evento `agent_step` (vista audit, M0 §2.10, ADR 0019).
+
+    Un paso del nodo `agent`. Los argumentos y el resultado de una tool van en su `tool_called` (`call_id`
+    los enlaza); el texto de la respuesta final solo como huella con clave, nunca razonamiento intermedio."""
+    node_id: NodeId
+    step: PositiveInt
+    kind: Literal["tool", "final"]
+    tool: EntityRef | None = None
+    call_id: str | None = None
+    status: ToolStatus | None = None
+    text_fp: Fingerprint | None = None
+    latency_ms: NonNegativeInt
+
+
 class StepUpRequestedPayload(Model):
     """Payload del evento `step_up_requested` (vista audit, M0 §2.10)."""
     node_id: NodeId
@@ -351,6 +366,12 @@ class ToolCalled(EngineEvent):
     payload: ToolCalledPayload
 
 
+class AgentStep(EngineEvent):
+    """Evento `agent_step` de la cadena de auditoría (M0 §2.10)."""
+    type: Literal["agent_step"] = "agent_step"
+    payload: AgentStepPayload
+
+
 class StepUpRequested(EngineEvent):
     """Evento `step_up_requested` de la cadena de auditoría (M0 §2.10)."""
     type: Literal["step_up_requested"] = "step_up_requested"
@@ -443,6 +464,7 @@ AnyEvent = Annotated[
     | DecisionMade
     | RuleEvaluated
     | ToolCalled
+    | AgentStep
     | StepUpRequested
     | ActionConfirmed
     | ActionCancelled
@@ -462,9 +484,9 @@ AnyEvent = Annotated[
 
 _EVENT_CLASSES: tuple[type[EngineEvent], ...] = (
     RunStarted, TurnStarted, CommandEmitted, NodeEntered, DecisionMade, RuleEvaluated, ToolCalled,
-    StepUpRequested, ActionConfirmed, ActionCancelled, ActionDispatched, ActionVerified, ExpiryEvaluated,
-    ResponseEmitted, ResponseFailed, TurnCompleted, InjectionFlagged, AccessDenied, Escalated,
-    HandoffResolved, RunClosed,
+    AgentStep, StepUpRequested, ActionConfirmed, ActionCancelled, ActionDispatched, ActionVerified,
+    ExpiryEvaluated, ResponseEmitted, ResponseFailed, TurnCompleted, InjectionFlagged, AccessDenied,
+    Escalated, HandoffResolved, RunClosed,
 )
 
 EVENT_TYPES: Mapping[str, type[EngineEvent]] = MappingProxyType(
@@ -483,6 +505,7 @@ EVENT_EMITTERS: Mapping[str, frozenset[str]] = MappingProxyType(
         "rule_evaluated": frozenset({"M2"}),
         "step_up_requested": frozenset({"M2"}),
         "tool_called": frozenset({"M2", "M3"}),
+        "agent_step": frozenset({"M2"}),
         "decision_made": frozenset({"M5"}),
         "action_confirmed": frozenset({"M3"}),
         "action_cancelled": frozenset({"M3"}),
@@ -501,6 +524,7 @@ MEASURED_FIELDS: Mapping[str, frozenset[str]] = MappingProxyType(
     {
         "decision_made": frozenset({"latency_ms"}),
         "tool_called": frozenset({"latency_ms"}),
+        "agent_step": frozenset({"latency_ms"}),
         "response_emitted": frozenset({"llm"}),
         "response_failed": frozenset({"llm"}),
         "turn_completed": frozenset({"duration_ms", "stages"}),

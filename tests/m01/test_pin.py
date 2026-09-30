@@ -172,13 +172,11 @@ def _flow_with(node: dict[str, Any]) -> Flow:
 
 PRODUCTION_NODES = [
     {"id": "sub", "type": "subflow", "config": {"flow": "otro@%s"}},
-    {"id": "ag", "type": "agent", "config": {"tools_allowed": ["leer@%s"], "max_steps": 3,
-                                              "prompt_ref": "p/gen@%s", "goal": "x"}},
 ]
 
 
 @pytest.mark.parametrize("spec", ["1.0.0", "1"])
-@pytest.mark.parametrize("node", PRODUCTION_NODES, ids=["subflow", "agent"])
+@pytest.mark.parametrize("node", PRODUCTION_NODES, ids=["subflow"])
 def test_pin_fails_closed_on_unknown_ref_sites(
     monkeypatch: pytest.MonkeyPatch, node: dict[str, Any], spec: str
 ) -> None:

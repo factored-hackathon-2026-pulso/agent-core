@@ -1,6 +1,6 @@
 # ADR 0019 — Agentes internos: copiloto del asesor y agente constructor
 
-- Estado: aceptado como **diseño**; los agentes y sus piezas de motor **no se construyen todavía** (2026-09-30)
+- Estado: aceptado (2026-09-30). **Implementado:** nodo `agent` de solo lectura y cálculo (M0, M1 con G0-22, M2) y la prueba de contrato de `AuthzPort`. **Pendiente:** clase `write_draft` (G0-23, AG-02, ruta sin `confirm` en M3), adaptador real de `AgentPort` y los agentes mismos
 - Unidad: 1 · Motor de decisión (con dependencias de la unidad 2, registry)
 - Amplía: ADR 0004 (nodo `agent`), ADR 0006 (principales y agentes internos), ADR 0007 (protocolo de escritura)
 - Spec del nodo y de las reglas: `docs/specs/motor/m02-interprete.md` §3.7, `docs/specs/motor/m01-validacion-estatica.md` §3.13
@@ -35,5 +35,5 @@
 ## Consecuencias
 - **Riesgo aceptado:** `write_draft` debilita `confirm → act → verify` para esa clase. Se compensa con que los borradores no se sirven, con AG-02 y con que la aprobación de la propuesta es humana.
 - **Dependencias del registry** (ver `docs/specs/2026-09-29-registry-design.md` §18): borradores reversibles e idempotentes; adaptador de `ToolExecutor` con credencial `constructor`; `forbidden_role` en `ProblemCode`; puerto de escritura de propuestas; validación de refs del nodo `agent` en el gate.
-- **Cambios de interfaz al construirse** (avisar a todos los módulos): M0 (`AgentNodeConfig`, `RiskClass.write_draft`, evento `agent_step`), M1 (G0-01, G0-05, G0-07, G0-22, AG-02), M2 (`handle_agent`), M3 (ruta de acciones sin `confirm`), M5/M8, M11 (replay). Requieren regenerar `contracts/`.
+- **Cambios de interfaz** (avisar a todos los módulos). Hechos con el nodo `agent`: M0 (`AgentNodeConfig.save_as`/`output_schema`, `FactSource.kind = agent`, evento `agent_step`; `SCHEMA_VERSION` 0.4.0 y `contracts/` regenerado), M1 (G0-01, G0-06, G0-15, G0-22, referencias y pin), M2 (`handle_agent`, `AgentPort`). Pendientes con `write_draft`: M0 (`RiskClass`), M1 (G0-05, G0-23, AG-02), M3 (ruta sin `confirm`), M11 (replay del bucle).
 - **Pendiente de decisión al construir** (secciones Abiertos de cada spec): topes del constructor autónomo (registry §17.4), `default_target_queue` opcional para agentes que nunca escalan, política de campos del copiloto (`purpose`), quién llena `open_questions` si el copiloto lo usa.

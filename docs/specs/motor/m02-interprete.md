@@ -107,32 +107,35 @@ Antes de cada nodo y de cada llamada a modelo se descuenta de `budgets_used`: `m
 
 Subconjunto cerrado: `JSONLOGIC_OPS` de M1 (`var`, `==`, `!=`, `>`, `>=`, `<`, `<=`, `and`, `or`, `!`, `in`, `if`, `missing`, con su aridad). Un operador fuera de la lista es error de esquema (G0-01), no de runtime. Aritmética con `Decimal`, nunca `float`. `evaluate(expr, data, reads=None)` registra las rutas `var`/`missing` que lee, para `rule_evaluated.inputs` (D11).
 
-### 3.7 Nodo `agent` (diseño, ADR 0019; no implementado)
+### 3.7 Nodo `agent` (ADR 0019; implementado: `handlers/agent.py`)
 
-Hoy `HANDLERS` no tiene `agent` y G0-01 rechaza el nodo. Esta sección fija el comportamiento para cuando se construya; la usan el copiloto del asesor y el agente constructor.
+ReAct acotado de **solo lectura y cálculo**. Lo usan el copiloto del asesor y el agente constructor. El adaptador real del modelo (gateway y prompt) sigue abierto (§11): M2 solo conoce el puerto `AgentPort`.
 
-**Configuración** (M0, ver m00 §2.5): `tools_allowed` (solo `read` y `compute`, G0-07), `max_steps`, `prompt_ref`, `goal` y, nuevos, `save_as` (nombre del hecho donde entra la salida) y `output_schema` (JSON Schema estricto de la respuesta final).
+**Configuración** (M0, m00 §2.5): `tools_allowed`, `max_steps`, `prompt_ref`, `goal`, `save_as` (nombre del hecho donde entra la salida) y `output_schema` (JSON Schema de la respuesta final).
 
-**Bucle.** Hasta `max_steps` pasos, cada uno con una llamada al `LLMGateway` con `prompt_ref`, el `goal` y los hechos permitidos (vista `model`, M7). El modelo devuelve una llamada a una tool de `tools_allowed` o la respuesta final:
-- **Tool:** se ejecuta con `ctx.tools.execute` y los `bound_params` del principal, y `authorize_subject` se repite en cada llamada (ADR 0006). Un `denied`, `error` o `timeout` vuelve al modelo como resultado y cuenta como paso. Los campos `untrusted_text` llegan marcados como tales (ADR 0008).
-- **Respuesta final:** se valida contra `output_schema` y contra la regla numérica de M8 (ADR 0011: toda cifra sale de un hecho). Si falla, una regeneración; si vuelve a fallar → `gave_up`.
+**Puerto.** `AgentPort.step(AgentRequest, state) → AgentStepResult`: un paso del modelo, que devuelve `AgentToolCall(tool, args)` o `AgentFinal(output)` más `model_calls`, `tokens` y `cost_usd`. `AgentRequest` lleva las `observations` de los pasos previos (en vista `model`) y, tras una salida rechazada, un `feedback` sin datos. `StepContext.agents` lo inyecta; sin él, un nodo `agent` es un error de cableado (`IllegalTransition`). Doble: `testing/fakes/agent.py` (`ScriptedAgent`).
 
-**Resultados.** `answered`: `facts[save_as] = {value, source: {agent, ref, inputs}}`, con `inputs` los `fact_id` que las tools produjeron en el bucle. `gave_up`: se agotó `max_steps`, la respuesta no validó, no hay tool permitida, o el turno está en modo degradado.
+**Bucle.** Hasta `max_steps` pasos. Antes de cada uno se revisan los presupuestos (modelo, tokens, costo y tiempo de pared): agotados → `EscalationRequest(budget_exceeded)`. Cada paso descuenta lo que informa el puerto.
+- **Tool.** Se ejecuta solo si está en `tools_allowed` (referencia exacta de la release) y es `read` o `compute`; si no, `access_denied` (`tool_denied`) y el modelo recibe `denied`. Los argumentos que son exactamente un token del run (`⟦tag:n⟧`) vuelven a su valor antes de ejecutar: la tool nunca ve el token y el modelo nunca ve el valor. Usa el circuit breaker como el nodo `tool`. La autorización por llamada es de `ToolExecutor` (ADR 0006). El resultado vuelve al modelo en vista `model`. Un `error`, `timeout` o `denied` vuelve como resultado y cuenta como paso; `step_up_required` se trata como `denied` (no se puede elevar el nivel a mitad del bucle).
+- **Respuesta final.** Se valida contra `output_schema` (subconjunto cerrado en `interpreter/schema.py`: `type`, `enum`, `properties`, `required`, `additionalProperties` booleano e `items`; una palabra clave fuera de la lista rechaza la salida). Si no cumple, **una** regeneración con el motivo (ruta y regla, nunca el valor); una segunda salida inválida → `gave_up`. La regeneración cuenta como paso.
+
+**Resultados.** `answered`: `facts[save_as] = {value, source: {kind: agent, ref: <id del nodo>, inputs: <call_id de las tools del bucle>}}`. `gave_up`: se agotó `max_steps`, no hubo una salida válida, o el turno está en modo degradado.
 
 **Modo degradado** (spec general §4.1 paso 6): con `injection_flagged` el nodo no llama al modelo y devuelve `gave_up`.
 
-**Presupuestos.** El nodo cuenta como un nodo. Cada paso descuenta una llamada a modelo, tokens, costo y tiempo de pared (§3.5); al agotarse → `EscalationRequest(budget_exceeded)`.
+**Presupuestos.** El nodo cuenta como un nodo (`max_nodes_per_turn`).
 
-**Eventos.** Un `agent_step` por paso (M0, nuevo): `node_id`, `step`, `kind` (`tool`/`final`), `tool@v?`, `status`, `latency_ms`. Los argumentos y resultados van en vista `audit` y el texto del modelo como huella con clave (ADR 0003); nunca razonamiento intermedio.
+**Eventos.** Cada tool ejecutada emite su `tool_called` (argumentos y resultado en vista `audit`), y cada paso un `agent_step` (M0): `node_id`, `step`, `kind` (`tool`/`final`), `tool`, `call_id` (enlaza con su `tool_called`), `status`, `text_fp` (huella con clave de la respuesta final) y `latency_ms`. Nunca el razonamiento intermedio.
 
-**Determinismo y replay.** El bucle usa solo puertos inyectados. Con un gateway guionado produce los mismos eventos; el replay `audit` verifica la cadena de `agent_step` sin volver a llamar al modelo, y el replay `fixture` guiona sus salidas.
+**Determinismo y replay.** El bucle usa solo puertos inyectados: con un `AgentPort` guionado produce los mismos eventos. El replay `audit` verifica la cadena de `agent_step` sin volver a llamar al modelo.
 
 **Límites duros.**
-- El nodo no escribe: `tools_allowed` solo admite `read` y `compute` (G0-07), y `write_draft` tampoco (m01 §3.13).
+- El nodo no escribe (G0-07 en el flow, y el motor lo repite en runtime).
 - Solo escribe en `facts[save_as]`: no toca `slots` ni `decisions`.
 - G0-22 impide que esa salida alimente una escritura, una `rule` o un `verify`.
+- Los campos de la salida se clasifican por nombre en M7 (origen `agent`); los que no estén clasificados se tokenizan.
 
-**Pruebas previstas.** `max_steps` agotado → `gave_up`; una tool fuera de `tools_allowed` no se ejecuta; modo degradado sin llamada al modelo; respuesta inválida → una regeneración y luego `gave_up`; los eventos `agent_step` reproducen bajo un gateway guionado; `denied` por delegación ajena vuelve al modelo sin datos del subject.
+**Pruebas:** `tests/m02/test_agent.py` (16) y `tests/m02/test_output_schema.py`.
 
 ## 4. Invariantes
 
@@ -229,7 +232,11 @@ Vía `tool_called` (lectura y `compute`), por `tool@v`: latencia p50/p95, tasa p
 
 - Validador `decide` de `collect`: no se sabe qué campo de la decisión valida (hoy `NotImplementedError`, D14).
 - Quién llena `open_questions` (índice §10).
-- **Nodo `agent` (§3.7, ADR 0019):** falta decidir el formato del prompt del bucle (la spec del gateway), cómo se serializa `output_schema` para el modelo y si `max_steps` cuenta también las regeneraciones.
+- **Nodo `agent` (§3.7, ADR 0019):**
+  - Falta el **adaptador real de `AgentPort`**: el formato del prompt del bucle (spec del gateway) y cómo se serializa `output_schema` para el modelo.
+  - No se aplica la regla numérica de M8 a la salida: M2 no puede importar M8. La salida solo llega a la persona por un `respond`, que tiene su propio validador, y G0-22 impide que decida o escriba.
+  - Un `output_schema` con palabras clave fuera del subconjunto rechaza toda salida en runtime; falta una regla de M1 que lo detecte al validar el flow.
+  - Falta decidir si la salida debe marcarse como `untrusted` cuando el bucle leyó campos `untrusted_text`.
 - Parámetros del circuit breaker por `tool_def` (hoy por constructor, D10).
 - Reinicio de `node_attempts` al terminar un flow (hoy solo lo reinicia `start_flow`).
 - (a) Step-up de escritura: M3 `execute_write` devuelve solo `"step_up_required"`, sin el nivel requerido; M2 usa `min_auth_level` de la tool. Requiere que M3 lo transporte.

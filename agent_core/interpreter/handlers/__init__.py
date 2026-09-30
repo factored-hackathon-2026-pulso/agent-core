@@ -3,6 +3,7 @@
 from collections.abc import Mapping
 from types import MappingProxyType
 
+from agent_core.interpreter.handlers.agent import handle_agent
 from agent_core.interpreter.handlers.base import NodeHandler, NodeResult
 from agent_core.interpreter.handlers.collect import handle_collect
 from agent_core.interpreter.handlers.decide import handle_decide
@@ -23,6 +24,7 @@ HANDLERS: Mapping[str, NodeHandler] = MappingProxyType({
     "confirm": handle_confirm,
     "tool_write": handle_write,
     "verify": handle_verify,
+    "agent": handle_agent,
 })
 
 __all__ = ["HANDLERS", "NodeHandler", "NodeResult"]

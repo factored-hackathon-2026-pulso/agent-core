@@ -30,6 +30,8 @@ SAMPLE_PAYLOADS: dict[str, dict[str, Any]] = {
     "tool_called": {"node_id": "buscar_tx", "tool": "buscar_transacciones@1.0.0", "call_id": "call-0001",
                     "status": "ok", "args": {"texto": "⟦txt:1⟧"}, "result": {"count": 2}, "result_fp": FP,
                     "error": None, "attempt": 1, "action_id": None, "latency_ms": 35},
+    "agent_step": {"node_id": "investigar", "step": 1, "kind": "tool", "tool": "buscar_transacciones@1.0.0",
+                   "call_id": "call-0001", "status": "ok", "text_fp": None, "latency_ms": 41},
     "step_up_requested": {"node_id": "radicar", "required_level": "step_up", "attempt": 1},
     "action_confirmed": {"action_id": "action-0001", "source": "button"},
     "action_cancelled": {"action_id": "action-0001", "reason": "token_expired"},

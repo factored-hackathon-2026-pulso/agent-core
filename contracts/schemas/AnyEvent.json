@@ -663,6 +663,192 @@
       "title": "ActionVerifiedPayload",
       "type": "object"
     },
+    "AgentStep": {
+      "additionalProperties": false,
+      "description": "Evento `agent_step` de la cadena de auditoría (M0 §2.10).",
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/AgentStepPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "agent_step",
+          "default": "agent_step",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "AgentStep",
+      "type": "object"
+    },
+    "AgentStepPayload": {
+      "additionalProperties": false,
+      "description": "Payload del evento `agent_step` (vista audit, M0 §2.10, ADR 0019).\n\nUn paso del nodo `agent`. Los argumentos y el resultado de una tool van en su `tool_called` (`call_id`\nlos enlaza); el texto de la respuesta final solo como huella con clave, nunca razonamiento intermedio.",
+      "properties": {
+        "call_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Call Id"
+        },
+        "kind": {
+          "enum": [
+            "tool",
+            "final"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "latency_ms": {
+          "minimum": 0,
+          "title": "Latency Ms",
+          "type": "integer"
+        },
+        "node_id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ToolStatus"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "step": {
+          "exclusiveMinimum": 0,
+          "title": "Step",
+          "type": "integer"
+        },
+        "text_fp": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Fingerprint"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tool": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EntityRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "node_id",
+        "step",
+        "kind",
+        "latency_ms"
+      ],
+      "title": "AgentStepPayload",
+      "type": "object"
+    },
     "AuthLevel": {
       "description": "Nivel de autenticación; se compara por rango (`anonymous < session < step_up`).",
       "enum": [
@@ -3610,6 +3796,7 @@
       "action_confirmed": "#/$defs/ActionConfirmed",
       "action_dispatched": "#/$defs/ActionDispatched",
       "action_verified": "#/$defs/ActionVerified",
+      "agent_step": "#/$defs/AgentStep",
       "command_emitted": "#/$defs/CommandEmitted",
       "decision_made": "#/$defs/DecisionMade",
       "escalated": "#/$defs/Escalated",
@@ -3650,6 +3837,9 @@
     },
     {
       "$ref": "#/$defs/ToolCalled"
+    },
+    {
+      "$ref": "#/$defs/AgentStep"
     },
     {
       "$ref": "#/$defs/StepUpRequested"

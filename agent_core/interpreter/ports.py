@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Protocol
 
 from agent_core.domain import (
+    AgentNodeConfig,
     Decision,
     EngineEvent,
     EntityRef,
@@ -19,6 +20,7 @@ from agent_core.domain import (
     RejectedDraft,
     RunState,
 )
+from agent_core.ports import ToolStatus
 
 
 @dataclass(frozen=True)
@@ -66,3 +68,60 @@ class ResponderPort(Protocol):
     """Generar → validar → regenerar → plantilla de respaldo (M8 §3.2)."""
 
     def generate(self, request: GenerateRequest, state: RunState) -> GenerateResult: ...
+
+
+@dataclass(frozen=True)
+class AgentObservation:
+    """Lo que el modelo ve de un paso anterior: la tool, sus argumentos y su resultado en vista `model`.
+
+    `result` es `None` si la tool no se ejecutó o no devolvió `ok`; `status` distingue el motivo."""
+
+    tool: EntityRef
+    args: dict[str, JsonValue]
+    status: ToolStatus
+    result: JsonValue = None
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class AgentRequest:
+    """Un paso del nodo `agent` (m02 §3.7). `feedback` es el motivo (sin datos) por el que se rechazó la
+    salida anterior, si la hay."""
+
+    node_id: NodeId
+    config: AgentNodeConfig
+    step: int
+    observations: tuple[AgentObservation, ...] = ()
+    feedback: str | None = None
+
+
+@dataclass(frozen=True)
+class AgentToolCall:
+    """El modelo pide ejecutar una tool de `tools_allowed`."""
+
+    tool: EntityRef
+    args: dict[str, JsonValue] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class AgentFinal:
+    """El modelo da su respuesta final, que debe cumplir `output_schema`."""
+
+    output: JsonValue
+
+
+@dataclass(frozen=True)
+class AgentStepResult:
+    """Lo que el modelo decidió en un paso y lo que costó."""
+
+    action: AgentToolCall | AgentFinal
+    model_calls: int = 1
+    tokens: int = 0
+    cost_usd: Decimal = Decimal("0")
+
+
+class AgentPort(Protocol):
+    """Un paso del bucle del nodo `agent`. Solo recibe la vista `model` (M7); el adaptador real (gateway,
+    prompt) está abierto (m02 §11)."""
+
+    def step(self, request: AgentRequest, state: RunState) -> AgentStepResult: ...

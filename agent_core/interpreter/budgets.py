@@ -40,6 +40,20 @@ def model_budget_exhausted(state: RunState, ctx: StepContext) -> bool:
     return state.budgets_used.turn_model_calls >= ctx.agent.budgets.max_model_calls_per_turn
 
 
+def run_budget_exhausted(state: RunState, ctx: StepContext) -> bool:
+    """Modelo, tokens, costo o tiempo de pared agotados: el bucle del nodo `agent` lo revisa en cada paso."""
+    used = state.budgets_used
+    limits = ctx.agent.budgets
+    started = used.turn_started_at or ctx.clock.now()
+    elapsed_ms = (ctx.clock.now() - started) // timedelta(milliseconds=1)
+    return (
+        model_budget_exhausted(state, ctx)
+        or used.run_tokens >= limits.max_tokens_per_run
+        or used.run_cost >= limits.max_cost_per_run
+        or elapsed_ms >= limits.max_wall_ms_per_turn
+    )
+
+
 def charge_model(state: RunState, *, calls: int, tokens: int, cost: Decimal) -> RunState:
     used = state.budgets_used
     charged = used.model_copy(update={

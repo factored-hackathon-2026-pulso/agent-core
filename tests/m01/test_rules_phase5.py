@@ -73,7 +73,8 @@ def test_g0_07_agent_node_with_write_tool() -> None:
         {
             "id": "ag",
             "type": "agent",
-            "config": {"tools_allowed": ["escribir@1"], "max_steps": 3, "prompt_ref": "p/gen", "goal": "x"},
+            "config": {"tools_allowed": ["escribir@1"], "max_steps": 3, "prompt_ref": "p/gen", "goal": "x",
+                       "save_as": "h", "output_schema": {}},
         }
     )
     found = list(g0_07(Ctx.build(Flow.model_validate(d), registry())))
@@ -93,6 +94,8 @@ def test_g0_07_agent_node_with_read_and_compute_tools_is_valid() -> None:
                 "max_steps": 3,
                 "prompt_ref": "p/gen",
                 "goal": "x",
+                "save_as": "h",
+                "output_schema": {},
             },
         }
     )
@@ -105,7 +108,8 @@ def test_g0_07_unresolved_tool_is_left_to_g0_02() -> None:
         {
             "id": "ag",
             "type": "agent",
-            "config": {"tools_allowed": ["nada@1"], "max_steps": 3, "prompt_ref": "p/gen", "goal": "x"},
+            "config": {"tools_allowed": ["nada@1"], "max_steps": 3, "prompt_ref": "p/gen", "goal": "x",
+                       "save_as": "h", "output_schema": {}},
         }
     )
     assert _direct(g0_07, d) == []

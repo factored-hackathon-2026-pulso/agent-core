@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from agent_core.domain import (
     Agent,
+    AgentNode,
     CollectNode,
     ConfirmNode,
     DecideNode,
@@ -78,6 +79,10 @@ def node_ref_sites(node: Node, index: int) -> list[RefSite]:
                 add(EntityKind.prompt, node.config.generate.prompt_ref, "generate", "prompt_ref")
                 add(EntityKind.template, node.config.generate.fallback_template_ref, "generate",
                     "fallback_template_ref")
+        case AgentNode():
+            for i, ref in enumerate(node.config.tools_allowed):
+                sites.append(RefSite(EntityKind.tool, ref, (*base, "tools_allowed", i), node.id))
+            add(EntityKind.prompt, node.config.prompt_ref, "prompt_ref")
         case _:
             pass
     return sites

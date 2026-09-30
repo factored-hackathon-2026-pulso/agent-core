@@ -170,7 +170,8 @@ def test_limits_must_be_positive(field: str, bad: int) -> None:
         "max_steps": {
             "id": "a",
             "type": "agent",
-            "config": {"tools_allowed": [], "max_steps": bad, "prompt_ref": "p/x", "goal": "g"},
+            "config": {"tools_allowed": [], "max_steps": bad, "prompt_ref": "p/x", "goal": "g",
+                       "save_as": "hallazgo", "output_schema": {"type": "object"}},
         },
     }
     with pytest.raises(ValidationError):
@@ -203,8 +204,10 @@ def test_config_is_stored_as_data_not_evaluated() -> None:
 
 def test_results_cover_mvp_kinds() -> None:
     assert frozenset(
-        {"decide", "rule", "collect", "tool", "tool_write", "confirm", "verify", "respond", "escalate", "end"}
+        {"decide", "rule", "collect", "tool", "tool_write", "confirm", "verify", "respond", "escalate", "end",
+         "agent"}  # `agent` se habilita con el ADR 0019; `subflow` y `await_approval` siguen en producción
     ) == MVP_NODE_KINDS
+    assert PRODUCTION_NODE_KINDS == frozenset({"subflow", "await_approval"})
     assert MVP_NODE_KINDS | PRODUCTION_NODE_KINDS == frozenset(RESULTS)
     assert RESULTS["tool_write"] == frozenset({"ok", "denied", "uncertain"})
     assert RESULTS["confirm"] == frozenset({"yes", "no", "unclear", "max_attempts"})
@@ -216,3 +219,27 @@ def test_results_cover_mvp_kinds() -> None:
 def test_results_is_read_only() -> None:
     with pytest.raises(TypeError):
         RESULTS["nuevo"] = frozenset()  # type: ignore[index]
+
+
+# ADR 0019: el nodo `agent` declara dónde entra su salida y con qué forma
+AGENT = {"id": "a", "type": "agent", "next": {"answered": "r", "gave_up": "r"},
+         "config": {"tools_allowed": ["leer@1"], "max_steps": 3, "prompt_ref": "p/x@1", "goal": "g",
+                    "save_as": "hallazgo", "output_schema": {"type": "object"}}}
+
+
+def test_agent_config_carries_save_as_and_output_schema() -> None:
+    node = NODE.validate_python(AGENT)
+    assert node.config.save_as == "hallazgo"  # type: ignore[union-attr]
+    assert node.config.output_schema == {"type": "object"}  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize("missing", ["save_as", "output_schema"])
+def test_agent_config_requires_save_as_and_output_schema(missing: str) -> None:
+    config = {k: v for k, v in AGENT["config"].items() if k != missing}  # type: ignore[attr-defined]
+    with pytest.raises(ValidationError):
+        NODE.validate_python({**AGENT, "config": config})
+
+
+def test_agent_save_as_is_an_identifier() -> None:
+    with pytest.raises(ValidationError):
+        NODE.validate_python({**AGENT, "config": {**AGENT["config"], "save_as": "Hallazgo 1"}})  # type: ignore[dict-item]
