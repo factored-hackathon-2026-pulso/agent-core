@@ -2,7 +2,7 @@
 
 from collections.abc import Iterator, Mapping, Sequence
 
-from agent_core.domain import RESULTS, DecideNode, DecisionModelDef, node_kind
+from agent_core.domain import RESULTS, DecideNode, DecisionModelDef, KnowledgeNode, node_kind
 from agent_core.flows.context import Ctx
 from agent_core.flows.graph import is_waiting
 from agent_core.flows.refs import flow_ref_sites, pointer_str
@@ -40,6 +40,8 @@ def g0_03(ctx: Ctx) -> Iterator[Violation]:
                 yield ctx.v("G0-03", ident, f"next.{clip(key)} apunta a {clip(dst)!r}, que no existe",
                             f"/next/{pointer_segment(key)}")
         expected: frozenset[str] | None = RESULTS.get(node_kind(node) or "", frozenset())
+        if isinstance(node, KnowledgeNode) and node.config.mode == "read":
+            expected = frozenset({"ok", "not_found", "denied"})  # `low_confidence` es solo de navigate
         if isinstance(node, DecideNode):
             model = ctx.model(node.config.model)
             if model is None:

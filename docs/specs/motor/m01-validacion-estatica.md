@@ -1,9 +1,9 @@
 # M1 — Esquema de flows y validación estática
 
-- Estado: **rev. 3 · implementado** · Fase 1 (carga, G0-01 a G0-06, `derive_claims`, CLI) y fase 5 (G0-07 a G0-16, chequeos por agente)
+- Estado: **rev. 4 · implementado** · Fase 1 (carga, G0-01 a G0-06, `derive_claims`, CLI) y fase 5 (G0-07 a G0-16, chequeos por agente)
 - Paquete: `agent_core.flows`
 - Origen: spec general §5 (catálogo y reclamos), §6.1, §6.2 (chequeos por agente), §13.1, §13.3
-- ADRs: 0004 (catálogo cerrado, G0), 0007 (acción congelada, reclamos), 0009 (políticas, literales), 0011 (`compute`), 0016 (G0-15). ADR 0015 (conocimiento) queda fuera hasta cerrar el tema #10.
+- ADRs: 0004 (catálogo cerrado, G0), 0007 (acción congelada, reclamos), 0009 (políticas, literales), 0011 (`compute`), 0016 (G0-15). ADR 0015 (conocimiento, rev. 4: G0-17 a G0-21; M12).
 - Usa: M0 · Lo usan: M2 (`derive_claims`, `release_view`, `JSONLOGIC_OPS`, rutas y plantillas), CLI `agentcore validate`, unidad 2 (gate de release), CI de `agent-registry`
 - **Requisito para empezar:** M0 terminado hasta sus tareas 4 (nodos), 5 (entidades, con `ModelProfile` y `Prompt.model_profile` de la rev. 5), 10 (`InMemoryRegistry`) y 12 (CLI).
 
@@ -40,6 +40,13 @@
   - `AuthoringRegistry` se construye desde objetos en memoria (`from_entities`), sin pasar por disco: el registry arma candidatas desde Postgres;
   - las funciones puras que reutiliza el registry (`validate_flow`, `validate_agent`, `validate_registry`, `derive_claims`, `pin_release`, `Violation`) ya salen de `agent_core.flows`, y `.importlinter` permite a `agent_core.registry` usar `domain`, `ports` y `flows`.
   - no cambian las reglas G0 ni el mensaje "conocimiento no habilitado (tema #10)": el nodo `knowledge` es de M12.
+- rev. 4 (2026-09-30), M12 `read` (M0 rev. 10, `SCHEMA_VERSION` 1.0.0; `m12-conocimiento.md`):
+  - **G0-17 a G0-21** (§3.4): G0-18 y G0-21 son reglas de flow (`FLOW_RULES`); G0-17, G0-19 y G0-20 necesitan el snapshot de la release y salen de una función nueva, `validate_flow_for_release(flow, snapshot, reg)`, que `validate_registry` llama por cada release;
+  - **G0-01** ya no rechaza el conocimiento: `knowledge_refs` dejó de existir (M0) y el mensaje "conocimiento no habilitado" desaparece. Un `knowledge_refs` en YAML es ahora un error de esquema (campo extra);
+  - **G0-03:** los resultados de un nodo `knowledge` dependen del modo (`read`: ok, not_found, denied; `navigate`: más `low_confidence`);
+  - **G0-02:** el `selector` de un nodo `navigate` es una referencia a un `decision_model`;
+  - `derive_claims` ignora las páginas (§3.6).
+  - `pin_release` (la publicación simulada) también corre `validate_flow_for_release` con el snapshot de su release, así que un flow que viola G0-17, G0-19 o G0-20 no se publica; el gate del registry lo hace con `validate_registry`.
 
 ## 1. Propósito y límites
 
@@ -80,6 +87,7 @@ def release_view(port: RegistryPort, release: Release) -> RegistryView          
 # --- Validación
 def validate_flow(flow: Flow, reg: RegistryView) -> list[Violation]                        # G0-01…G0-11, G0-13…G0-16
 def validate_flow_for_agent(flow: Flow, agent: Agent, reg: RegistryView) -> list[Violation]  # G0-12 y AG-01
+def validate_flow_for_release(flow: Flow, snapshot: KnowledgeSnapshot | None, reg: RegistryView) -> list[Violation]  # G0-17, G0-19, G0-20
 def validate_agent(agent: Agent, reg: RegistryView) -> list[Violation]                     # G0-02 y G0-12 sobre el agente
 def derive_claims(flow: Flow, reg: RegistryView) -> Mapping[str, frozenset[str]]           # lector → ids de confirm
 
@@ -117,7 +125,7 @@ $ agentcore validate <ruta-registry> [--json]
 
 - **Tipos del MVP:** `decide`, `rule`, `collect`, `tool` (lectura/`compute`), `tool` (escritura), `confirm`, `verify`, `respond`, `escalate`, `end`.
 - **Tipos de producción:** `agent`, `subflow` y `await_approval` existen en el esquema. **G0-01 los rechaza** en el MVP con el mensaje "tipo de producción no habilitado".
-- **Conocimiento:** `generate.knowledge_refs` no vacío es G0-01 ("conocimiento no habilitado, tema #10").
+- **Conocimiento (rev. 4):** el nodo `knowledge` es del catálogo (M12). `respond.generate` lleva `knowledge_from` y `purpose` en lugar de `knowledge_refs`.
 
 `respond` lleva `claims: list[str] = []`; `verify` lleva `save_as`; `confirm` lleva `max_attempts = 2` y `reprompt_template?`. El resto de los esquemas está en M0 §2.5.
 
@@ -167,7 +175,7 @@ campo   := [A-Za-z0-9_]+
 
 | ID | Regla | Algoritmo | Fase |
 |---|---|---|---|
-| G0-01 | Esquema | Lo decide `parse_flow` (y lo repite `validate_flow` para un `Flow` construido a mano). Casos: nodo fuera del catálogo o tipo de producción; `config` inválida; id de nodo duplicado; `knowledge_refs` no vacío; JSON Logic con operador fuera de `JSONLOGIC_OPS` o aridad inválida en `rule.expr`, `verify.predicate` o `escalate.priority_expr`; ruta mal formada; validador inválido o `decide`, que aún no se ejecuta (§3.4.1, m02 D14); archivo ilegible o con `id`/`version` distintos del nombre del archivo | 1 |
+| G0-01 | Esquema | Lo decide `parse_flow` (y lo repite `validate_flow` para un `Flow` construido a mano). Casos: nodo fuera del catálogo o tipo de producción; `config` inválida; id de nodo duplicado; JSON Logic con operador fuera de `JSONLOGIC_OPS` o aridad inválida en `rule.expr`, `verify.predicate` o `escalate.priority_expr`; ruta mal formada; validador inválido o `decide`, que aún no se ejecuta (§3.4.1, m02 D14); archivo ilegible o con `id`/`version` distintos del nombre del archivo | 1 |
 | G0-02 | Referencia inexistente | `reg.resolve(kind, ref)` sobre cada campo de la tabla §3.4.2 | 1 |
 | G0-03 | Estructura del grafo | (a) todo destino de `next` es un nodo del flow; (b) toda clave de `next` es un resultado del tipo; (c) todo resultado del tipo tiene `next` (terminales: `next` vacío); (d) todo nodo es alcanzable desde el primero (BFS); (e) en `decide`, `branch_on` es una propiedad de primer nivel de `output_schema.properties` con `enum` de strings, ninguno igual a `low_confidence`, y los resultados del tipo son ese enum más `low_confidence` | 1 |
 | G0-04 | Ciclo sin espera | Se quitan los nodos que esperan (`collect`, `confirm`, `respond` con `await: true`) y lo que queda debe ser acíclico, auto-bucles incluidos | 1 |
@@ -183,6 +191,11 @@ campo   := [A-Za-z0-9_]+
 | G0-14 | `end` con outcome no declarable, o mezcla de modos | `is_declarable(outcome, modo)`; todos los `end` en un mismo modo (§3.8) | 5 |
 | G0-15 | Prompt sin perfil de modelo (ADR 0016) | Para cada `generate.prompt_ref` que resuelve, `reg.resolve(model_profile, prompt.model_profile)` no es `None` | 5 |
 | G0-16 | Flow de modo task con nodos que esperan | Si el modo del flow es `task` (§3.8), no tiene `collect`, `confirm` ni `respond(await: true)`: un run task no tiene turnos que los contesten | 5 |
+| G0-17 | Página de `knowledge.read` fuera del snapshot | Cada `pages[i]` (ruta; el ancla no se ve en el manifiesto) está en `snapshot.pages`; sin snapshot, todas fallan. Solo en `validate_flow_for_release` | 5 |
+| G0-18 | `respond` `customer_answer` que lee un nodo `knowledge` de otro `purpose` | Para cada `generate.knowledge_from` de un `respond` con `purpose: customer_answer`, ningún nodo `knowledge` con ese `save_as` tiene otro `purpose` | 5 |
+| G0-19 | Página fija de un nodo `customer_answer` que no es `public` + `approved` | Sobre `snapshot.pages`; solo en `validate_flow_for_release` | 5 |
+| G0-20 | `navigate` con selector que no cubre el scope | `output_schema.properties.path.enum` del selector == rutas del snapshot bajo `scope/` (sin `index.md`), sin repetidos; sin snapshot no se puede verificar. Solo en `validate_flow_for_release` | 5 |
+| G0-21 | `knowledge_from` sin un nodo `knowledge` que domine al `respond` | Cada nombre es el `save_as` de algún nodo `knowledge`, y quitando las aristas de salida de esos nodos el `respond` no es alcanzable desde la entrada | 5 |
 | G0-24 | Tool de un nodo `agent` sin documentar | Toda tool de `tools_allowed` de un nodo `agent` lleva `description` y un `args_schema` dentro del subconjunto cerrado (`domain.schema`); el mensaje nombra la tool y la palabra clave fuera del subconjunto (§3.13) | 5 |
 
 **Consecuencia de G0-16:** en el MVP un agente task no puede escribir, porque toda escritura exige un `confirm` (G0-05). G0-16 **no se relaja** (ADR 0019): un flow task escribe solo con tools `write_draft` (§3.13) o, en producción, con `await_approval` (ADR 0014).
@@ -260,7 +273,7 @@ El análisis va por nombre y no depende del camino, así que es conservador: un 
 - `respond` con `generate`: `allowed_facts ∪ reads de fallback_template_ref ∪ prompt.reads`;
 - `end`: los valores de `output_map`.
 
-`derivados(R)` = {X : R lee algún nombre del origen de X}. Un lector con `claims(R) = ∅` es **seguro**. Las páginas de conocimiento no alimentan reclamos (M12). Si una referencia de R no resuelve, se usa lo que sí resolvió: G0-02 ya rechaza el flow.
+`derivados(R)` = {X : R lee algún nombre del origen de X}. Un lector con `claims(R) = ∅` es **seguro**. Las páginas de conocimiento no alimentan reclamos (M12): un nodo `knowledge` no es productor, `knowledge_from` no es una lectura de hechos y `respond` no suma páginas a `claims` (T-M12-05). Si una referencia de R no resuelve, se usa lo que sí resolvió: G0-02 ya rechaza el flow.
 
 **Uso en runtime:** M2 obtiene los reclamos de cada `respond` con `derive_claims(flow, release_view(registry, release))`, una vez por `flow@v` (el resultado es puro y cacheable). Así, el conjunto que va en `response_emitted.claims` es el mismo que validó el gate.
 
@@ -471,7 +484,7 @@ Ninguno. La unidad 2 registra el resultado del gate.
 | T-M1-35 | `derive_claims` conservador: hereda por la plantilla de respaldo, por una tool de lectura que lee el resultado de W, por `decide` + `compute`, y por `end.output_map` | 3 | 1 |
 | T-M1-36 | Plantillas: `reads` derivado de `{{ }}`; `reads` declarado distinto → G0-01; `{{` mal formado → G0-01; prompt con `{{` → G0-01 | — | 1 |
 | T-M1-37 | G0-03: `next` a un nodo inexistente, clave de `next` desconocida, terminal con `next`, enum de `decide` que incluye `low_confidence`; id duplicado → G0-01 | 1 | 1 |
-| T-M1-38 | G0-01: operador JSON Logic fuera de la lista o aridad inválida (en `rule`, `predicate` y `priority_expr`); ruta mal formada; regex que no compila; `knowledge_refs` no vacío | 1 | 1 |
+| T-M1-38 | G0-01: operador JSON Logic fuera de la lista o aridad inválida (en `rule`, `predicate` y `priority_expr`); ruta mal formada; regex que no compila (un `knowledge_refs` ya no existe: lo rechaza el esquema de M0) | 1 | 1 |
 | T-M1-39 | G0-10: `rule` que lee `decisions.*`; `confirm.action.args` con `decisions.*`; plantilla con `decisions.*` | — | 5 |
 | T-M1-40 | Sin cascada: una referencia que no resuelve da solo G0-02 para ese nodo | — | 1 |
 | T-M1-41 | Determinismo: la lista sale en el orden de `sort_key`; reordenar los nodos (salvo el primero) da las mismas violaciones salvo los índices de `path`; `validate_flow` no lanza sobre flows mal formados generados con `hypothesis` | — | 1 |
@@ -510,7 +523,7 @@ Sin métricas de runtime. Se reportan:
 
 ## 11. Abiertos
 
-- **Numeración de las reglas de conocimiento** (tema #10): con G0-15 (gateway) y G0-16 (modo task) tomadas, M12 pasa a proponer G0-17 a G0-21. Las reglas de agentes internos (§3.13) empiezan en G0-22 (G0-24 se sumó con la unidad 5).
+- ~~**Numeración de las reglas de conocimiento** (tema #10)~~ **Resuelto 2026-09-30:** G0-17 a G0-21 (rev. 4); pruebas en `tests/m12/test_static_rules.py` (T-M12-04). Las reglas de agentes internos (§3.13) empiezan en G0-22 (G0-24 se sumó con la unidad 5).
 - **Agentes internos (ADR 0019):** G0-23 y AG-02 están solo especificadas. Falta decidir si G0-22 debe cubrir también los `facts` de un `tool` `compute` que reciba una salida del agente, y si un `collect.prompt_ref` puede mostrar la salida del `agent` (hoy lo rechaza G0-22).
 - **Formato de `decide.input_view`:** lo define M5. M1 lo trata como una lista de rutas (§3.2); si M5 cambia la forma, cambia la tabla de productores de §3.6.
 

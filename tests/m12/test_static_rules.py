@@ -50,7 +50,7 @@ def check_safely(d: dict[str, Any]) -> list[Any]:
     return []
 
 
-# --- T-M12-04 · un fixture por regla --------------------------------------------------------------------------
+# --- T-M12-04 · un fixture por regla --------------------------------------------------------------
 
 
 def test_g0_17_a_page_that_is_not_in_the_snapshot() -> None:
@@ -59,7 +59,8 @@ def test_g0_17_a_page_that_is_not_in_the_snapshot() -> None:
     found = release_check(d)
     assert rules(found) == {"G0-17"}
     assert found[0].node_id == "saber" and "faq/no-existe.md" in found[0].message
-    assert found[0].path == "/nodes/%d/config/pages/0" % [n["id"] for n in d["nodes"]].index("saber")
+    position = [n["id"] for n in d["nodes"]].index("saber")
+    assert found[0].path == f"/nodes/{position}/config/pages/0"
     assert check(d) == []  # es una regla de la release: un flow aislado no conoce el snapshot
 
 
@@ -140,7 +141,9 @@ def test_g0_20_the_index_of_the_scope_is_not_a_route() -> None:
 
 def test_g0_21_a_respond_that_can_be_reached_without_going_through_the_knowledge_node() -> None:
     d = knowledge_flow()
-    node(d, "pedir")["next"]["max_attempts"] = "explica"  # rodea a `saber`
+    node(d, "pedir")["next"]["ok"] = "bifurca"  # un camino rodea a `saber`
+    d["nodes"].append({"id": "bifurca", "type": "rule", "config": {"expr": {"missing": ["slots.desc"]}},
+                       "next": {"true": "saber", "false": "buscar"}})
     found = check(d)
     assert rules(found) == {"G0-21"}
     assert found[0].node_id == "explica"
@@ -168,7 +171,7 @@ def test_g0_21_a_knowledge_node_whose_not_found_edge_skips_the_respond_still_dom
     assert check(d) == []
 
 
-# --- forma del nodo dentro de M1 -------------------------------------------------------------------------------
+# --- forma del nodo dentro de M1 ------------------------------------------------------------------
 
 
 def test_a_read_node_wires_exactly_ok_not_found_and_denied() -> None:
@@ -205,7 +208,7 @@ def test_knowledge_node_is_not_terminal_and_does_not_wait() -> None:
     assert not is_waiting(flow(knowledge_flow()).nodes[-2]) and isinstance(flow(knowledge_flow()), Flow)
 
 
-# --- el gate de la release -------------------------------------------------------------------------------------
+# --- el gate de la release ------------------------------------------------------------------------
 
 
 def _decl(**over: Any) -> ReleaseDecl:
@@ -240,13 +243,14 @@ def test_validate_registry_flags_a_release_with_knowledge_nodes_but_no_snapshot(
     assert {v.rule for v in validate_registry(reg)} == {"G0-17"}
 
 
-# --- T-M12-05 · derive_claims ignora las páginas -----------------------------------------------------------------
+# --- T-M12-05 · derive_claims ignora las páginas --------------------------------------------------
 
 
 def test_t_m12_05_derive_claims_ignores_pages() -> None:
     plain = knowledge_flow()
     with_nodes = dict(derive_claims(flow(plain), base_registry()))
-    assert with_nodes["explica"] == frozenset()  # una página describe procedimientos, no el resultado de una acción
+    # una página describe procedimientos, no el resultado de una acción
+    assert with_nodes["explica"] == frozenset()
     # la respuesta de éxito conserva sus reclamos y la de conocimiento no hereda ninguno
     assert with_nodes["ok_msg"] == frozenset({"confirmar"})
 

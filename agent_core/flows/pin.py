@@ -16,6 +16,7 @@ from agent_core.domain import (
     EntityKind,
     Flow,
     Interrupt,
+    KnowledgeSnapshot,
     RefSpec,
     RegistryEntity,
     Release,
@@ -27,7 +28,7 @@ from agent_core.domain import (
 from agent_core.flows.closure import Chosen, resolve_closure
 from agent_core.flows.refs import Pointer, entity_ref_sites
 from agent_core.flows.registry import AuthoringRegistry
-from agent_core.flows.validate import validate_flow
+from agent_core.flows.validate import validate_flow, validate_flow_for_release
 from agent_core.flows.violations import Violation, clip
 
 MAX_REPORTED = 20  # errores que lleva el mensaje; el resto se resume en un conteo
@@ -89,6 +90,14 @@ def _fail(errors: set[str]) -> SchemaError:
     return SchemaError("pin_release: " + shown + extra)
 
 
+def _snapshot(reg: AuthoringRegistry, chosen: Chosen, knowledge: RefSpec | None) -> KnowledgeSnapshot | None:
+    if knowledge is None:
+        return None
+    version = chosen.get((EntityKind.knowledge_snapshot, knowledge.id))
+    entity = reg.get_exact(EntityKind.knowledge_snapshot, knowledge.id, version) if version else None
+    return entity if isinstance(entity, KnowledgeSnapshot) else None
+
+
 def pin_release(reg: AuthoringRegistry, release_id: str) -> PinnedRelease:
     """Lanza únicamente `SchemaError`: release inexistente, referencia sin resolver o en conflicto, o
     violaciones G0 en un flow de la clausura."""
@@ -97,10 +106,11 @@ def pin_release(reg: AuthoringRegistry, release_id: str) -> PinnedRelease:
         raise SchemaError(f"la release {clip(release_id, 80)!r} no existe en el registro")
     chosen, problems = resolve_closure(reg, decl)
     errors = {f"{where}: {message}" for where, message in problems}
+    snapshot = _snapshot(reg, chosen, decl.knowledge)  # G0-17, G0-19 y G0-20 (M12) miran el de esta release
     for (kind, ident), version in chosen.items():
         entity = reg.get_exact(kind, ident, version)
         if isinstance(entity, Flow):
-            for v in validate_flow(entity, reg):
+            for v in (*validate_flow(entity, reg), *validate_flow_for_release(entity, snapshot, reg)):
                 errors.add(_violation_line(f"{ident}@{version}", v))
     if errors:
         raise _fail(errors)
