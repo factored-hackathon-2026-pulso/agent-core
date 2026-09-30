@@ -1,4 +1,4 @@
-"""CLI `agentcore`: `contracts`, `validate`, `sweep`, `replay`, `record`, `llm-smoke` y `registry`."""
+"""CLI `agentcore`: `contracts`, `validate`, `sweep`, `replay`, `record`, `llm-smoke`, `registry`, `serve`."""
 
 import argparse
 import importlib
@@ -309,11 +309,17 @@ def main(
     from agent_core.composition.registry import add_registry_parser, run_registry_cli
 
     add_registry_parser(sub)
+    from agent_core.composition.serve import run_serve
+    from agent_core.composition.serve_ports import add_serve_parser
+
+    add_serve_parser(sub)
     args = parser.parse_args(argv)
     if args.command == "llm-smoke":
         return _run_llm_smoke(args)
     if args.command == "registry":
         return run_registry_cli(args, clock=SystemClock(), ids=SystemIds(), env=os.environ.get)
+    if args.command == "serve":
+        return run_serve(args, clock=SystemClock(), ids=SystemIds(), env=os.environ)
     if args.command == "sweep":
         return _run_sweep(args, sweeper, clock)
     if args.command == "contracts":

@@ -41,6 +41,10 @@ class PostgresRegistry:
             self._releases[release_id] = cached
         return cached
 
+    def release(self, release_id: str) -> Release:
+        """La release fijada de un run por su id (para `EngineDeps.releases`)."""
+        return self._release(release_id)
+
     def release_status(self, release_id: str) -> Literal["active", "revoked"]:
         now = self._clock.now()
         hit = self._status.get(release_id)
