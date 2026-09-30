@@ -319,7 +319,7 @@ def test_cli_cycle_on_postgres_with_export_to_disk(registry_store: PgRegistrySto
     from tests.composition.test_registry_cli import Cli
 
     cli = Cli(capsys, registry_store)
-    [seed] = cli.ok("import", str(REGISTRY_DEMO))  # type: ignore[misc]
+    [seed] = cli.ok("import", str(REGISTRY_DEMO), actor="admin")  # type: ignore[misc]
     assert cli.ok("show", cli.ok("propose", AGENT, "t")["proposal_id"])["proposal"]["state"] == "draft"  # type: ignore[index]
     assert cli.ok("export", seed["release_id"], str(tmp_path)) is None
     assert any(tmp_path.rglob("*.yaml"))
