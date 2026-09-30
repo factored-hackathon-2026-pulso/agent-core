@@ -96,7 +96,7 @@ Todo JSON que entra al núcleo se lee con `agent_core.domain.loads` (números co
 
 | Parte de `RunState` | Escribe |
 |---|---|
-| `run_id`, `session_id`, `release`, `agent`, `principal`, `on_behalf_of`, `subject`, `mode` | M4 (al crear el run) |
+| `run_id`, `session_id`, `release`, `agent`, `principal`, `on_behalf_of`, `subject`, `mode` | M4 (al crear el run; en cada turno refresca `principal.auth` con el de la credencial presentada si la clave coincide, ADR 0010) |
 | `locale` | M4, con la decisión de M6 |
 | `status`, `outcome`, `created_at`, `last_activity_at`, `closed_at`, `turn_count`, `handoff_ref` | M4 (M10 prepara el cierre por escalamiento; M4 lo aplica) |
 | `awaiting`, `awaiting_node_id`, `pending_offer` | M4 (con el `Stop` de M2) |

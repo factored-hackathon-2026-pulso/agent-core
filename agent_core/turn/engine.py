@@ -321,6 +321,17 @@ class TurnEngine:
         except Exception:
             pass
 
+    @staticmethod
+    def _refresh_auth(state: RunState, presented: Principal) -> RunState:
+        """ADR 0010: el turno siguiente a un step-up llega con una credencial elevada del mismo principal.
+
+        Solo se toma `auth` (M9 ya validó firma y `principal_mismatch`); nunca la identidad, los roles ni los
+        scopes. Si la clave no coincide, no se cambia nada."""
+        if presented.key != state.principal.key or presented.auth == state.principal.auth:
+            return state
+        principal = state.principal.model_copy(update={"auth": presented.auth})
+        return state.model_copy(update={"principal": principal})
+
     def _process(
         self,
         uow: UnitOfWork,
@@ -334,6 +345,7 @@ class TurnEngine:
         """Pasos 3 a 14. Devuelve un `EngineError` (ya commiteable) cuando el turno cierra el run sin
         procesar el mensaje (abandono, P2)."""
         state = begin_turn(state.model_copy(update={"turn_count": state.turn_count + 1}), self._clock)
+        state = self._refresh_auth(state, principal)
         runtime = self._runtimes.open(state, principal, on_behalf_of)
         agent, release = runtime.step.agent, runtime.step.release
         frame = self._new_frame(
