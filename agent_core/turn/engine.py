@@ -258,7 +258,7 @@ class TurnEngine:
         )
         saved = frame.uow.save_run(state, expected_version=state.state_version)
         self._chain.append(frame.uow, saved.run_id, [*frame.buffer.drain(), completed])
-        cost = max(saved.budgets_used.run_cost - frame.initial_run_cost, Decimal("0")) + frame.cost_usd
+        cost = max(saved.budgets_used.run_cost - frame.initial_run_cost, Decimal("0"))
         frame.uow.add_usage(saved.principal.key, cost, now)
         result = build_turn_result(frame, saved, self._trace.current(frame.turn_id))
         if store_result and frame.client_turn_id is not None:
@@ -469,7 +469,6 @@ class TurnEngine:
         )
         with frame.meter.stage("understand"):
             outcome = self._understand.run(request)
-        frame.cost_usd += outcome.cost_usd
         frame.buffer.add(*outcome.events)  # `decision_made`, lo emite M5
         info = CommandInfo(
             command=outcome.command,
@@ -480,13 +479,20 @@ class TurnEngine:
             decision_id=outcome.decision_id,
         )
         frame.buffer.add(self._events.command_emitted(state, frame.turn_id, info, source="understand"))
-        self._charge_understand(frame, outcome.model_calls)
+        self._charge_understand(frame, outcome)
         return outcome
 
-    def _charge_understand(self, frame: TurnFrame, calls: int) -> None:
-        """Las llamadas de Understand se cuentan aparte de `turn_model_calls`; pasar el tope escala."""
+    def _charge_understand(self, frame: TurnFrame, outcome: UnderstandOutcome) -> None:
+        """Las llamadas de Understand se cuentan aparte de `turn_model_calls`; pasar el tope escala.
+
+        Sus tokens y su costo entran a `run_tokens`/`run_cost` (M4 §16), igual que los de M2 (`charge_model`);
+        `add_usage` toma el delta de `run_cost`, así que el principal no paga dos veces."""
         used = frame.state.budgets_used
-        counted = used.model_copy(update={"turn_understand_calls": used.turn_understand_calls + calls})
+        counted = used.model_copy(update={
+            "turn_understand_calls": used.turn_understand_calls + outcome.model_calls,
+            "run_tokens": used.run_tokens + outcome.tokens,
+            "run_cost": used.run_cost + outcome.cost_usd,
+        })
         frame.state = frame.state.model_copy(update={"budgets_used": counted})
         if counted.turn_understand_calls > self._config.max_understand_calls_per_turn:
             request = EscalationRequest(

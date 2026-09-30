@@ -46,7 +46,6 @@ class TurnFrame:
     confirmation: ConfirmationPrompt | None = None
     step_up: StepUpPrompt | None = None
     stop: Stop | None = None
-    cost_usd: Decimal = Decimal("0")
     initial_run_cost: Decimal = Decimal("0")
     closed: bool = False  # el run se cerró o escaló en este turno (ya emitió `run_closed`)
     tokens_expired: bool = False  # el paso 6 canceló propuestas por token vencido
