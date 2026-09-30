@@ -76,6 +76,7 @@ ENTITIES: list[RegistryEntity] = [
     _template("t/solo_es", "Solo español.", ("es",)),
     _tool("leer", "read"),
     _tool("sindoc", "read", description=None, args_schema=None),
+    _tool("blanco", "read", description="   "),
     _tool("malschema", "read", args_schema={"type": "object", "properties": {"a": {"oneOf": []}}}),
     _tool("leer_escritura", "read"),
     _tool("calc", "compute"),

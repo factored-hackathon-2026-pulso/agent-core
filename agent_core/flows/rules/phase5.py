@@ -286,7 +286,7 @@ def g0_24(ctx: Ctx) -> Iterator[Violation]:
             if tool is None:
                 continue
             sub = f"/config/tools_allowed/{i}"
-            if not tool.description or tool.args_schema is None:
+            if not (tool.description or "").strip() or tool.args_schema is None:
                 text = f"la tool {clip(ref.id)} de un nodo agent necesita description y args_schema"
                 yield ctx.v("G0-24", node.id, text, sub)
                 continue

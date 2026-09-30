@@ -127,6 +127,10 @@ def test_g0_24_agent_tool_without_documentation() -> None:
     assert rules(check(with_agent(tools_allowed=["sindoc@1"]))) == {"G0-24"}
 
 
+def test_g0_24_whitespace_only_description_counts_as_missing() -> None:
+    assert rules(check(with_agent(tools_allowed=["blanco@1"]))) == {"G0-24"}
+
+
 def test_g0_24_agent_tool_with_args_schema_outside_the_subset() -> None:
     found = check(with_agent(tools_allowed=["malschema@1"]))
     assert rules(found) == {"G0-24"}
