@@ -6,7 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, FastAPI, Header, Request
 
 from agent_core.api.authorization import RunAuthorizer
-from agent_core.api.gate import AccessGate, Admitted
+from agent_core.api.gate import ANON_SESSION_ATTR, AccessGate, Admitted
 from agent_core.api.limits import LimitGuard, RateLimitConfig
 from agent_core.api.problems import install_error_handlers
 from agent_core.api.protocols import (
@@ -27,7 +27,7 @@ from agent_core.api.schemas import (
     run_summary,
 )
 from agent_core.api.tracing import install_tracing, request_trace_id
-from agent_core.domain import EngineError, ProblemCode, RunInput, RunState, TurnInput
+from agent_core.domain import EngineError, Principal, ProblemCode, RunInput, RunState, TurnInput
 from agent_core.ports import (
     AuthzPort,
     Clock,
@@ -79,9 +79,13 @@ class ApiDeps:
     step_up_simulated: bool = True  # el OTP de la demo es simulado (ADR 0010); apagar con un OTP real
 
 
-def _idempotency_key(raw: str | None) -> str:
+def _idempotency_key(raw: str | None, principal: Principal) -> str:
+    """La clave que ve M4. Los anónimos comparten `PrincipalKey(customer, None)`: se antepone su sesión
+    firmada para que la clave de uno nunca devuelva el run de otro."""
     if raw is None or not raw.strip() or len(raw) > _MAX_IDEMPOTENCY_KEY or not raw.isprintable():
         raise EngineError(ProblemCode.invalid_request, "Idempotency-Key")
+    if principal.id is None:
+        return f"{principal.attrs[ANON_SESSION_ATTR]}:{raw}"
     return raw
 
 
@@ -140,7 +144,7 @@ def create_app(deps: ApiDeps) -> FastAPI:
             subject=body.subject,
             input=body.input,
             lang=body.lang,
-            idempotency_key=_idempotency_key(idempotency_key),
+            idempotency_key=_idempotency_key(idempotency_key, admitted.principal),
         )
         run_input = authorizer.authorize_new_run(admitted, run_input, trace_id=request_trace_id(request))
         result = deps.turns.start_run(admitted.principal, admitted.on_behalf_of, run_input)
