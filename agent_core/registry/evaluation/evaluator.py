@@ -1,6 +1,6 @@
 """`ScenarioEvaluator` (spec §6.2): k corridas por escenario sobre candidata y base, en sandbox."""
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
 from agent_core.domain import EngineEvent
@@ -47,11 +47,18 @@ class ScenarioEvaluator:
     def run(self, suite: EvalSuite, candidate: EvalTarget, base: EvalTarget | None) -> EvalReport:
         targets = [candidate] if base is None else [candidate, base]
         jobs = [_Job(t, s, r) for t in targets for s in suite.scenarios for r in range(suite.repetitions)]
+        pool = ThreadPoolExecutor(max_workers=self._max_workers)
         try:
-            with ThreadPoolExecutor(max_workers=self._max_workers) as pool:
-                done = list(pool.map(lambda job: self._one(suite, job), jobs))
-        except (HarnessUnavailable, TimeoutError) as exc:
-            return EvalReport(verdict="failed_infra", detail=type(exc).__name__ + ": " + str(exc)[:200])
+            futures = [pool.submit(self._one, suite, job) for job in jobs]
+            try:
+                for future in as_completed(futures):
+                    future.result()
+            except (HarnessUnavailable, TimeoutError) as exc:
+                pool.shutdown(wait=True, cancel_futures=True)
+                return EvalReport(verdict="failed_infra", detail=type(exc).__name__ + ": " + str(exc)[:200])
+            done = [f.result() for f in futures]  # orden de los trabajos, no de finalización
+        finally:
+            pool.shutdown(wait=True, cancel_futures=True)
         results = [r for r, _ in done]
 
         def metrics(label: str) -> SuiteMetrics:

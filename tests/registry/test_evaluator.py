@@ -23,12 +23,12 @@ def _closed(outcome: str) -> list[EngineEvent]:
 class FakeHarness:
     outcomes: dict[str, str]  # label -> outcome
     fail: bool = False
-    seen: list[tuple[str, str, int]] = field(default_factory=list)
+    seen: list[tuple[str, str, ToolExecutor]] = field(default_factory=list)
 
     def run(self, target: EvalTarget, agent_id: str, scenario: Scenario,
             tools: ToolExecutor) -> list[EngineEvent]:
         assert getattr(tools, "is_sandbox", False)
-        self.seen.append((target.label, scenario.id, id(tools)))
+        self.seen.append((target.label, scenario.id, tools))
         if self.fail:
             raise HarnessUnavailable("gateway caído")
         return _closed(self.outcomes[target.label])
@@ -70,7 +70,7 @@ def test_each_run_gets_its_own_sandbox() -> None:  # T-REG-23
     cand, base = _targets()
     harness = FakeHarness({"candidate": "resolved", "base": "resolved"})
     ScenarioEvaluator(harness, LocalSandbox(FakeIds()), max_workers=1).run(SUITE, cand, base)
-    assert len({tools_id for _, _, tools_id in harness.seen}) == 4
+    assert len({id(tools) for _, _, tools in harness.seen}) == 4  # siguen referenciados en `seen`
 
 
 def test_infra_failure_is_failed_infra() -> None:  # T-REG-11
@@ -104,3 +104,10 @@ def test_without_base_compares_to_floor() -> None:
     report = ScenarioEvaluator(harness, LocalSandbox(FakeIds())).run(SUITE, cand, None)
     assert report.verdict == "pass" and report.base is None
     assert AGENT == SUITE.agent_id
+
+
+def test_infra_failure_stops_queued_jobs() -> None:
+    cand, base = _targets()
+    harness = FakeHarness({}, fail=True)
+    report = ScenarioEvaluator(harness, LocalSandbox(FakeIds()), max_workers=1).run(SUITE, cand, base)
+    assert report.verdict == "failed_infra" and len(harness.seen) == 1
