@@ -61,4 +61,5 @@ def handle_write(node: WriteToolNode, state: RunState, ctx: StepContext, resume:
 
 def handle_verify(node: VerifyNode, state: RunState, ctx: StepContext, resume: Resume) -> NodeResult:
     state, result, events = ctx.actions.verify(state, node, build_action_context(state, ctx))
-    return NodeResult(state, result_key=result, events=events)
+    # `unavailable` (readback caído) sigue la rama `failed` del flow, pero la acción no se declara `failed`.
+    return NodeResult(state, result_key="failed" if result == "unavailable" else result, events=events)

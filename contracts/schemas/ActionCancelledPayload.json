@@ -10,7 +10,8 @@
         "escalated",
         "token_expired",
         "max_attempts",
-        "denied_by_user"
+        "denied_by_user",
+        "args_changed"
       ],
       "title": "InvalidationReason",
       "type": "string"

@@ -12,6 +12,7 @@ from agent_core.domain import (
     ActionDispatchedPayload,
     ActionVerified,
     ActionVerifiedPayload,
+    Fingerprint,
     InvalidationReason,
     RunState,
     ToolCalled,
@@ -51,15 +52,16 @@ class EventFactory:
         payload = ActionCancelledPayload(action_id=action_id, reason=reason)
         return ActionCancelled.model_validate({**self._envelope(state, turn_id), "payload": payload})
 
-    def dispatched(self, state: RunState, turn_id: str | None, action: Action) -> ActionDispatched:
-        payload = ActionDispatchedPayload(action_id=action.action_id, tool=action.tool,
-                                          args_hash=action.args_hash)
+    def dispatched(self, state: RunState, turn_id: str | None, action: Action,
+                   args_fp: Fingerprint | None) -> ActionDispatched:
+        payload = ActionDispatchedPayload(action_id=action.action_id, tool=action.tool, args_fp=args_fp)
         return ActionDispatched.model_validate({**self._envelope(state, turn_id), "payload": payload})
 
     def tool_called(self, state: RunState, turn_id: str | None, payload: ToolCalledPayload) -> ToolCalled:
         return ToolCalled.model_validate({**self._envelope(state, turn_id), "payload": payload})
 
     def verified(self, state: RunState, turn_id: str | None, action_id: str,
-                 result: Literal["verified", "failed"], readback_call_id: str) -> ActionVerified:
+                 result: Literal["verified", "failed", "unavailable"],
+                 readback_call_id: str) -> ActionVerified:
         payload = ActionVerifiedPayload(action_id=action_id, result=result, readback_call_id=readback_call_id)
         return ActionVerified.model_validate({**self._envelope(state, turn_id), "payload": payload})

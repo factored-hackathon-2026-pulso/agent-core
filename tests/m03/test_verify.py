@@ -12,6 +12,7 @@ from tests.m03.harness import (
     WRITE_NODE,
     ObservingTools,
     RaisingTools,
+    StatusTools,
     World,
     confirmed_state,
     event_types,
@@ -19,6 +20,7 @@ from tests.m03.harness import (
     readbacks,
     writes,
 )
+from tests.m03.scenarios import crash_then_recover
 
 
 def _written(w: World):  # type: ignore[no-untyped-def]
@@ -97,14 +99,44 @@ def test_predicate_that_raises_fails() -> None:
     assert verified == "failed"
 
 
-def test_readback_exception_fails_with_error_status() -> None:
+def test_readback_exception_is_unavailable_and_does_not_prove_absence() -> None:
+    """Un readback que no responde no prueba que el efecto no exista: la acción no pasa a `failed`."""
     w = World()
     state = _written(w)
     tools = RaisingTools(w.tools, TimeoutError("pqr-demo-1"), on="read")
     state, verified, events = w.manager.verify(state, VERIFY_NODE, w.ctx(tools=tools))
-    assert verified == "failed"
+    assert verified == "unavailable"
+    assert state.actions[0].state is ActionState.executed  # la tool había dicho ok; no se degrada a failed
     assert "pqr_verificada" not in state.facts
     assert (events[0].payload.status, events[0].payload.error) == (ToolStatus.error, "TimeoutError")
+    assert events[1].payload.result == "unavailable"
+
+
+@pytest.mark.parametrize("status", [ToolStatus.error, ToolStatus.timeout, ToolStatus.uncertain])
+def test_readback_error_status_is_unavailable(status: ToolStatus) -> None:
+    w = World()
+    written = _written(w)
+    tools = StatusTools(w.tools, status)
+    state, verified, _ = w.manager.verify(written, VERIFY_NODE, w.ctx(tools=tools))
+    assert verified == "unavailable" and state.actions[0].state is ActionState.executed
+
+
+def test_unavailable_readback_after_a_crash_leaves_the_action_uncertain() -> None:
+    """Recuperación (`executing`) con el readback caído: no se sabe si el efecto existe → `uncertain`."""
+    w = World()
+    out = crash_then_recover(w, "on_commit_2", readback=RaisingTools(w.tools, TimeoutError("x"), on="read"))
+    assert out.result == "unavailable"
+    assert out.recovered.actions[0].state is ActionState.uncertain
+    assert len(writes(w)) == 1
+
+
+def test_readback_that_answers_without_the_resource_still_fails() -> None:
+    w = World()
+    outcome = Scripted(ToolStatus.uncertain, result=RESOURCE, error="HTTP 503", effect=False)
+    w.write_behaviour(script=(outcome,))
+    state, _, _ = w.manager.execute_write(confirmed_state(w), WRITE_NODE, w.ctx())
+    state, verified, _ = w.manager.verify(state, VERIFY_NODE, w.ctx())
+    assert verified == "failed" and state.actions[0].state is ActionState.failed
 
 
 def test_t_m3_11_denied_never_goes_to_verify() -> None:

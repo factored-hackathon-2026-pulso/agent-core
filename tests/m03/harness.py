@@ -21,6 +21,7 @@ from agent_core.domain import (
     RefSpec,
     RunState,
     ToolDef,
+    ToolStatus,
     VerifyNode,
     WriteToolNode,
 )
@@ -175,6 +176,20 @@ class RaisingTools(_Wrapper):
         if self.definition(tool).is_write == (self.on == "write"):
             raise self.exc
         return super().execute(tool, args, bound_params, ctx, idempotency_key)
+
+
+class StatusTools(_Wrapper):
+    """Toda lectura responde con `status` (sin resultado): el readback existe pero no contesta bien."""
+
+    def __init__(self, inner: ToolExecutor, status: ToolStatus) -> None:
+        super().__init__(inner)
+        self.status = status
+
+    def execute(self, tool: EntityRef, args: dict[str, JsonValue], bound_params: dict[str, str],
+                ctx: ToolCallContext, idempotency_key: str | None = None) -> ToolResult:
+        if self.definition(tool).is_write:
+            return super().execute(tool, args, bound_params, ctx, idempotency_key)
+        return ToolResult(status=self.status, call_id="call-status", error="HTTP 503")
 
 
 class SlowTools(_Wrapper):

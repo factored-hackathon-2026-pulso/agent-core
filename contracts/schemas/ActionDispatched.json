@@ -9,10 +9,16 @@
           "title": "Action Id",
           "type": "string"
         },
-        "args_hash": {
-          "pattern": "^[0-9a-f]{64}$",
-          "title": "Args Hash",
-          "type": "string"
+        "args_fp": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Fingerprint"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "tool": {
           "$ref": "#/$defs/EntityRef"
@@ -20,8 +26,7 @@
       },
       "required": [
         "action_id",
-        "tool",
-        "args_hash"
+        "tool"
       ],
       "title": "ActionDispatchedPayload",
       "type": "object"
@@ -46,6 +51,32 @@
         "version"
       ],
       "title": "EntityRef",
+      "type": "object"
+    },
+    "Fingerprint": {
+      "additionalProperties": false,
+      "description": "Huella con clave (ADR 0008): `value = HMAC-SHA256(k[kid], JCS(dato))`.",
+      "properties": {
+        "alg": {
+          "const": "HMAC-SHA256",
+          "title": "Alg",
+          "type": "string"
+        },
+        "kid": {
+          "title": "Kid",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "alg",
+        "kid",
+        "value"
+      ],
+      "title": "Fingerprint",
       "type": "object"
     }
   },

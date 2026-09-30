@@ -33,7 +33,7 @@ SAMPLE_PAYLOADS: dict[str, dict[str, Any]] = {
     "step_up_requested": {"node_id": "radicar", "required_level": "step_up", "attempt": 1},
     "action_confirmed": {"action_id": "action-0001", "source": "button"},
     "action_cancelled": {"action_id": "action-0001", "reason": "token_expired"},
-    "action_dispatched": {"action_id": "action-0001", "tool": "radicar_pqr@1.0.0", "args_hash": "0" * 64},
+    "action_dispatched": {"action_id": "action-0001", "tool": "radicar_pqr@1.0.0", "args_fp": None},
     "action_verified": {"action_id": "action-0001", "result": "verified", "readback_call_id": "call-0002"},
     "expiry_evaluated": {"now": TS, "last_activity_at": "2026-09-28T11:00:00Z", "ttl": "PT30M",
                          "expired": True},

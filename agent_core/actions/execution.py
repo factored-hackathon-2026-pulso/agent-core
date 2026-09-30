@@ -76,7 +76,8 @@ class Executions:
             raise ValueError(f"{node.id}: {action.tool} no es una tool de escritura")
         executing = move(action, Trigger.dispatch)
         state = replace_action(state, executing)
-        dispatched = self._events.dispatched(state, ctx.turn_id, executing)
+        dispatched = self._events.dispatched(state, ctx.turn_id, executing,
+                                         ctx.audit.args_fingerprint(action.args, tool_def))
         state = commit_point(ctx, state, [dispatched])  # commit 1: executing + action_dispatched
         # Siempre los args congelados, nunca los del nodo; idempotency_key == action_id en todo reintento.
         call = self._call(ctx, action.tool, deepcopy(action.args), action.idempotency_key,
@@ -85,8 +86,9 @@ class Executions:
         state = replace_action(state, move(executing, trigger))
         if trigger is Trigger.tool_ok:
             state = self._save_fact(state, node.config.save_as, call.result.result_full, action.action_id)
+        attempt = state.node_attempts.get(node.id, 0) + 1  # cada step-up previo del nodo fue un intento
         called = self._tool_called(state, ctx, node.id, action.tool, tool_def, action.args, call,
-                                   action.action_id)
+                                   action.action_id, attempt)
         state = commit_point(ctx, state, [called])  # commit 2: resultado + tool_called
         return state, _WRITE_RESULT[trigger], [dispatched, called]
 
@@ -100,14 +102,23 @@ class Executions:
         readback_def = ctx.tools.definition(readback)
         args: dict[str, JsonValue] = {"idempotency_key": action.idempotency_key}
         call = self._call(ctx, readback, deepcopy(args), None, failure=ToolStatus.error)
-        found = call.result.status is ToolStatus.ok and call.result.result_full is not None
+        answered = call.result.status is ToolStatus.ok  # contestó: puede probar que el efecto falta
+        found = answered and call.result.result_full is not None
         holds = found and self._holds(ctx, node.config.predicate, call.result.result_full)
-        result: VerifyResult = "verified" if holds else "failed"
-        state = replace_action(state, move(action, Trigger.verified if holds else Trigger.failed))
+        result: VerifyResult
+        if not answered:
+            # Error, timeout o excepción del readback: no prueba que el efecto no exista. La acción no pasa a
+            # `failed` (un reintento podría duplicar la escritura); `executing` queda `uncertain`.
+            result = "unavailable"
+            if action.state is ActionState.executing:
+                state = replace_action(state, move(action, Trigger.tool_uncertain))
+        else:
+            result = "verified" if holds else "failed"
+            state = replace_action(state, move(action, Trigger.verified if holds else Trigger.failed))
         if found:
             state = self._save_fact(state, node.config.save_as, call.result.result_full, action.action_id)
         called = self._tool_called(state, ctx, node.id, readback, readback_def, args, call,
-                                   action.action_id)
+                                   action.action_id, 1)
         verified = self._events.verified(state, ctx.turn_id, action.action_id, result, call.result.call_id)
         return state, result, [called, verified]
 
@@ -140,7 +151,7 @@ class Executions:
 
     def _tool_called(
         self, state: RunState, ctx: ActionContext, node_id: str, tool: EntityRef, tool_def: ToolDef,
-        args: dict[str, JsonValue], call: _Call, action_id: str,
+        args: dict[str, JsonValue], call: _Call, action_id: str, attempt: int,
     ) -> ToolCalled:
         ok = call.result.status is ToolStatus.ok
         result, fingerprint = ctx.audit.result(call.result.result_full, tool_def) if ok else (None, None)
@@ -153,7 +164,7 @@ class Executions:
             result=result,
             result_fp=fingerprint,
             error=call.result.error,
-            attempt=1,
+            attempt=attempt,
             action_id=action_id,
             latency_ms=call.latency_ms,
         )

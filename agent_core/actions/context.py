@@ -57,6 +57,8 @@ class AuditProjector(Protocol):
 
     def args(self, args: dict[str, JsonValue], tool: ToolDef) -> dict[str, JsonValue]: ...
 
+    def args_fingerprint(self, args: dict[str, JsonValue], tool: ToolDef) -> Fingerprint | None: ...
+
     def result(self, result_full: JsonValue, tool: ToolDef) -> tuple[JsonValue, Fingerprint | None]: ...
 
 
@@ -75,6 +77,9 @@ class RedactAll:
 
     def args(self, args: dict[str, JsonValue], tool: ToolDef) -> dict[str, JsonValue]:
         return {key: "***" for key in sorted(args)}
+
+    def args_fingerprint(self, args: dict[str, JsonValue], tool: ToolDef) -> Fingerprint | None:
+        return None
 
     def result(self, result_full: JsonValue, tool: ToolDef) -> tuple[JsonValue, Fingerprint | None]:
         return None, None

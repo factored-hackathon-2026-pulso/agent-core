@@ -14,7 +14,8 @@
     "result": {
       "enum": [
         "verified",
-        "failed"
+        "failed",
+        "unavailable"
       ],
       "title": "Result",
       "type": "string"

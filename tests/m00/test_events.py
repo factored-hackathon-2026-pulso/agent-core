@@ -112,8 +112,9 @@ def test_seq_is_non_negative() -> None:
         EVENTS.validate_python(make_event("run_closed") | {"seq": -1})
 
 
-def test_args_hash_is_sha256_hex() -> None:
-    bad = {**SAMPLE_PAYLOADS["action_dispatched"], "args_hash": "no-es-hash"}
+def test_action_dispatched_carries_a_keyed_fingerprint_not_a_bare_hash() -> None:
+    """ADR 0008: la huella de los args es HMAC con `kid`; un sha256 sin clave ya no cabe en el evento."""
+    bad = {**SAMPLE_PAYLOADS["action_dispatched"], "args_fp": "0" * 64}
     with pytest.raises(ValidationError):
         EVENTS.validate_python(make_event("action_dispatched", bad))
 

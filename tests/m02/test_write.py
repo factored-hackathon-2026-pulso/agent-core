@@ -172,3 +172,30 @@ def test_confirm_clears_attempts_on_yes_no_and_max_attempts() -> None:
         out = w.step(w.persist(state), Resume("confirm_answer", "unclear"))
         state = out.state
     assert "confirmar" not in state.node_attempts
+
+
+class _ReadbackDown:
+    """Las lecturas fallan (el backend de lectura no contesta); las escrituras pasan al doble."""
+
+    def __init__(self, inner):  # type: ignore[no-untyped-def]
+        self.inner = inner
+
+    def definition(self, tool):  # type: ignore[no-untyped-def]
+        return self.inner.definition(tool)
+
+    def execute(self, tool, *args, **kwargs):  # type: ignore[no-untyped-def]
+        if not self.inner.definition(tool).is_write:
+            raise TimeoutError("readback")
+        return self.inner.execute(tool, *args, **kwargs)
+
+
+def test_verify_with_readback_down_follows_the_failed_branch_but_keeps_the_action_uncertain() -> None:
+    """M3 §11 (e): readback caído → rama `failed` del flow, sin declarar `failed` una escritura incierta."""
+    lost = Scripted(ToolStatus.uncertain, result={"status": "Open", "id": "pqr-1"}, error="timeout")
+    w, f = _world(write_script=(lost,))
+    proposed = w.step(_start(w, f))
+    assert proposed.confirmation is not None
+    answer = Resume("confirm_answer", "yes", token=proposed.confirmation.token)
+    out = w.step(w.persist(proposed.state), answer, tools=_ReadbackDown(w.tools))
+    assert out.state.active_flow is not None and out.state.active_flow.node_id == "esc"
+    assert [a.state for a in out.state.actions] == [ActionState.uncertain]

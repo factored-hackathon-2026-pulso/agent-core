@@ -172,13 +172,13 @@ class ActionDispatchedPayload(Model):
     """Payload del evento `action_dispatched` (vista audit, M0 §2.10)."""
     action_id: str
     tool: EntityRef
-    args_hash: Sha256Hex
+    args_fp: Fingerprint | None = None  # HMAC con clave de M7 (ADR 0008); nunca un hash sin clave
 
 
 class ActionVerifiedPayload(Model):
     """Payload del evento `action_verified` (vista audit, M0 §2.10)."""
     action_id: str
-    result: Literal["verified", "failed"]
+    result: Literal["verified", "failed", "unavailable"]
     readback_call_id: str
 
 

@@ -8,6 +8,7 @@ import pytest
 
 from agent_core.actions import VerifyResult
 from agent_core.domain import RunState
+from agent_core.ports import ToolExecutor
 from testing.fakes.storage import SimulatedCrash
 from tests.m03.harness import (
     CONFIRM,
@@ -33,7 +34,7 @@ class CrashOutcome:
     result: VerifyResult
 
 
-def crash_then_recover(w: World, at: CrashAt) -> CrashOutcome:
+def crash_then_recover(w: World, at: CrashAt, *, readback: ToolExecutor | None = None) -> CrashOutcome:
     """Turno de confirmación que muere en `at`; al recargar, la acción va a `verify` sin re-ejecutarse."""
     state, prompt = persisted_proposal(w)
     state, answered, _ = w.manager.answer(state, CONFIRM, "yes", prompt.token, w.ctx())
@@ -47,5 +48,6 @@ def crash_then_recover(w: World, at: CrashAt) -> CrashOutcome:
     loaded = reload(w)
     assert w.manager.pending_recovery(loaded) == [prompt.action_id]
     before = len(writes(w))
-    recovered, result, _ = w.manager.verify(loaded, VERIFY_NODE, w.ctx())
+    ctx = w.ctx(tools=readback) if readback else w.ctx()
+    recovered, result, _ = w.manager.verify(loaded, VERIFY_NODE, ctx)
     return CrashOutcome(prompt.action_id, before, loaded, recovered, result)

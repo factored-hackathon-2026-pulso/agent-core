@@ -62,6 +62,15 @@ class Confirmations:
         now = self._clock.now()
         events: list[EngineEvent] = []
         current = proposed_for(state, node.id)
+        args = deepcopy(resolved_args)  # congelada: nadie comparte estado mutable con el llamador
+        args_hash = sha256_hex(canonical_bytes(args))
+        tool_ref = EntityRef(id=tool_def.id, version=tool_def.version)
+        if current is not None and now < current.token_exp and (current.args_hash != args_hash
+                                                                or current.tool != tool_ref):
+            # Lo que el usuario vio ya no es lo que el flow propone: no se reutiliza (M3 §11 (a), (f)).
+            state, cancelled = self._cancel(state, current, InvalidationReason.args_changed, ctx.turn_id)
+            events.append(cancelled)
+            current = None
         if current is not None and now < current.token_exp:
             token = self._ids.secret_token()
             rotated = current.model_copy(update={"confirmation_token_hash": token_hash(token)})
@@ -73,14 +82,13 @@ class Confirmations:
             events.append(cancelled)
         action_id = self._ids.new_id(IdKind.action)
         token = self._ids.secret_token()
-        args = deepcopy(resolved_args)  # congelada: nadie comparte estado mutable con el llamador
         action = Action(
             action_id=action_id,
             confirm_node_id=node.id,
             flow=flow,
-            tool=EntityRef(id=tool_def.id, version=tool_def.version),
+            tool=tool_ref,
             args=args,
-            args_hash=sha256_hex(canonical_bytes(args)),
+            args_hash=args_hash,
             state=ActionState.proposed,
             confirmation_token_hash=token_hash(token),
             token_exp=now + tool_def.confirmation_ttl,

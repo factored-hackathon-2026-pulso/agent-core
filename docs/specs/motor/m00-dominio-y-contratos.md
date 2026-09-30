@@ -1,6 +1,6 @@
 # M0 — Dominio y contratos
 
-- Estado: **rev. 7 · implementado** (fase 1) · Fase 1
+- Estado: **rev. 8 · implementado** (fase 1) · Fase 1
 - Paquetes: `agent_core.domain`, `agent_core.ports`, `testing/fakes`
 - Origen: spec general §2, §5 (esquemas de nodos), §8 (estado), §10 (códigos), §14 (dependencias)
 - ADRs: 0001 (stack), 0002 (contratos), 0006 (principal y delegación), 0007 (acciones), 0008 (vistas y claves)
@@ -42,7 +42,12 @@
   - `LlmUsage` con `tokens_in`/`tokens_out` y `cost_known`;
   - `UnitOfWork.add_usage` (M4 acumula costo y hits en la transacción del turno); `CostCounters` pasa a M4.
 - rev. 7 (2026-09-29), cableado del motor (opción 2 de las llamadas de Understand, decidida por el usuario). Cambio aditivo:
-  - `BudgetsUsed.turn_understand_calls: int = 0` (lo suma M4, lo reinicia `begin_turn`); `contracts/` regenerado (`BudgetsUsed`, `RunState`). Los estados guardados siguen siendo válidos (valor por defecto). `SCHEMA_VERSION` **no** se subió (0.2.0): la rev. 6 subió el menor por un cambio aditivo, decidir si este también lo merece.
+  - `BudgetsUsed.turn_understand_calls: int = 0` (lo suma M4, lo reinicia `begin_turn`); `contracts/` regenerado (`BudgetsUsed`, `RunState`). Los estados guardados siguen siendo válidos (valor por defecto). `SCHEMA_VERSION` no se subió entonces; se subió a 0.3.0 en la rev. 8.
+- rev. 8 (2026-09-30), acciones y esquema (`SCHEMA_VERSION` 0.2.0 → **0.3.0**, menor: solo aditivos). Cubre además la rev. 7 y `response_failed`, que no habían subido la versión (M0 §9):
+  - `InvalidationReason.args_changed` (M3 rev. 3: la propuesta vigente se cancela si el flow repropone con otros args u otra versión de la tool);
+  - `action_dispatched`: `args_hash` (sha256 sin clave) sale del evento y entra `args_fp: Fingerprint | None` (HMAC con clave, ADR 0008); `Action.args_hash` sigue en el estado;
+  - `action_verified.result` admite `unavailable` (readback que no contestó: no prueba que el efecto falte; la acción no pasa a `failed`);
+  - `EVENT_EMITTERS["response_emitted"] = {M2, M8}` (D6).
 - rev. 6 (2026-09-29), registry (unidad 2, ADR 0017 y 0018; spec `../2026-09-29-registry-design.md` §15). Cambios aditivos:
   - `EntityKind.knowledge_snapshot` y entidad `KnowledgeSnapshot` (manifiesto de páginas, `KnowledgePage`); entra en `RegistryEntity` y en `ENTITY_KIND`;
   - `Release.knowledge_snapshot: EntityRef | None = None` (exacta; `None` = sin conocimiento);
@@ -260,7 +265,7 @@ class Decision:       decision_id: str; value: dict[str, JsonValue]; p_cal: dict
                       provider_used: str; model_version: str
 class ActionState(StrEnum): proposed, confirmed, executing, executed, uncertain, denied,
                             verified, failed, cancelled
-class InvalidationReason(StrEnum): cancel, abandoned, interrupt, escalated, token_expired, max_attempts, denied_by_user
+class InvalidationReason(StrEnum): cancel, abandoned, interrupt, escalated, token_expired, max_attempts, denied_by_user, args_changed
 class Action:         action_id: str; confirm_node_id: str; flow: EntityRef
                       tool: EntityRef; args: dict[str, JsonValue]; args_hash: str
                       state: ActionState; confirmation_token_hash: str; token_exp: AwareDatetime
@@ -484,8 +489,8 @@ Todo payload está en **vista `audit`**: sin `pii_direct` en claro, sin tokens r
 | `step_up_requested` | `node_id, required_level, attempt` | M2 |
 | `action_confirmed` | `action_id, source: understand\|button` | M3 |
 | `action_cancelled` | `action_id, reason: InvalidationReason` | M3 |
-| `action_dispatched` | `action_id, tool: EntityRef, args_hash` | M3 |
-| `action_verified` | `action_id, result: verified\|failed, readback_call_id` | M3 |
+| `action_dispatched` | `action_id, tool: EntityRef, args_fp: Fingerprint?` | M3 |
+| `action_verified` | `action_id, result: verified\|failed\|unavailable, readback_call_id` | M3 |
 | `expiry_evaluated` | `now, last_activity_at, ttl, expired: bool` | M4 |
 | `response_emitted` | `node_id?, kind, validator: {ok, failures, regenerations}, fallback_used, claims: list[str], transcript_fp: Fingerprint?, llm: LlmUsage?` | M8 desde `generate`; M2 desde `respond(template_ref)` (D6); M4 rellena `transcript_fp` |
 | `response_failed` | `node_id?, reason_code: "validation_failed", validator: {ok, failures, regenerations}, claims: list[str], llm: LlmUsage?` | M8 (`respond(generate)` terminó en `EscalationRequest`; sin texto de borradores) |

@@ -22,6 +22,9 @@ class ViewsAudit:
         audit = self._views.project(args, self._source(tool), tool.untrusted_fields, self._vault).audit
         return audit if isinstance(audit, dict) else {}
 
+    def args_fingerprint(self, args: dict[str, JsonValue], tool: ToolDef) -> Fingerprint | None:
+        return self._views.project(args, self._source(tool), tool.untrusted_fields, self._vault).fingerprint
+
     def result(self, result_full: JsonValue, tool: ToolDef) -> tuple[JsonValue, Fingerprint | None]:
         views = self._views.project(result_full, self._source(tool), tool.untrusted_fields, self._vault)
         return views.audit, views.fingerprint

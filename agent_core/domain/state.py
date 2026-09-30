@@ -69,6 +69,7 @@ class InvalidationReason(StrEnum):
     token_expired = "token_expired"
     max_attempts = "max_attempts"
     denied_by_user = "denied_by_user"
+    args_changed = "args_changed"  # el flow volvió a proponer con otros args o otra versión de la tool
 
 
 class Action(Model):

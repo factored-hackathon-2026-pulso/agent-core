@@ -35,8 +35,8 @@ def test_ok_executes_saves_fact_and_commits_twice() -> None:
     assert (fact.source.kind, fact.source.ref) == ("tool", action.action_id)
     assert event_types(events) == ["action_dispatched", "tool_called"]
     dispatched, called = events
-    assert (dispatched.payload.action_id, dispatched.payload.args_hash) == (
-        action.action_id, action.args_hash)
+    assert dispatched.payload.action_id == action.action_id
+    assert not hasattr(dispatched.payload, "args_hash")  # ADR 0008: sin hash sin clave en el evento
     assert (called.payload.status, called.payload.action_id, called.payload.node_id) == (
         ToolStatus.ok, action.action_id, "radicar")
     committed = reload(w)
@@ -147,3 +147,19 @@ def test_default_audit_projection_redacts_args_and_result() -> None:
     assert payload.args == {"descripcion": "***", "transaction_id": "***"}
     assert (payload.result, payload.result_fp) == (None, None)
     assert "tx-demo-1" not in events[1].model_dump_json()
+
+
+def _attempt_of_write(prior_attempts: int) -> int:
+    w = World()
+    state = confirmed_state(w)
+    if prior_attempts:
+        state = state.model_copy(update={"node_attempts": {WRITE_NODE.id: prior_attempts}})
+        w.store.runs[state.run_id] = state  # el store parte de la misma versión que el estado que se entrega
+    _, _, events = w.manager.execute_write(state, WRITE_NODE, w.ctx())
+    return events[1].payload.attempt
+
+
+def test_attempt_of_the_write_call_counts_previous_step_ups() -> None:
+    """M3 §11 (d): tras un step-up el reintento del nodo es el intento 2, no otro `attempt=1`."""
+    assert _attempt_of_write(0) == 1
+    assert _attempt_of_write(1) == 2

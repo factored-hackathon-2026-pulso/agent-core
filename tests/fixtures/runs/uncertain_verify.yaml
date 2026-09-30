@@ -584,14 +584,17 @@ events:
   ts: '2026-09-28T12:00:00Z'
   seq: 27
   prev_hash: 397d9ddd84087b1cdd16deabe3ffeefd883b4809b3c92f5a89232db95645383e
-  hash: 3469feb830ff36353e356eec71b5db50f975b88359bfe10a75ee373cae854cb0
+  hash: 8555d484ef9c7de35b5b446794e66f82eca2a58f33b7a249e9b4d46ad90076f0
   type: action_dispatched
   payload:
     action_id: action-0001
     tool:
       id: radicar_pqr
       version: 1.0.0
-    args_hash: 5d43891146eaf719fb4afbf0b90ce7fc7df4a40c73486c29ca6c8a2be34cbd87
+    args_fp:
+      alg: HMAC-SHA256
+      kid: fp-1
+      value: cbffd923b3e3469983c939f39ee168f78ef6310644e5b3410a5aa60c1324291d
 - event_id: event-0029
   run_id: run-0001
   turn_id: turn-0003
@@ -599,8 +602,8 @@ events:
   release: demo
   ts: '2026-09-28T12:00:00Z'
   seq: 28
-  prev_hash: 3469feb830ff36353e356eec71b5db50f975b88359bfe10a75ee373cae854cb0
-  hash: 9f95fa83a3e2e5f32b1e69a48d37410927a92835b1a540e8ae836bac10c16adf
+  prev_hash: 8555d484ef9c7de35b5b446794e66f82eca2a58f33b7a249e9b4d46ad90076f0
+  hash: 59c09ec0f74654341eb1a74ea377bf3ab93273023fc252ef18b49b8bb80d51fb
   type: tool_called
   payload:
     node_id: radicar
@@ -625,8 +628,8 @@ events:
   release: demo
   ts: '2026-09-28T12:00:00Z'
   seq: 29
-  prev_hash: 9f95fa83a3e2e5f32b1e69a48d37410927a92835b1a540e8ae836bac10c16adf
-  hash: 6bbc3efa2308299b7cf35d740c93af7a3aa9137da967eb520d4c0c75a621d2bd
+  prev_hash: 59c09ec0f74654341eb1a74ea377bf3ab93273023fc252ef18b49b8bb80d51fb
+  hash: 9779fb4c2ef1d514d515673925284e2e830cc0d5e23baedeb3ab1104611e6fbe
   type: node_entered
   payload:
     flow:
@@ -642,8 +645,8 @@ events:
   release: demo
   ts: '2026-09-28T12:00:00Z'
   seq: 30
-  prev_hash: 6bbc3efa2308299b7cf35d740c93af7a3aa9137da967eb520d4c0c75a621d2bd
-  hash: 1b7eaf4610dabbb0d0bbdb27d1d39ce1d05cced63b3dbc53cdd768ec09d4d0f1
+  prev_hash: 9779fb4c2ef1d514d515673925284e2e830cc0d5e23baedeb3ab1104611e6fbe
+  hash: 9e226371ddb58e372243e54a1d2faf0e18a5a3aec86309e647154ef88b575540
   type: tool_called
   payload:
     node_id: verificar
@@ -672,8 +675,8 @@ events:
   release: demo
   ts: '2026-09-28T12:00:00Z'
   seq: 31
-  prev_hash: 1b7eaf4610dabbb0d0bbdb27d1d39ce1d05cced63b3dbc53cdd768ec09d4d0f1
-  hash: 7b0aa30cef5359c8b6810c32c128efa1abd157b7934bc9e417f51a60ca763dd3
+  prev_hash: 9e226371ddb58e372243e54a1d2faf0e18a5a3aec86309e647154ef88b575540
+  hash: 9a918503bb2c6dd35e8890f647f9ddb87617e7df6fdb571d21b2fb5870723ba6
   type: action_verified
   payload:
     action_id: action-0001
@@ -686,8 +689,8 @@ events:
   release: demo
   ts: '2026-09-28T12:00:00Z'
   seq: 32
-  prev_hash: 7b0aa30cef5359c8b6810c32c128efa1abd157b7934bc9e417f51a60ca763dd3
-  hash: ed0d2d341217a292ac3fcc50cef201db0cac3ba1a48c95e9a90fa713264454ad
+  prev_hash: 9a918503bb2c6dd35e8890f647f9ddb87617e7df6fdb571d21b2fb5870723ba6
+  hash: b3f37c7af4402d6ce47a991055839650a4570e028285a5fdcf894f62dd163e05
   type: node_entered
   payload:
     flow:
@@ -703,8 +706,8 @@ events:
   release: demo
   ts: '2026-09-28T12:00:00Z'
   seq: 33
-  prev_hash: ed0d2d341217a292ac3fcc50cef201db0cac3ba1a48c95e9a90fa713264454ad
-  hash: 1b32f4cfb21a45ed7c390c054929aae8d7296180cdd98476e62432f3545405fa
+  prev_hash: b3f37c7af4402d6ce47a991055839650a4570e028285a5fdcf894f62dd163e05
+  hash: 9bc2135f7802327cdcce9c015f8c31c4a5840369499a67dd5dbb36747a6181c1
   type: response_emitted
   payload:
     node_id: responder_ok
@@ -736,8 +739,8 @@ events:
   release: demo
   ts: '2026-09-28T12:00:00Z'
   seq: 34
-  prev_hash: 1b32f4cfb21a45ed7c390c054929aae8d7296180cdd98476e62432f3545405fa
-  hash: 1f05df994a6d49259ce387b34ad14c2b01ef80211418899cf1fcbad03f0cb59a
+  prev_hash: 9bc2135f7802327cdcce9c015f8c31c4a5840369499a67dd5dbb36747a6181c1
+  hash: c3dc229aae591561bf63863cff6edcdc61d24a00593ec76c06ecec58a53c5800
   type: node_entered
   payload:
     flow:
@@ -753,8 +756,8 @@ events:
   release: demo
   ts: '2026-09-28T12:00:00Z'
   seq: 35
-  prev_hash: 1f05df994a6d49259ce387b34ad14c2b01ef80211418899cf1fcbad03f0cb59a
-  hash: 932486fea445e956a760d8c487e98bcdbb8c4cfc997b8d95091d78c17128efbb
+  prev_hash: c3dc229aae591561bf63863cff6edcdc61d24a00593ec76c06ecec58a53c5800
+  hash: 061bb687a18e3993d9de70e94c8fb73fbd821cfd884fedb8260853ff3e5c6044
   type: run_closed
   payload:
     outcome: resolved
@@ -766,8 +769,8 @@ events:
   release: demo
   ts: '2026-09-28T12:00:00Z'
   seq: 36
-  prev_hash: 932486fea445e956a760d8c487e98bcdbb8c4cfc997b8d95091d78c17128efbb
-  hash: 725ff4764c2eec2a4a85a29bc7d8f0c94761504016dd03627e9a67c04d36fffc
+  prev_hash: 061bb687a18e3993d9de70e94c8fb73fbd821cfd884fedb8260853ff3e5c6044
+  hash: 20d45248584fcc8ce201df3cd8bbc2680853c7d62697f30b1ce259f0b12f31c4
   type: turn_completed
   payload:
     client_turn_id: c-2

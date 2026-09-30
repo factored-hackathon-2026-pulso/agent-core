@@ -507,10 +507,16 @@
           "title": "Action Id",
           "type": "string"
         },
-        "args_hash": {
-          "pattern": "^[0-9a-f]{64}$",
-          "title": "Args Hash",
-          "type": "string"
+        "args_fp": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Fingerprint"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "tool": {
           "$ref": "#/$defs/EntityRef"
@@ -518,8 +524,7 @@
       },
       "required": [
         "action_id",
-        "tool",
-        "args_hash"
+        "tool"
       ],
       "title": "ActionDispatchedPayload",
       "type": "object"
@@ -643,7 +648,8 @@
         "result": {
           "enum": [
             "verified",
-            "failed"
+            "failed",
+            "unavailable"
           ],
           "title": "Result",
           "type": "string"
@@ -1755,7 +1761,8 @@
         "escalated",
         "token_expired",
         "max_attempts",
-        "denied_by_user"
+        "denied_by_user",
+        "args_changed"
       ],
       "title": "InvalidationReason",
       "type": "string"

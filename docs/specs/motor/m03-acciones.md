@@ -1,6 +1,6 @@
 # M3 — Protocolo de escritura (acciones)
 
-- Estado: implementado (rev. 2, 2026-09-29) · Fase 1
+- Estado: implementado (rev. 3, 2026-09-30) · Fase 1
 - Paquete: `agent_core.actions`
 - Origen: spec general §8.2, §4 (invalidación de acciones), §5 (`confirm`, escritura, `verify`), §10
 - ADRs: 0007 (acción congelada, outbox de intención, idempotencia, readback, `claims`, confirmación acotada)
@@ -85,7 +85,7 @@ Cualquier otra transición lanza `IllegalTransition` (bug, no error de usuario).
 
 ### 3.4 `execute_write` (dos transacciones propias)
 
-1. **Commit 1:** `state = executing` + `action_dispatched{action_id, tool@v, args_hash}`.
+1. **Commit 1:** `state = executing` + `action_dispatched{action_id, tool@v, args_fp}` (huella con clave de M7; `Action.args_hash` sigue en el estado).
 2. `tools.execute(tool, frozen_args, bound_params, run_ctx, idempotency_key=action_id)`. Los `args` **siempre** salen de la acción congelada, nunca del nodo.
 3. **Commit 2:** mapea el estado de la tool:
    - `ok` → `executed`;
@@ -161,11 +161,11 @@ Escrituras duplicadas (objetivo 0), tasa `uncertain`, tasa `uncertain → verifi
 ## 11. Abiertos
 
 - Resueltos en M0 rev. 2: `uncertain` y `denied` son estados explícitos (`denied` es terminal, sin `verify`), y la invalidación emite `action_cancelled`.
-- **(a) Reentrada ignora `resolved_args` cambiados.** Con token vigente, `propose` no compara `args_hash` ni la versión de la tool. Arreglo propuesto: cancelar y congelar una nueva con un `InvalidationReason` nuevo (`args_changed`); es cambio de contrato M0, decisión pendiente. `tests/m03/test_reentry_args.py` fija el comportamiento actual.
-- **(b) `unclear` de botón con token rotado o vencido** contradice ADR 0007 §8, spec general §13.11 y T-M4-05. Decidir entre dejar el caveat de §3.3 o un resultado `stale_token`.
-- **(c) `args_hash` sin clave en `action_dispatched`** frente a spec general §8.1.1 (huellas con HMAC con clave). Decidir hash con clave o retirarlo del evento.
-- **(d) `attempt=1` fijo en `tool_called`:** el reintento tras step-up emite otro `attempt=1`. Las métricas de escrituras duplicadas deben contar `action_id` distintos.
-- **(e) `verify` mapea error o excepción del readback a `failed`,** lo que confunde "efecto probado ausente" con "readback no disponible".
-- **(f) `propose` compara solo `tool.id`,** no la versión de la tool.
+- **Resueltos el 2026-09-30 (rev. 3), aprobados por el usuario:**
+  - **(a) y (f)** `propose` compara `args_hash` y la versión de la tool (no solo `tool.id`); si difieren cancela con `InvalidationReason.args_changed` y congela una acción nueva (`tests/m03/test_reentry_args.py`).
+  - **(b)** El botón con token rotado o vencido no cuenta intento ni reparación y lleva a la rama `unclear` del nodo, que repropone con token nuevo; el ADR 0007 §8 se precisó (ya no dice "nunca da `unclear`" a secas). No se agrega un resultado `stale_token`: el comportamiento ya era ese y evita cambiar el esquema de `confirm`.
+  - **(c)** `action_dispatched` lleva `args_fp` (HMAC con clave, ADR 0008) en vez de `args_hash` sin clave.
+  - **(d)** `tool_called.attempt` de la escritura es `node_attempts[nodo] + 1` (el reintento tras un step-up es el intento 2).
+  - **(e)** Un readback que no contesta (error, timeout, excepción) devuelve `unavailable`: la acción no pasa a `failed` (queda `executed`/`uncertain`; `executing` → `uncertain`) y el nodo `verify` sigue su rama `failed`. `failed` queda solo para "contestó y el efecto no está".
 - Commits propios: cada uno es una `UnitOfWork` nueva con `save_run(expected_version)`; el lease del turno (M4) sigue tomado durante ellos.
 - Rev. 2 (2026-09-29, con el usuario): token rotado en la reentrada; `EventRecorder` para los eventos de los commits propios; `ActionContext` con ganchos, porque M3 solo importa M0; `step_up_required` como resultado de `execute_write`; Postgres diferido a M4.
