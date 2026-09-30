@@ -10,6 +10,9 @@ inputs:
 - op: confirm
   answer: 'yes'
   auth: session
+- op: turn
+  text: aquí está mi código simulado
+  auth: step_up
 events:
 - event_id: event-0001
   run_id: run-0001
@@ -656,6 +659,336 @@ events:
       response_ms: 0
     degraded: false
     awaiting: step_up
+- event_id: event-0033
+  run_id: run-0001
+  turn_id: turn-0004
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 31
+  prev_hash: 9aeed582d28d824c560df7a5e1372613e428bb618619f42e006b7371f4a3e5a8
+  hash: a7b2788305b8858b3f6ce5db95a2d4254092f8b3c4d85398ef0fe47211c8c852
+  type: turn_started
+  payload:
+    client_turn_id: c-3
+    guards:
+      lang:
+        detector: lingua@2.1.1
+        letters: 24
+        top2:
+        - lang: es
+          score: 0.578435
+        - lang: pt
+          score: 0.421565
+        decision: kept
+        locale_prior: es
+        locale: es
+      injection:
+        flagged: false
+        signals: []
+        ruleset: injection-rules@1.0.0
+      size_ok: true
+- event_id: event-0032
+  run_id: run-0001
+  turn_id: turn-0004
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 32
+  prev_hash: a7b2788305b8858b3f6ce5db95a2d4254092f8b3c4d85398ef0fe47211c8c852
+  hash: 0cba4ef6d2de1afc7809e2112dd7287fcde41a8454623155c74600da0039b476
+  type: expiry_evaluated
+  payload:
+    now: '2026-09-28T12:00:00Z'
+    last_activity_at: '2026-09-28T12:00:00Z'
+    ttl: PT30M
+    expired: false
+- event_id: event-0034
+  run_id: run-0001
+  turn_id: turn-0004
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 33
+  prev_hash: 0cba4ef6d2de1afc7809e2112dd7287fcde41a8454623155c74600da0039b476
+  hash: 584d6732d2892af6592c9124faf0f4cd446016a284bcbb29cb9b603893e9c1be
+  type: decision_made
+  payload:
+    decision_id: decision-0003
+    model:
+      id: understand-turno
+      version: 1.0.0
+    provider_used: jev
+    model_version: unknown
+    fallback_depth: 0
+    value:
+      command: continue
+    p_cal:
+      command: 0.95
+      flow: null
+      interrupt: null
+    p_raw:
+      command: 0.95
+      flow: null
+      interrupt: null
+    top_k: {}
+    above_threshold:
+      command: true
+      flow: false
+      interrupt: false
+    latency_ms: 0
+    tokens: 20
+    cost_usd: !!float '0'
+    locale: es
+- event_id: event-0035
+  run_id: run-0001
+  turn_id: turn-0004
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 34
+  prev_hash: 584d6732d2892af6592c9124faf0f4cd446016a284bcbb29cb9b603893e9c1be
+  hash: 57a6d6d3f41463ffdad592b8495cae009767d45e3e31a1bd6ef873394b175b0e
+  type: command_emitted
+  payload:
+    command: continue
+    flow: null
+    interrupt: null
+    additional_flows: []
+    above_threshold:
+      command: true
+    decision_id: decision-0003
+    source: understand
+- event_id: event-0036
+  run_id: run-0001
+  turn_id: turn-0004
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 35
+  prev_hash: 57a6d6d3f41463ffdad592b8495cae009767d45e3e31a1bd6ef873394b175b0e
+  hash: 11f8c56cf723cc610709694fb03a407ef7bccf3b40a16aec9a9995464409284b
+  type: node_entered
+  payload:
+    flow:
+      id: disputa-cargo
+      version: 1.0.0
+    node_id: radicar
+    node_type: tool_write
+    resume_kind: none
+- event_id: event-0037
+  run_id: run-0001
+  turn_id: turn-0004
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 36
+  prev_hash: 11f8c56cf723cc610709694fb03a407ef7bccf3b40a16aec9a9995464409284b
+  hash: be56d835244f0c9c49521949f523745cfb520cd0298210bc5bbc44aa4d2e7ff7
+  type: action_dispatched
+  payload:
+    action_id: action-0001
+    tool:
+      id: radicar_pqr
+      version: 1.0.0
+    args_hash: 5d43891146eaf719fb4afbf0b90ce7fc7df4a40c73486c29ca6c8a2be34cbd87
+- event_id: event-0038
+  run_id: run-0001
+  turn_id: turn-0004
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 37
+  prev_hash: be56d835244f0c9c49521949f523745cfb520cd0298210bc5bbc44aa4d2e7ff7
+  hash: 525bac6eb3fdbc8d5c00f198ae6011aacb071ee79b2ab6ba081d6226a2c56318
+  type: tool_called
+  payload:
+    node_id: radicar
+    tool:
+      id: radicar_pqr
+      version: 1.0.0
+    call_id: call-0005
+    status: ok
+    args:
+      transaction_id: '***'
+      descripcion: '***'
+    result:
+      status: Open
+      id: pqr-demo-1
+      transaction_id: '***'
+      descripcion: '***'
+    result_fp:
+      alg: HMAC-SHA256
+      kid: fp-1
+      value: 8d412b4330dc3f3a0dbc8228f900a1d75617a2f62942141c47eac449d168ee54
+    error: null
+    attempt: 1
+    action_id: action-0001
+    latency_ms: 0
+- event_id: event-0039
+  run_id: run-0001
+  turn_id: turn-0004
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 38
+  prev_hash: 525bac6eb3fdbc8d5c00f198ae6011aacb071ee79b2ab6ba081d6226a2c56318
+  hash: b5f06b8db29a19b15e29cb05cdb4d2ea57293c7d1494ffab5d9323d805d74eb1
+  type: node_entered
+  payload:
+    flow:
+      id: disputa-cargo
+      version: 1.0.0
+    node_id: verificar
+    node_type: verify
+    resume_kind: none
+- event_id: event-0040
+  run_id: run-0001
+  turn_id: turn-0004
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 39
+  prev_hash: b5f06b8db29a19b15e29cb05cdb4d2ea57293c7d1494ffab5d9323d805d74eb1
+  hash: 591c51a5c4bade208a8edad699b047697cc06df9bad8bcdf5d1c62aebbd13c76
+  type: tool_called
+  payload:
+    node_id: verificar
+    tool:
+      id: obtener_pqr
+      version: 1.0.0
+    call_id: call-0006
+    status: ok
+    args:
+      idempotency_key: '***'
+    result:
+      status: Open
+      id: pqr-demo-1
+      transaction_id: '***'
+      descripcion: '***'
+    result_fp:
+      alg: HMAC-SHA256
+      kid: fp-1
+      value: 8d412b4330dc3f3a0dbc8228f900a1d75617a2f62942141c47eac449d168ee54
+    error: null
+    attempt: 1
+    action_id: action-0001
+    latency_ms: 0
+- event_id: event-0041
+  run_id: run-0001
+  turn_id: turn-0004
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 40
+  prev_hash: 591c51a5c4bade208a8edad699b047697cc06df9bad8bcdf5d1c62aebbd13c76
+  hash: b1ccff5005e2ac63d4f3ac137619f2d45bfda8fadacf1e98606b48ccd95409ff
+  type: action_verified
+  payload:
+    action_id: action-0001
+    result: verified
+    readback_call_id: call-0006
+- event_id: event-0042
+  run_id: run-0001
+  turn_id: turn-0004
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 41
+  prev_hash: b1ccff5005e2ac63d4f3ac137619f2d45bfda8fadacf1e98606b48ccd95409ff
+  hash: 571810692562319530f996e0f49ecb932e726fcf97667450330b778fd06e7b79
+  type: node_entered
+  payload:
+    flow:
+      id: disputa-cargo
+      version: 1.0.0
+    node_id: responder_ok
+    node_type: respond
+    resume_kind: none
+- event_id: event-0043
+  run_id: run-0001
+  turn_id: turn-0004
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 42
+  prev_hash: 571810692562319530f996e0f49ecb932e726fcf97667450330b778fd06e7b79
+  hash: 9bb76c06394d86a3751d28cd304b8d83aa5c45f36de3e5c1b073ab8b35b389de
+  type: response_emitted
+  payload:
+    node_id: responder_ok
+    kind: generated
+    validator:
+      ok: true
+      failures: []
+      regenerations: 0
+    fallback_used: false
+    claims:
+    - confirmar
+    transcript_fp:
+      alg: HMAC-SHA256
+      kid: fp-1
+      value: b283edd4d2239aca0519bf19b0d2e3894360a28f8d1048188817a93b982517c9
+    llm:
+      calls: 1
+      latency_ms: 0
+      tokens_in: 40
+      tokens_out: 12
+      cost_usd: 0.002
+      cost_known: true
+      models:
+      - modelo-sintetico-1
+- event_id: event-0044
+  run_id: run-0001
+  turn_id: turn-0004
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 43
+  prev_hash: 9bb76c06394d86a3751d28cd304b8d83aa5c45f36de3e5c1b073ab8b35b389de
+  hash: 63ed6701e0973209b8865cb9735610138c1507705990b820dc7a7dee13ca557f
+  type: node_entered
+  payload:
+    flow:
+      id: disputa-cargo
+      version: 1.0.0
+    node_id: fin
+    node_type: end
+    resume_kind: none
+- event_id: event-0045
+  run_id: run-0001
+  turn_id: turn-0004
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 44
+  prev_hash: 63ed6701e0973209b8865cb9735610138c1507705990b820dc7a7dee13ca557f
+  hash: dafdff07319dedb6f002d99d11750669e2fd6f782fabdaa5339c8d079dde70d7
+  type: run_closed
+  payload:
+    outcome: resolved
+    closed_by: flow
+- event_id: event-0046
+  run_id: run-0001
+  turn_id: turn-0004
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 45
+  prev_hash: dafdff07319dedb6f002d99d11750669e2fd6f782fabdaa5339c8d079dde70d7
+  hash: 28126923a7e651e3e9a633b8d1fff165e383e264f43315a9604c18faeefa228e
+  type: turn_completed
+  payload:
+    client_turn_id: c-3
+    entry: turn
+    duration_ms: 0
+    stages:
+      guards_ms: 0
+      understand_ms: 0
+      flow_ms: 0
+      response_ms: 0
+    degraded: false
+    awaiting: none
 full:
   call-0001:
     status: ok
@@ -690,4 +1023,27 @@ full:
     source: null
     error: null
     required_level: step_up
-drafts: []
+  call-0005:
+    status: ok
+    result_full:
+      status: Open
+      id: pqr-demo-1
+      transaction_id: tx-1
+      descripcion: no reconozco un cargo de ciento veinte dólares en una tienda
+    source: null
+    error: null
+    required_level: null
+  call-0006:
+    status: ok
+    result_full:
+      status: Open
+      id: pqr-demo-1
+      transaction_id: tx-1
+      descripcion: no reconozco un cargo de ciento veinte dólares en una tienda
+    source: null
+    error: null
+    required_level: null
+drafts:
+- text: Tu disputa quedó radicada y te avisaremos cuando haya novedades.
+  citations:
+  - fact-0005

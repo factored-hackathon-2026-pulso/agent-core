@@ -52,11 +52,14 @@ def uncertain_verify(w: EngineWorld) -> None:
 
 
 def step_up(w: EngineWorld) -> None:
-    """La escritura exige un nivel mayor al de la sesión: el flow se detiene pidiendo step-up.
+    """La escritura exige un nivel mayor al de la sesión: pide step-up y el turno elevado lo completa.
 
-    Solo cubre el pedido: completar el step-up actualiza el principal del run, que es de M9, no de M4."""
+    El turno siguiente llega con una credencial `step_up` del mismo principal; M4 refresca `principal.auth`
+    (ADR 0010) y el nodo `tool` se reintenta hasta radicar, verificar y resolver."""
     _hasta_confirmar(w, auth="session")
     w.confirm("yes", auth="session")
+    w.understands("continue")
+    w.turn("aquí está mi código simulado", auth="step_up")
 
 
 def interrupcion(w: EngineWorld) -> None:
