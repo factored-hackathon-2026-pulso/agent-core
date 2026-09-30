@@ -184,7 +184,7 @@ Vía `tool_called` (lectura y `compute`), por `tool@v`: latencia p50/p95, tasa p
 | D1 | M5/M8 no existen: `DecisionPort` y `ResponderPort` locales en `interpreter/ports.py`; se conservan los nombres `decisions` y `responder` |
 | D2 | `StepContext` gana `ids`, `vault`, `uow_factory`, `record`, `turn_id`, `breaker` |
 | D3 | `Resume.token`; `StepOutcome.output` y `rejected_drafts` |
-| D4 | `begin_turn(state, clock)` reinicia contadores por turno (lo llama M4) |
+| D4 | `begin_turn(state, clock)` reinicia contadores por turno (lo llama M4): `turn_nodes`, `turn_model_calls` y, desde la rev. 3, `turn_understand_calls` (que suma M4, no M2) |
 | D5 | `start_flow(state, flow)`: entrada = `flow.nodes[0]`; reinicia `node_attempts` |
 | D6 | El render de plantillas vive en M2; `ResponderPort` solo `generate`; sin `response_emitted` en fase 1 |
 | D7 | Un slot `claimed` cuenta como ausente en toda resolución; ruta ausente → `error` o `escalate(validation_failed)` |

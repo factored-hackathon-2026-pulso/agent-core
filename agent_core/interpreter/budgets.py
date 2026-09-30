@@ -11,7 +11,8 @@ from agent_core.ports import Clock
 def begin_turn(state: RunState, clock: Clock) -> RunState:
     """Pone en cero los contadores del turno (D4). Lo llama M4 (y el arnés) antes de `advance`."""
     used = state.budgets_used.model_copy(
-        update={"turn_nodes": 0, "turn_model_calls": 0, "turn_started_at": clock.now()}
+        update={"turn_nodes": 0, "turn_model_calls": 0, "turn_understand_calls": 0,
+                "turn_started_at": clock.now()}
     )
     return state.model_copy(update={"budgets_used": used})
 

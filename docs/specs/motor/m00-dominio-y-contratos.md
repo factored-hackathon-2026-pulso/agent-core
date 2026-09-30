@@ -1,6 +1,6 @@
 # M0 — Dominio y contratos
 
-- Estado: **rev. 6 · implementado** (fase 1) · Fase 1
+- Estado: **rev. 7 · implementado** (fase 1) · Fase 1
 - Paquetes: `agent_core.domain`, `agent_core.ports`, `testing/fakes`
 - Origen: spec general §2, §5 (esquemas de nodos), §8 (estado), §10 (códigos), §14 (dependencias)
 - ADRs: 0001 (stack), 0002 (contratos), 0006 (principal y delegación), 0007 (acciones), 0008 (vistas y claves)
@@ -41,6 +41,8 @@
   - `GenerationResult` con `tokens_in`/`tokens_out`; error `GatewayError(kind)`;
   - `LlmUsage` con `tokens_in`/`tokens_out` y `cost_known`;
   - `UnitOfWork.add_usage` (M4 acumula costo y hits en la transacción del turno); `CostCounters` pasa a M4.
+- rev. 7 (2026-09-29), cableado del motor (opción 2 de las llamadas de Understand, decidida por el usuario). Cambio aditivo:
+  - `BudgetsUsed.turn_understand_calls: int = 0` (lo suma M4, lo reinicia `begin_turn`); `contracts/` regenerado (`BudgetsUsed`, `RunState`). Los estados guardados siguen siendo válidos (valor por defecto). `SCHEMA_VERSION` **no** se subió (0.2.0): la rev. 6 subió el menor por un cambio aditivo, decidir si este también lo merece.
 - rev. 6 (2026-09-29), registry (unidad 2, ADR 0017 y 0018; spec `../2026-09-29-registry-design.md` §15). Cambios aditivos:
   - `EntityKind.knowledge_snapshot` y entidad `KnowledgeSnapshot` (manifiesto de páginas, `KnowledgePage`); entra en `RegistryEntity` y en `ENTITY_KIND`;
   - `Release.knowledge_snapshot: EntityRef | None = None` (exacta; `None` = sin conocimiento);
@@ -267,7 +269,8 @@ class Action:         action_id: str; confirm_node_id: str; flow: EntityRef
 class ActiveFlow:     flow: EntityRef; node_id: str; local_slots: dict[str, JsonValue] = {}
 class PendingIntent:  flow: str; priority: int; mention_order: int
 class BudgetsUsed:    run_tokens: int = 0; run_cost: Decimal = 0
-                      turn_nodes: int = 0; turn_model_calls: int = 0; turn_started_at: AwareDatetime | None
+                      turn_nodes: int = 0; turn_model_calls: int = 0; turn_understand_calls: int = 0   # rev. 7
+                      turn_started_at: AwareDatetime | None
 class EncryptedBlob:  kid: str; nonce: str; ciphertext: str         # base64; lo produce M7
 class RunState:       run_id: str; session_id: str | None; state_version: int
                       release: str; agent: EntityRef

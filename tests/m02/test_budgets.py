@@ -16,10 +16,12 @@ def _world(**limits: object) -> World:
 
 def test_begin_turn_resets_turn_counters_only() -> None:
     w = World()
-    state = w.state(flow(END), budgets_used={"run_tokens": 5, "turn_nodes": 9, "turn_model_calls": 2})
+    state = w.state(flow(END), budgets_used={
+        "run_tokens": 5, "turn_nodes": 9, "turn_model_calls": 2, "turn_understand_calls": 2})
     fresh = begin_turn(state, w.clock)
     used = fresh.budgets_used
-    assert (used.turn_nodes, used.turn_model_calls, used.run_tokens) == (0, 0, 5)
+    assert (used.turn_nodes, used.turn_model_calls, used.turn_understand_calls, used.run_tokens) == (
+        0, 0, 0, 5)
     assert used.turn_started_at == w.clock.now()
 
 

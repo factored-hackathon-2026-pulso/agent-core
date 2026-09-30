@@ -357,6 +357,8 @@ class TurnEngine:
         if self._guard(frame):  # paso 7: unsupported / tamaño → plantilla, sin Understand ni flow
             return self._finish(frame, record=True)
         understood = self._understand_step(frame)  # paso 8
+        if frame.closed:  # Understand superó su tope de llamadas: el turno ya escaló
+            return self._finish(frame, record=True)
         with frame.meter.stage("flow"):  # pasos 9 a 12
             self._decide_and_advance(frame, understood)
         return self._finish(frame, record=True)
@@ -476,7 +478,19 @@ class TurnEngine:
             decision_id=outcome.decision_id,
         )
         frame.buffer.add(self._events.command_emitted(state, frame.turn_id, info, source="understand"))
+        self._charge_understand(frame, outcome.model_calls)
         return outcome
+
+    def _charge_understand(self, frame: TurnFrame, calls: int) -> None:
+        """Las llamadas de Understand se cuentan aparte de `turn_model_calls`; pasar el tope escala."""
+        used = frame.state.budgets_used
+        counted = used.model_copy(update={"turn_understand_calls": used.turn_understand_calls + calls})
+        frame.state = frame.state.model_copy(update={"budgets_used": counted})
+        if counted.turn_understand_calls > self._config.max_understand_calls_per_turn:
+            request = EscalationRequest(
+                reason_code="budget_exceeded", target_queue=frame.agent.default_target_queue,
+                priority="normal")
+            self._closer.escalate(frame, request)
 
     def _guard(self, frame: TurnFrame) -> bool:
         """Paso 7. Devuelve `True` si el turno termina aquí con una plantilla del motor."""

@@ -46,6 +46,12 @@
       ],
       "default": null,
       "title": "Turn Started At"
+    },
+    "turn_understand_calls": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Turn Understand Calls",
+      "type": "integer"
     }
   },
   "title": "BudgetsUsed",

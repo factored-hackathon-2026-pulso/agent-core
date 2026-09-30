@@ -107,6 +107,7 @@ class BudgetsUsed(Model):
     run_cost: Decimal = Decimal("0")
     turn_nodes: NonNegativeInt = 0
     turn_model_calls: NonNegativeInt = 0
+    turn_understand_calls: NonNegativeInt = 0  # llamadas de Understand del turno (M4 las suma; opción 2)
     turn_started_at: UtcDatetime | None = None
 
 

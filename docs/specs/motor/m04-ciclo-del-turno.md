@@ -1,6 +1,6 @@
 # M4 — Ciclo del turno
 
-- Estado: rev. 2 (2026-09-29) · Fase 2 · Fase A implementada con dobles · Fase B: grabador y cadena de M11 verificados y Understand cableado a M5 · Fase C (Postgres) implementada
+- Estado: rev. 3 (2026-09-29) · Fase 2 · Fase A implementada con dobles · Fase B: grabador y cadena de M11 verificados y Understand cableado a M5 · Fase C (Postgres) implementada
 - Paquete: `agent_core.turn`
 - Origen: spec general §4.1 (estado, release, revocación, recuperación, abandono), §4.4 (uso del resultado de Understand), §4.5, §4.6, §4.8, §4.9, §4.10, invalidación de §4
 - ADRs: 0004 (intenciones e interrupciones), 0007 (precedencia con `confirm` pendiente), 0013 (cierre por escalamiento)
@@ -230,7 +230,7 @@ Detalles de implementación que el spec no fijaba (revisar):
 4. `slots_model_ref`: configuración del despliegue (`slots_model: RefSpec | None` del adaptador), fijada con los pines de la release; no está en `Agent` (habría tocado M0).
 5. `UnderstandRequest` gana `turn_id` y `step`; `UnderstandOutcome` gana `model_calls` y `tokens` (junto a `cost_usd`). `p_cal` no se propaga: `command_emitted` no lo lleva.
 
-**Abierto (M2/M4):** las llamadas de Understand no se cargan a `budgets_used.turn_model_calls` (dueño M2); `max_model_calls_per_turn` solo cuenta las de M2. El ADR 0005 pide que el límite admita 2 llamadas de Understand; no se resolvió qué módulo las carga.
+~~**Abierto (M2/M4):** llamadas de Understand frente a `max_model_calls_per_turn`~~ **Resuelto 2026-09-29 (opción 2, decidida por el usuario):** contador aparte. M4 suma `UnderstandOutcome.model_calls` a `budgets_used.turn_understand_calls` (campo nuevo de M0, rev. 7; `begin_turn` de M2 lo reinicia) y, si supera `TurnConfig.max_understand_calls_per_turn` (2 por defecto, ADR 0005), escala con `budget_exceeded` sin avanzar el flow. `max_model_calls_per_turn` sigue contando solo las llamadas de M2 (`decide` y `respond(generate)`): son dos límites, y el techo total de llamadas de un turno es su suma. El tope vive en `TurnConfig` y no en `Budgets` para no romper los agentes publicados. Pruebas: `tests/m04/test_understand_budget.py`.
 
 ## 15. Fase C: Postgres (2026-09-29)
 
