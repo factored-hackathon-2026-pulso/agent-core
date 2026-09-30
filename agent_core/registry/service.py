@@ -500,7 +500,7 @@ class RegistryService:
             return ReleaseDiff(a=a, b=b, added=added, removed=removed, changed=changed)
 
     def lineage_for_run(self, actor: Principal, run_id: str) -> RunLineage:
-        actor_id(actor)
+        require_constructor(actor)  # el linaje expone autoría y aprobación: no lo lee cualquier principal
         release_id = self._runs.release_of(run_id) if self._runs is not None else None
         if release_id is None:
             raise RegistryError(RegistryErrorCode.not_found, "el run no existe")

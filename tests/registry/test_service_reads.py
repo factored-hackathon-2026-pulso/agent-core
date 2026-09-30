@@ -3,7 +3,8 @@ import pytest
 from agent_core.registry.errors import RegistryError, RegistryErrorCode
 from agent_core.registry.models import Origin
 from agent_core.registry.service import RegistryService
-from tests.registry.helpers import AGENT, human, prompt_draft
+from testing.builders import principal
+from tests.registry.helpers import AGENT, bot, human, prompt_draft
 from tests.registry.service_world import SUITE, World
 
 ANA = human()
@@ -66,3 +67,16 @@ def test_entity_and_versions() -> None:
     assert latest.ref.version == "1.1.0" and latest.content["id"] == "p/resumen_radicado"
     versions = w.service.list_versions("prompt", "p/resumen_radicado")
     assert [v.ref.version for v in versions] == ["1.0.0", "1.1.0"]
+
+
+def test_lineage_requires_the_constructor_role() -> None:
+    w = World()
+    rel = _published(w)
+    service = RegistryService(w.store, w.evaluator, w.clock, w.ids, runs=Runs({"run-9": rel}))
+    customer = principal(type="customer", id="cliente-1", roles=[], attrs={})
+    approver_only = human("aprobador", pid="beto")
+    for who in (customer, approver_only):
+        with pytest.raises(RegistryError) as info:
+            service.lineage_for_run(who, "run-9")
+        assert info.value.code is RegistryErrorCode.forbidden_role
+    assert service.lineage_for_run(bot(), "run-9").run_id == "run-9"

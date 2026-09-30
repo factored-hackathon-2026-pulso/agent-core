@@ -386,7 +386,7 @@ class RunLineage(BaseModel, frozen=True):
 
 - La traza ya guarda `release_id`; el motor no cambia.
 - Como las releases son inmutables, el resultado no cambia con el tiempo.
-- En la entrega, `lineage_for_run` exige un principal autenticado. La autorización fina por dueño del run (M9) es de fase 2.
+- En la entrega, `lineage_for_run` exige el rol `constructor` (decisión 2026-09-30, auditoría: expone autoría y aprobación, y no debe leerlo cualquier principal autenticado, como un cliente). Un rol `lector` explícito y la autorización por dueño del run (M9) son de fase 2.
 
 ## 10. Comportamiento en runtime
 
