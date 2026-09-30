@@ -22,6 +22,7 @@ from agent_core.domain import (
 )
 from agent_core.interpreter.breaker import CircuitBreaker
 from agent_core.interpreter.ports import AgentPort, DecisionPort, ResponderPort
+from agent_core.knowledge import KnowledgeService
 from agent_core.ports import Clock, IdSource, RegistryPort, ToolExecutor, UnitOfWorkFactory
 from agent_core.views import TokenVault, ViewService
 
@@ -70,6 +71,7 @@ class StepContext:
     uow_factory: UnitOfWorkFactory
     bound_params: Mapping[str, str] = field(default_factory=dict)
     agents: AgentPort | None = None  # nodo `agent` (ADR 0019); sin él, un nodo `agent` es error de cableado
+    knowledge: KnowledgeService | None = None  # nodo `knowledge` (M12); sin él, es error de cableado
     record: EventRecorder = append_events
     turn_id: str | None = None
     breaker: CircuitBreaker = field(default_factory=CircuitBreaker)

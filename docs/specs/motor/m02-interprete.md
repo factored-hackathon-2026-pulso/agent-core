@@ -1,10 +1,10 @@
 # M2 — Intérprete de nodos
 
-- Estado: implementado (rev. 3) · Fase 1
+- Estado: implementado (rev. 4: nodo `knowledge`, M12) · Fase 1
 - Paquete: `agent_core.interpreter`
 - Origen: spec general §4.7, §5, §8 (slots, hechos, decisiones), §10 (fallas de tools y presupuesto)
 - ADRs: 0004 (flows deterministas), 0010 (step-up), 0011 (`compute`), 0009 (`rule` con `policy`)
-- Usa: M0, M1 (`derive_claims`, `release_view`, `JSONLOGIC_OPS`, rutas y plantillas), M3, M5, M7, M8 · Lo usa: M4
+- Usa: M0, M1 (`derive_claims`, `release_view`, `JSONLOGIC_OPS`, rutas y plantillas), M3, M5, M7, M8, M12 (interfaz pública: `KnowledgeService`, `KnowledgeContext`) · Lo usa: M4
 
 ## 1. Propósito y límites
 
@@ -23,6 +23,7 @@ class StepContext:                    # dataclass congelada
     responder: ResponderPort          # puerto local de M2; M8 lo adapta (D1)
     views: ViewService; vault: TokenVault                                       # M7
     ids: IdSource; uow_factory: UnitOfWorkFactory                               # D2
+    knowledge: KnowledgeService | None = None    # M12; sin él, un nodo `knowledge` es error de cableado
     bound_params: Mapping[str, str] = {}
     record: EventRecorder = append_events                                       # M3; M4 lo reemplaza
     turn_id: str | None = None
@@ -90,6 +91,7 @@ Rutas permitidas en `args`, plantillas y `rule`: `slots.<x>`, `facts.<x>.value[.
 | `confirm` | Sin `resume`: `ctx.actions.propose(...)` → para en `awaiting_confirmation` con el `ConfirmationPrompt`. Con `confirm_answer`: `ctx.actions.answer(...)` → `yes`/`no`/`unclear`/`max_attempts` |
 | `verify` | `ctx.actions.verify(...)` → `verified`/`failed`; guarda el readback en `facts[save_as]` |
 | `respond` | `template_ref`: M2 renderiza la plantilla del `locale` con los hechos (vista `model`); emite `response_emitted` con `kind=template` (`validator.ok`, `llm=None`, `claims` de M1; D6 resuelto 2026-09-30); M4 rellena `transcript_fp`. `generate`: `ctx.responder.generate(...)`; en modo degradado usa `fallback_template_ref` sin llamar al modelo. Si `await: true`, avanza el puntero a `next` y para en `awaiting_user` (D16); si no, sigue por `next` |
+| `knowledge` | Delega en `ctx.knowledge.read(node, state, KnowledgeContext(release, clock, ids, views, vault, turn_id))` (M12): M12 escribe `RunState.pages` y construye `knowledge_read`; el handler solo entrega el estado nuevo, el evento y la rama (`ok`, `not_found` o `denied`). No usa el modelo, así que el modo degradado no lo impide. Sin `ctx.knowledge` lanza `IllegalTransition` (cableado, como el `AgentPort`) |
 | `escalate` | Devuelve `EscalationRequest{reason_code, target_queue = agent.default_target_queue, priority: priority_expr evaluada o "normal"}` (D13); `stop = terminal` |
 | `end` | `end_outcome = config.outcome`; aplica `output_map` en modo task; `stop = terminal` |
 
@@ -160,7 +162,7 @@ ReAct acotado de **solo lectura y cálculo**. Lo usan el copiloto del asesor y e
 
 ## 6. Eventos que emite
 
-`node_entered`, `rule_evaluated`, `tool_called` (lectura y `compute`), `step_up_requested`, `access_denied` (`tool_denied`). `decision_made` lo emite M5 y los de acciones M3; M2 los agrega a la lista del `StepOutcome`. Los eventos que devuelve `execute_write` ya los persistió el `EventRecorder` dentro de los commits de M3: no vuelven a agregarse. Para que el orden persistido sea `node_entered…`, `action_confirmed`, `action_dispatched`, `tool_called`, `advance` entrega a los handlers un `StepContext` cuyo `record` envuelve al de M4: antes de cada commit propio de M3 llama `record(uow, state, [*pendientes, *nuevos])` y vacía los pendientes (los eventos acumulados hasta ese momento, incluido el `node_entered` del nodo actual). Lo ya volcado así no se repite en `StepOutcome.events` ni se vuelca dos veces.
+`node_entered`, `rule_evaluated`, `tool_called` (lectura y `compute`), `step_up_requested`, `access_denied` (`tool_denied`). El `knowledge_read` lo construye M12 y M2 lo agrega a la lista del `StepOutcome`. `decision_made` lo emite M5 y los de acciones M3; M2 los agrega a la lista del `StepOutcome`. Los eventos que devuelve `execute_write` ya los persistió el `EventRecorder` dentro de los commits de M3: no vuelven a agregarse. Para que el orden persistido sea `node_entered…`, `action_confirmed`, `action_dispatched`, `tool_called`, `advance` entrega a los handlers un `StepContext` cuyo `record` envuelve al de M4: antes de cada commit propio de M3 llama `record(uow, state, [*pendientes, *nuevos])` y vacía los pendientes (los eventos acumulados hasta ese momento, incluido el `node_entered` del nodo actual). Lo ya volcado así no se repite en `StepOutcome.events` ni se vuelca dos veces.
 
 ## 7. Pruebas
 
@@ -186,6 +188,7 @@ Tabla por tipo de nodo con `FakeToolExecutor`, `ScriptedProvider` y `FakeClock`.
 | T-M2-16 | `respond(generate)`: entrega, cobra presupuestos, respeta `max_model_calls`, reclamos por `derive_claims` y escalamiento del responder (`test_respond_generate`) | — |
 | T-M2-17 | `disputa-cargo` con monto alto escala por `policy:escalamiento-disputa-monto` sin escribir nada (`test_disputa_cargo`) | — |
 | T-M2-18 | Interfaz pública exacta e importar `agent_core.interpreter` no arrastra guards/handoff/audit/turn/api/registry/adapters (`test_public_api`) | — |
+| T-M2-19 | Nodo `knowledge` (M12): sigue por `ok`, `not_found` y `denied`; emite `knowledge_read` después de `node_entered`; fuente caída sale por `not_found`; `navigate` cerrado; sin servicio es error de cableado (`tests/m02/test_knowledge.py`) | — |
 
 Mapeo de archivos: 01 y 11 → `test_disputa_cargo`; 02/03/12 → `test_rule`; 04/09 → `test_tool` y `test_write`; 05 → `test_collect`; 06/07 → `test_tool` y `test_write`; 08 → `test_loop`, `test_budgets`, `test_decide`, `test_respond_generate`; 10 → `test_respond_generate`.
 
@@ -208,6 +211,7 @@ Vía `tool_called` (lectura y `compute`), por `tool@v`: latencia p50/p95, tasa p
 - [x] Interfaz pública exportada y tipada; `import-linter`, `mypy` y `ruff` en verde; los eventos se construyen con los modelos de M0 (`Events`); `agentcore contracts --check` sin cambios (M2 no toca M0).
 - [x] LOC registradas: `agent_core/interpreter` 1.356; `tests/m02` + `testing/fakes/decision.py` + `testing/fakes/responder.py` 1.524; total 2.880 (sobre la estimación de 1.500–2.000 con pruebas; el paquete solo queda dentro).
 - [x] Sin TODO sin issue.
+- [x] Handler `knowledge` (rev. 4, M12): T-M2-19 en verde; `StepContext.knowledge` y su cableado en `composition`.
 
 ## Decisiones D1–D16
 

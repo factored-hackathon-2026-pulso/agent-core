@@ -1,4 +1,5 @@
-"""Handler del nodo `knowledge` (M2 §3.3, m12 §3.1): delega en M12 y sigue por `ok`, `not_found` o `denied`."""
+"""Handler del nodo `knowledge` (M2 §3.3, m12 §3.1): delega en M12 y sigue por `ok`, `not_found` o
+`denied`."""
 
 from typing import Any
 
@@ -26,11 +27,13 @@ def _node(*pages: str, purpose: str = "customer_answer", **cfg: Any) -> dict[str
             "next": {"ok": "dicho", "not_found": "sin", "denied": "esc"}}
 
 
-def _world(source: InMemoryKnowledgeSource | None = None, snapshot: str | None = SNAPSHOT) -> tuple[World, Any]:
+def _world(source: InMemoryKnowledgeSource | None = None,
+           snapshot: str | None = SNAPSHOT) -> tuple[World, Any]:
     from agent_core.domain import Template
 
     w = World()
-    w.add(Template.model_validate({"id": "t/ok", "version": "1.0.0", "locales": {"es": "Listo.", "pt": "Pronto."}}))
+    w.add(Template.model_validate(
+        {"id": "t/ok", "version": "1.0.0", "locales": {"es": "Listo.", "pt": "Pronto."}}))
     service = KnowledgeService(source or InMemoryKnowledgeSource(standard_records()), TableAuthz())
     return w, service
 
@@ -42,7 +45,8 @@ def _release(w: World, snapshot: str | None) -> Any:
     return release.model_copy(update={"knowledge_snapshot": snapshot})
 
 
-def _step(w: World, service: Any, node: dict[str, Any], *, snapshot: str | None = SNAPSHOT, **over: Any) -> Any:
+def _step(w: World, service: Any, node: dict[str, Any], *, snapshot: str | None = SNAPSHOT,
+          **over: Any) -> Any:
     state = w.state(flow(node, *TAIL))
     return w.step(state, release=_release(w, snapshot), knowledge=service, **over)
 
@@ -96,7 +100,7 @@ def test_a_source_that_is_down_leaves_by_not_found() -> None:
 
 def test_a_navigate_node_is_closed_at_runtime() -> None:
     w, service = _world()
-    nav = _node(mode="navigate", scope="faq", selector="selector@1", pages=[])
+    nav = _node(mode="navigate", scope="faq", selector="selector@1.0.0", pages=[])
     nav["config"].pop("pages", None)
     nav["next"]["low_confidence"] = "sin"
     out = _step(w, service, nav)
