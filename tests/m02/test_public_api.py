@@ -7,8 +7,8 @@ import agent_core.interpreter as interpreter
 def test_public_surface() -> None:
     assert set(interpreter.__all__) == {
         "NO_RESUME", "CircuitBreaker", "DecisionPort", "DecisionResult", "GenerateRequest", "GenerateResult",
-        "ResponderPort", "Resume", "StepContext", "StepOutcome", "Stop", "advance", "begin_turn", "evaluate",
-        "start_flow", "truthy",
+        "Projector", "ResponderPort", "Resume", "StepContext", "StepOutcome", "Stop", "advance", "begin_turn",
+        "evaluate", "start_flow", "truthy",
     }
     for name in interpreter.__all__:
         assert getattr(interpreter, name) is not None

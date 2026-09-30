@@ -12,9 +12,10 @@ from agent_core.interpreter.ports import (
     GenerateResult,
     ResponderPort,
 )
+from agent_core.interpreter.projection import Projector
 
 __all__ = [
     "NO_RESUME", "CircuitBreaker", "DecisionPort", "DecisionResult", "GenerateRequest", "GenerateResult",
-    "ResponderPort", "Resume", "StepContext", "StepOutcome", "Stop", "advance", "begin_turn", "evaluate",
-    "start_flow", "truthy",
+    "Projector", "ResponderPort", "Resume", "StepContext", "StepOutcome", "Stop", "advance", "begin_turn",
+    "evaluate", "start_flow", "truthy",
 ]

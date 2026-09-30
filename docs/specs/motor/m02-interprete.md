@@ -1,6 +1,6 @@
 # M2 — Intérprete de nodos
 
-- Estado: implementado (rev. 2) · Fase 1
+- Estado: implementado (rev. 3) · Fase 1
 - Paquete: `agent_core.interpreter`
 - Origen: spec general §4.7, §5, §8 (slots, hechos, decisiones), §10 (fallas de tools y presupuesto)
 - ADRs: 0004 (flows deterministas), 0010 (step-up), 0011 (`compute`), 0009 (`rule` con `policy`)
@@ -46,7 +46,14 @@ class StepOutcome:
 def begin_turn(state: RunState, clock: Clock) -> RunState             # reinicia contadores por turno (D4)
 def advance(state: RunState, ctx: StepContext, resume: Resume) -> StepOutcome
 def start_flow(state: RunState, flow: Flow) -> RunState               # primer nodo = flow.nodes[0]; reinicia node_attempts (D5)
+
+class Projector:                      # puente hacia M7 (rev. 3): vista `model`/`audit` de slots y hechos del run
+    def __init__(self, state: RunState, ctx: StepContext)
+    def model_value(self, path: Path, *, wrap_slots: bool = False) -> JsonValue
+    def audit_value(self, path: Path) -> JsonValue
 ```
+
+`Projector` se exporta desde la rev. 3 (2026-09-29): el cableado del motor (`agent_core.composition`) lo necesita para armar el `ResponderContext` de M8 con la misma proyección que usa `decide`, en vez de duplicarla.
 
 `DecisionPort` y `ResponderPort` (con `DecisionResult`, `GenerateRequest`, `GenerateResult`) viven en `interpreter/ports.py`: M5 y M8 aún no existen y sus adaptadores los implementarán (D1). M4 debe inyectar **un único `CircuitBreaker` compartido por todo el proceso** (el default por `StepContext` es solo para pruebas; un breaker por turno nunca acumularía fallas). Exporta además `CircuitBreaker`, `evaluate`, `truthy` y `NO_RESUME`.
 
