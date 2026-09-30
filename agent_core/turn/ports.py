@@ -38,6 +38,8 @@ class UnderstandRequest:
     locale: Locale
     awaiting_confirmation: bool  # hay un confirm pendiente (m05 §3.2)
     current_node: NodeId | None
+    turn_id: str
+    step: StepContext  # del `TurnRuntime`: el adaptador de M5 saca de aquí el `TokenVault` del run
 
 
 @dataclass(frozen=True)
@@ -51,6 +53,8 @@ class UnderstandOutcome:
     decision_id: str | None = None
     events: list[EngineEvent] = field(default_factory=list)  # `decision_made`, lo emite M5
     cost_usd: Decimal = Decimal("0")
+    model_calls: int = 0  # llamadas `predict` del turno (1.ª y 2.ª llamada de M5)
+    tokens: int = 0
 
 
 class UnderstandPort(Protocol):

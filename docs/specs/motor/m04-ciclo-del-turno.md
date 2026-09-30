@@ -1,6 +1,6 @@
 # M4 — Ciclo del turno
 
-- Estado: rev. 2 (2026-09-29) · Fase 2 · Fase A implementada con dobles · Fase B: grabador y cadena de M11 verificados; Understand pendiente de decisión · Fase C (Postgres) pendiente
+- Estado: rev. 2 (2026-09-29) · Fase 2 · Fase A implementada con dobles · Fase B: grabador y cadena de M11 verificados y Understand cableado a M5 · Fase C (Postgres) pendiente
 - Paquete: `agent_core.turn`
 - Origen: spec general §4.1 (estado, release, revocación, recuperación, abandono), §4.4 (uso del resultado de Understand), §4.5, §4.6, §4.8, §4.9, §4.10, invalidación de §4
 - ADRs: 0004 (intenciones e interrupciones), 0007 (precedencia con `confirm` pendiente), 0013 (cierre por escalamiento)
@@ -222,10 +222,12 @@ Detalles de implementación que el spec no fijaba (revisar):
 - **`EventChain.append`** devuelve `-> object` (M11 devuelve los eventos encadenados; M4 los ignora).
 - Recordatorio de M11: el `recorder()` de `AuditLog` solo agrega los eventos de M3; M4 ya vuelca antes los pendientes del turno (paso 14).
 
-**M5 (NO cableado; requiere decisión):** `UnderstandPort.run(UnderstandRequest) -> UnderstandOutcome` no equivale a `UnderstandService.run(text, UnderstandContext, locale) -> (UnderstandResult, list[DecisionMade])`. Lo que falta o difiere:
+**M5 (cableado con `DecisionUnderstand`, `agent_core/turn/adapters.py`; decidido el 2026-09-29):** `UnderstandPort.run(UnderstandRequest) -> UnderstandOutcome` no equivalía a `UnderstandService.run(text, UnderstandContext, locale)`. Se resolvió dentro de M4 y de la composición, sin tocar M0:
 
-1. `UnderstandContext.token_vault` es un `TokenVault` de M7 y M4 no puede importar `agent_core.views`; `TurnRuntime` tampoco lo expone.
-2. `recent_turns` (spec M5: "M4 arma n fijo") no tiene fuente en M4: `TranscriptStore.recent_turns` existe en M0 pero M4 no recibe ese puerto.
-3. `flows` e `interrupts` se pueden derivar de `release.entities[flow]` y `release.interrupts`, y `model_ref` de `pinned_ref(release, decision_model, agent.understand)`.
-4. `slots_model_ref` (2.ª llamada de slots) no tiene fuente: `Agent` no tiene campo y `Release.entities` no distingue el rol del modelo.
-5. `UnderstandOutcome` no lleva `p_cal`, `model_calls` ni `tokens` (M5 sí los da) y solo `cost_usd`; `max_model_calls_per_turn` no puede contar la 2.ª llamada.
+1. `token_vault`: el adaptador lo toma de `UnderstandRequest.step.vault` (el `StepContext` del `TurnRuntime`), así M4 no importa `agent_core.views`.
+2. `recent_turns`: `DecisionUnderstand` recibe un `TranscriptStore` (puerto de M0) y `recent_turns: int` (sin valor por defecto; lo fija la composición) y usa `recent_turns(run_id, n)` en vista `model`, sin borradores rechazados (con borradores el resultado puede traer menos de `n`).
+3. `flows`, `interrupts` y `model_ref` salen de la release fijada (`release.entities[flow]`, `release.interrupts`, `pinned_ref(agent.understand)`); un agente sin `understand` da `DecisionConfigError`.
+4. `slots_model_ref`: configuración del despliegue (`slots_model: RefSpec | None` del adaptador), fijada con los pines de la release; no está en `Agent` (habría tocado M0).
+5. `UnderstandRequest` gana `turn_id` y `step`; `UnderstandOutcome` gana `model_calls` y `tokens` (junto a `cost_usd`). `p_cal` no se propaga: `command_emitted` no lo lleva.
+
+**Abierto (M2/M4):** las llamadas de Understand no se cargan a `budgets_used.turn_model_calls` (dueño M2); `max_model_calls_per_turn` solo cuenta las de M2. El ADR 0005 pide que el límite admita 2 llamadas de Understand; no se resolvió qué módulo las carga.

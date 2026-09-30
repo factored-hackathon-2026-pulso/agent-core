@@ -458,6 +458,8 @@ class TurnEngine:
             locale=state.locale,
             awaiting_confirmation=state.awaiting is Awaiting.confirmation,
             current_node=state.awaiting_node_id,
+            turn_id=frame.turn_id,
+            step=frame.runtime.step,
         )
         with frame.meter.stage("understand"):
             outcome = self._understand.run(request)
