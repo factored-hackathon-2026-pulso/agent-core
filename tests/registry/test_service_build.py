@@ -5,6 +5,8 @@ from agent_core.registry.models import Origin, ProposalState
 from tests.registry.helpers import AGENT, bot, human, prompt_draft
 from tests.registry.service_world import SUITE, World
 
+ANA_ = human()
+
 
 def _code(exc: pytest.ExceptionInfo[RegistryError]) -> RegistryErrorCode:
     return exc.value.code
@@ -100,3 +102,24 @@ def test_events_are_recorded() -> None:
     with w.store.transaction() as tx:
         types = [e.type for e in tx.events()]
     assert types == ["proposal_created", "draft_updated", "frozen"]
+
+
+@pytest.mark.parametrize(("agent_id", "title"),
+                         [(AGENT, ""), (AGENT, "x" * 201), ("Agente Malo", "t"), ("", "t")])
+def test_create_proposal_with_invalid_fields_is_validation_failed(agent_id: str, title: str) -> None:  # I4
+    w = World()
+    with pytest.raises(RegistryError) as info:
+        w.service.create_proposal(human(), agent_id, Origin.manual, title)
+    assert _code(info) is RegistryErrorCode.validation_failed
+    assert "Agente Malo" not in str(info.value.payload) and "xxxx" not in str(info.value.payload)
+
+
+def test_put_draft_over_entity_size_limit_is_validation_failed() -> None:  # I3
+    w = World()
+    p = w.service.create_proposal(ANA_, AGENT, Origin.manual, "t")
+    big = prompt_draft(text="x" * 300_000)
+    with pytest.raises(RegistryError) as info:
+        w.service.put_draft(ANA_, p.proposal_id, [big], expected_rev=0)
+    assert _code(info) is RegistryErrorCode.validation_failed
+    assert info.value.payload[0]["rule"] == "REG-LIMIT"  # type: ignore[index]
+    assert w.service.get_proposal(p.proposal_id).proposal.rev == 0  # nada se guardó

@@ -3,7 +3,7 @@
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 
-from agent_core.domain import Flow
+from agent_core.domain import Flow, canonical_bytes
 from agent_core.flows import AuthoringRegistry, Violation, validate_registry
 from agent_core.registry.candidate import Candidate, parse_semver
 from agent_core.registry.entities import encode_entity, version_ref
@@ -21,10 +21,19 @@ DEFAULT_LIMITS = Limits()
 
 
 def check_draft_limits(drafts: Sequence[EntityDraft], limits: Limits) -> list[Violation]:
+    """Límites que se comprueban al guardar el borrador, antes de parsear nada (spec §5.2.4)."""
     if len(drafts) > limits.max_changes:
         return [Violation(rule="REG-LIMIT", message=f"la propuesta cambia {len(drafts)} entidades; "
                                                       f"el máximo es {limits.max_changes}")]
-    return []
+    out: list[Violation] = []
+    for d in drafts:
+        size = len(canonical_bytes(d.content))
+        if size > limits.max_entity_bytes:
+            where = f"{d.kind[:40]}:{d.id[:80]}"
+            out.append(Violation(rule="REG-LIMIT", path=where,
+                                 message=f"{where} ocupa {size} bytes; "
+                                         f"el máximo es {limits.max_entity_bytes}"))
+    return out
 
 
 def validate_candidate(c: Candidate, *, base_versions: Mapping[tuple[str, str], str],

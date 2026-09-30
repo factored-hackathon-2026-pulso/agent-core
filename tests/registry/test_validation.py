@@ -56,3 +56,9 @@ def test_unknown_kind_and_bad_schema_are_violations() -> None:  # Review Focus 4
         _cand(bad_kind, bad_schema)
     assert sorted(v.rule for v in info.value.violations) == ["REG-KIND", "REG-SCHEMA"]
     assert all(v.message for v in info.value.violations)
+
+
+def test_draft_content_over_size_limit_is_violation() -> None:  # revisión final I3
+    out = check_draft_limits([prompt_draft(text="x" * 5000)], Limits(max_entity_bytes=1000))
+    assert [v.rule for v in out] == ["REG-LIMIT"] and out[0].path == "prompt:p/resumen_radicado"
+    assert check_draft_limits([prompt_draft()], Limits(max_entity_bytes=1000)) == []

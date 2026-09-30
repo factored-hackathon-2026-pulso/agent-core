@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from agent_core.domain import EntityKind, Principal, RegistryEntity, Release, loads
 from agent_core.flows import Violation
@@ -168,9 +168,18 @@ class RegistryService:
     def create_proposal(self, actor: Principal, agent_id: str, origin: Origin, title: str) -> Proposal:
         require_constructor(actor)
         with self._store.transaction() as tx:
-            p = Proposal(proposal_id=self._ids.new_id(IdKind.proposal), agent_id=agent_id, origin=origin,
-                         state=ProposalState.draft, base_release_id=tx.get_alias(agent_id, "staging"),
-                         title=title, created_by=actor_id(actor), updated_at=self._clock.now())
+            base = tx.get_alias(agent_id, "staging")
+            try:
+                p = Proposal(proposal_id=self._ids.new_id(IdKind.proposal), agent_id=agent_id, origin=origin,
+                             state=ProposalState.draft, base_release_id=base, title=title,
+                             created_by=actor_id(actor), updated_at=self._clock.now())
+            except ValidationError as exc:  # sin `input`: el título o el id pueden traer texto libre
+                errors = exc.errors(include_input=False)
+                fields = sorted({str(e["loc"][0]) for e in errors if e["loc"]})
+                raise RegistryError(RegistryErrorCode.validation_failed, "la propuesta no es válida",
+                                    payload=[{"rule": "REG-PROPOSAL", "path": f, "flow": None,
+                                              "node_id": None, "message": f"`{f}` no es válido"}
+                                             for f in fields]) from None
             tx.save_proposal(p)
             self._event(tx, "proposal_created", actor, p)
             return p

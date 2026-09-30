@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from agent_core.domain import JsonValue, Release
+from agent_core.domain import EntityId, JsonValue, Release
 from agent_core.registry.evaluation.report import EvalReport, Verdict
 
 
@@ -66,7 +66,7 @@ class EntityDraft(RegModel):
 
 class Proposal(RegModel):
     proposal_id: str
-    agent_id: str
+    agent_id: EntityId
     origin: Origin
     state: ProposalState
     rev: int = 0

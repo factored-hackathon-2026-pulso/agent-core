@@ -70,3 +70,12 @@ def test_publish_requires_idempotency_key_and_auth() -> None:
     c, _ = _client()
     assert c.post("/v1/registry/proposals/x/publish", headers=_h("ana")).status_code == 422
     assert c.get("/v1/registry/releases/rel-demo").status_code == 401
+
+
+def test_invalid_proposal_fields_are_validation_failed_problem_not_500() -> None:  # revisión final I4
+    c, _ = _client()
+    for body in ({"agent_id": AGENT, "title": ""}, {"agent_id": AGENT, "title": "x" * 201},
+                 {"agent_id": "Agente Malo", "title": "t"}):
+        r = c.post("/v1/registry/proposals", json=body, headers=_h("ana"))
+        assert r.status_code == 422, body
+        assert r.json()["code"] == "validation_failed" and r.json()["violations"][0]["rule"] == "REG-PROPOSAL"
