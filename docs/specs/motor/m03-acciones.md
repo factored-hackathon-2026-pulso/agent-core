@@ -156,7 +156,7 @@ Escrituras duplicadas (objetivo 0), tasa `uncertain`, tasa `uncertain → verifi
 ## 10. Definición de terminado
 
 - Máquina de estados con tabla de transiciones como dato y T-M3-01…11 en verde.
-- Prueba de integración con Postgres para la caída entre commits: **diferida a M4**, que es el dueño del `UnitOfWork` de Postgres. M4 corre `tests/m03/scenarios.py::crash_then_recover` con un `World` sobre Postgres (decisión del 2026-09-29).
+- Prueba de integración con Postgres para la caída entre commits: **diferida a M4**, que es el dueño del `UnitOfWork` de Postgres. M4 corre `tests/m03/scenarios.py::crash_then_recover` con un `World` sobre Postgres (decisión del 2026-09-29). **Hecho** (2026-09-29): `tests/integration/test_m3_crash_postgres.py` (T-M3-03 y T-M3-04 sobre Postgres real, con los eventos de M3 encadenados por el `AuditLog` de M11).
 
 ## 11. Abiertos
 

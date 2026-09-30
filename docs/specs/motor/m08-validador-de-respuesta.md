@@ -43,7 +43,7 @@ class Responder:
 ```
 
 - `LlmUsage` es el de M0: `calls, latency_ms, tokens_in, tokens_out, cost_usd, cost_known, models`. `cost_known = false` si alguna llamada falló con `GatewayError` sin costo.
-- M8 no importa `agent_core.interpreter`: el adaptador hacia el `ResponderPort`/`GenerateResult` de M2 (que toma `model_calls`, `tokens` y `cost_usd` de `response_emitted.llm`) vive fuera de M8 (M2 o el cableado de M4).
+- M8 no importa `agent_core.interpreter`: el adaptador hacia el `ResponderPort`/`GenerateResult` de M2 (que toma `model_calls`, `tokens` y `cost_usd` de `response_emitted.llm`) vive fuera de M8 (M2 o el cableado de M4); ese adaptador toma el uso de `response_emitted.llm` o de `response_failed.llm`.
 - `ResponderContext` (puertos `LLMGateway`, `Clock`, `IdSource`, `RegistryPort`, `resolve_ref` inyectado por M2, `ValidationContext` armado por quien llama, `claims`, `max_regenerations`) lo construye quien cablea; M8 no lee hora ni aleatoriedad.
 - `M8` emite `response_emitted` solo desde `generate`; quién lo emite para `respond(template_ref)` directo sigue abierto en M2.
 
@@ -107,6 +107,8 @@ M8 **no** se acopla a teléfono, canal ni `principal.attrs.country`, y no contie
 
 `response_emitted {node_id, kind: template|generated, validator: {ok, failures, regenerations}, fallback_used, claims (de M1), transcript_fp, llm}`. La huella la calcula M11 y la agrega antes de encadenar.
 
+`response_failed {node_id, reason_code: validation_failed, validator: {ok = false, failures, regenerations}, claims, llm}` (decidido el 2026-09-29, opción A; evento nuevo de M0): lo emite `generate` cuando termina en `EscalationRequest` (plantilla imposible o con PII en claro), en vez de `response_emitted`. Lleva el mismo `llm` (`calls`, `tokens`, `cost_usd`, `cost_known`), así que el gasto de una cadena que escala queda en la auditoría y M2 lo cobra como en `response_emitted`. `llm = None` en modo degradado. Sin texto de borradores.
+
 ## 7. Pruebas
 
 | ID | Caso | §13 |
@@ -147,7 +149,7 @@ M8 **no** se acopla a teléfono, canal ni `principal.attrs.country`, y no contie
 - [x] Spec en rev. 2 en el mismo cambio.
 - [x] Revisión de `revisor-spec` atendida: borrador con PII sin texto en `RejectedDraft`, detalles de falla sin texto del modelo (también en `validation_feedback`), falla de gateway distinta de `GatewayError` definida, `fact_sources` documentado.
 
-Notas de la implementación (rev. 2): si `generate` termina en `EscalationRequest` no se emite `response_emitted`, así que el uso del LLM de esa cadena no sale en ningún evento (ver §11). En modo degradado el evento lleva `validator.ok = true` (no hubo borrador rechazado); tras rechazos o gateway caído, `ok = false` con los ids de la última falla.
+Notas de la implementación (rev. 2): si `generate` termina en `EscalationRequest` no se emite `response_emitted` sino `response_failed` (§6), con el uso del LLM de la cadena. En modo degradado el evento lleva `validator.ok = true` (no hubo borrador rechazado); tras rechazos o gateway caído, `ok = false` con los ids de la última falla.
 
 ## 11. Abiertos
 
@@ -159,5 +161,5 @@ Notas de la implementación (rev. 2): si `generate` termina en `EscalationReques
 - ~~**`allowed_facts` frente a `fact_id`**~~ **Resuelto 2026-09-29:** `Responder` traduce (§3.1.2).
 - ~~**Renderizado de plantillas**~~ **Resuelto 2026-09-29:** renderizador mínimo propio (§3.2).
 - **Abiertos que siguen fuera de M8:** quién emite `response_emitted` para `respond(template_ref)` directo (M2); `PageView`, `knowledge_from` y su comprobación de citas de páginas (M12, tema #10).
-- **Nuevo:** cuando `generate` escala (`validation_failed`) no hay `response_emitted` y por tanto el uso del LLM (`llm`) de esa cadena no llega a M2 para cobrar presupuestos. Requiere decidir si se emite un evento con `kind` de fallo o si `generate` devuelve el uso aparte; toca M0 o el adaptador de M2.
+- ~~**Uso del LLM cuando `generate` escala**~~ **Resuelto 2026-09-29 (opción A):** evento nuevo `response_failed` (M0 §2.10; `contracts/` regenerado). El adaptador de M2 debe tomar `model_calls`, `tokens` y `cost_usd` de `response_emitted.llm` o de `response_failed.llm`.
 - **Nota (`.importlinter`):** el contrato `response` se llama "M8 (response) solo usa domain, ports y guards, views, knowledge". Es exacto como lista de dependencias permitidas (el contrato solo prohíbe el resto); M8 hoy no importa `knowledge`. No se toca.

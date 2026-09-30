@@ -118,7 +118,7 @@ M0 define el esquema de cada evento; M11 los encadena y persiste. El módulo emi
 | `node_entered`, `rule_evaluated`, `tool_called` (lectura y `compute`), `step_up_requested` | M2 |
 | `decision_made` | M5 |
 | `action_confirmed`, `action_cancelled`, `action_dispatched`, `tool_called` (escritura), `action_verified` | M3 |
-| `response_emitted` | M8 (con la huella que calcula M11) |
+| `response_emitted`, `response_failed` | M8 (`response_emitted` con la huella que calcula M11; `response_failed` cuando `respond(generate)` escala) |
 | `injection_flagged` | M6 (M4 lo registra) |
 | `access_denied` | M9 (y M2 con motivo `tool_denied`) |
 | `escalated`, `handoff_created` (outbox), `handoff_resolved` | M10 |

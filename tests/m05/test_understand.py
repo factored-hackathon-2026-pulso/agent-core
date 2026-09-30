@@ -1,11 +1,17 @@
 """T-M5-07: Understand: slots `claimed`, `additional_flows` sin umbral, esquema por release."""
 
+import dataclasses
+from decimal import Decimal
+
+import pytest
+
 from agent_core.decision.calibration.artifact import CalibrationArtifact, Target
-from agent_core.decision.types import RawPrediction
+from agent_core.decision.service import DecisionService
+from agent_core.decision.types import DecisionProvider, RawPrediction
 from agent_core.decision.understand import UnderstandContext, UnderstandResult, UnderstandService
 from agent_core.domain import Command, DecisionMade, DecisionModelDef, JsonValue
 from testing.capture import RequestCapture
-from testing.fakes.provider import Failure, Timeout
+from testing.fakes.provider import Failure, ScriptedProvider, Timeout
 from tests.m05.helpers import (
     Rig,
     artifact,
@@ -174,3 +180,113 @@ def test_repr_hides_slots() -> None:
     rig.providers[CLASSIFIER].push(_raw({"command": "affirm", "slots": {"nota": "SECRETO-XYZ"}}))
     result, _ = _run(rig)
     assert "SECRETO-XYZ" not in repr(result)
+
+
+# --- Segunda llamada: slots por `llm_structured` solo con `start_flow` (ADR 0005, enmienda 2026-09-29) ---
+
+SLOTS_MODEL = DecisionModelDef.model_validate({
+    "id": "understand-slots", "version": "1.0.0",
+    "output_schema": {"type": "object", "additionalProperties": True},
+    "calibrated_fields": [], "input_view": [], "providers": [{"provider": "llm_structured"}],
+    "calibration": {"method": "none"}, "thresholds_from": None,
+})
+SLOTS_REF = ref(SLOTS_MODEL)
+
+
+def _slots_rig(*, first: tuple[str, ...] = (CLASSIFIER,)) -> tuple[Rig, ScriptedProvider]:
+    """Rig con el modelo de Understand y un segundo modelo de slots servido por `llm_structured`."""
+    rig = _rig(first)
+    rig.registry.add(SLOTS_MODEL)
+    slots_provider = ScriptedProvider("llm_structured", clock=rig.clock)
+    providers: dict[str, DecisionProvider] = {**rig.providers, "llm_structured": slots_provider}
+    service = DecisionService(rig.registry, providers, rig.sources, rig.clock, rig.ids)
+    return dataclasses.replace(rig, service=service), slots_provider
+
+
+def _slots_raw(slots: dict[str, JsonValue], tokens: int = 7, cost: str = "0.0002") -> RawPrediction:
+    return RawPrediction(value={"slots": slots}, p_raw={}, tokens=tokens, cost_usd=Decimal(cost),
+                         model_version="llm-sint-1")
+
+
+def test_start_flow_makes_a_second_llm_call_and_fills_slots_as_claimed() -> None:
+    rig, slots_provider = _slots_rig()
+    token = rig.vault.tokenize("500000", "amount", "monto")
+    rig.providers[CLASSIFIER].push(_raw({"command": "start_flow", "flow": "disputa"}))
+    slots_provider.push(_slots_raw({"monto": token}))
+    result, events = _run(rig, slots_model_ref=SLOTS_REF)
+    assert result.slots == {"monto": token}
+    assert result.above_threshold == {"command": True, "flow": True}  # los slots nunca llevan umbral
+    assert [e.payload.provider_used for e in events] == [CLASSIFIER, "llm_structured"]
+    assert events[1].payload.above_threshold == {} and events[1].payload.model == SLOTS_REF
+    assert result.decision_id == events[0].payload.decision_id  # la decisión de Understand es la primera
+    assert result.model_calls == 2 and result.tokens == 7 and result.cost_usd == Decimal("0.0002")
+
+
+def test_slots_call_input_carries_the_flow_and_no_clear_text() -> None:
+    rig, slots_provider = _slots_rig()
+    rig.providers[CLASSIFIER].push(_raw({"command": "start_flow", "flow": "disputa"}))
+    slots_provider.push(_slots_raw({}))
+    _run(rig, "disputo ⟦amount:1⟧", slots_model_ref=SLOTS_REF)
+    inputs = slots_provider.calls[0][1]
+    assert inputs == {"text": "disputo ⟦amount:1⟧", "recent_turns": ["hola", "quiero disputar un cargo"],
+                      "current_node": "pedir_monto", "confirm_pending": False, "flow": "disputa"}
+    assert slots_provider.schemas[0]["properties"] == {
+        "slots": {"type": "object", "additionalProperties": True}}
+
+
+@pytest.mark.parametrize("value", [{"command": "affirm"}, {"command": "interrupt", "interrupt": "cancelar"},
+                                   {"command": "clarify"}])
+def test_other_commands_keep_a_single_call(value: dict[str, JsonValue]) -> None:
+    rig, slots_provider = _slots_rig()
+    rig.providers[CLASSIFIER].push(_raw(value))
+    result, events = _run(rig, slots_model_ref=SLOTS_REF)
+    assert slots_provider.calls == [] and len(events) == 1 and result.model_calls == 1
+
+
+def test_without_a_slots_model_there_is_no_second_call() -> None:
+    rig, slots_provider = _slots_rig()
+    rig.providers[CLASSIFIER].push(_raw({"command": "start_flow", "flow": "disputa"}))
+    result, events = _run(rig)
+    assert slots_provider.calls == [] and len(events) == 1 and result.slots == {}
+
+
+def test_exhausted_first_call_never_reaches_the_slots_model() -> None:
+    rig, slots_provider = _slots_rig()
+    rig.providers[CLASSIFIER].push(Timeout())
+    result, events = _run(rig, slots_model_ref=SLOTS_REF)
+    assert result.command is Command.clarify and slots_provider.calls == [] and len(events) == 1
+
+
+def test_slots_call_failure_keeps_the_command_and_leaves_slots_empty() -> None:
+    rig, slots_provider = _slots_rig()
+    rig.providers[CLASSIFIER].push(_raw({"command": "start_flow", "flow": "disputa"}))
+    slots_provider.push(Failure("x"))
+    result, events = _run(rig, slots_model_ref=SLOTS_REF)
+    assert result.command is Command.start_flow and result.above_threshold["command"] is True
+    assert result.slots == {} and len(events) == 2 and events[1].payload.provider_used == "none"
+    assert result.model_calls == 2
+
+
+def test_slots_from_the_second_call_replace_those_of_the_first() -> None:
+    rig, slots_provider = _slots_rig()
+    rig.providers[CLASSIFIER].push(_raw({"command": "start_flow", "flow": "disputa",
+                                         "slots": {"viejo": "x"}}))
+    slots_provider.push(_slots_raw({"nuevo": "y"}))
+    result, _ = _run(rig, slots_model_ref=SLOTS_REF)
+    assert result.slots == {"nuevo": "y"}
+
+
+@pytest.mark.parametrize("p", [{"command": 0.5}, {"flow": 0.5}])
+def test_slots_call_is_skipped_when_command_or_flow_is_below_threshold(p: dict[str, float]) -> None:
+    rig, slots_provider = _slots_rig()
+    rig.providers[CLASSIFIER].push(_raw({"command": "start_flow", "flow": "disputa"}, **p))
+    result, events = _run(rig, slots_model_ref=SLOTS_REF)
+    assert slots_provider.calls == [] and len(events) == 1 and result.model_calls == 1
+    assert result.slots == {} and False in result.above_threshold.values()
+
+
+def test_slots_call_is_skipped_without_a_flow() -> None:
+    rig, slots_provider = _slots_rig()
+    rig.providers[CLASSIFIER].push(_raw({"command": "start_flow"}))
+    _run(rig, slots_model_ref=SLOTS_REF)
+    assert slots_provider.calls == []

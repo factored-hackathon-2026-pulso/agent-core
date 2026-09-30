@@ -1,6 +1,6 @@
 # M4 — Ciclo del turno
 
-- Estado: rev. 2 (2026-09-29) · Fase 2 · Fase A implementada con dobles
+- Estado: rev. 2 (2026-09-29) · Fase 2 · Fase A implementada con dobles · Fase B: grabador y cadena de M11 verificados y Understand cableado a M5 · Fase C (Postgres) implementada
 - Paquete: `agent_core.turn`
 - Origen: spec general §4.1 (estado, release, revocación, recuperación, abandono), §4.4 (uso del resultado de Understand), §4.5, §4.6, §4.8, §4.9, §4.10, invalidación de §4
 - ADRs: 0004 (intenciones e interrupciones), 0007 (precedencia con `confirm` pendiente), 0013 (cierre por escalamiento)
@@ -175,9 +175,9 @@ Tiempos, todos desde el log de auditoría (no dependen del muestreo de trazas):
 
 ## 10. Definición de terminado
 
-- Pipeline completo con dobles, T-M4-01…17 en verde.
-- Integración con Postgres: bloqueo optimista, `409` y transacción única por turno.
-- `sweep` invocable por un comando (`agentcore sweep`) para la demo.
+- [x] Pipeline completo con dobles, T-M4-01…17 en verde.
+- [x] Integración con Postgres: bloqueo optimista, `409` con dos conexiones y transacción única por turno (`tests/integration/test_m4_postgres.py`, más la suite de contrato de `UnitOfWork` sobre Postgres y T-M3-03/04 en `tests/integration/`).
+- [x] `sweep` invocable por un comando (`agentcore sweep --dsn … --registry …`) sobre Postgres real (`tests/integration/test_sweep_postgres.py`).
 
 ## 11. Abiertos
 
@@ -210,6 +210,36 @@ Detalles de implementación que el spec no fijaba (revisar):
 ### Observaciones de la revisión (2026-09-29; el spec no las fija, no se cambian)
 
 - **Liberación del lease ante una excepción:** `_release_quietly` traga la falla de su propia UoW y no deja rastro en eventos ni estado. No es posible dejarlo visible dentro del diseño actual: el turno que falló hizo rollback, el catálogo de eventos de M0 no tiene un evento de fallo de turno y M4 no tiene puerto de logs. Consecuencia: si la liberación también falla, el lease vence solo por su TTL (`lease_ttl`, 60 s) y el reintento recibe `409` hasta entonces. Se añadiría un evento o un puerto de observabilidad solo con un cambio de M0/M11.
-- **Orden `409`/`410`:** con un lease ajeno vigente sobre un run ya cerrado, el turno recibe `409` (el lease se toma antes de mirar `status`). El spec lista ambos errores sin precedencia.
+- **Orden `409`/`410` (decidido el 2026-09-29):** un run ya cerrado recibe `410` aunque haya un lease ajeno vigente (se mira `status` antes de tomar el lease; tras tomarlo se vuelve a mirar con el estado fresco). La deduplicación por `client_turn_id` sigue yendo primero.
 - **`affirm`/`deny` con `awaiting = slot`:** sin `confirm` pendiente y con el run esperando un slot, `continue`, `affirm` y `deny` se toman como respuesta del slot (`slot_answer` con el texto crudo). El spec solo define `continue` para `collect` (§3.3).
 - **`inactive_after`:** solo se fija en runs conversacionales (§3.6); el cierre `abandoned` del turno y del barrido comparte una sola función (`closed_state`).
+
+## 14. Fase B: contraste con M5 y M11 reales (2026-09-29)
+
+**M11 (verificado, `tests/m04/test_real_m11.py`):** `TurnRecorder` cumple `TurnRecorderPort` y `AuditLog` cumple `EventChain` (mypy). Dos discrepancias resueltas dentro de M4:
+
+- **Orden de las referencias de `record_turn`:** M11 devuelve `[user, *rejected, final]` (m11, decisión 3); M4 tomaba `refs[1]`, que con borradores rechazados era la huella de un borrador. Ahora usa `refs[-1]` (`transcript_fp` = huella de la respuesta final). El doble `InMemoryTurnRecorder` sigue ese orden.
+- **`EventChain.append`** devuelve `-> object` (M11 devuelve los eventos encadenados; M4 los ignora).
+- Recordatorio de M11: el `recorder()` de `AuditLog` solo agrega los eventos de M3; M4 ya vuelca antes los pendientes del turno (paso 14).
+
+**M5 (cableado con `DecisionUnderstand`, `agent_core/turn/adapters.py`; decidido el 2026-09-29):** `UnderstandPort.run(UnderstandRequest) -> UnderstandOutcome` no equivalía a `UnderstandService.run(text, UnderstandContext, locale)`. Se resolvió dentro de M4 y de la composición, sin tocar M0:
+
+1. `token_vault`: el adaptador lo toma de `UnderstandRequest.step.vault` (el `StepContext` del `TurnRuntime`), así M4 no importa `agent_core.views`.
+2. `recent_turns`: `DecisionUnderstand` recibe un `TranscriptStore` (puerto de M0) y `recent_turns: int` (sin valor por defecto; lo fija la composición) y usa `recent_turns(run_id, n)` en vista `model`, sin borradores rechazados (con borradores el resultado puede traer menos de `n`).
+3. `flows`, `interrupts` y `model_ref` salen de la release fijada (`release.entities[flow]`, `release.interrupts`, `pinned_ref(agent.understand)`); un agente sin `understand` da `DecisionConfigError`.
+4. `slots_model_ref`: configuración del despliegue (`slots_model: RefSpec | None` del adaptador), fijada con los pines de la release; no está en `Agent` (habría tocado M0).
+5. `UnderstandRequest` gana `turn_id` y `step`; `UnderstandOutcome` gana `model_calls` y `tokens` (junto a `cost_usd`). `p_cal` no se propaga: `command_emitted` no lo lleva.
+
+**Abierto (M2/M4):** las llamadas de Understand no se cargan a `budgets_used.turn_model_calls` (dueño M2); `max_model_calls_per_turn` solo cuenta las de M2. El ADR 0005 pide que el límite admita 2 llamadas de Understand; no se resolvió qué módulo las carga.
+
+## 15. Fase C: Postgres (2026-09-29)
+
+- **Adaptador:** `agent_core/adapters/postgres_uow.py` (`PostgresStore`, `PostgresUoW`, `PostgresAuditSink`, `PostgresOutbox`, `PostgresCostCounters`) y `agent_core/adapters/sql/schema.sql` (esquema plano, idempotente; el log de auditoría sigue en `audit_events.sql`). Sin dependencias nuevas: `psycopg[binary]` ya lo trajo M11.
+- **Transacción única:** la UoW acumula todo y lo aplica en `commit()` dentro de **una** transacción de Postgres. **Bloqueo optimista:** `UPDATE runs … WHERE state_version = <base>` (o `INSERT … ON CONFLICT DO NOTHING` para un run nuevo); 0 filas → `VersionConflict` y no se aplica nada. **Lease:** sentencia autocommit propia (`INSERT … ON CONFLICT DO UPDATE … WHERE mismo turno OR vencido`), visible de inmediato y no lo deshace un rollback; `release_turn` se aplica con el commit.
+- **Contrato:** `tests/contracts/test_uow_contract.py` corre los mismos 31 checks contra el doble en memoria y contra Postgres (parámetro `postgres`, marcador `integration`). Para Postgres los eventos de prueba van encadenados (`prev_hash` del primer evento = `genesis_hash`) y `append_outside_turn` recibe un evento ya encadenado: `adapters` no puede importar `audit`, así que `PostgresAuditSink` no encadena y M9 debe usar `AuditLog.append_standalone`.
+- **Marcador y CI:** las pruebas de Postgres llevan `@pytest.mark.integration` y se omiten sin base (`AGENTCORE_REQUIRE_POSTGRES=1` las exige; el CI ya levanta el servicio). Se mantuvo la convención de M11 en vez de `AGENT_CORE_INTEGRATION=1`.
+- **`agentcore sweep`:** `agent_core/cli.py` (raíz de composición) compone el `Sweeper` con la DSN (`--dsn` o `AGENTCORE_DATABASE_URL`; nunca se imprime) y un `RegistryPort` mínimo sobre el directorio de autoría (`--registry`, por versión exacta) hasta que exista el registry de la unidad 2. Errores de Postgres o del registro salen con exit 1 y sin la DSN.
+- **Ediciones de prueba aprobadas:** `tests/m03/harness.py` (`World(uow_factory=…, record=…)`) y `tests/contracts/test_uow_contract.py` (backend `postgres`, eventos encadenados).
+- **Cadena de auditoría concurrente:** si dos UoW encadenan el mismo `seq` sin pasar por `save_run` (p. ej. `append_standalone` de M9 contra un turno), la segunda falla con `VersionConflict` (mapeo de `UniqueViolation`), no con un error crudo de psycopg.
+- **Revisión (2026-09-29), no aplicado:** `Outbox.mark_delivered` usa `now()` de SQL (el puerto no recibe hora); `apply_schema` solo da GRANT sobre `audit_events`; el barrido aborta entero si el registro no tiene el agente de un run (`SchemaError`), y ese lease queda hasta su TTL.
+- **Pendiente:** un turno que falla deja el lease hasta su TTL si la liberación también falla (ver §13); el barrido lo deja igual si el registro no tiene el agente (exit 1).

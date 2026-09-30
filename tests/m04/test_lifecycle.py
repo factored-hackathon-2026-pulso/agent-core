@@ -136,3 +136,13 @@ def test_el_texto_crudo_nunca_llega_a_guardas_ni_a_understand() -> None:
     assert w.guards.calls == ["[model]mi correo es user@example.test"]
     assert [c.text_model for c in w.understand.calls] == w.guards.calls
     assert w.recorder.calls[0][2] == w.guards.calls[0]
+
+
+def test_run_cerrado_con_lease_ajeno_da_410_y_no_409() -> None:
+    w = World()
+    w.open_run(status="closed", outcome="resolved", closed_at=w.clock.now(), inactive_after=None)
+    with w.store.uow() as other:
+        other.acquire_turn(RUN_ID, "turn-otro", w.clock.now(), timedelta(seconds=60))
+    with pytest.raises(EngineError) as exc:
+        w.turn("hola")
+    assert exc.value.code is ProblemCode.run_closed and exc.value.status == 410

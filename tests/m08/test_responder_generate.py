@@ -1,7 +1,14 @@
 from dataclasses import replace
 from decimal import Decimal
 
-from agent_core.domain import EscalationRequest, GatewayError, GatewayErrorKind, Message, ResponseEmitted
+from agent_core.domain import (
+    EscalationRequest,
+    GatewayError,
+    GatewayErrorKind,
+    Message,
+    ResponseEmitted,
+    ResponseFailed,
+)
 from agent_core.ports import GenerationResult
 from testing.fakes.gateway import gen
 from tests.m08.helpers import CONFIG, GOOD, World
@@ -65,7 +72,31 @@ def test_t_m8_07b_two_rejections_and_impossible_template_escalate() -> None:
     message, rejected, events = w.run()
     assert message == EscalationRequest(reason_code="validation_failed", target_queue="general",
                                         priority="normal")
-    assert len(rejected) == 2 and events == []
+    assert len(rejected) == 2
+    (event,) = events  # `response_failed`: el gasto del LLM de una cadena que escala queda auditado
+    assert isinstance(event, ResponseFailed) and event.payload.reason_code == "validation_failed"
+    assert event.payload.node_id == "responder"
+    assert event.payload.validator.ok is False and event.payload.validator.failures == ["citations"]
+    assert event.payload.validator.regenerations == 1 and event.payload.claims == sorted(w.ctx.claims)
+    llm = event.payload.llm
+    assert llm is not None and (llm.calls, llm.tokens_in, llm.tokens_out) == (2, 30, 13)
+    assert llm.cost_usd == Decimal("0.003") and llm.cost_known is True
+
+
+def test_escalation_after_a_gateway_error_reports_the_unknown_cost() -> None:
+    w = World([GatewayError(GatewayErrorKind.unavailable)], fallback_locales={"pt": "Olá"})
+    message, _, (event,) = w.run()
+    assert isinstance(message, EscalationRequest) and isinstance(event, ResponseFailed)
+    assert event.payload.llm is not None and event.payload.llm.calls == 1
+    assert event.payload.llm.cost_known is False
+
+
+def test_escalation_in_degraded_mode_has_no_llm_usage() -> None:
+    w = World(degraded=True, fallback_locales={"pt": "Olá"})
+    message, _, (event,) = w.run()
+    assert isinstance(message, EscalationRequest) and isinstance(event, ResponseFailed)
+    assert event.payload.llm is None and event.payload.validator.ok is False
+    assert event.payload.validator.failures == []
 
 
 def test_missing_fact_in_template_escalates() -> None:
@@ -125,8 +156,9 @@ def test_unparseable_output_is_a_format_rejection_that_consumes_the_regeneration
 
 def test_template_with_clear_pii_escalates() -> None:
     w = World([BAD_CITATION, BAD_CITATION_2], find_clear_pii=lambda text: ["cliente.document_number"])
-    message, _, _ = w.run()
+    message, _, events = w.run()
     assert isinstance(message, EscalationRequest) and message.reason_code == "validation_failed"
+    assert [e.type for e in events] == ["response_failed"]
 
 
 def test_regeneration_count_is_a_parameter() -> None:
