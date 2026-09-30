@@ -3,7 +3,7 @@
 from agent_core.domain import Message
 from agent_core.views import TokenVault
 from testing.builders import run_state
-from tests.composition.world import EngineWorld
+from testing.engine_world import EngineWorld
 
 CEDULA = "1023456789"
 

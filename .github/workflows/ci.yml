@@ -26,4 +26,12 @@ jobs:
       - run: uv run lint-imports
       - run: uv run agentcore contracts --check
       - run: uv run agentcore validate tests/m01/fixtures/registry
+      - run: uv run agentcore validate tests/fixtures/registry-demo
+      - name: replay fixture de los seis caminos (T-M11-01)
+        run: |
+          for f in tests/fixtures/runs/*.yaml; do
+            uv run agentcore replay "$f" --mode fixture \
+              --registry tests/fixtures/registry-demo \
+              --catalog tests/fixtures/catalogo-datos-prueba.yaml || exit 1
+          done
       - run: uv run pytest

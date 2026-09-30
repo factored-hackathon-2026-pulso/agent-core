@@ -252,4 +252,5 @@ Detalles de implementación que el spec no fijaba (revisar):
 - **`turn_id` de los eventos de M2:** `DecisionPort` y `ResponderPort` no reciben `turn_id`, así que `decision_made` y `response_emitted` de esos nodos llegaban con `turn_id = None`. `EventBuffer(turn_id)` lo completa al agregar (solo si viene `None`).
 - **Los eventos de M2 no pasan por el sink** sino por `EventBuffer.add` (vía `Closer.apply_outcome`); el sink solo recibe los de M3.
 - **No resuelto aquí:** `respond(template_ref)` sigue sin emitir `response_emitted` (D6, decidido fuera de este cambio); `Rendered.unknown_tokens` de `render` no se registra; el cobro de `run_tokens`/`run_cost` de Understand (M4 solo suma `cost_usd` a su contador de costo) es aparte del contador de llamadas.
-- Pruebas: `tests/composition/` (`EngineWorld` con puertos externos guionados y el registro demo `tests/composition/fixtures/registry`).
+- **Replay y `record`:** el mismo motor compuesto, con puertos grabados, corre en `testing/replay` (herramienta de desarrollo, ver M11 decisiones 18–23); `agent_core.turn` no provee `build_engine_runner`.
+- Pruebas: `tests/composition/` (`EngineWorld` en `testing/engine_world.py`, con puertos externos guionados y el registro demo `tests/fixtures/registry-demo`).

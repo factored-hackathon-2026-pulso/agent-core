@@ -75,7 +75,7 @@ def test_replay_engine_exception_exits_3_and_prints_only_the_type(
         def run(self, case: object, ports: object) -> list[object]:
             raise KeyError("valor-secreto-full")
 
-    monkeypatch.setattr("agent_core.cli.load_engine", lambda: Boom())
+    monkeypatch.setattr("agent_core.cli.load_engine", lambda *_: Boom())
     code = main(["replay", str(write_fixture(tmp_path)), "--mode", "fixture"])
     err = capsys.readouterr().err
     assert code == 3 and "KeyError" in err and "valor-secreto-full" not in err
@@ -92,3 +92,36 @@ def test_load_engine_only_swallows_missing_agent_core_turn(monkeypatch: pytest.M
     monkeypatch.setattr(importlib, "import_module", broken)
     with pytest.raises(ModuleNotFoundError):
         load_engine()
+
+
+# --- record y replay con el motor real (Task 14): `testing/replay` y el registro demo -----------------
+
+REGISTRY = "tests/fixtures/registry-demo"
+CATALOG = "tests/fixtures/catalogo-datos-prueba.yaml"
+
+
+def test_record_writes_a_synthetic_fixture_that_replays_as_match(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    out = tmp_path / "resuelto.yaml"
+    assert main(["record", "resuelto", "--out", str(out), "--registry", REGISTRY, "--catalog", CATALOG]) == 0
+    assert out.is_file()
+    code = main(["replay", str(out), "--mode", "fixture", "--registry", REGISTRY, "--catalog", CATALOG])
+    assert code == 0 and capsys.readouterr().out.splitlines()[-1].startswith("match")
+
+
+def test_replay_exits_1_when_the_recorded_draft_no_longer_validates(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    out = tmp_path / "resuelto.yaml"
+    assert main(["record", "resuelto", "--out", str(out), "--registry", REGISTRY]) == 0
+    out.write_text(out.read_text(encoding="utf-8").replace("Tu disputa quedó radicada", "Tu tarjeta 4242"),
+                   encoding="utf-8")
+    code = main(["replay", str(out), "--mode", "fixture", "--registry", REGISTRY, "--json"])
+    assert code == 1 and '"diverged"' in capsys.readouterr().out
+
+
+def test_record_unknown_scenario_exits_3(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    code = main(["record", "no-existe", "--out", str(tmp_path / "x.yaml"), "--registry", REGISTRY])
+    assert code == 3 and "escenario" in capsys.readouterr().err
+

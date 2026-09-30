@@ -4,7 +4,7 @@ from typing import Any
 
 from agent_core.audit import AuditLog
 from agent_core.domain import Awaiting, Outcome, ResponseEmitted
-from tests.composition.world import DRAFT, EngineWorld
+from testing.engine_world import DRAFT, EngineWorld
 
 TEXT = "no reconozco un cargo de ciento veinte dólares en una tienda"
 
@@ -13,9 +13,9 @@ def _confirmed(w: EngineWorld) -> tuple[Any, Any, Any]:
     started = w.start()
     w.understands("continue")
     w.matches()
-    prompt = w.turn(started.session_id, TEXT)
+    prompt = w.turn(TEXT)
     assert prompt.confirmation is not None
-    done = w.turn(started.session_id, confirm=(prompt.confirmation.token, "yes"))
+    done = w.confirm("yes")
     return started, prompt, done
 
 

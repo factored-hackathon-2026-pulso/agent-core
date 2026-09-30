@@ -1,0 +1,528 @@
+name: escalado_por_monto
+run_id: run-0001
+release: demo
+inputs:
+- op: start
+- op: turn
+  text: no reconozco un cargo de ciento veinte dólares en una tienda
+events:
+- event_id: event-0001
+  run_id: run-0001
+  turn_id: turn-0001
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 0
+  prev_hash: 30d0ee2270111fd5aa8d67093ed7b2fffb254d69c9fd4423ab50f139e5f06e3b
+  hash: cf9e10173eb7bc032b378c11569a6892f5ea6a5e88e7911d753e890cd2c8fca4
+  type: run_started
+  payload:
+    agent:
+      id: atencion
+      version: 1.0.0
+    mode: conversational
+    subject_kind: null
+    principal_type: customer
+    locale: es
+    reportable_attrs:
+      country: CO
+- event_id: event-0002
+  run_id: run-0001
+  turn_id: turn-0001
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 1
+  prev_hash: cf9e10173eb7bc032b378c11569a6892f5ea6a5e88e7911d753e890cd2c8fca4
+  hash: cae2647efe312366269e8dcd4b1562baffc0fb17d84d4ba20abf2c290f1bea62
+  type: turn_started
+  payload:
+    client_turn_id: null
+    guards: null
+- event_id: event-0003
+  run_id: run-0001
+  turn_id: turn-0001
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 2
+  prev_hash: cae2647efe312366269e8dcd4b1562baffc0fb17d84d4ba20abf2c290f1bea62
+  hash: 3ad4a03cf6ef15cc1dac025270fe371938755d55d4bd7a03fa39b469bcf89ac1
+  type: node_entered
+  payload:
+    flow:
+      id: disputa-cargo
+      version: 1.0.0
+    node_id: pedir_cargo
+    node_type: collect
+    resume_kind: none
+- event_id: event-0004
+  run_id: run-0001
+  turn_id: turn-0001
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 3
+  prev_hash: 3ad4a03cf6ef15cc1dac025270fe371938755d55d4bd7a03fa39b469bcf89ac1
+  hash: 4e4b78f833aefcb98de8064bdbf001e787337bfb6915fb2ab7cc60589479dd43
+  type: turn_completed
+  payload:
+    client_turn_id: null
+    entry: start_run
+    duration_ms: 0
+    stages:
+      guards_ms: null
+      understand_ms: null
+      flow_ms: 0
+      response_ms: 0
+    degraded: false
+    awaiting: slot
+- event_id: event-0006
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 4
+  prev_hash: 4e4b78f833aefcb98de8064bdbf001e787337bfb6915fb2ab7cc60589479dd43
+  hash: fd2634297c1d5cf9088e291c957a3b62f7f862fbcbd7c8b0c20ddd6925e09c1c
+  type: turn_started
+  payload:
+    client_turn_id: c-1
+    guards:
+      lang:
+        detector: lingua@2.1.1
+        letters: 50
+        top2:
+        - lang: es
+          score: 0.990504
+        - lang: pt
+          score: 0.009415
+        decision: kept
+        locale_prior: es
+        locale: es
+      injection:
+        flagged: false
+        signals: []
+        ruleset: injection-rules@1.0.0
+      size_ok: true
+- event_id: event-0005
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 5
+  prev_hash: fd2634297c1d5cf9088e291c957a3b62f7f862fbcbd7c8b0c20ddd6925e09c1c
+  hash: 24372517dea5a83bcaa60472e8178619836e6859464b9355ab9fe20199df31a5
+  type: expiry_evaluated
+  payload:
+    now: '2026-09-28T12:00:00Z'
+    last_activity_at: '2026-09-28T12:00:00Z'
+    ttl: PT30M
+    expired: false
+- event_id: event-0007
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 6
+  prev_hash: 24372517dea5a83bcaa60472e8178619836e6859464b9355ab9fe20199df31a5
+  hash: c32e40c0ac711eca2e85f5fa4981d2cb781a71d607dd1620e590f78c3ec4a71b
+  type: decision_made
+  payload:
+    decision_id: decision-0001
+    model:
+      id: understand-turno
+      version: 1.0.0
+    provider_used: jev
+    model_version: unknown
+    fallback_depth: 0
+    value:
+      command: continue
+    p_cal:
+      command: 0.95
+      flow: null
+      interrupt: null
+    p_raw:
+      command: 0.95
+      flow: null
+      interrupt: null
+    top_k: {}
+    above_threshold:
+      command: true
+      flow: false
+      interrupt: false
+    latency_ms: 0
+    tokens: 20
+    cost_usd: !!float '0'
+    locale: es
+- event_id: event-0008
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 7
+  prev_hash: c32e40c0ac711eca2e85f5fa4981d2cb781a71d607dd1620e590f78c3ec4a71b
+  hash: a685e303a4f2cd3070e19164fb750695f2e70d2c51b4a25a9a271cb52c89ed3a
+  type: command_emitted
+  payload:
+    command: continue
+    flow: null
+    interrupt: null
+    additional_flows: []
+    above_threshold:
+      command: true
+    decision_id: decision-0001
+    source: understand
+- event_id: event-0009
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 8
+  prev_hash: a685e303a4f2cd3070e19164fb750695f2e70d2c51b4a25a9a271cb52c89ed3a
+  hash: 17212d6740c391c23e54b7dd9f375f5695ae6b3a74f92ab9da5750ac2c311a52
+  type: node_entered
+  payload:
+    flow:
+      id: disputa-cargo
+      version: 1.0.0
+    node_id: pedir_cargo
+    node_type: collect
+    resume_kind: slot_answer
+- event_id: event-0010
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 9
+  prev_hash: 17212d6740c391c23e54b7dd9f375f5695ae6b3a74f92ab9da5750ac2c311a52
+  hash: fe28dab7a8259cdd40859dbf17be216ce620bfb187cee8bea6e96eca862251f0
+  type: node_entered
+  payload:
+    flow:
+      id: disputa-cargo
+      version: 1.0.0
+    node_id: buscar_tx
+    node_type: tool
+    resume_kind: none
+- event_id: event-0011
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 10
+  prev_hash: fe28dab7a8259cdd40859dbf17be216ce620bfb187cee8bea6e96eca862251f0
+  hash: 279274bcf82cf36df95bfb93962ec4a608b43d5627b7486b2c06cedfe6266fb6
+  type: tool_called
+  payload:
+    node_id: buscar_tx
+    tool:
+      id: buscar_transacciones
+      version: 1.0.0
+    call_id: call-0001
+    status: ok
+    args:
+      texto: '***'
+    result:
+    - transaction_id: '***'
+      amount: &id001 120.50
+      currency: USD
+    - transaction_id: '***'
+      amount: &id002 30.00
+      currency: USD
+    result_fp:
+      alg: HMAC-SHA256
+      kid: fp-1
+      value: 0fd19bc79b8f28c8cae499000248a884d1c146d2da4c75a26f7eb4ebbf385657
+    error: null
+    attempt: 1
+    action_id: null
+    latency_ms: 0
+- event_id: event-0012
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 11
+  prev_hash: 279274bcf82cf36df95bfb93962ec4a608b43d5627b7486b2c06cedfe6266fb6
+  hash: ed5be0dcf32492c702392a78b25736cc0724b400f52503b7c7345060a0a23feb
+  type: node_entered
+  payload:
+    flow:
+      id: disputa-cargo
+      version: 1.0.0
+    node_id: coincide
+    node_type: decide
+    resume_kind: none
+- event_id: event-0013
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 12
+  prev_hash: ed5be0dcf32492c702392a78b25736cc0724b400f52503b7c7345060a0a23feb
+  hash: cfc5cd630ed65816bf3d33afae1419a450dd8c56bd9f95fc7cb7e27206e405ad
+  type: decision_made
+  payload:
+    decision_id: decision-0002
+    model:
+      id: match-cargo
+      version: 2.0.0
+    provider_used: classifier
+    model_version: unknown
+    fallback_depth: 0
+    value:
+      match: unica
+      transaction: tx-1
+    p_cal:
+      match: 0.9
+    p_raw:
+      match: 0.9
+    top_k: {}
+    above_threshold:
+      match: true
+    latency_ms: 0
+    tokens: 10
+    cost_usd: !!float '0'
+    locale: es
+- event_id: event-0014
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 13
+  prev_hash: cfc5cd630ed65816bf3d33afae1419a450dd8c56bd9f95fc7cb7e27206e405ad
+  hash: 16cfb81b55a94679aae738426c4d722b3c2f728c5b56f878b0d6aed4ffb1ad88
+  type: node_entered
+  payload:
+    flow:
+      id: disputa-cargo
+      version: 1.0.0
+    node_id: elegir
+    node_type: tool
+    resume_kind: none
+- event_id: event-0015
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 14
+  prev_hash: 16cfb81b55a94679aae738426c4d722b3c2f728c5b56f878b0d6aed4ffb1ad88
+  hash: fe5914041562c7ff008a05f1c4f1d8063b5ef8f19571db2b4a893056e4b4d826
+  type: tool_called
+  payload:
+    node_id: elegir
+    tool:
+      id: seleccionar
+      version: 1.0.0
+    call_id: call-0002
+    status: ok
+    args:
+      lista:
+      - transaction_id: '***'
+        amount: *id001
+        currency: USD
+      - transaction_id: '***'
+        amount: *id002
+        currency: USD
+      id: tx-1
+    result:
+      transaction_id: '***'
+      amount: *id001
+      currency: USD
+    result_fp:
+      alg: HMAC-SHA256
+      kid: fp-1
+      value: f79bcb9bb901ae20e8ad58610076d396539bf2e1da87872ca7d29bcd8250187e
+    error: null
+    attempt: 1
+    action_id: null
+    latency_ms: 0
+- event_id: event-0016
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 15
+  prev_hash: fe5914041562c7ff008a05f1c4f1d8063b5ef8f19571db2b4a893056e4b4d826
+  hash: 79302b1fc4599541785169c58335e76439980a40890c2bae0840ab4793b2d354
+  type: node_entered
+  payload:
+    flow:
+      id: disputa-cargo
+      version: 1.0.0
+    node_id: a_usd
+    node_type: tool
+    resume_kind: none
+- event_id: event-0017
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 16
+  prev_hash: 79302b1fc4599541785169c58335e76439980a40890c2bae0840ab4793b2d354
+  hash: 4c4a87fd70285b3ba9b6cc400abe2d31c906d633c9087b1566f94240d548f96c
+  type: tool_called
+  payload:
+    node_id: a_usd
+    tool:
+      id: convertir_moneda
+      version: 1.0.0
+    call_id: call-0003
+    status: ok
+    args:
+      monto: '***'
+      moneda: '***'
+      destino: '***'
+    result: '***'
+    result_fp:
+      alg: HMAC-SHA256
+      kid: fp-1
+      value: 87da13f83a380c75db4734a9f91c4a6b9a2b1b41d4d2e005a8eb06b2864a7834
+    error: null
+    attempt: 1
+    action_id: null
+    latency_ms: 0
+- event_id: event-0018
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 17
+  prev_hash: 4c4a87fd70285b3ba9b6cc400abe2d31c906d633c9087b1566f94240d548f96c
+  hash: a59153b721f90b79dc3ca1817c7030af236b5543ce463c1d835623a423e99833
+  type: node_entered
+  payload:
+    flow:
+      id: disputa-cargo
+      version: 1.0.0
+    node_id: umbral
+    node_type: rule
+    resume_kind: none
+- event_id: event-0019
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 18
+  prev_hash: a59153b721f90b79dc3ca1817c7030af236b5543ce463c1d835623a423e99833
+  hash: 46b3ca9d4b3e3cb426199e477e015566d02573446eb9e2cf3b048beeee47b121
+  type: rule_evaluated
+  payload:
+    node_id: umbral
+    policy:
+      id: escalamiento-disputa-monto
+      version: 1.0.0
+    inputs:
+      facts.monto_usd.value: '***'
+    result: true
+- event_id: event-0020
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 19
+  prev_hash: 46b3ca9d4b3e3cb426199e477e015566d02573446eb9e2cf3b048beeee47b121
+  hash: 2ce8dee7dbc977c6be2943ac0d1f8b281d917b366d072a031bf8438597588768
+  type: node_entered
+  payload:
+    flow:
+      id: disputa-cargo
+      version: 1.0.0
+    node_id: esc_monto
+    node_type: escalate
+    resume_kind: none
+- event_id: event-0021
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 20
+  prev_hash: 2ce8dee7dbc977c6be2943ac0d1f8b281d917b366d072a031bf8438597588768
+  hash: abf739040085ac4048817d81cc34936d0fa01d77cea8fd3e80076726363113b6
+  type: escalated
+  payload:
+    reason_code: policy:escalamiento-disputa-monto
+    target_queue: disputas
+    priority: normal
+    handoff_ref: handoff-0001
+- event_id: event-0022
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 21
+  prev_hash: abf739040085ac4048817d81cc34936d0fa01d77cea8fd3e80076726363113b6
+  hash: fd9be9420adeab8d67092fcd93cd8bd16b1a98d67928dd78037cfaff22e6baa6
+  type: run_closed
+  payload:
+    outcome: escalated
+    closed_by: escalation
+- event_id: event-0023
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 22
+  prev_hash: fd9be9420adeab8d67092fcd93cd8bd16b1a98d67928dd78037cfaff22e6baa6
+  hash: 572cb3796274b71e27ad4983893be9b1394fb1502bc50f055524e349da4faece
+  type: turn_completed
+  payload:
+    client_turn_id: c-1
+    entry: turn
+    duration_ms: 0
+    stages:
+      guards_ms: 0
+      understand_ms: 0
+      flow_ms: 0
+      response_ms: 0
+    degraded: false
+    awaiting: none
+full:
+  call-0001:
+    status: ok
+    result_full:
+    - transaction_id: tx-1
+      amount: *id001
+      currency: USD
+    - transaction_id: tx-2
+      amount: *id002
+      currency: USD
+    source: null
+    error: null
+    required_level: null
+  call-0002:
+    status: ok
+    result_full:
+      transaction_id: tx-1
+      amount: *id001
+      currency: USD
+    source: null
+    error: null
+    required_level: null
+  call-0003:
+    status: ok
+    result_full: 900.00
+    source: null
+    error: null
+    required_level: null
+drafts: []

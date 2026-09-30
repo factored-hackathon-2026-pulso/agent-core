@@ -22,6 +22,7 @@ from agent_core.audit import (
     ReplayReport,
     check_chain,
     check_fixture,
+    dump_fixture,
     load_catalog,
     load_fixture_file,
 )
@@ -41,28 +42,28 @@ from agent_core.flows.cli_validate import run_validate
 from agent_core.ports import Clock
 from agent_core.turn import Sweeper, SweepReport
 
-ENGINE_UNAVAILABLE_MESSAGE = "motor M4/M2 no disponible: el replay necesita el motor integrado"
-RECORD_UNAVAILABLE_MESSAGE = "motor M4/M2 no disponible: record necesita el motor integrado"
-_TURN_MODULE = "agent_core.turn"
+ENGINE_UNAVAILABLE_MESSAGE = "motor no disponible: el replay necesita el motor integrado y --registry"
+RECORD_UNAVAILABLE_MESSAGE = "motor no disponible: record necesita el motor integrado y --registry"
+# El motor del replay y `record` son herramientas de desarrollo (`testing/`, no van al wheel).
+_ENGINE_MODULE = "testing.replay"
 DSN_ENV = "AGENTCORE_DATABASE_URL"
 
 
 class EngineUnavailable(RuntimeError):
-    """El motor integrado (M4 + M2 + M5/M6/M8) no está cableado todavía (Task 14)."""
+    """El motor del replay no está disponible: falta `testing/replay` (wheel instalado) o `--registry`."""
 
 
-def load_engine() -> EngineRunner:
-    """Construye el `EngineRunner` con el motor real. Mientras M4 no exista lanza `EngineUnavailable`."""
+def load_engine(registry: Path | None = None) -> EngineRunner:
+    """Construye el `EngineRunner` del replay sobre el registro de autoría `registry`."""
     try:
-        turn = importlib.import_module(_TURN_MODULE)
+        module = importlib.import_module(_ENGINE_MODULE)
     except ModuleNotFoundError as error:
-        if error.name != _TURN_MODULE:  # un fallo interno del motor no es "motor no disponible"
-            raise
+        if error.name not in (_ENGINE_MODULE, _ENGINE_MODULE.split(".")[0]):
+            raise  # un fallo interno del motor no es "motor no disponible"
         raise EngineUnavailable from error
-    builder = getattr(turn, "build_engine_runner", None)
-    if builder is None:
+    if registry is None:
         raise EngineUnavailable
-    runner: EngineRunner = builder()
+    runner: EngineRunner = module.build_engine_runner(registry)
     return runner
 
 
@@ -91,12 +92,13 @@ def _run_replay(args: argparse.Namespace) -> int:
         print(render_report(report, args.json))
         return EXIT["chain_broken"]
     try:
-        engine = load_engine()
+        engine = load_engine(args.registry)
     except EngineUnavailable:
         print(ENGINE_UNAVAILABLE_MESSAGE, file=sys.stderr)
         return USAGE_ERROR
     try:
-        result = Replayer(engine, clock).replay(fixture, args.mode)
+        result = Replayer(engine, clock, definitions=getattr(engine, "definitions", None)).replay(
+            fixture, args.mode)
     except Exception as error:
         print(f"replay falló: {type(error).__name__}", file=sys.stderr)
         return USAGE_ERROR
@@ -104,14 +106,27 @@ def _run_replay(args: argparse.Namespace) -> int:
     return EXIT[result.verdict]
 
 
-def _run_record(_: argparse.Namespace) -> int:
+def _run_record(args: argparse.Namespace) -> int:
     try:
-        load_engine()
+        load_engine(args.registry)
     except EngineUnavailable:
         print(RECORD_UNAVAILABLE_MESSAGE, file=sys.stderr)
         return USAGE_ERROR
-    print("record: implementación real pendiente (Task 14)", file=sys.stderr)
-    return USAGE_ERROR
+    scenarios = importlib.import_module(_ENGINE_MODULE).SCENARIOS
+    if args.scenario not in scenarios:
+        print(f"escenario desconocido: {args.scenario} (disponibles: {', '.join(sorted(scenarios))})",
+              file=sys.stderr)
+        return USAGE_ERROR
+    try:
+        fixture = importlib.import_module(_ENGINE_MODULE).record_scenario(args.scenario, args.registry)
+        if args.catalog is not None:
+            check_fixture(fixture, load_catalog(args.catalog))
+    except FixtureRejected as rejected:
+        print(f"el fixture grabado tiene datos no sintéticos: {rejected}", file=sys.stderr)
+        return USAGE_ERROR
+    args.out.write_text(dump_fixture(fixture), encoding="utf-8")
+    print(f"record: {args.scenario} -> {args.out}")
+    return 0
 
 
 # --- composición de `agentcore sweep`: Postgres real, registro de autoría en disco y reloj del sistema -----
@@ -201,9 +216,14 @@ def main(
     replay.add_argument("--mode", choices=["fixture", "audit"], required=True)
     replay.add_argument("--json", action="store_true", help="salida JSON estable")
     replay.add_argument("--catalog", type=Path, default=None, help="catálogo de datos de prueba")
+    replay.add_argument("--registry", type=Path, default=None,
+                        help="directorio del registro de autoría de la release grabada")
     record = sub.add_parser("record", help="graba un fixture de un camino (M11)")
     record.add_argument("scenario")
     record.add_argument("--out", type=Path, required=True)
+    record.add_argument("--registry", type=Path, default=None,
+                        help="directorio del registro de autoría sobre el que se graba")
+    record.add_argument("--catalog", type=Path, default=None, help="catálogo de datos de prueba")
     args = parser.parse_args(argv)
     if args.command == "sweep":
         return _run_sweep(args, sweeper, clock)

@@ -1,0 +1,232 @@
+name: interrupcion
+run_id: run-0001
+release: demo
+inputs:
+- op: start
+- op: turn
+  text: creo que me están robando la tarjeta
+events:
+- event_id: event-0001
+  run_id: run-0001
+  turn_id: turn-0001
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 0
+  prev_hash: 30d0ee2270111fd5aa8d67093ed7b2fffb254d69c9fd4423ab50f139e5f06e3b
+  hash: cf9e10173eb7bc032b378c11569a6892f5ea6a5e88e7911d753e890cd2c8fca4
+  type: run_started
+  payload:
+    agent:
+      id: atencion
+      version: 1.0.0
+    mode: conversational
+    subject_kind: null
+    principal_type: customer
+    locale: es
+    reportable_attrs:
+      country: CO
+- event_id: event-0002
+  run_id: run-0001
+  turn_id: turn-0001
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 1
+  prev_hash: cf9e10173eb7bc032b378c11569a6892f5ea6a5e88e7911d753e890cd2c8fca4
+  hash: cae2647efe312366269e8dcd4b1562baffc0fb17d84d4ba20abf2c290f1bea62
+  type: turn_started
+  payload:
+    client_turn_id: null
+    guards: null
+- event_id: event-0003
+  run_id: run-0001
+  turn_id: turn-0001
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 2
+  prev_hash: cae2647efe312366269e8dcd4b1562baffc0fb17d84d4ba20abf2c290f1bea62
+  hash: 3ad4a03cf6ef15cc1dac025270fe371938755d55d4bd7a03fa39b469bcf89ac1
+  type: node_entered
+  payload:
+    flow:
+      id: disputa-cargo
+      version: 1.0.0
+    node_id: pedir_cargo
+    node_type: collect
+    resume_kind: none
+- event_id: event-0004
+  run_id: run-0001
+  turn_id: turn-0001
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 3
+  prev_hash: 3ad4a03cf6ef15cc1dac025270fe371938755d55d4bd7a03fa39b469bcf89ac1
+  hash: 4e4b78f833aefcb98de8064bdbf001e787337bfb6915fb2ab7cc60589479dd43
+  type: turn_completed
+  payload:
+    client_turn_id: null
+    entry: start_run
+    duration_ms: 0
+    stages:
+      guards_ms: null
+      understand_ms: null
+      flow_ms: 0
+      response_ms: 0
+    degraded: false
+    awaiting: slot
+- event_id: event-0006
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 4
+  prev_hash: 4e4b78f833aefcb98de8064bdbf001e787337bfb6915fb2ab7cc60589479dd43
+  hash: 5bd22ebaa5bb60c8d581f6254dd9add9bb6eba60f70a122fab8fdb79ccd51f62
+  type: turn_started
+  payload:
+    client_turn_id: c-1
+    guards:
+      lang:
+        detector: lingua@2.1.1
+        letters: 30
+        top2:
+        - lang: es
+          score: 0.968164
+        - lang: pt
+          score: 0.029928
+        decision: kept
+        locale_prior: es
+        locale: es
+      injection:
+        flagged: false
+        signals: []
+        ruleset: injection-rules@1.0.0
+      size_ok: true
+- event_id: event-0005
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 5
+  prev_hash: 5bd22ebaa5bb60c8d581f6254dd9add9bb6eba60f70a122fab8fdb79ccd51f62
+  hash: c403ff76f91a2781c1d798c0a9c13c07cdc752bb914b31eb3da5758c24360998
+  type: expiry_evaluated
+  payload:
+    now: '2026-09-28T12:00:00Z'
+    last_activity_at: '2026-09-28T12:00:00Z'
+    ttl: PT30M
+    expired: false
+- event_id: event-0007
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 6
+  prev_hash: c403ff76f91a2781c1d798c0a9c13c07cdc752bb914b31eb3da5758c24360998
+  hash: c657cdd8b4b840097afcac224c84cd361e2b641ae0b45c1b49665dec9fda9428
+  type: decision_made
+  payload:
+    decision_id: decision-0001
+    model:
+      id: understand-turno
+      version: 1.0.0
+    provider_used: jev
+    model_version: unknown
+    fallback_depth: 0
+    value:
+      command: interrupt
+      interrupt: fraude
+    p_cal:
+      command: 0.95
+      flow: null
+      interrupt: 0.95
+    p_raw:
+      command: 0.95
+      flow: null
+      interrupt: 0.95
+    top_k: {}
+    above_threshold:
+      command: true
+      flow: false
+      interrupt: true
+    latency_ms: 0
+    tokens: 20
+    cost_usd: !!float '0'
+    locale: es
+- event_id: event-0008
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 7
+  prev_hash: c657cdd8b4b840097afcac224c84cd361e2b641ae0b45c1b49665dec9fda9428
+  hash: 308f2f18c8f4b719dfd687c6d0ecbca88ac7a0125c300619249625264aa1abc7
+  type: command_emitted
+  payload:
+    command: interrupt
+    flow: null
+    interrupt: fraude
+    additional_flows: []
+    above_threshold:
+      command: true
+      interrupt: true
+    decision_id: decision-0001
+    source: understand
+- event_id: event-0009
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 8
+  prev_hash: 308f2f18c8f4b719dfd687c6d0ecbca88ac7a0125c300619249625264aa1abc7
+  hash: a6b5903f2163643f4610997cab771580a11548bc48e700fabf968165b7cdad28
+  type: escalated
+  payload:
+    reason_code: interrupt:fraude
+    target_queue: fraude
+    priority: critical
+    handoff_ref: handoff-0001
+- event_id: event-0010
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 9
+  prev_hash: a6b5903f2163643f4610997cab771580a11548bc48e700fabf968165b7cdad28
+  hash: 2cd87f517a9abb45cf6ee3cba676c8d6ab056c0743903df8231bd1f6cc8d0efe
+  type: run_closed
+  payload:
+    outcome: escalated
+    closed_by: escalation
+- event_id: event-0011
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 10
+  prev_hash: 2cd87f517a9abb45cf6ee3cba676c8d6ab056c0743903df8231bd1f6cc8d0efe
+  hash: 92a887cccbdd8d591f833c56ce65b22e1ba96d265bc4729d2ee844095bfff5bb
+  type: turn_completed
+  payload:
+    client_turn_id: c-1
+    entry: turn
+    duration_ms: 0
+    stages:
+      guards_ms: 0
+      understand_ms: 0
+      flow_ms: 0
+      response_ms: 0
+    degraded: false
+    awaiting: none
+full: {}
+drafts: []

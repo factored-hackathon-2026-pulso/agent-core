@@ -7,7 +7,7 @@ import pytest
 
 from agent_core.audit import AuditLog
 from agent_core.domain import Outcome, ResponseEmitted
-from tests.composition.world import DRAFT, EngineWorld
+from testing.engine_world import DRAFT, EngineWorld
 from tests.support.pg import postgres_store
 
 pytestmark = pytest.mark.integration
@@ -21,9 +21,9 @@ def test_disputa_cargo_de_punta_a_punta_sobre_postgres() -> None:
         started = w.start()
         w.understands("continue")
         w.matches()
-        prompt = w.turn(started.session_id, TEXT)
+        prompt = w.turn(TEXT)
         assert prompt.confirmation is not None
-        done = w.turn(started.session_id, confirm=(prompt.confirmation.token, "yes"))
+        done = w.confirm("yes")
 
         assert [m.text for m in done.messages] == [DRAFT] and done.messages[0].kind == "generated"
         with pg.uow() as uow:
@@ -50,9 +50,9 @@ def test_dos_corridas_del_mismo_guion_producen_los_mismos_eventos() -> None:
             started = w.start()
             w.understands("continue")
             w.matches()
-            prompt = w.turn(started.session_id, TEXT)
+            prompt = w.turn(TEXT)
             assert prompt.confirmation is not None
-            w.turn(started.session_id, confirm=(prompt.confirmation.token, "yes"))
+            w.confirm("yes")
             return [(e.type, e.turn_id) for e in w.audit.read(started.run_id)]
 
     assert run("cableado_det_a") == run("cableado_det_b")
