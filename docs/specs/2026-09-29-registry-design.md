@@ -1,6 +1,6 @@
 # Spec — Registry (unidad 2: entidades, versionado y publicación)
 
-- Estado: **rev. 2, alcance de entrega (MVP) acordado el 2026-09-30; pendiente de revisión**
+- Estado: **rev. 2 implementada (entrega), 2026-09-30.** Pendientes en §14: composición del motor con `PostgresRegistry` (raíz de composición del servidor, con el LLM gateway)
 - Fecha: 2026-09-29 (rev. 1) · 2026-09-30 (rev. 2)
 - Repo: `agent-core`
 - Paquete: `agent_core.registry`
@@ -439,20 +439,52 @@ Las que necesitan Postgres van en `tests/integration/`; el resto usa dobles en m
 | T-REG-21 | `lineage_for_run` coincide exactamente con las entidades de la release del run, con sus `VersionDocs` y `changed_vs_base` |
 | T-REG-22 | `diff_releases` coincide con `release_entities` |
 | T-REG-23 | Evaluador: base y candidata parten del mismo `seed` y cada corrida tiene su propio entorno |
-| T-REG-24 | El evaluador se niega a correr con un `ActionsConfig` no marcado como sandbox |
+| T-REG-24 | El evaluador se niega a correr con un `ToolExecutor` (el que entrega `SandboxPort.tools`) no marcado con `is_sandbox = True` |
 | T-REG-25 | Calificación: `expect` se evalúa desde los eventos, y los guardarraíles se cuentan bien con eventos sintéticos |
 | T-REG-26 | `import` de la carpeta YAML de la demo crea releases publicadas; `export` seguido de `import` conserva los `content_hash` |
 | T-REG-27 | **E2E:** `import` → propuesta (cambio de prompt) → `freeze` → `evaluate` (`LocalSandbox`, LLM falso determinista) → `approve` → `publish` → un run nuevo usa la release nueva → el linaje muestra la entidad cambiada con su `VersionDocs` |
 
 ## 14. Definición de terminado
 
-- `RegistryService`, `BlobStore`, `EvalPort`, `SandboxPort`, `Judge`, `PostgresRegistry` y `SnapshotRegistry` exportados y tipados.
-- T-REG-01 a T-REG-27 en verde.
-- `lint-imports`, `mypy` y `ruff` en verde.
-- API montada en M9 y CLI funcionando.
-- La composición del motor usa `PostgresRegistry`.
-- `contracts/` regenerado si se tocó M0.
-- Sin TODO sin issue.
+- [x] `RegistryService`, `BlobStore`, `EvalPort`, `SandboxPort`, `Judge`, `PostgresRegistry` y `SnapshotRegistry` exportados y tipados (`agent_core/registry/__init__.py`; `mypy` strict en verde).
+- [x] T-REG-01 a T-REG-27 en verde (suite completa con Postgres: 2956 pasaron, 1 omitida por `AGENT_CORE_PERF`, ajena al registry). Trazabilidad abajo.
+- [x] `lint-imports`, `mypy` y `ruff` en verde.
+- [x] API montada en M9 (`registry_extension`, `ApiDeps.extensions`) y CLI (`agentcore registry …`).
+- [ ] La composición del motor usa `PostgresRegistry`. **Pendiente:** hoy no hay servidor de producción que componga `create_app` con adaptadores reales; queda para la raíz de composición del servidor, junto con el LLM gateway (otra sesión). `PostgresRegistry` ya cumple `RegistryPort` (T-REG-17) y lo usa la E2E (T-REG-27).
+- [x] `contracts/` regenerado (`agentcore contracts --check` en verde).
+- [x] Sin TODO sin issue (no hay `TODO` en `agent_core/`, `testing/` ni `tests/`).
+
+### Trazabilidad de pruebas
+
+| T-REG | Prueba |
+|---|---|
+| 01 | `tests/integration/test_registry_postgres.py::test_immutable_tables_reject_update_and_delete` |
+| 02 | `tests/registry/test_service_decide.py::test_publish_failure_mid_way_leaves_nothing`, `tests/integration/test_registry_postgres.py::test_publish_failure_mid_way_leaves_nothing` |
+| 03 | `tests/registry/test_service_build.py::test_put_draft_with_stale_rev_fails` |
+| 04 | `tests/registry/test_service_build.py::test_freeze_with_violation_keeps_draft` |
+| 05 | `tests/registry/test_validation.py::test_version_not_greater_than_base_is_violation` |
+| 06 | `tests/registry/test_validation.py::test_entity_over_size_limit_is_violation` |
+| 07 | `tests/registry/test_service_build.py::test_illegal_transitions` |
+| 08 | `tests/registry/test_gate.py::test_guardrail_regression_fails_even_if_primary_improves` |
+| 09 | `tests/registry/test_gate.py::test_primary_within_margin_passes_outside_fails` |
+| 10 | `tests/registry/test_gate.py::test_without_base_uses_floor_and_zero_guardrails` |
+| 11 | `tests/registry/test_service_decide.py::test_failed_infra_keeps_candidate_and_blocks_approval`, `tests/registry/test_evaluator.py::test_infra_failure_is_failed_infra` |
+| 12 | `tests/registry/test_service_decide.py::test_approve_with_other_hash_is_candidate_changed`, `::test_reopen_invalidates_approval` |
+| 13 | `tests/registry/test_service_decide.py::test_non_human_or_non_approver_cannot_decide`, `tests/registry/test_http.py::test_bot_gets_forbidden_role_problem` |
+| 14 | `tests/registry/test_service_decide.py::test_human_completes_cycle_alone` |
+| 15 | `tests/registry/test_service_decide.py::test_publish_with_moved_staging_is_stale_and_rebases` |
+| 16 | `tests/registry/test_service_decide.py::test_two_proposals_same_agent_second_publish_is_stale`, `tests/integration/test_registry_postgres.py::test_second_publish_on_same_agent_is_stale` |
+| 17 | `tests/integration/test_registry_postgres.py::test_postgres_registry_passes_contract`, `tests/contracts/test_registry_contract.py` (`SnapshotRegistry`) |
+| 18 | `tests/integration/test_registry_postgres.py::test_candidates_and_drafts_are_invisible` |
+| 19 | `tests/registry/test_memory_store.py::test_blob_round_trip_and_integrity`, `tests/integration/test_registry_postgres.py::test_tampered_blob_raises_integrity_error` |
+| 20 | `tests/registry/test_service_decide.py::test_promote_and_revoke`, `tests/integration/test_registry_postgres.py::test_revoked_release_not_resolved_for_new_runs` |
+| 21 | `tests/registry/test_service_reads.py::test_lineage_matches_release_exactly` |
+| 22 | `tests/registry/test_service_reads.py::test_diff_matches_release_entities` |
+| 23 | `tests/registry/test_evaluator.py::test_each_run_gets_its_own_sandbox`, `tests/registry/test_local_sandbox.py::test_each_provision_is_isolated` |
+| 24 | `tests/registry/test_evaluator.py::test_refuses_non_sandbox_tools` |
+| 25 | `tests/registry/test_scoring.py::test_resolved_with_verified_action_passes` |
+| 26 | `tests/registry/test_yaml_io.py::test_import_demo_creates_published_release_with_both_aliases`, `::test_export_then_load_keeps_content_hashes` |
+| 27 | `tests/integration/test_registry_postgres.py::test_end_to_end_prompt_change` |
 
 ## 15. Cambios en otros módulos
 
@@ -465,7 +497,7 @@ Todos **aditivos**.
 - **M3:** sin cambios (el sandbox entra como `ToolExecutor`).
 - **M9:** `ApiDeps.extensions`: cada extensión recibe la app y un `authenticate(request, authorization)`.
 - **M11:** expone por su interfaz pública la lectura del `release_id` de un run.
-- **`composition`:** una fábrica que compone el motor con un `RegistryPort` y un `ActionsConfig` dados (la usan el evaluador y la API).
+- **`composition`:** una fábrica que compone el motor con un `RegistryPort` y un `ToolExecutor` dados (la usan el evaluador y la API).
 - **`.importlinter`:** `registry` puede usar `domain`, `ports`, la interfaz pública de `flows` y, solo el submódulo del evaluador, `composition`. Ningún módulo del motor importa `registry`.
 - **M12:** el `KnowledgeSource` respaldado por el registry sustituye a `FileKnowledgeSource`.
 - **Unidad 3:** implementa `SandboxPort`. Hasta entonces se usa `LocalSandbox`.

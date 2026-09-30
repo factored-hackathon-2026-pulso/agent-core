@@ -41,6 +41,8 @@ La spec general describe el motor completo en un solo documento. Aquí se parte 
 
 **Fuera de esta tabla:** el registry (unidad 2) tiene su propia spec, `../2026-09-29-registry-design.md` (rev. 2: alcance de entrega y fase 2). Añade `EntityKind.knowledge_snapshot` y `Release.knowledge_snapshot` a M0, y M1 le aporta las funciones puras de validación y `pin_release` (ver §15 de esa spec).
 
+Paquete `agent_core.registry/` (unidad 2): implementado (rev. 2, entrega). Solo lo importa `composition` (evaluador, servicio y CLI; la API lo monta como extensión `registry_extension`); ningún módulo del motor lo importa.
+
 ## 3. Dependencias
 
 Un módulo solo importa `agent_core.domain`, `agent_core.ports` y la **interfaz pública** (`__init__.py`) de los módulos de su columna "usa". Se hace cumplir en CI con `import-linter`.

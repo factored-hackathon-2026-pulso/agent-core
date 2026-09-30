@@ -158,3 +158,39 @@ def test_revoked_release_not_resolved_for_new_runs(registry_store: PgRegistrySto
     assert reg.release_status(rel) == "revoked"
     with pytest.raises(KeyError):
         reg.resolve_release(AgentSelector.parse(f"{AGENT}@staging"), principal())
+
+
+def test_end_to_end_prompt_change(registry_store: PgRegistryStore) -> None:  # T-REG-27
+    from agent_core.registry import EntityDraft, LocalSandbox, ScenarioEvaluator, VersionDocs
+    from testing.registry_demo import build_harness, demo_suite
+
+    clock, ids = FakeClock(), FakeIds()
+    evaluator = ScenarioEvaluator(build_harness(), LocalSandbox(ids), max_workers=1)
+    runs: dict[str, str] = {}
+
+    class Runs:
+        def release_of(self, run_id: str) -> str | None:
+            return runs.get(run_id)
+
+    service = RegistryService(registry_store, evaluator, clock, ids, runs=Runs())
+    service.import_seed(ANA, REGISTRY_DEMO)
+
+    suite = EntityDraft(kind="eval_suite", content=demo_suite().model_dump(mode="json"),
+                        docs=VersionDocs(description="suite de disputas", rationale="gate",
+                                         changelog="inicial"))
+    p = service.create_proposal(ANA, AGENT, Origin.manual, "Confirmación más clara del radicado")
+    service.put_draft(ANA, p.proposal_id, [prompt_draft(), suite], expected_rev=0)
+    view = service.freeze(ANA, p.proposal_id)
+    report = service.evaluate(ANA, p.proposal_id, "disputas-suite")
+    assert report.verdict == "pass", report.model_dump()
+    service.approve(ANA, p.proposal_id, view.candidate_hash)
+    detail = service.publish(ANA, p.proposal_id, "e2e-1")
+
+    reg = PostgresRegistry(registry_store, clock)
+    release = reg.resolve_release(AgentSelector.parse(f"{AGENT}@staging"), principal())
+    assert release.id == detail.release_id  # un run nuevo en staging usa la release nueva
+    runs["run-e2e"] = release.id
+    lineage = service.lineage_for_run(ANA, "run-e2e")
+    changed = {e.ref.id: e.docs for e in lineage.entities if e.changed_vs_base}
+    assert changed["p/resumen_radicado"].description == "cambio de prueba"
+    assert lineage.approved_by == "ana" and lineage.eval_verdict == "pass"
