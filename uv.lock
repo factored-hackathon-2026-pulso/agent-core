@@ -9,6 +9,7 @@ source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "lingua-language-detector" },
     { name = "openai" },
     { name = "opentelemetry-api" },
@@ -22,7 +23,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "hypothesis" },
     { name = "import-linter" },
     { name = "mypy" },
@@ -36,6 +36,7 @@ dev = [
 requires-dist = [
     { name = "cryptography", specifier = ">=43" },
     { name = "fastapi", specifier = ">=0.142.1" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "lingua-language-detector", specifier = "==2.1.1" },
     { name = "openai", specifier = "==2.54.0" },
     { name = "opentelemetry-api", specifier = ">=1.27" },
@@ -49,7 +50,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "httpx", specifier = ">=0.28.1" },
     { name = "hypothesis", specifier = ">=6.100" },
     { name = "import-linter", specifier = ">=2.1" },
     { name = "mypy", specifier = ">=1.13" },
