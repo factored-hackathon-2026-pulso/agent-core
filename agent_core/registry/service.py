@@ -7,7 +7,16 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from agent_core.domain import EntityKind, Principal, RegistryEntity, Release, loads
+from agent_core.domain import (
+    EntityKind,
+    JsonValue,
+    Principal,
+    RegistryEntity,
+    Release,
+    canonical_bytes,
+    loads,
+    sha256_hex,
+)
 from agent_core.flows import Violation
 from agent_core.ports import Clock, IdKind, IdSource
 from agent_core.registry.candidate import (
@@ -24,7 +33,10 @@ from agent_core.registry.evaluation.report import EvalReport
 from agent_core.registry.models import (
     AliasChange,
     Approval,
+    AuditContext,
     ChangedRef,
+    DraftOp,
+    DraftWrite,
     EntityDraft,
     EntityInRelease,
     EntityVersion,
@@ -41,7 +53,9 @@ from agent_core.registry.models import (
     VersionDocs,
     VersionRef,
     VersionSummary,
+    WriteRecord,
 )
+from agent_core.registry.quotas import DEFAULT_QUOTAS, Quotas
 from agent_core.registry.roles import actor_id, require_admin, require_approver, require_constructor
 from agent_core.registry.snapshot import SnapshotRegistry
 from agent_core.registry.store import RegistryStore, RegistryTx
@@ -90,11 +104,18 @@ def _violations_payload(violations: Sequence[Violation]) -> list[dict[str, str |
             for v in violations]
 
 
+def _request_hash(op: str, payload: JsonValue) -> str:
+    """Huella del contenido de una escritura: una clave solo se reutiliza con el mismo contenido."""
+    return sha256_hex(canonical_bytes({"op": op, "payload": payload}))
+
+
 class RegistryService:
     def __init__(self, store: RegistryStore, evaluator: EvalPort, clock: Clock, ids: IdSource,
-                 runs: RunReleaseReader | None = None, limits: Limits = DEFAULT_LIMITS) -> None:
+                 runs: RunReleaseReader | None = None, limits: Limits = DEFAULT_LIMITS,
+                 quotas: Quotas = DEFAULT_QUOTAS) -> None:
         self._store, self._evaluator, self._clock, self._ids = store, evaluator, clock, ids
         self._runs, self._limits = runs, limits
+        self._quotas = quotas
 
     # --- helpers ---------------------------------------------------------------------------------------
 
@@ -166,11 +187,38 @@ class RegistryService:
                                 f"{detail}: {len(exc.violations)} violaciones",
                                 payload=_violations_payload(exc.violations)) from exc  # type: ignore[arg-type]
 
+    @staticmethod
+    def _replayed(tx: RegistryTx, key: str | None, op: DraftOp, request_hash: str) -> DraftWrite | None:
+        """Una clave ya usada con el mismo contenido devuelve su escritura; con otro, conflicto (ADR 0007)."""
+        if key is None:
+            return None
+        prior = tx.get_draft_write(key)
+        if prior is None:
+            return None
+        if prior.op != op or prior.request_hash != request_hash:
+            raise RegistryError(RegistryErrorCode.idempotency_conflict,
+                                "la clave de idempotencia ya se usó con otro contenido")
+        return prior
+
+    def _remember(self, tx: RegistryTx, key: str | None, op: DraftOp, p: Proposal, request_hash: str,
+                  audit: AuditContext | None, result_ref: str | None = None) -> None:
+        if key is None:
+            return
+        tx.put_draft_write(DraftWrite(idempotency_key=key, op=op, proposal_id=p.proposal_id, rev_after=p.rev,
+                                      request_hash=request_hash, result_ref=result_ref, audit=audit,
+                                      created_at=self._clock.now()))
+
     # --- construcción (rol constructor) ------------------------------------------------------------------
 
-    def create_proposal(self, actor: Principal, agent_id: str, origin: Origin, title: str) -> Proposal:
+    def create_proposal(self, actor: Principal, agent_id: str, origin: Origin, title: str, *,
+                        idempotency_key: str | None = None, audit: AuditContext | None = None) -> Proposal:
         require_constructor(actor)
+        request = _request_hash("create_proposal",
+                                {"agent_id": agent_id, "origin": origin.value, "title": title})
         with self._store.transaction() as tx:
+            prior = self._replayed(tx, idempotency_key, "create_proposal", request)
+            if prior is not None:
+                return self._proposal(tx, prior.proposal_id, for_update=False)
             base = tx.get_alias(agent_id, "staging")
             try:
                 p = Proposal(proposal_id=self._ids.new_id(IdKind.proposal), agent_id=agent_id, origin=origin,
@@ -185,17 +233,23 @@ class RegistryService:
                                              for f in fields]) from None
             tx.save_proposal(p)
             self._event(tx, "proposal_created", actor, p)
+            self._remember(tx, idempotency_key, "create_proposal", p, request, audit)
             return p
 
     def put_draft(self, actor: Principal, proposal_id: str, changes: Sequence[EntityDraft],
-                  expected_rev: int) -> Proposal:
+                  expected_rev: int, *, idempotency_key: str | None = None,
+                  audit: AuditContext | None = None) -> Proposal:
         require_constructor(actor)
         problems = check_draft_limits(changes, self._limits)
         if problems:
             raise RegistryError(RegistryErrorCode.validation_failed, "el borrador excede los límites",
                                 payload=_violations_payload(problems))  # type: ignore[arg-type]
+        request = _request_hash("put_draft", {"proposal_id": proposal_id, "expected_rev": expected_rev,
+                                              "changes": [c.model_dump(mode="json") for c in changes]})
         with self._store.transaction() as tx:
             p = self._proposal(tx, proposal_id)
+            if self._replayed(tx, idempotency_key, "put_draft", request) is not None:
+                return p  # el estado actual: la escritura ya ocurrió y la propuesta pudo avanzar
             self._expect(p, ProposalState.draft)
             if p.rev != expected_rev:
                 raise RegistryError(RegistryErrorCode.proposal_stale,
@@ -203,6 +257,7 @@ class RegistryService:
             tx.replace_changes(proposal_id, changes)
             p = self._save(tx, p, rev=p.rev + 1)
             self._event(tx, "draft_updated", actor, p)
+            self._remember(tx, idempotency_key, "put_draft", p, request, audit)
             return p
 
     def validate(self, actor: Principal, proposal_id: str) -> ValidationReport:
@@ -249,6 +304,22 @@ class RegistryService:
             p = self._proposal(tx, proposal_id, for_update=False)
             last = tx.latest_eval_run(p.proposal_id, p.candidate_hash) if p.candidate_hash else None
             return ProposalDetail(proposal=p, changes=tx.get_changes(proposal_id), last_eval=last)
+
+    def get_write(self, idempotency_key: str) -> WriteRecord | None:
+        """Readback de las escrituras del constructor (`readback_by: idempotency_key`, ADR 0007 §5)."""
+        with self._store.transaction() as tx:
+            write = tx.get_draft_write(idempotency_key)
+            if write is None:
+                return None
+            verdict = None
+            if write.op == "evaluate" and write.result_ref is not None:
+                run = tx.get_eval_run(write.result_ref)
+                verdict = run.verdict if run is not None else None
+            audit = write.audit
+            return WriteRecord(op=write.op, proposal_id=write.proposal_id, rev_after=write.rev_after,
+                               request_hash=write.request_hash, verdict=verdict,
+                               run_id=audit.run_id if audit else None,
+                               on_behalf_of=audit.on_behalf_of if audit else None)
 
     # --- evaluación --------------------------------------------------------------------------------------
 
