@@ -9,6 +9,11 @@ from typing import Protocol
 
 from agent_core.domain import Decision, JsonValue, Locale, Probability, ProviderSpec, canonical_bytes
 
+# Threshold label that matches any value of a field: runtime choices (ADR 0021) have no fixed label set,
+# so one calibrated threshold per (field, provider, lang) covers them. Choices are agent ids, which can
+# never be "*" (`EntityId` forbids it).
+WILDCARD_LABEL = "*"
+
 
 def value_label(value: JsonValue) -> str:
     """Etiqueta de un valor para las claves de umbral: el string tal cual; el resto en JCS (sin orden de

@@ -5,17 +5,20 @@ from datetime import timedelta
 from decimal import Decimal
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import Field, NonNegativeInt, PositiveInt
+from pydantic import Field, NonNegativeInt, PositiveInt, SerializerFunctionWrapHandler, model_serializer
 
 from agent_core.domain.base import Locale, Model, NodeId, Probability, Sha256Hex, UtcDatetime
+from agent_core.domain.errors import GatewayErrorKind
 from agent_core.domain.identity import AuthLevel, PrincipalType
 from agent_core.domain.json import JsonValue
+from agent_core.domain.knowledge import Purpose
 from agent_core.domain.outcomes import Awaiting, Command, Mode, Outcome, ReasonCodeStr
 from agent_core.domain.refs import EntityRef
 from agent_core.domain.shared import Fingerprint, ToolStatus
 from agent_core.domain.state import InvalidationReason
+from agent_core.domain.transfer import RunOrigin
 
 Cost = Annotated[Decimal, Field(ge=0, allow_inf_nan=False)]
 
@@ -45,6 +48,15 @@ class RunStartedPayload(Model):
     principal_type: PrincipalType
     locale: Locale
     reportable_attrs: dict[str, str] = Field(default_factory=dict)
+    origin: RunOrigin | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_empty_origin(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Hashes come from the dump: an absent origin must not change chains sealed before 1.2.0."""
+        data: dict[str, Any] = handler(self)
+        if data.get("origin") is None:
+            data.pop("origin", None)
+        return data
 
 
 class LangScore(Model):
@@ -153,15 +165,38 @@ class AgentStepPayload(Model):
     """Payload del evento `agent_step` (vista audit, M0 §2.10, ADR 0019).
 
     Un paso del nodo `agent`. Los argumentos y el resultado de una tool van en su `tool_called` (`call_id`
-    los enlaza); el texto de la respuesta final solo como huella con clave, nunca razonamiento intermedio."""
+    los enlaza); el texto de la respuesta final solo como huella con clave, nunca razonamiento intermedio.
+    `kind = "failed"`: el gateway falló en ese paso y el nodo terminó en `gave_up`."""
     node_id: NodeId
     step: PositiveInt
-    kind: Literal["tool", "final"]
+    kind: Literal["tool", "final", "failed"]
     tool: EntityRef | None = None
     call_id: str | None = None
     status: ToolStatus | None = None
     text_fp: Fingerprint | None = None
+    error_kind: GatewayErrorKind | None = None  # solo con `kind = "failed"`: la falla del gateway
     latency_ms: NonNegativeInt
+
+
+class FilteredPage(Model):
+    """Una página pedida que M12 no entregó, y por qué (nunca lleva su contenido)."""
+    ref: str
+    reason: Literal["audience", "not_approved", "expired", "not_yet_valid", "lang", "snapshot", "view"]
+
+
+class KnowledgeReadPayload(Model):
+    """Payload del evento `knowledge_read` (vista audit, M12 §6). Solo referencias y motivos, nunca texto.
+
+    `result` es la rama del nodo. `refs` son las páginas entregadas; `filtered_out`, las que el servicio
+    devolvió y M12 retuvo; `missing`, las que el servicio no devolvió. `reason` distingue las causas que el
+    esquema del nodo no separa: fuente caída, sin snapshot o `navigate` sin ejecutar."""
+    node_id: NodeId
+    purpose: Purpose
+    result: Literal["ok", "not_found", "denied"]
+    refs: list[str] = Field(default_factory=list)
+    filtered_out: list[FilteredPage] = Field(default_factory=list)
+    missing: list[str] = Field(default_factory=list)
+    reason: Literal["source_unavailable", "navigate_unavailable", "no_snapshot"] | None = None
 
 
 class StepUpRequestedPayload(Model):
@@ -306,7 +341,40 @@ class HandoffResolvedPayload(Model):
 class RunClosedPayload(Model):
     """Payload del evento `run_closed` (vista audit, M0 §2.10)."""
     outcome: Outcome
-    closed_by: Literal["flow", "abandonment", "escalation", "revocation"]
+    closed_by: Literal["flow", "abandonment", "escalation", "revocation", "transfer"]
+
+
+TransferRejectReason = Literal[
+    "not_in_directory", "no_active_release", "not_eligible", "accepts_mismatch", "transfer_limit", "no_turn"]
+
+
+class RunTransferredPayload(Model):
+    """Payload of `run_transferred` (audit view, ADR 0021 P1): packet fingerprint only."""
+    transfer_id: str
+    to_agent: EntityRef
+    to_release_id: str
+    to_run_id: str
+    reason: str
+    packet_fp: Fingerprint
+    directory: str
+    directory_hash: Sha256Hex
+    candidates: list[str]
+
+
+class TransferReceivedPayload(Model):
+    """Payload of `transfer_received` (audit view)."""
+    transfer_id: str
+    accepted_slots: list[str]
+    packet_fp: Fingerprint
+
+
+class TransferRejectedPayload(Model):
+    """Payload of `transfer_rejected` (audit view)."""
+    transfer_id: str
+    to_agent: str | None = None
+    reason_code: TransferRejectReason
+    directory: str | None = None
+    directory_hash: Sha256Hex | None = None
 
 
 class HandoffCreatedPayload(Model):
@@ -370,6 +438,12 @@ class AgentStep(EngineEvent):
     """Evento `agent_step` de la cadena de auditoría (M0 §2.10)."""
     type: Literal["agent_step"] = "agent_step"
     payload: AgentStepPayload
+
+
+class KnowledgeRead(EngineEvent):
+    """Evento `knowledge_read` de la cadena de auditoría (M12 §6)."""
+    type: Literal["knowledge_read"] = "knowledge_read"
+    payload: KnowledgeReadPayload
 
 
 class StepUpRequested(EngineEvent):
@@ -456,6 +530,24 @@ class RunClosed(EngineEvent):
     payload: RunClosedPayload
 
 
+class RunTransferred(EngineEvent):
+    """Evento `run_transferred` de la cadena origen (ADR 0021)."""
+    type: Literal["run_transferred"] = "run_transferred"
+    payload: RunTransferredPayload
+
+
+class TransferReceived(EngineEvent):
+    """Evento `transfer_received` de la cadena destino (ADR 0021)."""
+    type: Literal["transfer_received"] = "transfer_received"
+    payload: TransferReceivedPayload
+
+
+class TransferRejected(EngineEvent):
+    """Evento `transfer_rejected` de la cadena origen (ADR 0021)."""
+    type: Literal["transfer_rejected"] = "transfer_rejected"
+    payload: TransferRejectedPayload
+
+
 AnyEvent = Annotated[
     RunStarted
     | TurnStarted
@@ -465,6 +557,7 @@ AnyEvent = Annotated[
     | RuleEvaluated
     | ToolCalled
     | AgentStep
+    | KnowledgeRead
     | StepUpRequested
     | ActionConfirmed
     | ActionCancelled
@@ -478,15 +571,19 @@ AnyEvent = Annotated[
     | AccessDenied
     | Escalated
     | HandoffResolved
-    | RunClosed,
+    | RunClosed
+    | RunTransferred
+    | TransferReceived
+    | TransferRejected,
     Field(discriminator="type"),
 ]
 
 _EVENT_CLASSES: tuple[type[EngineEvent], ...] = (
     RunStarted, TurnStarted, CommandEmitted, NodeEntered, DecisionMade, RuleEvaluated, ToolCalled,
-    AgentStep, StepUpRequested, ActionConfirmed, ActionCancelled, ActionDispatched, ActionVerified,
+    AgentStep, KnowledgeRead, StepUpRequested, ActionConfirmed, ActionCancelled, ActionDispatched,
+    ActionVerified,
     ExpiryEvaluated, ResponseEmitted, ResponseFailed, TurnCompleted, InjectionFlagged, AccessDenied,
-    Escalated, HandoffResolved, RunClosed,
+    Escalated, HandoffResolved, RunClosed, RunTransferred, TransferReceived, TransferRejected,
 )
 
 EVENT_TYPES: Mapping[str, type[EngineEvent]] = MappingProxyType(
@@ -506,6 +603,7 @@ EVENT_EMITTERS: Mapping[str, frozenset[str]] = MappingProxyType(
         "step_up_requested": frozenset({"M2"}),
         "tool_called": frozenset({"M2", "M3"}),
         "agent_step": frozenset({"M2"}),
+        "knowledge_read": frozenset({"M12"}),
         "decision_made": frozenset({"M5"}),
         "action_confirmed": frozenset({"M3"}),
         "action_cancelled": frozenset({"M3"}),
@@ -517,6 +615,9 @@ EVENT_EMITTERS: Mapping[str, frozenset[str]] = MappingProxyType(
         "access_denied": frozenset({"M9", "M2"}),
         "escalated": frozenset({"M10"}),
         "handoff_resolved": frozenset({"M10"}),
+        "run_transferred": frozenset({"M4"}),
+        "transfer_received": frozenset({"M4"}),
+        "transfer_rejected": frozenset({"M4"}),
     }
 )
 

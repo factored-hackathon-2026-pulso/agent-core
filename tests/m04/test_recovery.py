@@ -7,7 +7,7 @@ import pytest
 
 from agent_core.domain import EntityRef, Flow, RunState
 from agent_core.turn.recovery import position_at_verify
-from testing.builders import action
+from testing.builders import action, run_state
 from tests.m04.harness import RUN_ID, World
 from tests.m04.helpers import cmd
 
@@ -132,3 +132,31 @@ def test_recuperacion_que_deja_al_usuario_esperando_procesa_el_mensaje() -> None
     assert types.index("action_verified") < types.index("command_emitted")
     assert [m.text for m in result.messages] == [w.text("t-listo")]  # el de la recuperación
     assert result.status == "closed"
+
+
+def _draft_action(node: str = "guardar", flow: str = "borrador@1.0.0") -> Any:
+    return action(flow=flow, state="executing", confirm_node_id=None, write_node_id=node,
+                  confirmation_token_hash=None, token_exp=None)
+
+
+def test_position_at_verify_para_una_escritura_draft() -> None:
+    flow = Flow.model_validate({"id": "borrador", "version": "1.0.0", "priority": 1, "nodes": [
+        {"id": "guardar", "type": "tool",
+         "config": {"draft": True, "tool": "guardar@1.0.0", "args": {}, "save_as": "b"},
+         "next": {"ok": "verificar", "uncertain": "verificar", "denied": "fin"}},
+        {"id": "verificar", "type": "verify",
+         "config": {"readback": "leer@1.0.0", "by": "idempotency_key", "predicate": True, "save_as": "v"},
+         "next": {"verified": "fin", "failed": "fin"}},
+        {"id": "fin", "type": "end", "config": {"outcome": "resolved"}}]})
+    state = run_state(active_flow={"flow": "borrador@1.0.0", "node_id": "guardar"}, actions=[_draft_action()])
+    moved = position_at_verify(state, ["action-0001"], flow)
+    assert moved.active_flow is not None and moved.active_flow.node_id == "verificar"
+
+
+def test_una_accion_draft_no_se_asocia_a_una_escritura_con_confirm() -> None:
+    w = World()
+    flow = w.registry.get(EntityRef(id="disputa", version="1.0.0"), Flow)  # su escritura lleva confirm
+    state = run_state(active_flow={"flow": "disputa@1.0.0", "node_id": "radicar"},
+                      actions=[_draft_action(node="radicar", flow="disputa@1.0.0")])
+    with pytest.raises(LookupError):
+        position_at_verify(state, ["action-0001"], flow)

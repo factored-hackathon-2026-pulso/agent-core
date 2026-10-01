@@ -1,4 +1,5 @@
-"""Emite las credenciales de la demo: cliente, asesor con delegación, anónimo, vencido y elevado.
+"""Emite las credenciales de la demo: cliente, asesor con delegación, anónimo, vencido y elevado; y, con el
+emisor del staff, supervisor, administrador y bot constructor.
 
     uv run python -m testing.demo_identities [--customer cust-001] [--advisor adv-7] [--anon-session anon-1]
 
@@ -12,7 +13,7 @@ from collections.abc import Sequence
 
 from agent_core.adapters.system_clock import SystemClock
 from agent_core.ports import Clock
-from testing.fakes.identity import TestIdentityIssuer
+from testing.fakes.identity import TestIdentityIssuer, TestStaffIssuer
 
 NOTE = "Credenciales de PRUEBA firmadas con claves TEST públicas del repo; no son de producción."
 
@@ -23,7 +24,9 @@ def main(argv: Sequence[str] | None = None, *, clock: Clock | None = None) -> in
     parser.add_argument("--advisor", default="adv-7")
     parser.add_argument("--anon-session", default="anon-1")
     args = parser.parse_args(argv)
-    issuer = TestIdentityIssuer(clock or SystemClock())
+    clock = clock or SystemClock()
+    issuer = TestIdentityIssuer(clock)
+    staff = TestStaffIssuer(clock)
     advisor, delegation = issuer.advisor(args.advisor, args.customer)
     tokens = {
         "_note": NOTE,
@@ -33,6 +36,10 @@ def main(argv: Sequence[str] | None = None, *, clock: Clock | None = None) -> in
         "anonymous": issuer.anonymous(args.anon_session),
         "expired": issuer.expired(),
         "stepped_up": issuer.stepped_up(args.customer),
+        # Emisor del staff (clave distinta): solo lo acepta la API del registry.
+        "supervisor": staff.supervisor(),
+        "admin": staff.admin(),
+        "constructor_bot": staff.constructor_bot(),
     }
     print(json.dumps(tokens, indent=2))
     return 0

@@ -9,11 +9,13 @@ from agent_core.actions import ActionManager, EventRecorder, append_events
 from agent_core.domain import (
     Agent,
     ConfirmationPrompt,
+    DirectorySnapshot,
     EngineEvent,
     EscalationRequest,
     JsonValue,
     Locale,
     Message,
+    NodeId,
     Outcome,
     RejectedDraft,
     Release,
@@ -22,6 +24,7 @@ from agent_core.domain import (
 )
 from agent_core.interpreter.breaker import CircuitBreaker
 from agent_core.interpreter.ports import AgentPort, DecisionPort, ResponderPort
+from agent_core.knowledge import KnowledgeService
 from agent_core.ports import Clock, IdSource, RegistryPort, ToolExecutor, UnitOfWorkFactory
 from agent_core.views import TokenVault, ViewService
 
@@ -70,9 +73,21 @@ class StepContext:
     uow_factory: UnitOfWorkFactory
     bound_params: Mapping[str, str] = field(default_factory=dict)
     agents: AgentPort | None = None  # nodo `agent` (ADR 0019); sin él, un nodo `agent` es error de cableado
+    knowledge: KnowledgeService | None = None  # nodo `knowledge` (M12); sin él, es error de cableado
     record: EventRecorder = append_events
     turn_id: str | None = None
     breaker: CircuitBreaker = field(default_factory=CircuitBreaker)
+
+
+@dataclass(frozen=True)
+class TransferRequest:
+    """What a `transfer` node asks M4 to do (ADR 0021). Values are `full`: they never go to an event."""
+
+    node_id: NodeId
+    target: str | None
+    snapshot: DirectorySnapshot | None
+    reason: str
+    slots: dict[str, JsonValue] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -89,3 +104,4 @@ class StepOutcome:
     step_up: StepUpPrompt | None = None
     output: dict[str, JsonValue] | None = None  # `end.output_map` en modo task
     rejected_drafts: list[RejectedDraft] = field(default_factory=list)
+    transfer: TransferRequest | None = None  # `transfer` node: M4 validates it (ADR 0021)

@@ -23,7 +23,7 @@ def test_base_parses() -> None:
 # T-M1-01
 def test_unknown_type_is_g0_01_with_location() -> None:
     d = base()
-    d["nodes"].append({"id": "k", "type": "knowledge", "config": {}})
+    d["nodes"].append({"id": "k", "type": "inventado", "config": {}})
     with pytest.raises(FlowSchemaError) as info:
         parse_flow(d, source="flows/base@1.0.0.yaml")
     (violation,) = info.value.violations
@@ -53,12 +53,6 @@ def test_generate_without_fallback_is_g0_09() -> None:
 
 def _dup(d: dict[str, Any]) -> None:
     d["nodes"].append({"id": "fin", "type": "end", "config": {"outcome": "resolved"}})
-
-
-def _knowledge(d: dict[str, Any]) -> None:
-    node(d, "ok_msg")["config"] = {
-        "generate": {"prompt_ref": "p/gen", "fallback_template_ref": "t/hecho", "knowledge_refs": ["faq#x"]}
-    }
 
 
 def _rule_op(d: dict[str, Any]) -> None:
@@ -108,7 +102,7 @@ def _type(d: dict[str, Any]) -> None:
 
 
 def _decide_validator(d: dict[str, Any]) -> None:
-    node(d, "pedir")["config"]["validator"] = {"kind": "decide", "value": "no valido@@"}
+    node(d, "pedir")["config"]["validator"] = {"kind": "decide", "value": "modelo@1"}
 
 
 # T-M1-38, T-M1-37 (id duplicado)
@@ -116,7 +110,6 @@ def _decide_validator(d: dict[str, Any]) -> None:
     "mutate",
     [
         _dup,
-        _knowledge,
         _rule_op,
         _predicate_arity,
         _priority_expr,

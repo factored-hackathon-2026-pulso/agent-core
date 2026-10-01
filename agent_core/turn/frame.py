@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from agent_core.domain import (
     Agent,
@@ -15,12 +15,15 @@ from agent_core.domain import (
     StepUpPrompt,
     TurnInput,
 )
-from agent_core.interpreter import NO_RESUME, Resume, Stop
+from agent_core.interpreter import NO_RESUME, Resume, Stop, TransferRequest
 from agent_core.ports import UnitOfWork
 from agent_core.turn.buffer import EventBuffer, TurnEventSink
 from agent_core.turn.events import TurnEvents
 from agent_core.turn.metering import StageMeter
 from agent_core.turn.ports import TurnRuntime
+
+if TYPE_CHECKING:
+    from agent_core.turn.transfer import TransferPlan
 
 
 @dataclass
@@ -51,3 +54,5 @@ class TurnFrame:
     tokens_expired: bool = False  # el paso 6 canceló propuestas por token vencido
     advanced: bool = False  # `advance` corrió en este turno
     output: dict[str, JsonValue] | None = None  # `end.output_map` (modo task)
+    pending_transfer: TransferRequest | None = None  # a `transfer` node stopped the flow; M4 resolves it
+    transfer_plan: "TransferPlan | None" = None  # validated transfer: the origin closed, the target opens

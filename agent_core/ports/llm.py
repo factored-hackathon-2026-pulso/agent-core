@@ -15,6 +15,7 @@ class GenerationResult(Model):
     tokens_out: int = Field(ge=0)
     cost_usd: Decimal = Field(ge=0)
     model: str
+    usage_known: bool = True  # false si el proveedor no informó el uso: el costo 0 es un relleno
 
 
 class LLMGateway(Protocol):

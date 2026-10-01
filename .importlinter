@@ -248,6 +248,30 @@ forbidden_modules =
     agent_core.contracts
     agent_core.registry
 
+[importlinter:contract:knowledge_publica]
+name = M12 (knowledge): quien lo importa (M2, M8, composition) usa solo su interfaz pública, no sus submódulos
+type = forbidden
+# `agent_core.knowledge` (su __init__) sí se puede importar; lo indirecto pasa por ahí.
+allow_indirect_imports = True
+source_modules =
+    agent_core.flows
+    agent_core.views
+    agent_core.guards
+    agent_core.actions
+    agent_core.decision
+    agent_core.response
+    agent_core.interpreter
+    agent_core.handoff
+    agent_core.audit
+    agent_core.turn
+    agent_core.api
+    agent_core.adapters
+    agent_core.cli
+    agent_core.composition
+    agent_core.registry
+forbidden_modules =
+    agent_core.knowledge.*
+
 [importlinter:contract:turn]
 name = M4 (turn) solo usa domain, ports y interpreter, actions, decision, guards, handoff, audit
 type = forbidden

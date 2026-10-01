@@ -1,7 +1,7 @@
 # ADR 0015 — Consumo de conocimiento: nodo `knowledge`, páginas OKF y puerto `KnowledgeSource`
 
 - Estado: aceptado (2026-09-28). **Renumerado desde 0009** el 2026-09-28 (tema #8 de la auto-revisión: el número 0009 ya correspondía a políticas protegidas).
-- **Integración pendiente:** la spec del motor todavía no refleja esta decisión (nodo `knowledge`, `knowledge_from[]`, `purpose`, reglas de validación y comprobaciones del validador). Ver tema #10 de `TEMAS-ABIERTOS-PENDIENTES.md`.
+- **Integración:** aprobada como diseño el 2026-09-30 en `docs/specs/motor/m12-conocimiento.md` (nodo `knowledge`, `knowledge_from[]`, `purpose`, reglas de validación y comprobaciones del validador). **Construido el 2026-09-30 (fase 2): el modo `read`, los filtros, G0-17…G0-21 y las comprobaciones 6 y 7** (`SCHEMA_VERSION` 1.0.0). `navigate` y `search` siguen sin construir. Ver tema #10 de `TEMAS-ABIERTOS-PENDIENTES.md`.
 - Unidad: 1 · Motor de decisión (contrato compartido con las unidades 3 y 7)
 - Origen: hallazgo U11 de la revisión externa (el catálogo de nodos no tenía mecanismo de recuperación de conocimiento)
 - Spec: `docs/specs/2026-09-28-motor-de-decision-design.md` §8.4
@@ -35,11 +35,11 @@
 ## Consecuencias
 - El esquema de flows gana un tipo de nodo (cambio mayor). Hoy su costo es bajo porque el intérprete no está implementado.
 - `respond.generate` cambia `knowledge_refs[]` por `knowledge_from[]` y agrega `purpose`.
-- Se agregan las reglas 10–14 de validación estática y las comprobaciones 5 y 6 del validador de respuesta. **Nota de renumeración:** esa numeración ya no coincide con la spec actual (hoy las reglas llegan a 6.1.14 y el validador usa la comprobación 5 para idioma); se reasigna al integrar (tema #10).
+- Se agregan las reglas 10–14 de validación estática y las comprobaciones 5 y 6 del validador de respuesta. **Nota de renumeración:** esa numeración ya no coincide con la spec actual (hoy las reglas llegan a 6.1.14 y el validador usa la comprobación 5 para idioma); se reasignó al integrar (tema #10) como **G0-17…G0-21** y las comprobaciones **6 (`page_citations`) y 7 (`page_audience`)**.
 - La unidad 3 debe exponer `knowledge_view(principal, purpose)`. La unidad 2 agrega `knowledge_snapshot` al release.
 - La unidad 7 hereda la ingesta, el mantenimiento, el lint, la aprobación humana de páginas y `search`.
 - Cada snapshot que cambie un scope de `navigate` obliga a recalibrar su selector.
-- **Corte MVP:** se construyen `read`, los filtros y el validador. `navigate` se construye si alcanza el tiempo.
+- **Corte MVP:** se construyen `read`, los filtros y el validador. `navigate` se construye si alcanza el tiempo. **Hecho (2026-09-30):** `read`, los filtros y el validador; `navigate` queda en el esquema (con G0-20) pero no se ejecuta.
 
 ## Fuentes
 - https://www.marktechpost.com/2026/06/16/google-cloud-introduces-open-knowledge-format-okf-a-vendor-neutral-markdown-spec-for-giving-ai-agents-curated-context/

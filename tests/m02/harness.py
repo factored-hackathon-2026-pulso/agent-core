@@ -42,6 +42,7 @@ CATALOG = {
     "currency": FieldRule(field_class="public"),
     "status": FieldRule(field_class="public"),
     "id": FieldRule(field_class="public"),
+    "choices": FieldRule(field_class="public"),  # directory option ids (ADR 0021): not PII
 }
 
 AGENT = Agent.model_validate({

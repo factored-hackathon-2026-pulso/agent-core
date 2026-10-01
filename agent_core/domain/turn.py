@@ -8,7 +8,7 @@ from agent_core.domain.base import Locale, Model, UtcDatetime
 from agent_core.domain.identity import AuthLevel, SubjectRef
 from agent_core.domain.json import JsonValue
 from agent_core.domain.outcomes import Awaiting, Outcome
-from agent_core.domain.refs import AgentSelector
+from agent_core.domain.refs import AgentSelector, EntityRef
 from agent_core.domain.state import RunStatus
 
 
@@ -77,6 +77,7 @@ class TurnResult(Model):
     status: RunStatus
     outcome: Outcome | None = None
     handoff_ref: str | None = None
+    agent: EntityRef | None = None  # the agent that answered (differs from the origin after a transfer)
     trace_id: str
 
 

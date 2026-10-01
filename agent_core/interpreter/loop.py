@@ -84,7 +84,8 @@ def advance(state: RunState, ctx: StepContext, resume: Resume) -> StepOutcome:
             if result.result_key is not None:
                 state = _move(state, node, result.result_key)
             return StepOutcome(state, result.stop, messages, pending, result.end_outcome, result.escalation,
-                               result.confirmation, result.step_up, result.output, rejected)
+                               result.confirmation, result.step_up, result.output, rejected,
+                               transfer=result.transfer)
         if result.result_key is None:
             raise IllegalTransition(f"el handler de {node.id} no devolvió rama ni detención")
         state = _move(state, node, result.result_key)

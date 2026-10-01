@@ -33,14 +33,30 @@
           "default": null
         },
         "confirm_node_id": {
-          "pattern": "^[a-z0-9][a-z0-9_]*$",
-          "title": "Confirm Node Id",
-          "type": "string"
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confirm Node Id"
         },
         "confirmation_token_hash": {
-          "pattern": "^[0-9a-f]{64}$",
-          "title": "Confirmation Token Hash",
-          "type": "string"
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confirmation Token Hash"
         },
         "created_at": {
           "format": "date-time",
@@ -58,24 +74,42 @@
           "$ref": "#/$defs/ActionState"
         },
         "token_exp": {
-          "format": "date-time",
-          "title": "Token Exp",
-          "type": "string"
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Token Exp"
         },
         "tool": {
           "$ref": "#/$defs/EntityRef"
+        },
+        "write_node_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Write Node Id"
         }
       },
       "required": [
         "action_id",
-        "confirm_node_id",
         "flow",
         "tool",
         "args",
         "args_hash",
         "state",
-        "confirmation_token_hash",
-        "token_exp",
         "idempotency_key",
         "created_at"
       ],
@@ -487,10 +521,164 @@
         "completed",
         "failed",
         "abandoned",
-        "escalated"
+        "escalated",
+        "transferred"
       ],
       "title": "Outcome",
       "type": "string"
+    },
+    "PageMeta": {
+      "additionalProperties": false,
+      "description": "Metadatos de una página de conocimiento compatible con OKF (ADR 0015).",
+      "properties": {
+        "anchor": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Anchor"
+        },
+        "approved_by": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approved By"
+        },
+        "audience": {
+          "enum": [
+            "public",
+            "internal",
+            "agent_only"
+          ],
+          "title": "Audience",
+          "type": "string"
+        },
+        "lang": {
+          "pattern": "^[a-z]{2}$",
+          "title": "Lang",
+          "type": "string"
+        },
+        "path": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_./-]{0,254}$",
+          "title": "Path",
+          "type": "string"
+        },
+        "snapshot": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_./@-]{0,127}$",
+          "title": "Snapshot",
+          "type": "string"
+        },
+        "source_refs": {
+          "items": {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 50,
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "status": {
+          "enum": [
+            "draft",
+            "approved"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "translation_of": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_./-]{0,254}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Translation Of"
+        },
+        "type": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Type",
+          "type": "string"
+        },
+        "valid_from": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valid From"
+        },
+        "valid_to": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Valid To"
+        }
+      },
+      "required": [
+        "path",
+        "snapshot",
+        "type",
+        "audience",
+        "status",
+        "lang"
+      ],
+      "title": "PageMeta",
+      "type": "object"
+    },
+    "PageView": {
+      "additionalProperties": false,
+      "description": "Una página (o una sección) ya proyectada a la vista `model` (M7). Se guarda en `RunState.pages`.\n\n`ref` es `ruta@snapshot#ancla` y coincide con `meta`. El contenido es el de la vista `model`: nunca lleva\nPII en claro, y si la página viene de una fuente externa llega envuelto como `untrusted_text`.",
+      "properties": {
+        "content_model": {
+          "title": "Content Model",
+          "type": "string"
+        },
+        "meta": {
+          "$ref": "#/$defs/PageMeta"
+        },
+        "ref": {
+          "title": "Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "meta",
+        "content_model"
+      ],
+      "title": "PageView",
+      "type": "object"
     },
     "PendingIntent": {
       "additionalProperties": false,
@@ -613,6 +801,53 @@
       ],
       "title": "PrincipalType",
       "type": "string"
+    },
+    "RunOrigin": {
+      "additionalProperties": false,
+      "description": "Why a run exists when another run transferred to it (spec §3.3, P2, P5).",
+      "properties": {
+        "depth": {
+          "exclusiveMinimum": 0,
+          "title": "Depth",
+          "type": "integer"
+        },
+        "from_agent": {
+          "$ref": "#/$defs/EntityRef"
+        },
+        "from_event_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "From Event Hash",
+          "type": "string"
+        },
+        "from_release_id": {
+          "title": "From Release Id",
+          "type": "string"
+        },
+        "from_run_id": {
+          "title": "From Run Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "transfer",
+          "title": "Kind",
+          "type": "string"
+        },
+        "transfer_id": {
+          "title": "Transfer Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "transfer_id",
+        "from_run_id",
+        "from_agent",
+        "from_release_id",
+        "from_event_hash",
+        "depth"
+      ],
+      "title": "RunOrigin",
+      "type": "object"
     },
     "Slot": {
       "additionalProperties": false,
@@ -825,6 +1060,17 @@
       "title": "Open Questions",
       "type": "array"
     },
+    "origin": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RunOrigin"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "outcome": {
       "anyOf": [
         {
@@ -835,6 +1081,18 @@
         }
       ],
       "default": null
+    },
+    "pages": {
+      "patternProperties": {
+        "^[a-z][a-z0-9_]*$": {
+          "items": {
+            "$ref": "#/$defs/PageView"
+          },
+          "type": "array"
+        }
+      },
+      "title": "Pages",
+      "type": "object"
     },
     "pending_intents": {
       "items": {

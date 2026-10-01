@@ -10,6 +10,7 @@ from agent_core.domain import (
     DecideNode,
     EntityKind,
     Flow,
+    KnowledgeNode,
     Node,
     Prompt,
     RefSpec,
@@ -18,6 +19,7 @@ from agent_core.domain import (
     RuleNode,
     ToolNode,
     VerifyNode,
+    WriteToolNode,
 )
 
 Pointer = tuple[str | int, ...]
@@ -67,6 +69,9 @@ def node_ref_sites(node: Node, index: int) -> list[RefSite]:
                 add(EntityKind.decision_model, _ref_or_none(validator.value), "validator", "value")
         case ToolNode():
             add(EntityKind.tool, node.config.tool, "tool")
+        case WriteToolNode():
+            if node.config.tool is not None:
+                add(EntityKind.tool, node.config.tool, "tool")
         case ConfirmNode():
             add(EntityKind.tool, node.config.action.tool, "action", "tool")
             add(EntityKind.template, node.config.summary_template, "summary_template")
@@ -79,6 +84,8 @@ def node_ref_sites(node: Node, index: int) -> list[RefSite]:
                 add(EntityKind.prompt, node.config.generate.prompt_ref, "generate", "prompt_ref")
                 add(EntityKind.template, node.config.generate.fallback_template_ref, "generate",
                     "fallback_template_ref")
+        case KnowledgeNode():
+            add(EntityKind.decision_model, node.config.selector, "selector")
         case AgentNode():
             for i, ref in enumerate(node.config.tools_allowed):
                 sites.append(RefSite(EntityKind.tool, ref, (*base, "tools_allowed", i), node.id))

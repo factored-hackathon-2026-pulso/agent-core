@@ -23,7 +23,7 @@ Python 3.12, FastAPI, Pydantic v2, Postgres 16, `uv`, `docker-compose`. Sin cola
 - Tipos: `uv run mypy` (strict; archivos en `pyproject.toml`)
 - Lint: `uv run ruff check .`
 - Contratos: `uv run agentcore contracts` (regenera) · `uv run agentcore contracts --check` (CI)
-- Postgres local (M3, M4, M9, M11): `docker compose up -d postgres`
+- Postgres local (M3, M4, M9, M11, registry): `docker compose up -d postgres`
 
 ## Estructura
 
@@ -35,10 +35,13 @@ agent_core/
   turn/                      M4   decision/      M5   guards/    M6
   views/                     M7   response/      M8   api/       M9
   handoff/                   M10  audit/         M11  knowledge/ M12
+  registry/                  unidad 2 (spec 2026-09-29-registry-design.md)
+  composition/               raíz de composición: motor, evaluador, servicio y CLI del registry
+  adapters/llm/              gateway de LLM compatible con OpenAI y LLMAgentPort (unidad 5)
 testing/fakes/               dobles en memoria de cada puerto
 tests/mXX/                   pruebas unitarias por módulo (sin red ni Postgres)
 tests/contracts/             suites de contrato de los puertos
-tests/integration/           pruebas con Postgres (solo M3, M4, M9, M11)
+tests/integration/           pruebas con Postgres (M3, M4, M9, M11 y registry)
 contracts/                   JSON Schema y OpenAPI generados (no editar a mano)
 ```
 

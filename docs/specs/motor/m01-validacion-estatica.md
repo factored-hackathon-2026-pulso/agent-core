@@ -1,9 +1,9 @@
 # M1 — Esquema de flows y validación estática
 
-- Estado: **rev. 3 · implementado** · Fase 1 (carga, G0-01 a G0-06, `derive_claims`, CLI) y fase 5 (G0-07 a G0-16, chequeos por agente)
+- Estado: **rev. 5 · implementado** · Fase 1 (carga, G0-01 a G0-06, `derive_claims`, CLI) y fase 5 (G0-07 a G0-16, chequeos por agente)
 - Paquete: `agent_core.flows`
 - Origen: spec general §5 (catálogo y reclamos), §6.1, §6.2 (chequeos por agente), §13.1, §13.3
-- ADRs: 0004 (catálogo cerrado, G0), 0007 (acción congelada, reclamos), 0009 (políticas, literales), 0011 (`compute`), 0016 (G0-15). ADR 0015 (conocimiento) queda fuera hasta cerrar el tema #10.
+- ADRs: 0004 (catálogo cerrado, G0), 0007 (acción congelada, reclamos), 0009 (políticas, literales), 0011 (`compute`), 0016 (G0-15). ADR 0015 (conocimiento, rev. 4: G0-17 a G0-21; M12).
 - Usa: M0 · Lo usan: M2 (`derive_claims`, `release_view`, `JSONLOGIC_OPS`, rutas y plantillas), CLI `agentcore validate`, unidad 2 (gate de release), CI de `agent-registry`
 - **Requisito para empezar:** M0 terminado hasta sus tareas 4 (nodos), 5 (entidades, con `ModelProfile` y `Prompt.model_profile` de la rev. 5), 10 (`InMemoryRegistry`) y 12 (CLI).
 
@@ -40,6 +40,14 @@
   - `AuthoringRegistry` se construye desde objetos en memoria (`from_entities`), sin pasar por disco: el registry arma candidatas desde Postgres;
   - las funciones puras que reutiliza el registry (`validate_flow`, `validate_agent`, `validate_registry`, `derive_claims`, `pin_release`, `Violation`) ya salen de `agent_core.flows`, y `.importlinter` permite a `agent_core.registry` usar `domain`, `ports` y `flows`.
   - no cambian las reglas G0 ni el mensaje "conocimiento no habilitado (tema #10)": el nodo `knowledge` es de M12.
+- rev. 5 (2026-09-30), transferencia entre agentes (ADR 0021; M0 `SCHEMA_VERSION` 1.2.0): G0-26, G0-27 y AG-03 (§3.4, §3.13); `decide.choices_from` con resultados `chosen`/`none`/`low_confidence` (G0-03, G0-10, G0-11); nodo `transfer` con el único resultado `rejected`. `transfer` no es terminal (no está en `TERMINAL`).
+- rev. 4 (2026-09-30), M12 `read` (M0 rev. 10, `SCHEMA_VERSION` 1.0.0; `m12-conocimiento.md`):
+  - **G0-17 a G0-21** (§3.4): G0-18 y G0-21 son reglas de flow (`FLOW_RULES`); G0-17, G0-19 y G0-20 necesitan el snapshot de la release y salen de una función nueva, `validate_flow_for_release(flow, snapshot, reg)`, que `validate_registry` llama por cada release;
+  - **G0-01** ya no rechaza el conocimiento: `knowledge_refs` dejó de existir (M0) y el mensaje "conocimiento no habilitado" desaparece. Un `knowledge_refs` en YAML es ahora un error de esquema (campo extra);
+  - **G0-03:** los resultados de un nodo `knowledge` dependen del modo (`read`: ok, not_found, denied; `navigate`: más `low_confidence`);
+  - **G0-02:** el `selector` de un nodo `navigate` es una referencia a un `decision_model`;
+  - `derive_claims` ignora las páginas (§3.6).
+  - `pin_release` (la publicación simulada) también corre `validate_flow_for_release` con el snapshot de su release, así que un flow que viola G0-17, G0-19 o G0-20 no se publica; el gate del registry lo hace con `validate_registry`.
 
 ## 1. Propósito y límites
 
@@ -79,8 +87,9 @@ def release_view(port: RegistryPort, release: Release) -> RegistryView          
 
 # --- Validación
 def validate_flow(flow: Flow, reg: RegistryView) -> list[Violation]                        # G0-01…G0-11, G0-13…G0-16
-def validate_flow_for_agent(flow: Flow, agent: Agent, reg: RegistryView) -> list[Violation]  # G0-12 y AG-01
-def validate_agent(agent: Agent, reg: RegistryView) -> list[Violation]                     # G0-02 y G0-12 sobre el agente
+def validate_flow_for_agent(flow: Flow, agent: Agent, reg: RegistryView) -> list[Violation]  # G0-12, AG-01 y AG-03
+def validate_flow_for_release(flow: Flow, snapshot: KnowledgeSnapshot | None, reg: RegistryView) -> list[Violation]  # G0-17, G0-19, G0-20
+def validate_agent(agent: Agent, reg: RegistryView) -> list[Violation]                     # G0-02, G0-12 y AG-03 sobre el agente
 def derive_claims(flow: Flow, reg: RegistryView) -> Mapping[str, frozenset[str]]           # lector → ids de confirm
 
 # --- Análisis compartido con runtime
@@ -117,13 +126,13 @@ $ agentcore validate <ruta-registry> [--json]
 
 - **Tipos del MVP:** `decide`, `rule`, `collect`, `tool` (lectura/`compute`), `tool` (escritura), `confirm`, `verify`, `respond`, `escalate`, `end`.
 - **Tipos de producción:** `agent`, `subflow` y `await_approval` existen en el esquema. **G0-01 los rechaza** en el MVP con el mensaje "tipo de producción no habilitado".
-- **Conocimiento:** `generate.knowledge_refs` no vacío es G0-01 ("conocimiento no habilitado, tema #10").
+- **Conocimiento (rev. 4):** el nodo `knowledge` es del catálogo (M12). `respond.generate` lleva `knowledge_from` y `purpose` en lugar de `knowledge_refs`.
 
 `respond` lleva `claims: list[str] = []`; `verify` lleva `save_as`; `confirm` lleva `max_attempts = 2` y `reprompt_template?`. El resto de los esquemas está en M0 §2.5.
 
 ### 3.2 Rutas
 
-Una sola gramática para `args`, `rule.expr`, `verify.predicate`, `escalate.priority_expr`, `end.output_map`, plantillas, `allowed_facts` y `decide.input_view`:
+Una sola gramática para `args`, `rule.expr`, `verify.predicate`, `escalate.priority_expr`, `end.output_map`, plantillas, `allowed_facts` y el `input_view` de `decide` y de `agent`:
 
 ```
 ruta    := "slots."     nombre
@@ -152,8 +161,10 @@ campo   := [A-Za-z0-9_]+
 | `escalate.priority_expr` | `slots`, `facts` |
 | `end.output_map` (valores) | `slots`, `facts` |
 | `decide.input_view` | `slots`, `facts` |
+| `agent.input_view` | `slots`, `facts` |
 | plantillas (`{{ }}`) | `slots`, `facts` |
 | `generate.allowed_facts` | `facts` |
+| `decide.choices_from` | `facts` (con `.value`) |
 
 ### 3.3 Plantillas y prompts
 
@@ -167,9 +178,9 @@ campo   := [A-Za-z0-9_]+
 
 | ID | Regla | Algoritmo | Fase |
 |---|---|---|---|
-| G0-01 | Esquema | Lo decide `parse_flow` (y lo repite `validate_flow` para un `Flow` construido a mano). Casos: nodo fuera del catálogo o tipo de producción; `config` inválida; id de nodo duplicado; `knowledge_refs` no vacío; JSON Logic con operador fuera de `JSONLOGIC_OPS` o aridad inválida en `rule.expr`, `verify.predicate` o `escalate.priority_expr`; ruta mal formada; validador inválido (§3.4.1); archivo ilegible o con `id`/`version` distintos del nombre del archivo | 1 |
+| G0-01 | Esquema | Lo decide `parse_flow` (y lo repite `validate_flow` para un `Flow` construido a mano). Casos: nodo fuera del catálogo o tipo de producción; `config` inválida; id de nodo duplicado; JSON Logic con operador fuera de `JSONLOGIC_OPS` o aridad inválida en `rule.expr`, `verify.predicate` o `escalate.priority_expr`; ruta mal formada; validador inválido o `decide`, que aún no se ejecuta (§3.4.1, m02 D14); archivo ilegible o con `id`/`version` distintos del nombre del archivo | 1 |
 | G0-02 | Referencia inexistente | `reg.resolve(kind, ref)` sobre cada campo de la tabla §3.4.2 | 1 |
-| G0-03 | Estructura del grafo | (a) todo destino de `next` es un nodo del flow; (b) toda clave de `next` es un resultado del tipo; (c) todo resultado del tipo tiene `next` (terminales: `next` vacío); (d) todo nodo es alcanzable desde el primero (BFS); (e) en `decide`, `branch_on` es una propiedad de primer nivel de `output_schema.properties` con `enum` de strings, ninguno igual a `low_confidence`, y los resultados del tipo son ese enum más `low_confidence` | 1 |
+| G0-03 | Estructura del grafo | (a) todo destino de `next` es un nodo del flow; (b) toda clave de `next` es un resultado del tipo; (c) todo resultado del tipo tiene `next` (terminales: `next` vacío); (d) todo nodo es alcanzable desde el primero (BFS); (e) en `decide`, `branch_on` es una propiedad de primer nivel de `output_schema.properties` con `enum` de strings, ninguno igual a `low_confidence`, y los resultados del tipo son ese enum más `low_confidence`. Un `decide` con `choices_from` (ADR 0021) no usa el enum: su `branch_on` es `choice` y sus resultados son `chosen`, `none` y `low_confidence`. Un nodo `transfer` solo tiene el resultado `rejected` | 1 |
 | G0-04 | Ciclo sin espera | Se quitan los nodos que esperan (`collect`, `confirm`, `respond` con `await: true`) y lo que queda debe ser acíclico, auto-bucles incluidos | 1 |
 | G0-05 | Invariante de escritura | §3.5 | 1 |
 | G0-06 | Rama de fallo sin salida segura | §3.7 | 1 |
@@ -177,13 +188,24 @@ campo   := [A-Za-z0-9_]+
 | G0-08 | `rule.expr` con literales de negocio | §3.9 | 5 |
 | G0-09 | `respond.generate` sin `fallback_template_ref` | Lo detecta el esquema; `parse_flow` lo reporta como **G0-09**, no como G0-01 | 5 |
 | G0-10 | Lectura fuera de su espacio de nombres | Tabla §3.2. En particular, `decisions.*` fuera de una tool `compute`, incluidos `confirm.action.args` y `rule.expr` | 5 |
-| G0-11 | `decide` ramifica por un campo no calibrado | `branch_on ∈ model_def.calibrated_fields` | 5 |
+| G0-11 | `decide` ramifica por un campo no calibrado | `branch_on ∈ model_def.calibrated_fields`; en un `decide` con `choices_from` esto exige `choice ∈ calibrated_fields` | 5 |
 | G0-12 | Falta una plantilla o un prompt para un locale del agente | §3.8 | 5 |
 | G0-13 | `claims` con un id que no es `confirm` del flow | Búsqueda por id | 5 |
 | G0-14 | `end` con outcome no declarable, o mezcla de modos | `is_declarable(outcome, modo)`; todos los `end` en un mismo modo (§3.8) | 5 |
 | G0-15 | Prompt sin perfil de modelo (ADR 0016) | Para cada `generate.prompt_ref` que resuelve, `reg.resolve(model_profile, prompt.model_profile)` no es `None` | 5 |
 | G0-16 | Flow de modo task con nodos que esperan | Si el modo del flow es `task` (§3.8), no tiene `collect`, `confirm` ni `respond(await: true)`: un run task no tiene turnos que los contesten | 5 |
+| G0-17 | Página de `knowledge.read` fuera del snapshot | Cada `pages[i]` (ruta; el ancla no se ve en el manifiesto) está en `snapshot.pages`; sin snapshot, todas fallan. Solo en `validate_flow_for_release` | 5 |
+| G0-18 | `respond` `customer_answer` que lee un nodo `knowledge` de otro `purpose` | Para cada `generate.knowledge_from` de un `respond` con `purpose: customer_answer`, ningún nodo `knowledge` con ese `save_as` tiene otro `purpose` | 5 |
+| G0-19 | Página fija de un nodo `customer_answer` que no es `public` + `approved` | Sobre `snapshot.pages`; solo en `validate_flow_for_release` | 5 |
+| G0-20 | `navigate` con selector que no cubre el scope | `output_schema.properties.path.enum` del selector == rutas del snapshot bajo `scope/` (sin `index.md`), sin repetidos; sin snapshot no se puede verificar. Solo en `validate_flow_for_release` | 5 |
+| G0-21 | `knowledge_from` sin un nodo `knowledge` que domine al `respond` | Cada nombre es el `save_as` de algún nodo `knowledge`, y quitando las aristas de salida de esos nodos el `respond` no es alcanzable desde la entrada | 5 |
 | G0-24 | Tool de un nodo `agent` sin documentar | Toda tool de `tools_allowed` de un nodo `agent` lleva `description` y un `args_schema` dentro del subconjunto cerrado (`domain.schema`); el mensaje nombra la tool y la palabra clave fuera del subconjunto (§3.13) | 5 |
+| G0-26 | `transfer` sin origen de destino o de directorio que lo domine | `target_from` (`decisions.<save_as>.choice`) nombra un `decide` con `choices_from` y `directory_from` es el `save_as` de un nodo `tool` de `directory/list`; quitando la arista `chosen` del `decide` (`none` y `low_confidence` no producen `choice`) y todas las aristas de salida del `tool`, el `transfer` no es alcanzable desde la entrada (ADR 0021, spec de transferencia §6) | 7 |
+| G0-27 | Slot del paquete de transferencia no recolectado | Cada `packet.slots[i]` es el `slot` de algún `collect` del flow | 7 |
+| G0-23 | Escritura `draft` sin `confirm` mal formada | La tool es `write_draft` con `readback_by: idempotency_key`; `ok` y `uncertain` van al mismo `verify` con `by: idempotency_key`, que ningún otro nodo de escritura comparte; el flow solo vuelve al nodo desde `verified` (§3.13) | 5 |
+| G0-25 | Prompt de un nodo `agent` en modo nativo | El `model_profile` del prompt del `agent` es `structured: prompted` (§3.13) | 5 |
+| G0-26 | `transfer` sin origen de destino o de directorio que lo domine | `target_from` (`decisions.<save_as>.choice`) nombra un `decide` con `choices_from` y `directory_from` es el `save_as` de un nodo `tool` de `directory/list`; quitando la arista `chosen` del `decide` (`none` y `low_confidence` no producen `choice`) y todas las aristas de salida del `tool`, el `transfer` no es alcanzable desde la entrada (ADR 0021, spec de transferencia §6) | 7 |
+| G0-27 | Slot del paquete de transferencia no recolectado | Cada `packet.slots[i]` es el `slot` de algún `collect` del flow | 7 |
 
 **Consecuencia de G0-16:** en el MVP un agente task no puede escribir, porque toda escritura exige un `confirm` (G0-05). G0-16 **no se relaja** (ADR 0019): un flow task escribe solo con tools `write_draft` (§3.13) o, en producción, con `await_approval` (ADR 0014).
 
@@ -194,7 +216,7 @@ campo   := [A-Za-z0-9_]+
 | `type` | uno de `string`, `integer`, `decimal`, `date`, `boolean` |
 | `regex` | string que compila con `re` y tiene 200 caracteres o menos |
 | `enum` | lista no vacía de strings sin repetidos |
-| `decide` | string `RefSpec` de un `decision_model` (G0-02 lo resuelve) |
+| `decide` | **no soportado todavía**: G0-01 lo rechaza (el intérprete no sabe qué campo de la decisión valida, m02 D14). Diseño previsto: string `RefSpec` de un `decision_model` (G0-02 lo resuelve) |
 
 #### 3.4.2 Referencias (G0-02)
 
@@ -216,7 +238,7 @@ Definiciones:
 
 Condiciones por nodo (sin escrituras de por medio):
 
-1. Todo nodo `tool` **sin** `action_from` usa una tool de clase `read` o `compute`. Una tool de escritura solo se invoca desde un nodo con `action_from`.
+1. Todo nodo `tool` **sin** `action_from` ni `draft: true` usa una tool de clase `read` o `compute`. Una tool de escritura solo se invoca desde un nodo con `action_from` (con `confirm`) o con `draft: true` (solo `write_draft`, G0-23).
 2. Todo `verify.readback` es una tool de clase `read`.
 
 Condiciones para cada nodo de escritura W con `action_from: C`:
@@ -246,6 +268,7 @@ Las comprobaciones de alcanzabilidad son BFS con una arista quitada, O(N + E) ca
 | escritura | `facts[save_as]` | — |
 | `verify` | `facts[save_as]` | la ruta de `by: fact:<ruta>`, si la hay |
 | `decide` | `decisions[save_as]` | rutas de `input_view` (`None` ⇒ ninguna) |
+| `agent` | `facts[save_as]` | rutas de `input_view` (vacío ⇒ ninguna). Las tools que el modelo llama no cuentan: sus argumentos no son rutas |
 
 **Origen de X:** es el menor punto fijo que contiene:
 
@@ -260,7 +283,7 @@ El análisis va por nombre y no depende del camino, así que es conservador: un 
 - `respond` con `generate`: `allowed_facts ∪ reads de fallback_template_ref ∪ prompt.reads`;
 - `end`: los valores de `output_map`.
 
-`derivados(R)` = {X : R lee algún nombre del origen de X}. Un lector con `claims(R) = ∅` es **seguro**. Las páginas de conocimiento no alimentan reclamos (M12). Si una referencia de R no resuelve, se usa lo que sí resolvió: G0-02 ya rechaza el flow.
+`derivados(R)` = {X : R lee algún nombre del origen de X}. Un lector con `claims(R) = ∅` es **seguro**. Las páginas de conocimiento no alimentan reclamos (M12): un nodo `knowledge` no es productor, `knowledge_from` no es una lectura de hechos y `respond` no suma páginas a `claims` (T-M12-05). Si una referencia de R no resuelve, se usa lo que sí resolvió: G0-02 ya rechaza el flow.
 
 **Uso en runtime:** M2 obtiene los reclamos de cada `respond` con `derive_claims(flow, release_view(registry, release))`, una vez por `flow@v` (el resultado es puro y cacheable). Así, el conjunto que va en `response_emitted.claims` es el mismo que validó el gate.
 
@@ -411,19 +434,33 @@ Cualquier error de `load_yaml` es una sola `Violation` G0-01 con la ruta del arc
 - G0-01 ya no rechaza `agent` (`PRODUCTION_NODE_KINDS` = `subflow`, `await_approval`).
 - **Referencias:** `tools_allowed` y `prompt_ref` son sitios de referencia (G0-02) y `pin_release` los fija.
 - **G0-07** es alcanzable. **G0-15** cubre también el `prompt_ref` del `agent`. **G0-12** (locales) alcanza al prompt por ser un sitio de plantilla. **G0-06** trata `gave_up` como rama de fallo.
-- **G0-22:** ninguna ruta `facts.<save_as>` de un nodo `agent` se lee en `rule.expr`, `verify.predicate`, `tool.args`, `confirm.action.args`, `escalate.priority_expr` ni `end.output_map`. Solo `respond` (plantilla, `allowed_facts` y su plantilla de respaldo) y el `input_view` de un `decide` pueden leerla. Para que un valor del agente llegue a una escritura debe pasar por un `collect` (la persona lo da) o por un `decide` con esquema.
+- **G0-22:** ninguna ruta `facts.<save_as>` de un nodo `agent` se lee en `rule.expr`, `verify.predicate`, `tool.args`, `confirm.action.args`, `escalate.priority_expr` ni `end.output_map`. Solo `respond` (plantilla, `allowed_facts` y su plantilla de respaldo) y el `input_view` de un `decide` o de otro `agent` pueden leerla. Para que un valor del agente llegue a una escritura debe pasar por un `collect` (la persona lo da) o por un `decide` con esquema.
+- **`input_view` del `agent`** (2026-09-30, `SCHEMA_VERSION` 1.1.0): solo admite rutas (un literal o una ruta mal formada → G0-01), solo `slots` y `facts` con `.value` (G0-10). En `derive_claims` el `agent` es productor (§3.6): si su `input_view` lee el hecho de una escritura verificada, quien lea su salida reclama esa acción, como con `decide`. Pruebas en `tests/m01/test_agent_node.py`.
 - **G0-24** (2026-09-30, unidad 5; **implementada**): toda tool de `tools_allowed` de un nodo `agent` lleva `description` y un `args_schema` dentro del subconjunto cerrado. Es el catálogo que `LLMAgentPort` le muestra al modelo; sin él falla cerrado en runtime, así que la regla lo detecta al validar. No alcanza a las tools fuera de un nodo `agent`.
 - Pruebas: `tests/m01/test_agent_node.py`.
 
-**Diseñado, no implementado (clase `write_draft`, constructor por señal):** depende de que el registry garantice borradores reversibles (registry §18) y de especificar la ruta sin `confirm` en M3.
+**Transferencia entre agentes (ADR 0021, rev. 5):**
+- **`decide.choices_from`:** solo admite una ruta `facts.<x>.value...` (un literal o una ruta mal formada → G0-01; otro espacio de nombres o falta `.value` → G0-10). Ver G0-03 y G0-11 en §3.4.
+- **G0-26 y G0-27** (§3.4) son reglas de flow (`FLOW_RULES`). Para G0-26 solo la arista `chosen` del `decide` cuenta como productora del `choice`: un `none` o `low_confidence` que llegue al `transfer` es violación.
+- **G0-06** no cambia: `transfer` no cuenta como salida segura, pero el `transfer` de un flow de recepción se alcanza por el resultado `chosen` de un `decide` (no una rama de fallo) y su `rejected` va a un `escalate`.
+- **AG-03** (`validate_flow_for_agent` y `validate_agent`): un flow con `transfer` exige `agent.mode == conversational`; un agente con `accepts` exige `routing`, `understand` y modo conversacional.
+- Pruebas: `tests/m01/test_transfer_rules.py` (T-M1-47).
+**Implementado (clase `write_draft`, fase 3 de la spec write-draft, 2026-09-30):**
+- **Forma `draft` del nodo de escritura:** `tool` con `draft: true` declara su propia `tool` y `args` (sin `action_from`). Es un nodo `tool_write` más: ramas `ok`, `uncertain` y `denied`.
+- **G0-05.1:** un nodo `tool` normal admite `read` y `compute`; una escritura va en un nodo con `action_from` (con `confirm`) o con `draft: true` (G0-23).
+- **G0-23:** la tool de una escritura draft es `write_draft` con `readback_by: idempotency_key`; `next.ok == next.uncertain == V`, con V un `verify` con `by: idempotency_key`; ningún otro nodo de escritura tiene a V como destino de `ok` o `uncertain`; el flow solo vuelve al nodo desde la rama `verified` de V. No exige `confirm`.
+- **Reclamos:** `respond.claims` y `derive_claims` usan el id del nodo draft como identificador de la acción (en vez del `confirm`); G0-13 acepta ese id; el invariante de G0-05.8 es el mismo.
+- **G0-22, excepción acotada (ADR 0019 §1):** el `config.args` de una escritura draft puede leer **solo** `facts.<save_as>.value.changes` de un nodo `agent` cuyo `output_schema` es `agent_core.flows.DRAFT_OUTPUT_SCHEMA` (si dos agentes comparten `save_as`, valen las condiciones de todos); el resto de los `args` (p. ej. `origin`, `proposal_id`) lo fija el flow. El `save_as` de esa escritura queda marcado como salida de agente: no lo puede leer una `rule`, un `verify`, un `confirm` ni un `end`. Todos los demás destinos siguen vetados.
+- **G0-25:** el prompt del `prompt_ref` de un nodo `agent` tiene un `model_profile` con `structured: prompted`.
+- **AG-02** (`validate_flow_for_agent`): un agente cuyos flows referencian una tool `write_draft` tiene `invocable_by ⊆ {builder}` y `subject_kinds` vacío (los `subject_kinds` son cadenas libres: una lista de «datos de clientes» no es comprobable; con la lista vacía el agente nunca recibe subject, M9 §85).
+- Pruebas: `tests/m01/test_draft_writes.py` y `tests/m01/test_agent_node.py`.
 
-| Regla | Qué comprueba | Fase |
-|---|---|---|
-| G0-23 | Un `write_draft` se invoca con un nodo `tool_write` con `verify` enlazado como en G0-05.7, `readback` de clase `read` e `idempotency_key`; no exige `confirm` | pendiente |
-| AG-02 | Un agente cuyos flows usan un `write_draft` tiene `invocable_by ⊆ {builder}` y `subject_kinds` sin datos de clientes | pendiente |
-
-- G0-05 pasará a aceptar `write_draft` sin `confirm` (`action_from` opcional solo para esa clase). Las demás clases no cambian.
-- `RiskClass` aún no tiene `write_draft`: mientras tanto, cualquier tool de escritura exige `confirm`, así que **falla cerrado**.
+**Transferencia entre agentes (ADR 0021, rev. 5):**
+- **`decide.choices_from`:** solo admite una ruta `facts.<x>.value...` (un literal o una ruta mal formada → G0-01; otro espacio de nombres o falta `.value` → G0-10). Ver G0-03 y G0-11 en §3.4.
+- **G0-26 y G0-27** (§3.4) son reglas de flow (`FLOW_RULES`). Para G0-26 solo la arista `chosen` del `decide` cuenta como productora del `choice`: un `none` o `low_confidence` que llegue al `transfer` es violación.
+- **G0-06** no cambia: `transfer` no cuenta como salida segura, pero el `transfer` de un flow de recepción se alcanza por el resultado `chosen` de un `decide` (no una rama de fallo) y su `rejected` va a un `escalate`.
+- **AG-03** (`validate_flow_for_agent` y `validate_agent`): un flow con `transfer` exige `agent.mode == conversational`; un agente con `accepts` exige `routing`, `understand` y modo conversacional.
+- Pruebas: `tests/m01/test_transfer_rules.py` (T-M1-47).
 
 ## 4. Invariantes
 
@@ -485,7 +522,7 @@ Ninguno. La unidad 2 registra el resultado del gate.
 | T-M1-35 | `derive_claims` conservador: hereda por la plantilla de respaldo, por una tool de lectura que lee el resultado de W, por `decide` + `compute`, y por `end.output_map` | 3 | 1 |
 | T-M1-36 | Plantillas: `reads` derivado de `{{ }}`; `reads` declarado distinto → G0-01; `{{` mal formado → G0-01; prompt con `{{` → G0-01 | — | 1 |
 | T-M1-37 | G0-03: `next` a un nodo inexistente, clave de `next` desconocida, terminal con `next`, enum de `decide` que incluye `low_confidence`; id duplicado → G0-01 | 1 | 1 |
-| T-M1-38 | G0-01: operador JSON Logic fuera de la lista o aridad inválida (en `rule`, `predicate` y `priority_expr`); ruta mal formada; regex que no compila; `knowledge_refs` no vacío | 1 | 1 |
+| T-M1-38 | G0-01: operador JSON Logic fuera de la lista o aridad inválida (en `rule`, `predicate` y `priority_expr`); ruta mal formada; regex que no compila (un `knowledge_refs` ya no existe: lo rechaza el esquema de M0) | 1 | 1 |
 | T-M1-39 | G0-10: `rule` que lee `decisions.*`; `confirm.action.args` con `decisions.*`; plantilla con `decisions.*` | — | 5 |
 | T-M1-40 | Sin cascada: una referencia que no resuelve da solo G0-02 para ese nodo | — | 1 |
 | T-M1-41 | Determinismo: la lista sale en el orden de `sort_key`; reordenar los nodos (salvo el primero) da las mismas violaciones salvo los índices de `path`; `validate_flow` no lanza sobre flows mal formados generados con `hypothesis` | — | 1 |
@@ -494,6 +531,7 @@ Ninguno. La unidad 2 registra el resultado del gate.
 | T-M1-44 | CLI: código `0` sobre el registro de ejemplo, `1` con un flow inválido y `2` con una raíz inexistente; `--json` con el formato de §3.12 y la lista ordenada | — | 1 |
 | T-M1-45 | `derive_claims` da lo mismo con `AuthoringRegistry` que con `release_view` sobre la release fijada | — | 1 |
 | T-M1-46 | G0-24: una tool de `tools_allowed` de un nodo `agent` sin `description` o sin `args_schema`, o con un `args_schema` fuera del subconjunto (el mensaje nombra la palabra clave), falla; una tool sin documentar fuera de un nodo `agent` no dispara G0-24 (`tests/m01/test_agent_node.py`) | — | 5 |
+| T-M1-47 | Transferencia: el flow de recepción es válido; `decide` con `choices_from` exige `chosen`/`none`/`low_confidence` y `branch_on: choice` (G0-03), lee solo `facts` (G0-10); G0-26 (destino y directorio que dominan al `transfer`, camino que esquiva el `decide`), G0-27 y AG-03 (`tests/m01/test_transfer_rules.py`) | — | 7 |
 
 ## 8. Evaluación
 
@@ -524,7 +562,7 @@ Sin métricas de runtime. Se reportan:
 
 ## 11. Abiertos
 
-- **Numeración de las reglas de conocimiento** (tema #10): con G0-15 (gateway) y G0-16 (modo task) tomadas, M12 pasa a proponer G0-17 a G0-21. Las reglas de agentes internos (§3.13) empiezan en G0-22 (G0-24 se sumó con la unidad 5).
+- ~~**Numeración de las reglas de conocimiento** (tema #10)~~ **Resuelto 2026-09-30:** G0-17 a G0-21 (rev. 4); pruebas en `tests/m12/test_static_rules.py` (T-M12-04). Las reglas de agentes internos (§3.13) empiezan en G0-22 (G0-24 se sumó con la unidad 5).
 - **Agentes internos (ADR 0019):** G0-23 y AG-02 están solo especificadas. Falta decidir si G0-22 debe cubrir también los `facts` de un `tool` `compute` que reciba una salida del agente, y si un `collect.prompt_ref` puede mostrar la salida del `agent` (hoy lo rechaza G0-22).
 - **Formato de `decide.input_view`:** lo define M5. M1 lo trata como una lista de rutas (§3.2); si M5 cambia la forma, cambia la tabla de productores de §3.6.
 

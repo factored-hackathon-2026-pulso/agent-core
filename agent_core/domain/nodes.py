@@ -23,14 +23,12 @@ from pydantic import (
     model_validator,
 )
 
-from agent_core.domain.base import Model, NodeId
+from agent_core.domain.base import Model, NodeId, SaveAs
 from agent_core.domain.identity import PrincipalType
 from agent_core.domain.json import JsonValue
+from agent_core.domain.knowledge import PagePath, Purpose, parse_page_spec
 from agent_core.domain.outcomes import Outcome, ReasonCodeStr
 from agent_core.domain.refs import RefSpec
-
-# Patrones solo ASCII; el motor de regex de pydantic no admite un salto de línea final tras `$`.
-SaveAs = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]*$")]
 
 
 def _positive(value: timedelta) -> timedelta:
@@ -55,6 +53,7 @@ class DecideConfig(Model):
     input_view: list[str] | None = None
     branch_on: str
     save_as: SaveAs
+    choices_from: str | None = None  # path to a list of strings in a fact; runtime options (ADR 0021)
 
 
 class RuleConfig(Model):
@@ -86,11 +85,27 @@ class ToolConfig(Model):
 
 
 class WriteToolConfig(Model):
-    """Escritura: sin `args` propios; usa la acción congelada del `confirm` (ADR 0007)."""
+    """Escritura de un nodo `tool`.
 
-    action_from: NodeId
+    Con `action_from` usa la acción congelada de un `confirm` (ADR 0007) y no admite `tool` ni `args`.
+    Con `draft: true` (ADR 0019) invoca una tool `write_draft` con sus propios `args`: no hay `confirm`; la
+    acción se congela al entrar al nodo."""
+
+    action_from: NodeId | None = None
+    draft: bool = False
+    tool: RefSpec | None = None
+    args: dict[str, JsonValue] = Field(default_factory=dict)
     save_as: SaveAs
     step_up_max_attempts: PositiveInt = 2
+
+    @model_validator(mode="after")
+    def _one_form(self) -> "WriteToolConfig":
+        if self.draft:
+            if self.action_from is not None or self.tool is None:
+                raise ValueError("una escritura draft declara `tool` y no `action_from`")
+        elif self.action_from is None or self.tool is not None or self.args:
+            raise ValueError("una escritura con confirm declara solo `action_from` (sin `tool` ni `args`)")
+        return self
 
 
 class ActionSpec(Model):
@@ -116,10 +131,14 @@ class VerifyConfig(Model):
 
 
 class GenerateConfig(Model):
-    """Configuración del nodo `generate` (M0 §2.5)."""
+    """Configuración del nodo `generate` (M0 §2.5).
+
+    `knowledge_from` lista los `save_as` de nodos `knowledge` cuyas páginas puede citar la respuesta, y
+    `purpose` dice para quién es (M12 §2: reemplaza a `knowledge_refs`). El defecto es el más estricto."""
     prompt_ref: RefSpec
     allowed_facts: list[str] = Field(default_factory=list)
-    knowledge_refs: list[str] = Field(default_factory=list)  # se reemplaza al cerrar el tema #10
+    knowledge_from: list[SaveAs] = Field(default_factory=list)
+    purpose: Purpose = "customer_answer"
     fallback_template_ref: RefSpec
 
 
@@ -150,16 +169,53 @@ class EndConfig(Model):
     output_map: dict[str, str] | None = None
 
 
-class AgentNodeConfig(Model):
-    """Configuración del nodo `agent` (M0 §2.5, ADR 0019).
+def _page_specs(pages: list[str]) -> list[str]:
+    for text in pages:
+        parse_page_spec(text)
+    return pages
 
-    `save_as` nombra el hecho donde entra la salida; `output_schema` es el JSON Schema de esa salida."""
+
+class KnowledgeConfig(Model):
+    """Configuración del nodo `knowledge` (M0 §2.5, M12, ADR 0015).
+
+    `read`: `pages` fijas (`ruta` o `ruta#ancla`), resueltas contra el snapshot de la release.
+    `navigate`: `scope` (un directorio del snapshot) y `selector` (un `decision_model` sobre las rutas del
+    scope); el modo está en el esquema, pero M12 todavía no lo ejecuta (sale por `not_found`)."""
+
+    mode: Literal["read", "navigate"]
+    pages: Annotated[list[str], AfterValidator(_page_specs)] = Field(default_factory=list)
+    scope: PagePath | None = None
+    selector: RefSpec | None = None
+    purpose: Purpose
+    save_as: SaveAs
+
+    @model_validator(mode="after")
+    def _shape_of_the_mode(self) -> "KnowledgeConfig":
+        if self.mode == "read":
+            if not self.pages:
+                raise ValueError("knowledge read necesita al menos una página")
+            if self.scope is not None or self.selector is not None:
+                raise ValueError("scope y selector son solo de navigate")
+        else:
+            if self.scope is None or self.selector is None:
+                raise ValueError("knowledge navigate necesita scope y selector")
+            if self.pages:
+                raise ValueError("pages es solo de read")
+        return self
+
+
+class AgentNodeConfig(Model):
+    """Configuration of the `agent` node (M0 §2.5, ADR 0019).
+
+    `save_as` names the fact that receives the output; `output_schema` is the JSON Schema of that output.
+    `input_view` lists the paths (`slots`, `facts`) the model sees in the `model` view; empty means none."""
     tools_allowed: list[RefSpec]
     max_steps: PositiveInt
     prompt_ref: RefSpec
     goal: str
     save_as: SaveAs
     output_schema: dict[str, JsonValue]
+    input_view: list[str] = Field(default_factory=list)
 
 
 class SubflowConfig(Model):
@@ -247,6 +303,12 @@ class EndNode(_NodeBase):
     config: EndConfig
 
 
+class KnowledgeNode(_NodeBase):
+    """Nodo `knowledge` de un flow (M0 §2.5, M12)."""
+    type: Literal["knowledge"]
+    config: KnowledgeConfig
+
+
 class AgentNode(_NodeBase):
     """Nodo `agent` de un flow (M0 §2.5)."""
     type: Literal["agent"]
@@ -265,12 +327,34 @@ class AwaitApprovalNode(_NodeBase):
     config: AwaitApprovalConfig
 
 
+class TransferPacketSpec(Model):
+    """What the transfer node sends: a literal reason and the names of validated slots (ADR 0021 D7)."""
+
+    reason: Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]*$")]
+    slots: list[SaveAs] = Field(default_factory=list)
+
+
+class TransferConfig(Model):
+    """`target_from` is a `decisions.<save_as>.choice` path; `directory_from` the fact of `directory/list`."""
+
+    target_from: Annotated[str, StringConstraints(pattern=r"^decisions\.[a-z][a-z0-9_]*\.choice$")]
+    directory_from: SaveAs
+    packet: TransferPacketSpec
+
+
+class TransferNode(_NodeBase):
+    """`transfer` node (ADR 0021): hands the conversation to a specialist; only `rejected` is wired."""
+    type: Literal["transfer"]
+    config: TransferConfig
+
+
 def node_kind(value: Any) -> str | None:
-    """Discriminador: `type`, salvo `tool` con `action_from` → `tool_write`."""
+    """Discriminador: `type`, salvo `tool` con `action_from` o con `draft: true` → `tool_write`."""
     if isinstance(value, dict):
         kind = value.get("type")
         config = value.get("config")
-        if kind == "tool" and isinstance(config, dict) and "action_from" in config:
+        if kind == "tool" and isinstance(config, dict) and (
+                "action_from" in config or config.get("draft") is True):
             return "tool_write"
         return kind if isinstance(kind, str) else None
     if isinstance(value, WriteToolNode):
@@ -290,9 +374,11 @@ Node = Annotated[
     | Annotated[RespondNode, Tag("respond")]
     | Annotated[EscalateNode, Tag("escalate")]
     | Annotated[EndNode, Tag("end")]
+    | Annotated[KnowledgeNode, Tag("knowledge")]
     | Annotated[AgentNode, Tag("agent")]
     | Annotated[SubflowNode, Tag("subflow")]
-    | Annotated[AwaitApprovalNode, Tag("await_approval")],
+    | Annotated[AwaitApprovalNode, Tag("await_approval")]
+    | Annotated[TransferNode, Tag("transfer")],
     Discriminator(node_kind),
 ]
 
@@ -308,9 +394,12 @@ RESULTS: Mapping[str, frozenset[str]] = MappingProxyType(
         "respond": frozenset({"next"}),
         "escalate": frozenset(),
         "end": frozenset(),
+        # `low_confidence` es solo de `navigate`; un `read` cablea ok, not_found y denied (M1 G0-03)
+        "knowledge": frozenset({"ok", "not_found", "denied", "low_confidence"}),
         "agent": frozenset({"answered", "gave_up"}),
         "subflow": frozenset(),  # los declara el subflow
         "await_approval": frozenset({"approved", "rejected", "timeout"}),
+        "transfer": frozenset({"rejected"}),  # success closes the run; not in TERMINAL (ruling R2)
     }
 )
 TERMINAL: frozenset[str] = frozenset({"escalate", "end"})

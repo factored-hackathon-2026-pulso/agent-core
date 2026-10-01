@@ -26,6 +26,7 @@ from agent_core.domain import (
 from agent_core.flows import parse_path, release_view
 from agent_core.guards import UNCALIBRATED, LangThresholds
 from agent_core.interpreter import CircuitBreaker, GenerateRequest, Projector, StepContext
+from agent_core.knowledge import KnowledgeService
 from agent_core.ports import (
     AuthzPort,
     Clock,
@@ -94,7 +95,8 @@ class EngineRuntimeFactory:
                  releases: Callable[[str], Release], tools: ToolExecutor, gateway: LLMGateway,
                  decisions: DecisionService, actions: ActionManager, views: ViewService,
                  uow_factory: UnitOfWorkFactory, authz: AuthzPort, breaker: CircuitBreaker,
-                 config: RuntimeConfig) -> None:
+                 config: RuntimeConfig, knowledge: KnowledgeService | None = None) -> None:
+        self._knowledge = knowledge
         self._clock, self._ids, self._keys = clock, ids, keys
         self._registry, self._releases = registry, releases
         self._tools, self._gateway = tools, gateway
@@ -120,7 +122,8 @@ class EngineRuntimeFactory:
             views=self._views, vault=vault, ids=self._ids, uow_factory=self._uow_factory,
             bound_params=self._authz.bind_params(principal, on_behalf_of, state.subject),
             breaker=self._breaker,
-            agents=LLMAgentPort(self._gateway, self._registry, release_resolver(self._registry, release)))
+            agents=LLMAgentPort(self._gateway, self._registry, release_resolver(self._registry, release)),
+            knowledge=self._knowledge)
         holder.append(step)
         return EngineRuntime(step, principal, on_behalf_of)
 

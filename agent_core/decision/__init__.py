@@ -10,6 +10,7 @@ from agent_core.decision.providers.llm_structured import LlmStructuredProvider
 from agent_core.decision.providers.rule import RuleProvider
 from agent_core.decision.service import DecisionService
 from agent_core.decision.types import (
+    WILDCARD_LABEL,
     DecisionConfigError,
     DecisionOutput,
     DecisionProvider,
@@ -21,8 +22,24 @@ from agent_core.decision.types import (
 from agent_core.decision.understand import UnderstandContext, UnderstandResult, UnderstandService
 
 __all__ = [
-    "ArtifactLoader", "ClassifierProvider", "DecisionConfigError", "DecisionOutput", "DecisionProvider",
-    "DecisionService", "EventScope", "HttpJevTransport", "JevProvider", "JevTransport", "JevTransportError",
-    "LlmStructuredProvider", "ProviderError", "ProviderTimeout", "RawPrediction", "RuleProvider",
-    "UnderstandContext", "UnderstandResult", "UnderstandService",
+    "WILDCARD_LABEL",
+    "ArtifactLoader",
+    "ClassifierProvider",
+    "DecisionConfigError",
+    "DecisionOutput",
+    "DecisionProvider",
+    "DecisionService",
+    "EventScope",
+    "HttpJevTransport",
+    "JevProvider",
+    "JevTransport",
+    "JevTransportError",
+    "LlmStructuredProvider",
+    "ProviderError",
+    "ProviderTimeout",
+    "RawPrediction",
+    "RuleProvider",
+    "UnderstandContext",
+    "UnderstandResult",
+    "UnderstandService",
 ]

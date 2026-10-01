@@ -23,7 +23,7 @@ from agent_core.ports import Clock
 
 b64 = b64url_encode
 
-__all__ = ["DELEGATION_TYP", "PRINCIPAL_TYP", "TestIdentityIssuer", "b64", "sign_jws"]
+__all__ = ["DELEGATION_TYP", "PRINCIPAL_TYP", "TestIdentityIssuer", "TestStaffIssuer", "b64", "sign_jws"]
 
 
 def sign_jws(header: dict[str, Any], payload: bytes, key: Ed25519PrivateKey) -> str:
@@ -123,3 +123,34 @@ class TestIdentityIssuer:
         """Principal elevado tras un OTP SIMULADO (`auth.simulated`)."""
         auth = {"level": "step_up", "at": self._clock.now(), "simulated": True}
         return self.issue(self._principal(id=customer_id, auth=auth))
+
+
+class TestStaffIssuer(TestIdentityIssuer):
+    """El emisor del staff de la plataforma (supervisor, administrador y bot constructor), con una clave y un
+    `kid` distintos de los del emisor de clientes y asesores (ADR 0006, tema #14). Las personas entran con
+    `step_up` (OTP simulado); el bot no lleva `actor` ni más rol que `constructor`."""
+
+    principal_kid = "test-staff-1"
+
+    def __init__(self, clock: Clock, *, ttl: timedelta = timedelta(hours=1)) -> None:
+        super().__init__(clock, ttl=ttl)
+        self.principal_key = _key(b"staff")
+
+    def _staff(self, pid: str, roles: list[str], actor: bool, level: str) -> str:
+        now = self._clock.now()
+        who = Principal.model_validate({
+            "type": "builder", "id": pid, "roles": roles, "attrs": {"actor": "human"} if actor else {},
+            "auth": {"level": level, "at": now, "simulated": True} if level == "step_up"
+            else {"level": level, "at": now},
+            "exp": now + self._ttl})
+        return self.issue(who)
+
+    def supervisor(self, pid: str = "ana", *, level: str = "step_up") -> str:
+        return self._staff(pid, ["constructor", "aprobador"], True, level)
+
+    def admin(self, pid: str = "root", *, level: str = "step_up") -> str:
+        return self._staff(pid, ["constructor", "aprobador", "admin"], True, level)
+
+    def constructor_bot(self, pid: str = "constructor-bot") -> str:
+        return self._staff(pid, ["constructor"], False, "session")
+

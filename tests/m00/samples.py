@@ -32,6 +32,9 @@ SAMPLE_PAYLOADS: dict[str, dict[str, Any]] = {
                     "error": None, "attempt": 1, "action_id": None, "latency_ms": 35},
     "agent_step": {"node_id": "investigar", "step": 1, "kind": "tool", "tool": "buscar_transacciones@1.0.0",
                    "call_id": "call-0001", "status": "ok", "text_fp": None, "latency_ms": 41},
+    "knowledge_read": {"node_id": "saber", "purpose": "customer_answer", "result": "ok",
+                       "refs": ["faq/cargos.md@kb-base@1.0.0#plazos"], "filtered_out": [], "missing": [],
+                       "reason": None},
     "step_up_requested": {"node_id": "radicar", "required_level": "step_up", "attempt": 1},
     "action_confirmed": {"action_id": "action-0001", "source": "button"},
     "action_cancelled": {"action_id": "action-0001", "reason": "token_expired"},
@@ -61,6 +64,14 @@ SAMPLE_PAYLOADS: dict[str, dict[str, Any]] = {
     "handoff_resolved": {"handoff_ref": "handoff-0001", "resolution_code": "resuelto",
                          "handoff_quality": "useful", "reader_type": "advisor"},
     "run_closed": {"outcome": "escalated", "closed_by": "escalation"},
+    "run_transferred": {"transfer_id": "transfer-0001", "to_agent": "disputas@1.0.0",
+                        "to_release_id": "rel-2", "to_run_id": "run-0002", "reason": "routed",
+                        "packet_fp": FP,
+                        "directory": "customer-care", "directory_hash": "b" * 64, "candidates": ["disputas"]},
+    "transfer_received": {"transfer_id": "transfer-0001", "accepted_slots": ["problem"], "packet_fp": FP},
+    "transfer_rejected": {"transfer_id": "transfer-0001", "to_agent": "disputas",
+                          "reason_code": "not_in_directory", "directory": "customer-care",
+                          "directory_hash": "b" * 64},
 }
 
 

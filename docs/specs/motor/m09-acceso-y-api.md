@@ -23,6 +23,7 @@ Rutas (contrato generado en `contracts/openapi.json` por `agentcore contracts`):
 | `POST /v1/runs` | `create_run` | M4 `start_run` (201) |
 | `POST /v1/sessions/{session_id}/turns` | `post_turn` | M4 `handle_turn` |
 | `GET /v1/runs/{run_id}` | `get_run` | lectura de estado resumido, sujeta a política (§3.6) |
+| `GET /v1/sessions/{session_id}/lineage` | `get_session_lineage` | linaje de la sesión: runs en orden con release y origen de transferencia (§3.8, ADR 0021) |
 | `GET /v1/runs/{run_id}/transcript` | `get_transcript` | M11 `TranscriptReader` (el renderer de M7 va dentro) |
 | `GET /v1/handoffs/{handoff_ref}` | `get_handoff` | M10 `get` |
 | `POST /v1/handoffs/{handoff_ref}/resolution` | `post_resolution` | M10 `record_resolution` |
@@ -120,6 +121,14 @@ Cuando M4 devuelve `awaiting: step_up`, M9 responde `200` con `step_up: {require
 - El transcript autoriza el run primero y solo entonces llama al lector, que autoriza por campo (`can_read_field`). Un run inexistente es `404`.
 - Los handoffs no pasan por `principal_mismatch` (el asesor no es el dueño del run): M10 autoriza el subject.
 
+### 3.8 Linaje de la sesión: `GET /v1/sessions/{session_id}/lineage` (ADR 0021, T-TR-10)
+
+- Respuesta: `{session_id, runs: [{run_id, agent, release, status, outcome, origin}], trace_id}`, con los runs en orden de creación (`list_runs_by_session`). `origin` es `null` o `{transfer_id, from_run_id, from_agent, from_release_id}`.
+- **No se publica `from_event_hash`** (dato de integridad del enlace, lo usa `verify_transfer_link`) ni principal, subject, slots ni hechos: no hay PII en la respuesta.
+- Admisión como `post_turn`: pasa por la puerta con la sesión, así que una sesión inexistente es `404 not_found` solo después de una firma válida, y otro principal (incluido un asesor) recibe `403 principal_mismatch`. Además se aplica `authorize_read` a cada run de la sesión; un rechazo es `403 subject_forbidden` y queda como `access_denied`. Las lecturas por run (`GET /v1/runs/{id}`) siguen disponibles para asesores con delegación.
+- Funciona también con la sesión cerrada (`find_run_by_session` devuelve el más reciente si no hay uno abierto).
+- Cambia `contracts/openapi.json` (regenerado); no cambia `SCHEMA_VERSION`.
+
 ### 3.7 Observabilidad (ADR 0003)
 
 Un span `agentcore.api.request` por request (OpenTelemetry, provider de `agent_telemetry`), con una lista cerrada de atributos (método y status). El `trace_id` de la respuesta es el de la traza si hay una activa; si no, uno del `IdSource`. `agent_telemetry.span()` exige `run_id` y `agentcore.release`, que no existen en un 401, por eso la puerta usa la API de OTel directamente. Nada de credenciales, `principal.id` ni body en atributos.
@@ -172,6 +181,7 @@ Con `TestClient` de FastAPI, `StubVerifier` (tokens opacos sintéticos), `TableA
 | T-M9-12 | Exceso de tasa o costo → `429` | 12 | `test_api`, `test_limits`, `test_m9_postgres` |
 | T-M9-13 | Todas las respuestas llevan `trace_id` y los errores son `problem+json` | — | `test_problems`, `test_api` |
 | T-M9-14 | `awaiting: step_up` devuelve `step_up` en el cuerpo | 5 | `test_api` |
+| T-TR-10 | `GET /v1/sessions/{id}/lineage` devuelve la cadena con releases y `transfer_id`; otro cliente recibe `403`; no expone `from_event_hash` | — | `test_session_lineage` |
 
 Además: IDOR de lecturas (dueño, asesor con delegación, run sin subject, anónimos entre sí), decimales en el body, JSON ambiguo, `openapi.json` al día, fixture `TableAuthz`.
 
@@ -198,8 +208,9 @@ Fuera de la definición pero hecho: `TableAuthz` (`testing/fakes/authz.py`) como
 ## 11. Abiertos
 
 - **Contrato `api` de `.importlinter`** (decisión del usuario). Con los `Protocol` de `api/protocols.py` el contrato pasa sin `allow_indirect_imports`; importar `TurnEngine`, `HandoffService` o `TranscriptReader` directamente sí lo exigiría.
-- **Cableado real.** No existe aún un `agentcore serve` ni la factoría en `composition` que arme `ApiDeps` (verificador, `TableAuthz`/unidad 3, `TurnEngine`, `HandoffService`, `TranscriptReader`, `AuditLog`, `OtelSecurityLog`, `TraceIds` de M4 con el `trace_id` de OTel).
+- ~~**Cableado real.**~~ **Resuelto 2026-09-30 (tema #13):** `agentcore serve` (`agent_core/composition/serve.py`, `serve_ports.py`) arma `ApiDeps` con el motor real (`build_engine`: `TurnEngine`, `HandoffService`, `TranscriptReader`), `AuditLog` y `OtelSecurityLog`. Claves públicas de identidad: archivo YAML/JSON `{principal_keys: {kid: b64url}, delegation_keys: {kid: b64url}}` (32 bytes Ed25519 por clave; `--identity-keys`). Las piezas de las unidades 3, 6 y 7 son dobles de demo tras `AGENTCORE_ALLOW_DEMO=1`.
 - **Copiloto y constructor (ADR 0019):** el vocabulario de `purpose` para el copiloto y los scopes del `builder` siguen sin definir; la prueba de contrato fija solo las negaciones.
 - **`AuthzPort` sin especificar:** qué significa `subject=None` en `authorize_agent`, las claves de `bind_params`, el vocabulario de `purpose` y los scopes de `service`/`builder` (`TableAuthz` usa `subject:<kind>`/`subject:*` como convención propia del doble).
 - **Anónimos y contadores:** sin límite por sesión anónima en el motor.
 - **Resolución de handoff:** la respuesta `{handoff_ref, resolution_code, handoff_quality, trace_id}` es propuesta de M9; la spec general no define su cuerpo.
+- **Hash del directorio en el linaje (pendiente, ADR 0021):** la spec de transferencia (§5.3, T-TR-10) pide que el linaje incluya el hash del directorio, pero `RunState`/`RunOrigin` no lo guardan (vive en el evento `run_transferred` de la cadena del run origen) y la respuesta acordada en el plan no lo incluye. Opciones: (a) leer el evento `run_transferred` de la cadena de auditoría del run origen mediante un puerto de lectura inyectado en `ApiDeps` (no existe hoy uno para eventos); (b) añadir `directory_hash` opcional a `RunOrigin` (cambio de M0: regenerar `contracts/`); (c) retirar el hash de §5.3/T-TR-10 y dejarlo solo en el replay. Decisión del usuario.

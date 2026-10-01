@@ -50,6 +50,8 @@ NUM_PATTERN = r"(?:0|[1-9][0-9]*)"
 EXACT_VERSION_PATTERN = rf"{NUM_PATTERN}\.{NUM_PATTERN}\.{NUM_PATTERN}"
 ExactVersion = Annotated[str, StringConstraints(pattern=rf"^{EXACT_VERSION_PATTERN}$")]
 NodeId = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9_]*$")]
+# Nombre bajo el que un nodo deja su resultado (`save_as`): hechos, decisiones y páginas de conocimiento.
+SaveAs = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]*$")]
 # sha256 en hexadecimal minúscula (ASCII)
 Sha256Hex = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 Probability = Annotated[float, Field(ge=0.0, le=1.0, allow_inf_nan=False)]

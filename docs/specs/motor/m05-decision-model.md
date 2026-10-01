@@ -76,6 +76,8 @@ def calibrate(model_def, dev_split: Sequence[DevExample], providers, *, targets:
               min_samples: Mapping[str, int], min_support: int) -> CalibrationArtifact
 ```
 
+**Opciones de runtime (ADR 0021, decisión P3 del plan de transferencia).** `DecisionService.decide_with_schema` ya sirve para elegir entre opciones que solo se conocen en el run. M2 las pide con `DecisionPort.decide_choice(model, inputs_model_view, choices, locale) -> DecisionResult`; el valor de la decisión es `{"choice": <una de choices o "none">}`. El adaptador de composición arma el esquema efectivo `{choice: enum[*choices, "none"]}` (el motor agrega `"none"`) y delega en `decide_with_schema`. `WILDCARD_LABEL = "*"` se exporta desde `agent_core.decision`.
+
 `DecisionPort.decide` de M2 (`decide(model, inputs, locale) -> DecisionResult`) no puede vivir aquí (M5 no importa `interpreter`): el adaptador `DecisionOutput → DecisionResult` (con `vault = ctx.vault` y `model_calls`) lo escribe M2 o la composición de M4 (P1, fuera de M5).
 
 ## 3. Comportamiento
@@ -88,7 +90,7 @@ def calibrate(model_def, dev_split: Sequence[DevExample], providers, *, targets:
    - salida fuera de `output_schema` → **1** reintento con el mismo proveedor; si vuelve a fallar, siguiente.
    `tokens` y `cost_usd` acumulan todas las llamadas (también las fallidas); `latency_ms` es la duración total medida con `Clock.monotonic_ns`.
 3. Calibra cada campo calibrado con el mapa `(field, provider, lang)` del artefacto de `calibration.run`. Sin mapa: `p_cal = p_raw` si `method = none`, si no `null`. `p_raw = null` da `p_cal = null`.
-4. Umbral (artefacto de `thresholds_from`): `thresholds[(field, value, provider, lang)]`; **combinación ausente = 1.0 y nunca pasa**, ni con `p_cal = 1.0` (coherente con §5: sin calibración, siempre `low_confidence`). `above_threshold[field] = p_cal is not None and p_cal >= umbral`. `p_cal = null` cuenta como bajo umbral; un campo calibrado ausente de `value` también.
+4. Umbral (artefacto de `thresholds_from`): `thresholds[(field, value, provider, lang)]`; **combinación ausente = 1.0 y nunca pasa**, ni con `p_cal = 1.0`; antes de darla por ausente se busca la misma combinación con la etiqueta comodín `"*"` (`thresholds[(field, "*", provider, lang)]`), y una etiqueta específica gana al comodín (decisión P3 del plan de transferencia: las opciones de runtime no tienen etiquetas fijas que calibrar) (coherente con §5: sin calibración, siempre `low_confidence`). `above_threshold[field] = p_cal is not None and p_cal >= umbral`. `p_cal = null` cuenta como bajo umbral; un campo calibrado ausente de `value` también.
 5. **Tokens:** todo string de `value` (valores y claves, en cualquier profundidad) que coincida con `TOKEN_PATTERN` de M7 se verifica con `token_vault.exists(token)`; un token desconocido invalida la salida → todos los campos calibrados quedan bajo umbral (`p_cal` se conserva para diagnóstico y `value` no se toca).
 6. Cadena agotada → `DecisionOutput` con `value = {}`, `p_cal`/`p_raw` en `null`, `above_threshold` todo en `false`, `provider_used = model_version = "none"` y `fallback_depth = len(providers)` (la rama es `low_confidence`).
 7. Emite `decision_made` con la salida completa (vista `audit`).
@@ -96,7 +98,7 @@ def calibrate(model_def, dev_split: Sequence[DevExample], providers, *, targets:
 ### 3.2 Understand
 
 - Esquema cerrado, armado por release (no muta el `DecisionModelDef` del registro): `command` (enum de `Command`), `flow` (enum de flows de la release), `interrupt` (enum de interrupciones de la release), `additional_flows` (lista del enum de flows), `slots` (único objeto libre).
-- Entrada al proveedor (vista `model`): `{text, recent_turns, current_node, confirm_pending}`.
+- Entrada al proveedor (vista `model`): `{text, recent_turns, current_node, confirm_pending}`. `recent_turns` sigue la política del tema #12 (n fijo de 6 turnos, truncado sin resumen; m04, cableado de M5).
 - Campos calibrados: `command`, `flow` (solo con `start_flow`), `interrupt` (solo con `interrupt`). Los demás `above_threshold` se omiten (no `false`); `additional_flows` y `slots` nunca llevan umbral.
 - Cadena agotada: `command = clarify` con `above_threshold["command"] = false` (valor neutro; M4 decide qué hacer).
 - Umbrales de `interrupt` se fijan por **recall** (objetivo en `target`); el resto por precisión.
@@ -216,6 +218,7 @@ Con `ScriptedProvider` (salidas y latencias guionadas) y artefactos de calibraci
 - Región de procesamiento y período de retención de JEV: no figuran en la doc pública ni en el DPA (pedirlos por escrito).
 - Mínimo de muestra PT (lo fija la unidad 6): `calibrate` lo exige como parámetro `min_samples`, sin valor por defecto.
 - Artefactos reales de Understand ES (y PT si llega la muestra) y del clasificador: los produce otro equipo (P9).
+- **Opciones de runtime (decisión P3 del plan de transferencia, 2026-09-30):** el umbral comodín `"*"` cierra solo la parte del umbral del abierto 1 de la spec de transferencia (cómo se calibra el umbral con opciones variables); el comodín se calibra por `(campo, proveedor, idioma)`, sin recalibrar por cada especialista nuevo. Siguen abiertos la elección del proveedor de `choices_from` (JEV `choice` frente a `llm_structured`; el `classifier` no acepta opciones en runtime) y el procedimiento offline que produce el umbral `"*"` (`calibrate` aún no lo genera).
 - Adaptador `DecisionOutput → DecisionResult` de M2 (P1): lo escribe M2 o la composición de M4.
 
 ## 12. Decisiones de la rev. 2

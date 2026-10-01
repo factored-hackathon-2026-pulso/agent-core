@@ -769,7 +769,7 @@
     },
     "AgentStepPayload": {
       "additionalProperties": false,
-      "description": "Payload del evento `agent_step` (vista audit, M0 §2.10, ADR 0019).\n\nUn paso del nodo `agent`. Los argumentos y el resultado de una tool van en su `tool_called` (`call_id`\nlos enlaza); el texto de la respuesta final solo como huella con clave, nunca razonamiento intermedio.",
+      "description": "Payload del evento `agent_step` (vista audit, M0 §2.10, ADR 0019).\n\nUn paso del nodo `agent`. Los argumentos y el resultado de una tool van en su `tool_called` (`call_id`\nlos enlaza); el texto de la respuesta final solo como huella con clave, nunca razonamiento intermedio.\n`kind = \"failed\"`: el gateway falló en ese paso y el nodo terminó en `gave_up`.",
       "properties": {
         "call_id": {
           "anyOf": [
@@ -783,10 +783,22 @@
           "default": null,
           "title": "Call Id"
         },
+        "error_kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GatewayErrorKind"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "kind": {
           "enum": [
             "tool",
-            "final"
+            "final",
+            "failed"
           ],
           "title": "Kind",
           "type": "string"
@@ -1588,6 +1600,35 @@
       "title": "ExpiryEvaluatedPayload",
       "type": "object"
     },
+    "FilteredPage": {
+      "additionalProperties": false,
+      "description": "Una página pedida que M12 no entregó, y por qué (nunca lleva su contenido).",
+      "properties": {
+        "reason": {
+          "enum": [
+            "audience",
+            "not_approved",
+            "expired",
+            "not_yet_valid",
+            "lang",
+            "snapshot",
+            "view"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "ref": {
+          "title": "Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "reason"
+      ],
+      "title": "FilteredPage",
+      "type": "object"
+    },
     "Fingerprint": {
       "additionalProperties": false,
       "description": "Huella con clave (ADR 0008): `value = HMAC-SHA256(k[kid], JCS(dato))`.",
@@ -1613,6 +1654,18 @@
       ],
       "title": "Fingerprint",
       "type": "object"
+    },
+    "GatewayErrorKind": {
+      "description": "Clases de falla del gateway de LLM (M0 §2.11).",
+      "enum": [
+        "timeout",
+        "unavailable",
+        "rate_limited",
+        "invalid_output",
+        "refused"
+      ],
+      "title": "GatewayErrorKind",
+      "type": "string"
     },
     "GuardsOutput": {
       "additionalProperties": false,
@@ -1988,6 +2041,184 @@
         }
       ]
     },
+    "KnowledgeRead": {
+      "additionalProperties": false,
+      "description": "Evento `knowledge_read` de la cadena de auditoría (M12 §6).",
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/KnowledgeReadPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "knowledge_read",
+          "default": "knowledge_read",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "KnowledgeRead",
+      "type": "object"
+    },
+    "KnowledgeReadPayload": {
+      "additionalProperties": false,
+      "description": "Payload del evento `knowledge_read` (vista audit, M12 §6). Solo referencias y motivos, nunca texto.\n\n`result` es la rama del nodo. `refs` son las páginas entregadas; `filtered_out`, las que el servicio\ndevolvió y M12 retuvo; `missing`, las que el servicio no devolvió. `reason` distingue las causas que el\nesquema del nodo no separa: fuente caída, sin snapshot o `navigate` sin ejecutar.",
+      "properties": {
+        "filtered_out": {
+          "items": {
+            "$ref": "#/$defs/FilteredPage"
+          },
+          "title": "Filtered Out",
+          "type": "array"
+        },
+        "missing": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Missing",
+          "type": "array"
+        },
+        "node_id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "purpose": {
+          "enum": [
+            "customer_answer",
+            "advisor_view",
+            "agent_guidance"
+          ],
+          "title": "Purpose",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "source_unavailable",
+                "navigate_unavailable",
+                "no_snapshot"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Refs",
+          "type": "array"
+        },
+        "result": {
+          "enum": [
+            "ok",
+            "not_found",
+            "denied"
+          ],
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node_id",
+        "purpose",
+        "result"
+      ],
+      "title": "KnowledgeReadPayload",
+      "type": "object"
+    },
     "LabelScore": {
       "additionalProperties": false,
       "description": "Etiqueta con su probabilidad (top-k de una decisión).",
@@ -2302,7 +2533,8 @@
         "completed",
         "failed",
         "abandoned",
-        "escalated"
+        "escalated",
+        "transferred"
       ],
       "title": "Outcome",
       "type": "string"
@@ -2904,7 +3136,8 @@
             "flow",
             "abandonment",
             "escalation",
-            "revocation"
+            "revocation",
+            "transfer"
           ],
           "title": "Closed By",
           "type": "string"
@@ -2918,6 +3151,53 @@
         "closed_by"
       ],
       "title": "RunClosedPayload",
+      "type": "object"
+    },
+    "RunOrigin": {
+      "additionalProperties": false,
+      "description": "Why a run exists when another run transferred to it (spec §3.3, P2, P5).",
+      "properties": {
+        "depth": {
+          "exclusiveMinimum": 0,
+          "title": "Depth",
+          "type": "integer"
+        },
+        "from_agent": {
+          "$ref": "#/$defs/EntityRef"
+        },
+        "from_event_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "From Event Hash",
+          "type": "string"
+        },
+        "from_release_id": {
+          "title": "From Release Id",
+          "type": "string"
+        },
+        "from_run_id": {
+          "title": "From Run Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "transfer",
+          "title": "Kind",
+          "type": "string"
+        },
+        "transfer_id": {
+          "title": "Transfer Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "transfer_id",
+        "from_run_id",
+        "from_agent",
+        "from_release_id",
+        "from_event_hash",
+        "depth"
+      ],
+      "title": "RunOrigin",
       "type": "object"
     },
     "RunStarted": {
@@ -3044,6 +3324,17 @@
           "title": "Mode",
           "type": "string"
         },
+        "origin": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RunOrigin"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "principal_type": {
           "$ref": "#/$defs/PrincipalType"
         },
@@ -3074,6 +3365,167 @@
         "locale"
       ],
       "title": "RunStartedPayload",
+      "type": "object"
+    },
+    "RunTransferred": {
+      "additionalProperties": false,
+      "description": "Evento `run_transferred` de la cadena origen (ADR 0021).",
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/RunTransferredPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "run_transferred",
+          "default": "run_transferred",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "RunTransferred",
+      "type": "object"
+    },
+    "RunTransferredPayload": {
+      "additionalProperties": false,
+      "description": "Payload of `run_transferred` (audit view, ADR 0021 P1): packet fingerprint only.",
+      "properties": {
+        "candidates": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Candidates",
+          "type": "array"
+        },
+        "directory": {
+          "title": "Directory",
+          "type": "string"
+        },
+        "directory_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Directory Hash",
+          "type": "string"
+        },
+        "packet_fp": {
+          "$ref": "#/$defs/Fingerprint"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "to_agent": {
+          "$ref": "#/$defs/EntityRef"
+        },
+        "to_release_id": {
+          "title": "To Release Id",
+          "type": "string"
+        },
+        "to_run_id": {
+          "title": "To Run Id",
+          "type": "string"
+        },
+        "transfer_id": {
+          "title": "Transfer Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "transfer_id",
+        "to_agent",
+        "to_release_id",
+        "to_run_id",
+        "reason",
+        "packet_fp",
+        "directory",
+        "directory_hash",
+        "candidates"
+      ],
+      "title": "RunTransferredPayload",
       "type": "object"
     },
     "StepUpRequested": {
@@ -3410,6 +3862,306 @@
       ],
       "title": "ToolStatus",
       "type": "string"
+    },
+    "TransferReceived": {
+      "additionalProperties": false,
+      "description": "Evento `transfer_received` de la cadena destino (ADR 0021).",
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/TransferReceivedPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "transfer_received",
+          "default": "transfer_received",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "TransferReceived",
+      "type": "object"
+    },
+    "TransferReceivedPayload": {
+      "additionalProperties": false,
+      "description": "Payload of `transfer_received` (audit view).",
+      "properties": {
+        "accepted_slots": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Accepted Slots",
+          "type": "array"
+        },
+        "packet_fp": {
+          "$ref": "#/$defs/Fingerprint"
+        },
+        "transfer_id": {
+          "title": "Transfer Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "transfer_id",
+        "accepted_slots",
+        "packet_fp"
+      ],
+      "title": "TransferReceivedPayload",
+      "type": "object"
+    },
+    "TransferRejected": {
+      "additionalProperties": false,
+      "description": "Evento `transfer_rejected` de la cadena origen (ADR 0021).",
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/TransferRejectedPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "transfer_rejected",
+          "default": "transfer_rejected",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "TransferRejected",
+      "type": "object"
+    },
+    "TransferRejectedPayload": {
+      "additionalProperties": false,
+      "description": "Payload of `transfer_rejected` (audit view).",
+      "properties": {
+        "directory": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Directory"
+        },
+        "directory_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Directory Hash"
+        },
+        "reason_code": {
+          "enum": [
+            "not_in_directory",
+            "no_active_release",
+            "not_eligible",
+            "accepts_mismatch",
+            "transfer_limit",
+            "no_turn"
+          ],
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "to_agent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Agent"
+        },
+        "transfer_id": {
+          "title": "Transfer Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "transfer_id",
+        "reason_code"
+      ],
+      "title": "TransferRejectedPayload",
+      "type": "object"
     },
     "TurnCompleted": {
       "additionalProperties": false,
@@ -3803,14 +4555,18 @@
       "expiry_evaluated": "#/$defs/ExpiryEvaluated",
       "handoff_resolved": "#/$defs/HandoffResolved",
       "injection_flagged": "#/$defs/InjectionFlagged",
+      "knowledge_read": "#/$defs/KnowledgeRead",
       "node_entered": "#/$defs/NodeEntered",
       "response_emitted": "#/$defs/ResponseEmitted",
       "response_failed": "#/$defs/ResponseFailed",
       "rule_evaluated": "#/$defs/RuleEvaluated",
       "run_closed": "#/$defs/RunClosed",
       "run_started": "#/$defs/RunStarted",
+      "run_transferred": "#/$defs/RunTransferred",
       "step_up_requested": "#/$defs/StepUpRequested",
       "tool_called": "#/$defs/ToolCalled",
+      "transfer_received": "#/$defs/TransferReceived",
+      "transfer_rejected": "#/$defs/TransferRejected",
       "turn_completed": "#/$defs/TurnCompleted",
       "turn_started": "#/$defs/TurnStarted"
     },
@@ -3840,6 +4596,9 @@
     },
     {
       "$ref": "#/$defs/AgentStep"
+    },
+    {
+      "$ref": "#/$defs/KnowledgeRead"
     },
     {
       "$ref": "#/$defs/StepUpRequested"
@@ -3882,6 +4641,15 @@
     },
     {
       "$ref": "#/$defs/RunClosed"
+    },
+    {
+      "$ref": "#/$defs/RunTransferred"
+    },
+    {
+      "$ref": "#/$defs/TransferReceived"
+    },
+    {
+      "$ref": "#/$defs/TransferRejected"
     }
   ]
 }

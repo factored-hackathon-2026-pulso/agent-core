@@ -1,6 +1,6 @@
 # ADR 0019 — Agentes internos: copiloto del asesor y agente constructor
 
-- Estado: aceptado (2026-09-30). **Implementado:** nodo `agent` de solo lectura y cálculo (M0, M1 con G0-22, M2) y la prueba de contrato de `AuthzPort`. **Pendiente:** clase `write_draft` (G0-23, AG-02, ruta sin `confirm` en M3), adaptador real de `AgentPort` y los agentes mismos
+- Estado: aceptado (2026-09-30). **Implementado:** nodo `agent` de solo lectura y cálculo (M0, M1 con G0-22, M2) y la prueba de contrato de `AuthzPort`. **Implementado también (2026-09-30, fases 1 a 5 de la spec write-draft):** clase `write_draft` (M0 1.2.0, M1 con G0-05, G0-22 con su excepción, G0-23, G0-25 y AG-02, M2, M3 y M4), borradores idempotentes y topes en el registry y `BuilderToolExecutor`; el adaptador real de `AgentPort` (`LLMAgentPort`) ya existía. **Pendiente:** replay del bucle en M11, los dos agentes del constructor y `await_approval`
 - Unidad: 1 · Motor de decisión (con dependencias de la unidad 2, registry)
 - Amplía: ADR 0004 (nodo `agent`), ADR 0006 (principales y agentes internos), ADR 0007 (protocolo de escritura)
 - Spec del nodo y de las reglas: `docs/specs/motor/m02-interprete.md` §3.7, `docs/specs/motor/m01-validacion-estatica.md` §3.13
@@ -23,7 +23,7 @@
    - Todo lo que no sea borrador (`write_reversible`, `write_irreversible`, `money_movement`) conserva `confirm → act → verify` sin cambios.
 6. **G0-16 no se relaja.** Un flow `task` sigue sin nodos que esperan; escribe con `write_draft` o no escribe.
 7. **El copiloto del asesor es solo lectura y cálculo en su primera versión.** Principal `advisor`, run propio sobre el subject de su delegación (un traspaso entre asesores es un run nuevo, ADR 0006). No escribe, así que no usa `write_draft`.
-8. **Un `builder` nunca obtiene datos de clientes**: ni subject, ni campos, ni parámetros vinculados. Es una prueba de contrato de `AuthzPort` (`tests/contracts/test_authz_contract.py`), no solo una convención del doble.
+8. **Un `builder` nunca obtiene datos de clientes**: ni subject, ni campos, ni parámetros vinculados. Es una prueba de contrato de `AuthzPort` (`tests/contracts/test_authz_contract.py`), no solo una convención del doble. **Excepción (2026-09-30, ADR 0006):** el administrador de la plataforma (`builder` con rol `admin`, persona y `step_up`) sí accede a datos de clientes; el supervisor y el agente constructor no.
 
 ## Alternativas
 - **Todo guionado, sin `agent` (opción A):** no exige cambios de motor, pero un copiloto abierto se abstendría a menudo y el contenido de un borrador tendría que salir de un `decide` con esquema estricto.
@@ -37,3 +37,8 @@
 - **Dependencias del registry** (ver `docs/specs/2026-09-29-registry-design.md` §18): borradores reversibles e idempotentes; adaptador de `ToolExecutor` con credencial `constructor`; `forbidden_role` en `ProblemCode`; puerto de escritura de propuestas; validación de refs del nodo `agent` en el gate.
 - **Cambios de interfaz** (avisar a todos los módulos). Hechos con el nodo `agent`: M0 (`AgentNodeConfig.save_as`/`output_schema`, `FactSource.kind = agent`, evento `agent_step`; `SCHEMA_VERSION` 0.4.0 y `contracts/` regenerado), M1 (G0-01, G0-06, G0-15, G0-22, referencias y pin), M2 (`handle_agent`, `AgentPort`). Pendientes con `write_draft`: M0 (`RiskClass`), M1 (G0-05, G0-23, AG-02), M3 (ruta sin `confirm`), M11 (replay del bucle).
 - **Pendiente de decisión al construir** (secciones Abiertos de cada spec): topes del constructor autónomo (registry §17.4), `default_target_queue` opcional para agentes que nunca escalan, política de campos del copiloto (`purpose`), quién llena `open_questions` si el copiloto lo usa.
+
+## Enmienda 2026-09-30 (spec write-draft)
+- **§1, excepción acotada a G0-22:** el `args` de una escritura `draft` puede leer solo `value.changes` de la salida de un nodo `agent` cuyo `output_schema` es el del borrador (`DRAFT_OUTPUT_SCHEMA`); el resultado de esa escritura sigue siendo salida de agente. El registry la valida con esquema estricto y límites, y la aprobación humana de la propuesta es el gate. Cualquier otro destino sigue vetado.
+- **§2, flows duplicados:** AG-01 y `subflow` (rechazado por G0-01) impiden compartir flows entre los dos agentes del constructor; comparten tools, prompts y plantillas, y cada uno tiene su flow de entrada hasta que `subflow` exista.
+- **Forma del nodo:** una escritura `draft` es un nodo `tool_write` con `draft: true`, `tool` y `args` propios; su acción lleva `write_node_id` en vez de `confirm_node_id` y no tiene token.

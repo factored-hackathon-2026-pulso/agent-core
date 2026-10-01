@@ -13,7 +13,7 @@ PUBLIC = [
     "ArtifactLoader", "ClassifierProvider", "DecisionConfigError", "DecisionOutput", "DecisionProvider",
     "DecisionService", "EventScope", "HttpJevTransport", "JevProvider", "JevTransport", "JevTransportError",
     "LlmStructuredProvider", "ProviderError", "ProviderTimeout", "RawPrediction", "RuleProvider",
-    "UnderstandContext", "UnderstandResult", "UnderstandService",
+    "UnderstandContext", "UnderstandResult", "UnderstandService", "WILDCARD_LABEL",
 ]
 OFFLINE = [
     "CalibrationArtifact", "CalibrationSource", "DevExample", "DirectoryCalibrationSource",

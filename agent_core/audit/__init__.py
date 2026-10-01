@@ -2,6 +2,7 @@
 
 from agent_core.audit.chain import ChainCheck, ChainedEvent, chain_events, check_chain
 from agent_core.audit.export import chain_integrity, export_events
+from agent_core.audit.links import verify_transfer_link
 from agent_core.audit.log import AuditLog
 from agent_core.audit.replay.fixture import (
     Fixture,
@@ -30,5 +31,5 @@ __all__ = [
     "RecordingToolExecutor", "RenderedEntry", "ReplayCase", "ReplayDesync", "ReplayReport", "Replayer",
     "RunNotFound", "SyntheticCatalog", "TranscriptReader", "TranscriptWriteError", "TurnRecorder",
     "build_fixture", "chain_events", "chain_integrity", "check_chain", "check_fixture", "dump_fixture",
-    "export_events", "load_catalog", "load_fixture", "load_fixture_file",
+    "export_events", "load_catalog", "load_fixture", "load_fixture_file", "verify_transfer_link",
 ]

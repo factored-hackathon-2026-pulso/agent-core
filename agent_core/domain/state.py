@@ -7,11 +7,22 @@ from typing import Any, Literal, Self
 
 from pydantic import Field, NonNegativeInt, model_validator
 
-from agent_core.domain.base import Locale, Model, MutableModel, NodeId, Probability, Sha256Hex, UtcDatetime
+from agent_core.domain.base import (
+    Locale,
+    Model,
+    MutableModel,
+    NodeId,
+    Probability,
+    SaveAs,
+    Sha256Hex,
+    UtcDatetime,
+)
 from agent_core.domain.identity import OnBehalfOf, Principal, SubjectRef
 from agent_core.domain.json import JsonValue
+from agent_core.domain.knowledge import PageView
 from agent_core.domain.outcomes import Awaiting, Mode, Outcome
 from agent_core.domain.refs import EntityRef
+from agent_core.domain.transfer import RunOrigin
 
 RunStatus = Literal["open", "closed", "escalated"]
 
@@ -75,17 +86,28 @@ class InvalidationReason(StrEnum):
 class Action(Model):
     """Acción de escritura propuesta al usuario, con su token de confirmación y ciclo de vida (M0 §2.6)."""
     action_id: str
-    confirm_node_id: NodeId
+    confirm_node_id: NodeId | None = None
+    write_node_id: NodeId | None = None  # el nodo `draft` que la creó (ADR 0019); sin confirm
     flow: EntityRef
     tool: EntityRef
     args: dict[str, JsonValue]
     args_hash: Sha256Hex
     state: ActionState
-    confirmation_token_hash: Sha256Hex
-    token_exp: UtcDatetime
+    confirmation_token_hash: Sha256Hex | None = None
+    token_exp: UtcDatetime | None = None
     idempotency_key: str
     created_at: UtcDatetime
     cancel_reason: InvalidationReason | None = None
+
+    @model_validator(mode="after")
+    def _confirmed_or_draft(self) -> "Action":
+        confirm = (self.confirm_node_id, self.confirmation_token_hash, self.token_exp)
+        if self.write_node_id is None:
+            if any(value is None for value in confirm):
+                raise ValueError("una acción con confirm lleva confirm_node_id, token y vencimiento")
+        elif any(value is not None for value in confirm):
+            raise ValueError("una acción de escritura draft no lleva confirm_node_id, token ni vencimiento")
+        return self
 
 
 class ActiveFlow(Model):
@@ -146,6 +168,7 @@ class RunState(MutableModel):
     slots: dict[str, Slot] = Field(default_factory=dict)
     facts: dict[str, Fact] = Field(default_factory=dict)
     decisions: dict[str, Decision] = Field(default_factory=dict)
+    pages: dict[SaveAs, list[PageView]] = Field(default_factory=dict)  # páginas de conocimiento; solo M12
     actions: list[Action] = Field(default_factory=list)
     token_map: EncryptedBlob | None = None
     open_questions: list[str] = Field(default_factory=list)
@@ -156,6 +179,7 @@ class RunState(MutableModel):
     repair_turns_used: NonNegativeInt = 0
     degraded_turns: list[NonNegativeInt] = Field(default_factory=list)
     handoff_ref: str | None = None
+    origin: RunOrigin | None = None
 
     @model_validator(mode="after")
     def _coherence(self) -> "RunState":

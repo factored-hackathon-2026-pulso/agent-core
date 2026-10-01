@@ -1,4 +1,4 @@
-"""CLI `agentcore`: `contracts`, `validate`, `sweep`, `replay`, `record` y `llm-smoke`."""
+"""CLI `agentcore`: `contracts`, `validate`, `sweep`, `replay`, `record`, `llm-smoke`, `registry`, `serve`."""
 
 import argparse
 import importlib
@@ -306,9 +306,20 @@ def main(
     smoke.add_argument("--registry", type=Path, required=True, help="directorio del registro de autoría")
     smoke.add_argument("--profile", required=True, help="model_profile id@versión exacta")
     smoke.add_argument("--n", type=int, default=10, help="cantidad de llamadas (por defecto 10)")
+    from agent_core.composition.registry import add_registry_parser, run_registry_cli
+
+    add_registry_parser(sub)
+    from agent_core.composition.serve import run_serve
+    from agent_core.composition.serve_ports import add_serve_parser
+
+    add_serve_parser(sub)
     args = parser.parse_args(argv)
     if args.command == "llm-smoke":
         return _run_llm_smoke(args)
+    if args.command == "registry":
+        return run_registry_cli(args, clock=SystemClock(), ids=SystemIds(), env=os.environ.get)
+    if args.command == "serve":
+        return run_serve(args, clock=SystemClock(), ids=SystemIds(), env=os.environ)
     if args.command == "sweep":
         return _run_sweep(args, sweeper, clock)
     if args.command == "contracts":

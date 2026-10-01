@@ -66,6 +66,13 @@ class InMemoryRegistry:
         require_exact_refs(release)
         return release.model_copy(deep=True)
 
+    def resolve_release_by_id(self, release_id: str) -> Release:
+        return self._releases[release_id].model_copy(deep=True)
+
+    def aliases(self, alias: str) -> list[tuple[str, str]]:
+        """`(agent_id, release_id)` for every agent with this alias, sorted by agent id."""
+        return sorted((agent_id, rid) for (agent_id, name), rid in self._aliases.items() if name == alias)
+
     def release_status(self, release_id: str) -> Literal["active", "revoked"]:
         return self._releases[release_id].status
 

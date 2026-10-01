@@ -5,6 +5,8 @@ Decisiones vigentes (2026-09-29): el formato llega como dato opcional `ctx.numbe
 aceptan lecturas inequívocas y una cifra ambigua (`1.234`) se rechaza aunque algún hecho la respalde; todo
 número del texto cuenta igual (no hay lista de literales permitidos).
 
+Las cifras del texto de una página citada (M12) respaldan como las de un hecho.
+
 Un hecho `compute` respalda cifras como cualquier otro hecho citado; una cifra calculada cuyo hecho `compute`
 no se cita no aparece en ningún hecho citado y por eso falla (T-M8-03). `ctx.fact_sources` no se usa para
 filtrar: el criterio es el origen del número, no su semántica.
@@ -47,6 +49,12 @@ def _walk(value: JsonValue) -> Iterable[Decimal | date]:
             yield from _walk(item)
 
 
+def _page_figures(text: str, ctx: ValidationContext) -> Iterable[Decimal | date]:
+    """Cifras de un texto de página. Una ambigua sin `number_format` no respalda nada (igual que en el
+    borrador)."""
+    return [f.value for f in scan_figures(text, ctx.number_format) if f.value is not None]
+
+
 def check_numbers(draft: Draft, ctx: ValidationContext) -> list[Failure]:
     figures = scan_figures(draft.text, ctx.number_format)
     if not figures:
@@ -56,7 +64,10 @@ def check_numbers(draft: Draft, ctx: ValidationContext) -> list[Failure]:
         if citation in ctx.facts_model_view:
             cited.update(_walk(ctx.facts_model_view[citation]))
         if citation in ctx.pages_model_view:
-            cited.update(_walk(ctx.pages_model_view[citation]))
+            page = ctx.pages_model_view[citation]
+            cited.update(_walk(page))
+            if isinstance(page, str):  # el texto de una página: sus cifras cuentan como las de un hecho (M12)
+                cited.update(_page_figures(page, ctx))
     failures: list[Failure] = []
     # El detalle lleva la posición de la cifra, no su texto (lo escribe el modelo).
     for position, figure in enumerate(figures, start=1):
