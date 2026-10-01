@@ -15,7 +15,7 @@ def test_domain_exports() -> None:
                  "GatewayError", "GatewayErrorKind", "KnowledgePage", "KnowledgeSnapshot", "KnowledgeNode",
                  "KnowledgeView", "PageMeta", "PageView", "PageRecord", "Purpose", "KnowledgeRead"]:
         assert hasattr(domain, name), name
-    assert domain.SCHEMA_VERSION == "1.1.0"
+    assert domain.SCHEMA_VERSION == "1.2.0"
 
 
 def test_ports_exports() -> None:
@@ -128,7 +128,7 @@ def test_tool_result_fields_match_spec() -> None:
 def test_id_kinds_match_spec() -> None:
     assert {k.value for k in ports.IdKind} == {
         "run", "session", "turn", "action", "decision", "fact", "call", "handoff", "event", "message",
-        "proposal", "eval_run"}
+        "proposal", "eval_run", "transfer"}
     assert {k.value for k in ports.KeyPurpose} == {"fingerprint", "token_map"}
 
 

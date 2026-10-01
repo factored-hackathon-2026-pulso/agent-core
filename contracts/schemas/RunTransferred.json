@@ -23,45 +23,68 @@
       "title": "EntityRef",
       "type": "object"
     },
-    "PrincipalType": {
-      "description": "Tipo de principal que invoca el motor (ADR 0006, M0 §2.3).",
-      "enum": [
-        "customer",
-        "advisor",
-        "service",
-        "builder"
-      ],
-      "title": "PrincipalType",
-      "type": "string"
-    },
-    "RunOrigin": {
+    "Fingerprint": {
       "additionalProperties": false,
-      "description": "Why a run exists when another run transferred to it (spec §3.3, P2, P5).",
+      "description": "Huella con clave (ADR 0008): `value = HMAC-SHA256(k[kid], JCS(dato))`.",
       "properties": {
-        "depth": {
-          "exclusiveMinimum": 0,
-          "title": "Depth",
-          "type": "integer"
+        "alg": {
+          "const": "HMAC-SHA256",
+          "title": "Alg",
+          "type": "string"
         },
-        "from_agent": {
+        "kid": {
+          "title": "Kid",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "alg",
+        "kid",
+        "value"
+      ],
+      "title": "Fingerprint",
+      "type": "object"
+    },
+    "RunTransferredPayload": {
+      "additionalProperties": false,
+      "description": "Payload of `run_transferred` (audit view, ADR 0021 P1): packet fingerprint only.",
+      "properties": {
+        "candidates": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Candidates",
+          "type": "array"
+        },
+        "directory": {
+          "title": "Directory",
+          "type": "string"
+        },
+        "directory_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Directory Hash",
+          "type": "string"
+        },
+        "packet_fp": {
+          "$ref": "#/$defs/Fingerprint"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "to_agent": {
           "$ref": "#/$defs/EntityRef"
         },
-        "from_event_hash": {
-          "pattern": "^[0-9a-f]{64}$",
-          "title": "From Event Hash",
+        "to_release_id": {
+          "title": "To Release Id",
           "type": "string"
         },
-        "from_release_id": {
-          "title": "From Release Id",
-          "type": "string"
-        },
-        "from_run_id": {
-          "title": "From Run Id",
-          "type": "string"
-        },
-        "kind": {
-          "const": "transfer",
-          "title": "Kind",
+        "to_run_id": {
+          "title": "To Run Id",
           "type": "string"
         },
         "transfer_id": {
@@ -70,83 +93,22 @@
         }
       },
       "required": [
-        "kind",
         "transfer_id",
-        "from_run_id",
-        "from_agent",
-        "from_release_id",
-        "from_event_hash",
-        "depth"
+        "to_agent",
+        "to_release_id",
+        "to_run_id",
+        "reason",
+        "packet_fp",
+        "directory",
+        "directory_hash",
+        "candidates"
       ],
-      "title": "RunOrigin",
-      "type": "object"
-    },
-    "RunStartedPayload": {
-      "additionalProperties": false,
-      "description": "Payload del evento `run_started` (vista audit, M0 §2.10).",
-      "properties": {
-        "agent": {
-          "$ref": "#/$defs/EntityRef"
-        },
-        "locale": {
-          "pattern": "^[a-z]{2}$",
-          "title": "Locale",
-          "type": "string"
-        },
-        "mode": {
-          "enum": [
-            "conversational",
-            "task"
-          ],
-          "title": "Mode",
-          "type": "string"
-        },
-        "origin": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/RunOrigin"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "principal_type": {
-          "$ref": "#/$defs/PrincipalType"
-        },
-        "reportable_attrs": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "title": "Reportable Attrs",
-          "type": "object"
-        },
-        "subject_kind": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Subject Kind"
-        }
-      },
-      "required": [
-        "agent",
-        "mode",
-        "principal_type",
-        "locale"
-      ],
-      "title": "RunStartedPayload",
+      "title": "RunTransferredPayload",
       "type": "object"
     }
   },
   "additionalProperties": false,
-  "description": "Evento `run_started` de la cadena de auditoría (M0 §2.10).",
+  "description": "Evento `run_transferred` de la cadena origen (ADR 0021).",
   "properties": {
     "event_id": {
       "title": "Event Id",
@@ -166,7 +128,7 @@
       "title": "Hash"
     },
     "payload": {
-      "$ref": "#/$defs/RunStartedPayload"
+      "$ref": "#/$defs/RunTransferredPayload"
     },
     "prev_hash": {
       "anyOf": [
@@ -232,8 +194,8 @@
       "title": "Turn Id"
     },
     "type": {
-      "const": "run_started",
-      "default": "run_started",
+      "const": "run_transferred",
+      "default": "run_transferred",
       "title": "Type",
       "type": "string"
     }
@@ -245,6 +207,6 @@
     "ts",
     "payload"
   ],
-  "title": "RunStarted",
+  "title": "RunTransferred",
   "type": "object"
 }

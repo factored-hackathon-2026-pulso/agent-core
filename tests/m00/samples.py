@@ -64,6 +64,14 @@ SAMPLE_PAYLOADS: dict[str, dict[str, Any]] = {
     "handoff_resolved": {"handoff_ref": "handoff-0001", "resolution_code": "resuelto",
                          "handoff_quality": "useful", "reader_type": "advisor"},
     "run_closed": {"outcome": "escalated", "closed_by": "escalation"},
+    "run_transferred": {"transfer_id": "transfer-0001", "to_agent": "disputas@1.0.0",
+                        "to_release_id": "rel-2", "to_run_id": "run-0002", "reason": "routed",
+                        "packet_fp": FP,
+                        "directory": "customer-care", "directory_hash": "b" * 64, "candidates": ["disputas"]},
+    "transfer_received": {"transfer_id": "transfer-0001", "accepted_slots": ["problem"], "packet_fp": FP},
+    "transfer_rejected": {"transfer_id": "transfer-0001", "to_agent": "disputas",
+                          "reason_code": "not_in_directory", "directory": "customer-care",
+                          "directory_hash": "b" * 64},
 }
 
 

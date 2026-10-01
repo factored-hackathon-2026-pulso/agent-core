@@ -3,4 +3,4 @@
 `agentcore contracts` la escribe en contracts/VERSION.
 """
 
-SCHEMA_VERSION = "1.1.0"
+SCHEMA_VERSION = "1.2.0"

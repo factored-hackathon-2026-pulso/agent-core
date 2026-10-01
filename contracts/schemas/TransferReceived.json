@@ -1,51 +1,62 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "$defs": {
-    "Outcome": {
-      "description": "Resultado final de un run (M0 §2.7).",
-      "enum": [
-        "resolved",
-        "abstained",
-        "cancelled",
-        "clarify_exhausted",
-        "completed",
-        "failed",
-        "abandoned",
-        "escalated",
-        "transferred"
-      ],
-      "title": "Outcome",
-      "type": "string"
-    },
-    "RunClosedPayload": {
+    "Fingerprint": {
       "additionalProperties": false,
-      "description": "Payload del evento `run_closed` (vista audit, M0 §2.10).",
+      "description": "Huella con clave (ADR 0008): `value = HMAC-SHA256(k[kid], JCS(dato))`.",
       "properties": {
-        "closed_by": {
-          "enum": [
-            "flow",
-            "abandonment",
-            "escalation",
-            "revocation",
-            "transfer"
-          ],
-          "title": "Closed By",
+        "alg": {
+          "const": "HMAC-SHA256",
+          "title": "Alg",
           "type": "string"
         },
-        "outcome": {
-          "$ref": "#/$defs/Outcome"
+        "kid": {
+          "title": "Kid",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
         }
       },
       "required": [
-        "outcome",
-        "closed_by"
+        "alg",
+        "kid",
+        "value"
       ],
-      "title": "RunClosedPayload",
+      "title": "Fingerprint",
+      "type": "object"
+    },
+    "TransferReceivedPayload": {
+      "additionalProperties": false,
+      "description": "Payload of `transfer_received` (audit view).",
+      "properties": {
+        "accepted_slots": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Accepted Slots",
+          "type": "array"
+        },
+        "packet_fp": {
+          "$ref": "#/$defs/Fingerprint"
+        },
+        "transfer_id": {
+          "title": "Transfer Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "transfer_id",
+        "accepted_slots",
+        "packet_fp"
+      ],
+      "title": "TransferReceivedPayload",
       "type": "object"
     }
   },
   "additionalProperties": false,
-  "description": "Evento `run_closed` de la cadena de auditoría (M0 §2.10).",
+  "description": "Evento `transfer_received` de la cadena destino (ADR 0021).",
   "properties": {
     "event_id": {
       "title": "Event Id",
@@ -65,7 +76,7 @@
       "title": "Hash"
     },
     "payload": {
-      "$ref": "#/$defs/RunClosedPayload"
+      "$ref": "#/$defs/TransferReceivedPayload"
     },
     "prev_hash": {
       "anyOf": [
@@ -131,8 +142,8 @@
       "title": "Turn Id"
     },
     "type": {
-      "const": "run_closed",
-      "default": "run_closed",
+      "const": "transfer_received",
+      "default": "transfer_received",
       "title": "Type",
       "type": "string"
     }
@@ -144,6 +155,6 @@
     "ts",
     "payload"
   ],
-  "title": "RunClosed",
+  "title": "TransferReceived",
   "type": "object"
 }

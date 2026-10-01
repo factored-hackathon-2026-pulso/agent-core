@@ -119,7 +119,7 @@ M0 define el esquema de cada evento; M11 los encadena y persiste. El módulo emi
 
 | Evento | Emisor |
 |---|---|
-| `run_started`, `turn_started`, `command_emitted`, `expiry_evaluated`, `turn_completed`, `run_closed` | M4 |
+| `run_started`, `turn_started`, `command_emitted`, `expiry_evaluated`, `turn_completed`, `run_closed`, `run_transferred`, `transfer_received`, `transfer_rejected` | M4 |
 | `node_entered`, `rule_evaluated`, `tool_called` (lectura y `compute`), `agent_step`, `step_up_requested` | M2 |
 | `knowledge_read` | M12 (lo construye; el handler de M2 lo entrega al turno) |
 | `decision_made` | M5 |

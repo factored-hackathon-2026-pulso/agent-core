@@ -29,7 +29,7 @@ from agent_core.domain import (
 )
 from agent_core.ports import Clock, IdKind, IdSource
 
-ClosedBy = Literal["flow", "abandonment", "escalation", "revocation"]
+ClosedBy = Literal["flow", "abandonment", "escalation", "revocation", "transfer"]
 
 
 @dataclass(frozen=True)

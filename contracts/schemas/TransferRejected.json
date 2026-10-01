@@ -1,51 +1,74 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "$defs": {
-    "Outcome": {
-      "description": "Resultado final de un run (M0 §2.7).",
-      "enum": [
-        "resolved",
-        "abstained",
-        "cancelled",
-        "clarify_exhausted",
-        "completed",
-        "failed",
-        "abandoned",
-        "escalated",
-        "transferred"
-      ],
-      "title": "Outcome",
-      "type": "string"
-    },
-    "RunClosedPayload": {
+    "TransferRejectedPayload": {
       "additionalProperties": false,
-      "description": "Payload del evento `run_closed` (vista audit, M0 §2.10).",
+      "description": "Payload of `transfer_rejected` (audit view).",
       "properties": {
-        "closed_by": {
-          "enum": [
-            "flow",
-            "abandonment",
-            "escalation",
-            "revocation",
-            "transfer"
+        "directory": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
           ],
-          "title": "Closed By",
+          "default": null,
+          "title": "Directory"
+        },
+        "directory_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Directory Hash"
+        },
+        "reason_code": {
+          "enum": [
+            "not_in_directory",
+            "no_active_release",
+            "not_eligible",
+            "accepts_mismatch",
+            "transfer_limit",
+            "no_turn"
+          ],
+          "title": "Reason Code",
           "type": "string"
         },
-        "outcome": {
-          "$ref": "#/$defs/Outcome"
+        "to_agent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Agent"
+        },
+        "transfer_id": {
+          "title": "Transfer Id",
+          "type": "string"
         }
       },
       "required": [
-        "outcome",
-        "closed_by"
+        "transfer_id",
+        "reason_code"
       ],
-      "title": "RunClosedPayload",
+      "title": "TransferRejectedPayload",
       "type": "object"
     }
   },
   "additionalProperties": false,
-  "description": "Evento `run_closed` de la cadena de auditoría (M0 §2.10).",
+  "description": "Evento `transfer_rejected` de la cadena origen (ADR 0021).",
   "properties": {
     "event_id": {
       "title": "Event Id",
@@ -65,7 +88,7 @@
       "title": "Hash"
     },
     "payload": {
-      "$ref": "#/$defs/RunClosedPayload"
+      "$ref": "#/$defs/TransferRejectedPayload"
     },
     "prev_hash": {
       "anyOf": [
@@ -131,8 +154,8 @@
       "title": "Turn Id"
     },
     "type": {
-      "const": "run_closed",
-      "default": "run_closed",
+      "const": "transfer_rejected",
+      "default": "transfer_rejected",
       "title": "Type",
       "type": "string"
     }
@@ -144,6 +167,6 @@
     "ts",
     "payload"
   ],
-  "title": "RunClosed",
+  "title": "TransferRejected",
   "type": "object"
 }
