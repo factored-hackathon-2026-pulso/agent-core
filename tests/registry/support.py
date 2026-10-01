@@ -1,7 +1,7 @@
 from typing import Any
 
 from agent_core.domain import MetricDef
-from agent_core.registry.evaluation import EvalSuite
+from agent_core.registry.evaluation import EvalSuite, Yardstick
 
 
 def metric(mid: str, role: str = "gate", higher: bool = True, event: str = "engine.turn_completed",
@@ -29,3 +29,8 @@ def suite(scenarios: list[dict[str, Any]], thresholds: dict[str, dict[str, Any]]
           agent_id: str = "atencion") -> EvalSuite:
     return EvalSuite.model_validate({"id": "suite", "version": "1.0.0", "agent_id": agent_id,
                                      "scenarios": scenarios, "thresholds": thresholds or {}})
+
+
+def yardstick(metrics: list[MetricDef], scenarios: list[dict[str, Any]],
+              thresholds: dict[str, dict[str, Any]] | None = None) -> Yardstick:
+    return Yardstick(metrics=metrics, suite=suite(scenarios, thresholds))

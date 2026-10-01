@@ -15,6 +15,13 @@ from agent_core.registry.evaluation.suite import (
     SuiteProblemCode,
     suite_problems,
 )
+from agent_core.registry.evaluation.yardstick import (
+    Yardstick,
+    YardstickChange,
+    YardstickChangeKind,
+    classify_yardstick_change,
+    metric_identity,
+)
 
 __all__ = [
     "PLATFORM_GUARDRAILS",
@@ -26,5 +33,10 @@ __all__ = [
     "ScriptedSource",
     "SuiteProblem",
     "SuiteProblemCode",
+    "Yardstick",
+    "YardstickChange",
+    "YardstickChangeKind",
+    "classify_yardstick_change",
+    "metric_identity",
     "suite_problems",
 ]
