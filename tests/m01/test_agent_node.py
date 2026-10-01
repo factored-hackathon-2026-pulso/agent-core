@@ -139,3 +139,17 @@ def test_g0_24_agent_tool_with_args_schema_outside_the_subset() -> None:
 
 def test_g0_24_does_not_apply_to_tools_outside_agent_nodes() -> None:
     assert "G0-24" not in rules(check(base()))  # `leer@1` sin documentar sería válida fuera de un nodo agent
+
+
+def test_agent_prompt_with_a_native_profile_is_g0_25() -> None:
+    from agent_core.domain import ModelProfile, Prompt
+
+    native = ModelProfile.model_validate(
+        {"id": "perfil_nativo", "version": "1.0.0", "endpoint_alias": "demo", "model": "modelo-sintetico",
+         "temperature": "0", "max_tokens": 400, "structured": "native",
+         "price": {"input_per_mtok": "1", "output_per_mtok": "2", "source": "sintético",
+                   "as_of": "2026-09-28"}})
+    prompt = Prompt.model_validate({"id": "p/nativo", "version": "1.0.0",
+                                    "locales": {"es": "Responde.", "pt": "Responda."},
+                                    "model_profile": "perfil_nativo@1"})
+    assert rules(check(with_agent(prompt_ref="p/nativo"), registry(native, prompt))) == {"G0-25"}

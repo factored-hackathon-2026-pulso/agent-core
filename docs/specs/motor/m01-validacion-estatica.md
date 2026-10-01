@@ -197,6 +197,8 @@ campo   := [A-Za-z0-9_]+
 | G0-20 | `navigate` con selector que no cubre el scope | `output_schema.properties.path.enum` del selector == rutas del snapshot bajo `scope/` (sin `index.md`), sin repetidos; sin snapshot no se puede verificar. Solo en `validate_flow_for_release` | 5 |
 | G0-21 | `knowledge_from` sin un nodo `knowledge` que domine al `respond` | Cada nombre es el `save_as` de algún nodo `knowledge`, y quitando las aristas de salida de esos nodos el `respond` no es alcanzable desde la entrada | 5 |
 | G0-24 | Tool de un nodo `agent` sin documentar | Toda tool de `tools_allowed` de un nodo `agent` lleva `description` y un `args_schema` dentro del subconjunto cerrado (`domain.schema`); el mensaje nombra la tool y la palabra clave fuera del subconjunto (§3.13) | 5 |
+| G0-23 | Escritura `draft` sin `confirm` mal formada | La tool es `write_draft` con `readback_by: idempotency_key`; `ok` y `uncertain` van al mismo `verify` con `by: idempotency_key`, que ningún otro nodo de escritura comparte; el flow solo vuelve al nodo desde `verified` (§3.13) | 5 |
+| G0-25 | Prompt de un nodo `agent` en modo nativo | El `model_profile` del prompt del `agent` es `structured: prompted` (§3.13) | 5 |
 
 **Consecuencia de G0-16:** en el MVP un agente task no puede escribir, porque toda escritura exige un `confirm` (G0-05). G0-16 **no se relaja** (ADR 0019): un flow task escribe solo con tools `write_draft` (§3.13) o, en producción, con `await_approval` (ADR 0014).
 
@@ -229,7 +231,7 @@ Definiciones:
 
 Condiciones por nodo (sin escrituras de por medio):
 
-1. Todo nodo `tool` **sin** `action_from` usa una tool de clase `read` o `compute`. Una tool de escritura solo se invoca desde un nodo con `action_from`.
+1. Todo nodo `tool` **sin** `action_from` ni `draft: true` usa una tool de clase `read` o `compute`. Una tool de escritura solo se invoca desde un nodo con `action_from` (con `confirm`) o con `draft: true` (solo `write_draft`, G0-23).
 2. Todo `verify.readback` es una tool de clase `read`.
 
 Condiciones para cada nodo de escritura W con `action_from: C`:
@@ -414,15 +416,15 @@ Cualquier error de `load_yaml` es una sola `Violation` G0-01 con la ruta del arc
 - **G0-24** (2026-09-30, unidad 5; **implementada**): toda tool de `tools_allowed` de un nodo `agent` lleva `description` y un `args_schema` dentro del subconjunto cerrado. Es el catálogo que `LLMAgentPort` le muestra al modelo; sin él falla cerrado en runtime, así que la regla lo detecta al validar. No alcanza a las tools fuera de un nodo `agent`.
 - Pruebas: `tests/m01/test_agent_node.py`.
 
-**Diseñado, no implementado (clase `write_draft`, constructor por señal):** depende de que el registry garantice borradores reversibles (registry §18) y de especificar la ruta sin `confirm` en M3.
-
-| Regla | Qué comprueba | Fase |
-|---|---|---|
-| G0-23 | Un `write_draft` se invoca con un nodo `tool_write` con `verify` enlazado como en G0-05.7, `readback` de clase `read` e `idempotency_key`; no exige `confirm` | pendiente |
-| AG-02 | Un agente cuyos flows usan un `write_draft` tiene `invocable_by ⊆ {builder}` y `subject_kinds` sin datos de clientes | pendiente |
-
-- G0-05 pasará a aceptar `write_draft` sin `confirm` (`action_from` opcional solo para esa clase). Las demás clases no cambian.
-- `RiskClass` aún no tiene `write_draft`: mientras tanto, cualquier tool de escritura exige `confirm`, así que **falla cerrado**.
+**Implementado (clase `write_draft`, fase 3 de la spec write-draft, 2026-09-30):**
+- **Forma `draft` del nodo de escritura:** `tool` con `draft: true` declara su propia `tool` y `args` (sin `action_from`). Es un nodo `tool_write` más: ramas `ok`, `uncertain` y `denied`.
+- **G0-05.1:** un nodo `tool` normal admite `read` y `compute`; una escritura va en un nodo con `action_from` (con `confirm`) o con `draft: true` (G0-23).
+- **G0-23:** la tool de una escritura draft es `write_draft` con `readback_by: idempotency_key`; `next.ok == next.uncertain == V`, con V un `verify` con `by: idempotency_key`; ningún otro nodo de escritura tiene a V como destino de `ok` o `uncertain`; el flow solo vuelve al nodo desde la rama `verified` de V. No exige `confirm`.
+- **Reclamos:** `respond.claims` y `derive_claims` usan el id del nodo draft como identificador de la acción (en vez del `confirm`); G0-13 acepta ese id; el invariante de G0-05.8 es el mismo.
+- **G0-22, excepción acotada (ADR 0019 §1):** el `config.args` de una escritura draft puede leer `facts.<save_as>` de un nodo `agent` cuyo `output_schema` es `agent_core.flows.DRAFT_OUTPUT_SCHEMA`. Todos los demás destinos siguen vetados.
+- **G0-25:** el prompt del `prompt_ref` de un nodo `agent` tiene un `model_profile` con `structured: prompted`.
+- **AG-02** (`validate_flow_for_agent`): un agente cuyos flows referencian una tool `write_draft` tiene `invocable_by ⊆ {builder}` y `subject_kinds` vacío (los `subject_kinds` son cadenas libres: una lista de «datos de clientes» no es comprobable; con la lista vacía el agente nunca recibe subject, M9 §85).
+- Pruebas: `tests/m01/test_draft_writes.py` y `tests/m01/test_agent_node.py`.
 
 ## 4. Invariantes
 

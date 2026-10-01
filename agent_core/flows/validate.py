@@ -8,7 +8,19 @@ from agent_core.flows.registry import AuthoringRegistry, ReleaseDecl
 from agent_core.flows.rules.drafts import g0_23
 from agent_core.flows.rules.exits import g0_06
 from agent_core.flows.rules.knowledge import g0_18, g0_21, release_rules
-from agent_core.flows.rules.phase5 import g0_07, g0_08, g0_10, g0_11, g0_13, g0_14, g0_15, g0_16, g0_22, g0_24
+from agent_core.flows.rules.phase5 import (
+    g0_07,
+    g0_08,
+    g0_10,
+    g0_11,
+    g0_13,
+    g0_14,
+    g0_15,
+    g0_16,
+    g0_22,
+    g0_24,
+    g0_25,
+)
 from agent_core.flows.rules.structure import g0_02, g0_03, g0_04
 from agent_core.flows.rules.writes import g0_05
 from agent_core.flows.schema import schema_violations
@@ -18,7 +30,7 @@ from agent_core.flows.violations import Violation, clip, sort_violations
 # Reglas que necesitan un esquema sin G0-01. Agregar una regla = agregarla aquí (M1 §9).
 FLOW_RULES: tuple[Rule, ...] = (
     g0_03, g0_04, g0_05, g0_06, g0_07, g0_08, g0_10, g0_11, g0_13, g0_14, g0_15, g0_16, g0_18, g0_21, g0_22,
-    g0_24, g0_23,
+    g0_24, g0_23, g0_25,
 )
 
 

@@ -119,6 +119,7 @@ Pendiente de construcción: las vistas SQL y la conexión a Phoenix; no bloquean
 
 ## 17. `write_draft` y dependencias del constructor — abierto
 Registry §18: clase de riesgo `write_draft` (G0-23, AG-02, ruta de M3), regla G0-25 del gateway (el prompt del nodo `agent` debe ser `structured: prompted`), adaptador de `ToolExecutor` del constructor con su propia credencial, `readback_by` de borradores y catálogo de campos y plantillas de handoff como entidades versionadas. Nada de esto está construido; el constructor solo puede correr de solo lectura.
+**Avance (2026-09-30):** hechos registry (idempotencia, `get_write`, topes), M0 (`RiskClass.write_draft`, nodo `draft`, `Action.write_node_id`) y M1 (G0-05, G0-13, G0-22, G0-23, G0-25, AG-02). Siguen M3, M2/M4, el adaptador del constructor, el replay y los agentes.
 
 ## 18. Auditoría de las lecturas de datos de clientes del administrador — decidido; construcción pendiente
 El administrador puede leer runs, transcripts y campos de clientes (ADR 0006, enmienda 2026-09-30), pero una lectura autorizada no deja hoy ningún evento: solo se registran los rechazos (`access_denied`).

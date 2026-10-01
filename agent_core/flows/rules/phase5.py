@@ -20,10 +20,12 @@ from agent_core.domain import (
     EntityKind,
     EscalateNode,
     JsonValue,
+    ModelProfile,
     RefSpec,
     RespondNode,
     RiskClass,
     RuleNode,
+    StructuredMode,
     ToolNode,
     VerifyNode,
     WriteToolNode,
@@ -261,6 +263,26 @@ def g0_15(ctx: Ctx) -> Iterator[Violation]:
                     f"{clip(prompt.model_profile.id)}, que no existe",
                     sub,
                 )
+
+
+def g0_25(ctx: Ctx) -> Iterator[Violation]:
+    """El prompt de un nodo `agent` va en modo `prompted`: el paso del agente tiene propiedades opcionales y
+    el modo `native` estricto de OpenAI lo rechaza (gateway §3.8)."""
+    for node in ctx.flow.nodes:
+        if not isinstance(node, AgentNode):
+            continue
+        prompt = ctx.prompt(node.config.prompt_ref)
+        if prompt is None:
+            continue
+        profile = ctx.reg.resolve(EntityKind.model_profile, prompt.model_profile)
+        if isinstance(profile, ModelProfile) and profile.structured is not StructuredMode.prompted:
+            yield ctx.v(
+                "G0-25",
+                node.id,
+                f"el model_profile {clip(prompt.model_profile.id)} del prompt del agente debe ser "
+                "structured: prompted",
+                "/config/prompt_ref",
+            )
 
 
 def g0_16(ctx: Ctx) -> Iterator[Violation]:

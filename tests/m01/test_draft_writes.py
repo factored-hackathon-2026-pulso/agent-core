@@ -4,8 +4,8 @@ from typing import Any
 
 from agent_core.domain import EntityKind
 from agent_core.domain.schema import check_output, unsupported_keyword
-from agent_core.flows import DRAFT_OUTPUT_SCHEMA, derive_claims, entity_ref_sites
-from tests.m01.cases import agent_node, check, draft_base, flow, node, registry, rules
+from agent_core.flows import DRAFT_OUTPUT_SCHEMA, derive_claims, entity_ref_sites, validate_flow_for_agent
+from tests.m01.cases import agent, agent_node, base, check, draft_base, flow, node, registry, rules
 
 
 def test_draft_flow_is_valid() -> None:
@@ -116,3 +116,24 @@ def test_agent_output_still_cannot_feed_a_verify_even_with_the_draft_schema() ->
     d = _agent_into_draft(dict(DRAFT_OUTPUT_SCHEMA))
     node(d, "verificar")["config"]["predicate"] = {"==": [{"var": "facts.hallazgo.value.changes"}, []]}
     assert "G0-22" in rules(check(d))
+
+
+def _ag02(d: dict[str, Any], **over: Any) -> list[str]:
+    return [v.rule for v in validate_flow_for_agent(flow(d), agent(**over), registry())]
+
+
+def test_a_builder_agent_without_subjects_may_use_write_draft() -> None:
+    assert _ag02(draft_base(), invocable_by=["builder"], subject_kinds=[]) == []
+
+
+def test_write_draft_is_closed_to_agents_invocable_by_others() -> None:
+    assert _ag02(draft_base(), invocable_by=["builder", "customer"], subject_kinds=[]) == ["AG-02"]
+    assert _ag02(draft_base(), invocable_by=["advisor"], subject_kinds=[]) == ["AG-02"]
+
+
+def test_write_draft_is_closed_to_agents_that_declare_subjects() -> None:
+    assert _ag02(draft_base(), invocable_by=["builder"], subject_kinds=["customer"]) == ["AG-02"]
+
+
+def test_a_flow_without_write_draft_has_no_ag_02() -> None:
+    assert "AG-02" not in _ag02(base())  # el agente de prueba es invocable por customer
