@@ -5,6 +5,7 @@ from collections.abc import Iterable, Mapping
 from types import MappingProxyType
 
 from agent_core.domain import (
+    AgentNode,
     ConfirmNode,
     DecideNode,
     EndNode,
@@ -44,7 +45,7 @@ def _parsed(texts: Iterable[str]) -> list[Path]:
 
 
 def _output(node: Node) -> Name | None:
-    if isinstance(node, ToolNode | WriteToolNode | VerifyNode):
+    if isinstance(node, ToolNode | WriteToolNode | VerifyNode | AgentNode):
         return ("facts", node.config.save_as)
     if isinstance(node, DecideNode):
         return ("decisions", node.config.save_as)
@@ -56,7 +57,7 @@ def _inputs(node: Node) -> set[Name]:
         return _names(value_paths(dict(node.config.args), strict=False))
     if isinstance(node, VerifyNode) and node.config.by.startswith("fact:"):
         return _names(_parsed([node.config.by.removeprefix("fact:")]))
-    if isinstance(node, DecideNode):
+    if isinstance(node, DecideNode | AgentNode):
         return _names(_parsed(node.config.input_view or []))
     return set()
 

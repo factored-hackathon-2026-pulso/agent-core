@@ -113,9 +113,11 @@ Subconjunto cerrado: `JSONLOGIC_OPS` de M1 (`var`, `==`, `!=`, `>`, `>=`, `<`, `
 
 ReAct acotado de **solo lectura y cálculo**. Lo usan el copiloto del asesor y el agente constructor. M2 solo conoce el puerto `AgentPort`; su adaptador real es `LLMAgentPort` (unidad 5, spec del gateway §3.8).
 
-**Configuración** (M0, m00 §2.5): `tools_allowed`, `max_steps`, `prompt_ref`, `goal`, `save_as` (nombre del hecho donde entra la salida) y `output_schema` (JSON Schema de la respuesta final).
+**Configuración** (M0, m00 §2.5): `tools_allowed`, `max_steps`, `prompt_ref`, `goal`, `save_as` (nombre del hecho donde entra la salida), `output_schema` (JSON Schema de la respuesta final) e `input_view` (rutas `slots.*`/`facts.*` que el modelo ve; vacío por defecto).
 
-**Puerto.** `AgentPort.step(AgentRequest, state) → AgentStepResult`: un paso del modelo, que devuelve `AgentToolCall(tool, args)` o `AgentFinal(output)` más `model_calls`, `tokens` y `cost_usd`. `AgentRequest` lleva las `observations` de los pasos previos (en vista `model`) y, tras una salida rechazada, un `feedback` sin datos. `StepContext.agents` lo inyecta; sin él, un nodo `agent` es un error de cableado (`IllegalTransition`). Doble: `testing/fakes/agent.py` (`ScriptedAgent`).
+**Entradas** (2026-09-30). Antes del primer paso, `input_view` se proyecta **una vez** con la misma función que `decide` (`projection.model_inputs`): vista `model`, slots envueltos como `untrusted_text` (D8) y hechos tokenizados según su origen. Es la vía por la que el modelo ve lo que pidió la persona (un `collect` previo) o lo que ya se leyó. Una ruta que no resuelve (ausente o slot `claimed`, D7) termina el nodo en `gave_up` **sin llamar al modelo**. Las mismas entradas viajan en todos los pasos.
+
+**Puerto.** `AgentPort.step(AgentRequest, state) → AgentStepResult`: un paso del modelo, que devuelve `AgentToolCall(tool, args)` o `AgentFinal(output)` más `model_calls`, `tokens` y `cost_usd`. `AgentRequest` lleva las `inputs`, las `observations` de los pasos previos (en vista `model`) y, tras una salida rechazada, un `feedback` sin datos. `StepContext.agents` lo inyecta; sin él, un nodo `agent` es un error de cableado (`IllegalTransition`). Doble: `testing/fakes/agent.py` (`ScriptedAgent`).
 
 **Bucle.** Hasta `max_steps` pasos. Antes de cada uno se revisan los presupuestos (modelo, tokens, costo y tiempo de pared): agotados → `EscalationRequest(budget_exceeded)`. Cada paso descuenta lo que informa el puerto.
 - **Tool.** Se ejecuta solo si está en `tools_allowed` (referencia exacta de la release) y es `read` o `compute`; si no, `access_denied` (`tool_denied`) y el modelo recibe `denied`. Los argumentos que son exactamente un token del run (`⟦tag:n⟧`) vuelven a su valor antes de ejecutar: la tool nunca ve el token y el modelo nunca ve el valor. Usa el circuit breaker como el nodo `tool`. La autorización por llamada es de `ToolExecutor` (ADR 0006). El resultado vuelve al modelo en vista `model`. Un `error`, `timeout` o `denied` vuelve como resultado y cuenta como paso; `step_up_required` se trata como `denied` (no se puede elevar el nivel a mitad del bucle).
@@ -123,7 +125,7 @@ ReAct acotado de **solo lectura y cálculo**. Lo usan el copiloto del asesor y e
 
 **Falla del gateway.** Un `GatewayError` de `AgentPort.step` termina el nodo en `gave_up` y carga al presupuesto el uso que informe el error (la llamada cuenta aunque no informe tokens ni costo); cualquier otra excepción sube. Esta ruta no deja evento en el log (ver gateway spec §11).
 
-**Resultados.** `answered`: `facts[save_as] = {value, source: {kind: agent, ref: <id del nodo>, inputs: <call_id de las tools del bucle>}}`. `gave_up`: se agotó `max_steps`, no hubo una salida válida, o el turno está en modo degradado.
+**Resultados.** `answered`: `facts[save_as] = {value, source: {kind: agent, ref: <id del nodo>, inputs: <fact_id leídos por input_view, luego call_id de las tools del bucle>}}`. `gave_up`: se agotó `max_steps`, no hubo una salida válida, faltó una entrada de `input_view` o el turno está en modo degradado.
 
 **Modo degradado** (spec general §4.1 paso 6): con `injection_flagged` el nodo no llama al modelo y devuelve `gave_up`.
 
@@ -139,7 +141,7 @@ ReAct acotado de **solo lectura y cálculo**. Lo usan el copiloto del asesor y e
 - G0-22 impide que esa salida alimente una escritura, una `rule` o un `verify`.
 - Los campos de la salida se clasifican por nombre en M7 (origen `agent`); los que no estén clasificados se tokenizan.
 
-**Pruebas:** `tests/m02/test_agent.py` (16, más T-U5-17 para el `GatewayError`) y `tests/m02/test_output_schema.py`.
+**Pruebas:** `tests/m02/test_agent.py` (16, más T-U5-17 para el `GatewayError` y 4 de `input_view`) y `tests/m02/test_output_schema.py`.
 
 ## 4. Invariantes
 

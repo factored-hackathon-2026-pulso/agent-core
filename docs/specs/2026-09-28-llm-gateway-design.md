@@ -173,10 +173,10 @@ Implementa `AgentPort.step(request, state) -> AgentStepResult` sobre `LLMGateway
 1. **Tools del catálogo.** Para cada `ref` de `request.config.tools_allowed`, `registry.get(resolve_ref(EntityKind.tool, ref), ToolDef)`. Cada entrada del catálogo es `{tool: "id@version", description, args_schema}`. Si una tool no tiene `description` o `args_schema`, es un error de programación (G0-24 lo impide): lanza `SchemaError`.
 2. **Entradas** (`inputs_model_view`):
    ```
-   {goal, step, tools: [<catálogo>], observations: [{tool, args, status, result, error}],
+   {goal, inputs, step, tools: [<catálogo>], observations: [{tool, args, status, result, error}],
     feedback, output_schema}
    ```
-   Las `observations` ya vienen en vista `model` (m02 §3.7). `feedback` es el motivo sin datos de la última salida rechazada, o `null`.
+   `inputs` es `request.inputs`: las rutas del `input_view` del nodo, ya proyectadas por M2 (2026-09-30; `{}` si el nodo no declara ninguna). Las `observations` también vienen en vista `model` (m02 §3.7). `feedback` es el motivo sin datos de la última salida rechazada, o `null`.
 3. **Prompt.** `resolve_ref(EntityKind.prompt, request.config.prompt_ref)` (un `Prompt` con su `model_profile`); el texto describe el bucle y el formato del paso. La llamada es `generate(prompt, inputs, state.locale, schema=STEP_SCHEMA)`.
 4. **Esquema del paso** (plano, dentro del subconjunto de §3.7):
    ```json

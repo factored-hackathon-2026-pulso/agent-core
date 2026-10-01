@@ -3,8 +3,22 @@
 from agent_core.domain import EntityRef, Fact, InvalidRuntimeRef, JsonValue, RunState, ToolDef
 from agent_core.flows import Path
 from agent_core.interpreter.context import StepContext
-from agent_core.interpreter.resolve import MissingPath, resolve_path, walk
+from agent_core.interpreter.resolve import MissingPath, parse_runtime_path, resolve_path, walk
 from agent_core.views import Views
+
+
+def model_inputs(paths: list[str], state: RunState, ctx: StepContext) -> dict[str, JsonValue]:
+    """Entrada de un modelo (`decide`, `agent`): cada ruta en vista `model`, con los slots envueltos (D8).
+
+    Lanza `MissingPath` si una ruta no resuelve; cada nodo decide qué rama toma."""
+    projector = Projector(state, ctx)
+    inputs: dict[str, JsonValue] = {}
+    for raw in paths:
+        path = parse_runtime_path(raw)
+        if path is None:
+            raise MissingPath(raw)
+        inputs[raw] = projector.model_value(path, wrap_slots=True)
+    return inputs
 
 
 class Projector:
