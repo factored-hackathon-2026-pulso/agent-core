@@ -4,9 +4,12 @@ Solo expone campos que el evento ya lleva en vista `audit`; ningún campo de dat
 evento medible es un cambio de catálogo y sube `SCHEMA_VERSION`.
 """
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from decimal import Decimal
 from types import MappingProxyType
 from typing import Literal
+
+from agent_core.domain.metrics import Predicate
 
 FieldKind = Literal["str", "int", "decimal", "bool"]
 
@@ -60,3 +63,45 @@ METRIC_EVENT_CATALOG: Mapping[str, Mapping[str, FieldKind]] = MappingProxyType({
 def catalog_fields(event: str) -> Mapping[str, FieldKind] | None:
     """Campos medibles de `event`, o None si no está en el catálogo. Nunca lanza."""
     return METRIC_EVENT_CATALOG.get(event)
+
+
+_ORDER_OPS = frozenset({"lt", "le", "gt", "ge"})
+_NUMERIC = frozenset({"int", "decimal"})
+
+
+def _short(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[:limit] + "..."
+
+
+def _scalar_matches(kind: str, value: object) -> bool:
+    if kind == "str":
+        return isinstance(value, str)
+    if kind == "bool":
+        return isinstance(value, bool)
+    return isinstance(value, int | Decimal) and not isinstance(value, bool)
+
+
+def predicate_problems(event: str, predicates: Sequence[Predicate]) -> list[tuple[int, str, str]]:
+    """Lo que está mal en `predicates` frente a los campos de `event`: `(índice, "field" | "value", mensaje)`.
+
+    El campo debe existir, el valor debe corresponder a su tipo y los operadores de orden exigen un campo
+    numérico. Un evento fuera del catálogo devuelve lista vacía: lo reporta quien llama. Nunca lanza.
+    """
+    fields = catalog_fields(event)
+    if fields is None:
+        return []
+    found: list[tuple[int, str, str]] = []
+    for i, pred in enumerate(predicates):
+        kind = fields.get(pred.field)
+        name = _short(pred.field, 40)
+        if kind is None:
+            text = f"campo {_short(pred.field, 60)} no existe en {_short(event, 60)}"
+            found.append((i, "field", text))
+            continue
+        if pred.op in _ORDER_OPS and kind not in _NUMERIC:
+            found.append((i, "field", f"el operador {pred.op} exige un campo numérico y {name} es {kind}"))
+            continue
+        values = pred.value if isinstance(pred.value, list) else [pred.value]
+        if not all(_scalar_matches(kind, v) for v in values):
+            found.append((i, "value", f"el valor no corresponde al tipo {kind} de {name}"))
+    return found

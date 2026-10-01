@@ -130,7 +130,7 @@ from agent_core.domain.json import (
     sha256_hex,
     to_jsonable,
 )
-from agent_core.domain.metric_catalog import METRIC_EVENT_CATALOG, catalog_fields
+from agent_core.domain.metric_catalog import METRIC_EVENT_CATALOG, catalog_fields, predicate_problems
 from agent_core.domain.metrics import (
     PLATFORM_METRIC_PREFIX,
     AlertThreshold,
@@ -440,6 +440,7 @@ __all__ = [
     "iter_refspecs",
     "loads",
     "node_kind",
+    "predicate_problems",
     "require_exact_refs",
     "sha256_hex",
     "to_jsonable",

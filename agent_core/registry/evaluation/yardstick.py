@@ -46,7 +46,12 @@ def _gating(metrics: list[MetricDef]) -> dict[str, MetricDef]:
     return {m.id: m for m in metrics if m.role in ("gate", "guardrail")}
 
 
-def _floor_loosened(base: MetricThreshold, cand: MetricThreshold, higher_is_better: bool) -> bool:
+def _floor_loosened(
+    base: MetricThreshold, cand: MetricThreshold, base_higher: bool, cand_higher: bool
+) -> bool:
+    if base_higher != cand_higher:
+        return False  # la dirección cambió: ya se marca como `metric_changed`
+    higher_is_better = base_higher
     if base.floor is None:
         return False
     if cand.floor is None:
@@ -71,20 +76,24 @@ def _metric_changes(base: Yardstick, cand: Yardstick) -> list[YardstickChange]:
             found.append(_change(YardstickChangeKind.role_degraded, metric_id,
                                  f"{metric_id} pasa de {base_metric.role} a {cand_metric.role}"))
             continue
-        changed = metric_identity(cand_metric) != metric_identity(base_metric)
-        if changed and cand_metric.role == base_metric.role:
+        # Solo la definición cuenta aquí (dirección y expresión), con o sin promoción de rol.
+        if metric_identity(cand_metric)[1:] != metric_identity(base_metric)[1:]:
             found.append(_change(YardstickChangeKind.metric_changed, metric_id,
                                  f"cambió la expresión o la dirección de {metric_id}"))
             continue
         base_thr = base.suite.thresholds.get(metric_id)
         cand_thr = cand.suite.thresholds.get(metric_id)
         if base_thr is None:
+            # Sin umbral en la base el gate medía con margen 0 y sin piso.
+            if cand_thr is not None and cand_thr.noise_margin > 0:
+                found.append(_change(YardstickChangeKind.noise_widened, metric_id,
+                                     f"el margen de ruido de {metric_id} aumentó"))
             continue
         if cand_thr is None:
             found.append(_change(YardstickChangeKind.threshold_removed, metric_id,
                                  f"{metric_id} ya no tiene umbral en la suite"))
             continue
-        if _floor_loosened(base_thr, cand_thr, base_metric.higher_is_better):
+        if _floor_loosened(base_thr, cand_thr, base_metric.higher_is_better, cand_metric.higher_is_better):
             found.append(_change(YardstickChangeKind.floor_loosened, metric_id,
                                  f"el piso de {metric_id} se aflojó"))
         if cand_thr.noise_margin > base_thr.noise_margin:

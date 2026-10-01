@@ -4,8 +4,6 @@ Reglas MT-01 a MT-06. Total y determinista: ninguna entrada hace que lance. Todo
 mensaje o en una ruta se acota con `clip`.
 """
 
-from decimal import Decimal
-
 from agent_core.domain import (
     PLATFORM_METRIC_PREFIX,
     Agent,
@@ -14,9 +12,9 @@ from agent_core.domain import (
     MetricDef,
     MetricExpr,
     ModelProfile,
-    Predicate,
     RefSpec,
     catalog_fields,
+    predicate_problems,
 )
 from agent_core.flows.view import RegistryView
 from agent_core.flows.violations import Violation, clip
@@ -28,28 +26,7 @@ def _problem(rule: str, pointer: str, text: str) -> _Problem:
     return (rule, pointer, clip(text, 200))
 
 
-_ORDER_OPS = frozenset({"lt", "le", "gt", "ge"})
 _NUMERIC = frozenset({"int", "decimal"})
-
-
-def _scalar_matches(kind: str, value: object) -> bool:
-    if kind == "str":
-        return isinstance(value, str)
-    if kind == "bool":
-        return isinstance(value, bool)
-    return isinstance(value, int | Decimal) and not isinstance(value, bool)
-
-
-def _predicate_problems(pred: Predicate, kind: str, at: str) -> list[_Problem]:
-    values = pred.value if isinstance(pred.value, list) else [pred.value]
-    if pred.op in _ORDER_OPS and kind not in _NUMERIC:
-        name = clip(pred.field, 40)
-        text = f"el operador {pred.op} exige un campo numérico y {name} es {kind}"
-        return [_problem("MT-02", f"{at}/field", text)]
-    if not all(_scalar_matches(kind, v) for v in values):
-        text = f"el valor no corresponde al tipo {kind} de {clip(pred.field, 40)}"
-        return [_problem("MT-02", f"{at}/value", text)]
-    return []
 
 
 def _expr_problems(expr: MetricExpr, at: str) -> list[_Problem]:
@@ -57,13 +34,8 @@ def _expr_problems(expr: MetricExpr, at: str) -> list[_Problem]:
     if fields is None:
         return [_problem("MT-01", f"{at}/event", f"evento {clip(expr.event, 60)} fuera del catálogo")]
     found: list[_Problem] = []
-    for i, pred in enumerate(expr.where):
-        kind = fields.get(pred.field)
-        if kind is None:
-            text = f"campo {clip(pred.field, 60)} no existe en {clip(expr.event, 60)}"
-            found.append(_problem("MT-02", f"{at}/where/{i}/field", text))
-        else:
-            found += _predicate_problems(pred, kind, f"{at}/where/{i}")
+    for i, sub, text in predicate_problems(expr.event, expr.where):
+        found.append(_problem("MT-02", f"{at}/where/{i}/{sub}", text))
     for i, name in enumerate(expr.group_by):
         if name not in fields:
             text = f"campo {clip(name, 60)} no existe en {clip(expr.event, 60)}"

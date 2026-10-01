@@ -166,6 +166,77 @@ def test_a_scenario_that_passed_in_the_base_and_fails_in_the_candidate_fails() -
     assert verdict.status == "failed"
 
 
+GOOD = {"quality": "0.8", "speed": "0.5", "leaks": "0"}
+
+
+def _scenario_verdict(base_scenarios: dict[str, bool], cand_scenarios: dict[str, bool]) -> Any:
+    base = base_yardstick()
+    old_base = report(GOOD, base_scenarios)
+    cand_old = report(GOOD, cand_scenarios)
+    new = report(GOOD, {"s1": True})
+    return evaluate_gate(base, base, GateRuns(base_on_old=old_base, cand_on_old=cand_old, cand_on_new=new))
+
+
+@pytest.mark.parametrize(
+    ("base_scenarios", "cand_scenarios", "expected"),
+    [
+        ({"s1": True}, {"s1": True}, []),
+        ({"s1": True}, {"s1": False}, ["scenario/s1"]),
+        ({"s1": True}, {}, ["scenario/s1"]),  # la candidata no midió el escenario
+        ({}, {"s1": False}, ["scenario/s1"]),  # la base no midió el escenario: falla cerrado
+        ({}, {}, ["scenario/s1"]),
+        ({"s1": False}, {"s1": False}, []),  # fallaba ya en la base: no es regresión
+        ({"s1": False}, {}, []),  # un False explícito en la base exime
+    ],
+)
+def test_scenario_regression_fails_closed_when_unmeasured(
+    base_scenarios: dict[str, bool], cand_scenarios: dict[str, bool], expected: list[str]
+) -> None:
+    assert failed(_scenario_verdict(base_scenarios, cand_scenarios)) == expected
+
+
+# Una métrica cuya identidad cambia conserva el id pero se juzga en la vara nueva
+def test_a_metric_whose_identity_changed_is_judged_on_the_new_yardstick() -> None:
+    base = base_yardstick()
+    old = report(GOOD)
+
+    def candidate(floor: str | None, **over: Any) -> Any:
+        return yardstick(
+            [metric("quality", **over), metric("speed"), metric("leaks", role="guardrail", higher=False)],
+            [scenario("s1")],
+            {"quality": thr("0.05", floor), "speed": thr("0.1", "0.4"), "leaks": thr("0", "0")},
+        )
+
+    def verdict(cand: Any, quality: str) -> Any:
+        new = report({**GOOD, "quality": quality})
+        return evaluate_gate(base, cand, GateRuns(base_on_old=old, cand_on_old=old, cand_on_new=new))
+
+    for change in ({"event": "engine.run_closed"}, {"higher": False}):
+        higher = change.get("higher", True)
+        ok = verdict(candidate("0.5", **change), "0.6" if higher else "0.3")
+        assert ok.status == "passed"
+        phases = {(i.metric_id, i.phase) for i in ok.items}
+        assert ("quality", "new_yardstick") in phases
+        below = verdict(candidate("0.5", **change), "0.4" if higher else "0.9")
+        assert failed(below) == ["quality"]
+        no_floor = verdict(candidate(None, **change), "0.8")
+        assert failed(no_floor) == ["quality"]
+
+
+def test_a_guardrail_with_a_declared_noise_margin_still_has_zero_tolerance() -> None:
+    base = yardstick(
+        [metric("leaks", role="guardrail", higher=False)], [scenario("s1")], {"leaks": thr("0.5", "0")}
+    )
+    old_base = report({"leaks": "0"})
+    slightly_worse = report({"leaks": "0.3"})
+    verdict = evaluate_gate(
+        base, base, GateRuns(base_on_old=old_base, cand_on_old=slightly_worse, cand_on_new=slightly_worse)
+    )
+    item = next(i for i in verdict.items if i.metric_id == "leaks" and i.phase == "base_yardstick")
+    assert not item.passed and item.threshold == Decimal(0)
+    assert failed(verdict) == ["leaks"]
+
+
 # Vara nueva: métricas y escenarios nuevos o modificados
 def test_new_metrics_and_scenarios_must_meet_the_new_yardstick() -> None:
     base = base_yardstick()
@@ -233,6 +304,16 @@ def test_platform_guardrails_must_be_zero() -> None:
     )
     verdict = evaluate_gate(None, base_yardstick(), runs)
     assert verdict.status == "failed" and failed(verdict) == ["platform_pii_leak"]
+
+
+def test_a_measured_pii_leak_on_the_candidate_old_suite_fails_even_if_not_worse_than_base() -> None:
+    base = base_yardstick()
+    leaky = report(GOOD, platform=ZEROS | {"platform_pii_leak": "2"})
+    clean_new = report(GOOD)  # la candidata quitó de su suite nueva el escenario que filtraba
+    verdict = evaluate_gate(base, base, GateRuns(base_on_old=leaky, cand_on_old=leaky, cand_on_new=clean_new))
+    assert verdict.status == "failed" and failed(verdict) == ["platform_pii_leak"]
+    item = next(i for i in verdict.items if i.metric_id == "platform_pii_leak")
+    assert item.base_value == Decimal(2)
 
 
 def test_a_platform_guardrail_that_was_not_measured_fails() -> None:

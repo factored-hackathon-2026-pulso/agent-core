@@ -97,15 +97,18 @@ def _base_items(base: Yardstick, base_run: EvalReport, cand_run: EvalReport) -> 
             )
         )
     for scenario in sorted(base.suite.scenarios, key=lambda s: s.id):
-        if base_run.scenarios.get(scenario.id) is True and cand_run.scenarios.get(scenario.id) is not True:
-            items.append(
-                GateItem(
-                    metric_id=f"scenario/{scenario.id}",
-                    phase="base_yardstick",
-                    passed=False,
-                    reason="el escenario pasaba en la base y falla en la candidata",
-                )
-            )
+        before, after = base_run.scenarios.get(scenario.id), cand_run.scenarios.get(scenario.id)
+        if before is False:
+            continue  # ya fallaba en la base: no es una regresión
+        if before is None or after is None:
+            reason = "el escenario no se midió en la base o en la candidata"
+        elif after is not True:
+            reason = "el escenario pasaba en la base y falla en la candidata"
+        else:
+            continue
+        items.append(
+            GateItem(metric_id=f"scenario/{scenario.id}", phase="base_yardstick", passed=False, reason=reason)
+        )
     return items
 
 
@@ -164,10 +167,8 @@ def _platform_items(runs: GateRuns) -> list[GateItem]:
             ok, reason = False, "el guardarraíl de plataforma no se midió"
         elif has_base and (base_value is None or old_value is None):
             ok, reason = False, "el guardarraíl de plataforma no se midió en la suite vieja"
-        elif value != 0:
+        elif value != 0 or (has_base and old_value != 0):
             ok, reason = False, "el guardarraíl de plataforma debe valer 0"
-        elif base_value is not None and old_value is not None and old_value > base_value:
-            ok, reason = False, "el guardarraíl de plataforma empeora frente a la base"
         else:
             ok, reason = True, ""
         items.append(
@@ -186,7 +187,15 @@ def _platform_items(runs: GateRuns) -> list[GateItem]:
 
 
 def evaluate_gate(base: Yardstick | None, cand: Yardstick, runs: GateRuns) -> Verdict:
-    """Veredicto de una candidata frente a su base (si existe). `failed_infra` no es pase ni fallo."""
+    """Veredicto de una candidata frente a su base (si existe). `failed_infra` no es pase ni fallo.
+
+    Precondiciones que esta función NO verifica (quien la llama las garantiza):
+    - `suite_problems` devolvió lista vacía para la candidata (suite completa, umbrales declarados).
+    - Los ids de métrica son únicos (MT-03); `Yardstick` acepta duplicados y aquí el último gana.
+    - Cada reporte se midió sobre la suite y la release correctas: `base_on_old` es la base con la suite
+      vieja, `cand_on_old` la candidata con la suite vieja y `cand_on_new` la candidata con la suite nueva.
+      `GateRuns` no lleva referencia a la suite ni al `candidate_hash`.
+    """
     reports = [r for r in (runs.base_on_old, runs.cand_on_old, runs.cand_on_new) if r is not None]
     if any(report.status == "failed_infra" for report in reports):
         return Verdict(status="failed_infra", items=[])

@@ -59,6 +59,55 @@ def test_changing_an_expression_direction_or_judge_is_flagged() -> None:
     assert kinds(base_yardstick(), cand) == ["metric_changed", "metric_changed"]
 
 
+def _promoted(**over: Any) -> Any:
+    """`m_gate` promovida a guardarraíl en la propuesta, con `over` cambiando su definición."""
+    higher = over.pop("higher", True)
+    return yardstick(
+        [metric("m_gate", role="guardrail", higher=higher, **over),
+         metric("m_guard", role="guardrail", higher=False)],
+        [scenario("s1", 3), scenario("s2")],
+        {"m_gate": thr("0.05", "0.6"), "m_guard": thr("0", "0")})
+
+
+def test_a_pure_promotion_is_not_flagged() -> None:
+    assert kinds(base_yardstick(), _promoted()) == []
+
+
+def test_promotion_with_an_expression_change_is_flagged() -> None:
+    cand = _promoted(event="engine.run_closed")
+    assert kinds(base_yardstick(), cand) == ["metric_changed"]
+
+
+def test_promotion_with_a_direction_flip_is_flagged() -> None:
+    assert kinds(base_yardstick(), _promoted(higher=False)) == ["metric_changed"]
+
+
+def test_promotion_that_changes_expression_and_direction_is_flagged() -> None:
+    # Sonda de la revisión final: antes devolvía [].
+    base = yardstick([metric("q")], [scenario("s1")], {"q": thr("0", "0.5")})
+    cand = yardstick(
+        [metric("q", role="guardrail", higher=False, event="engine.escalated")],
+        [scenario("s1")], {"q": thr("0", "1000")})
+    assert kinds(base, cand) == ["metric_changed"]
+
+
+def test_degraded_role_with_changed_expression_reports_only_role_degraded() -> None:
+    cand = yardstick(
+        [metric("m_gate", role="monitor", event="engine.run_closed"),
+         metric("m_guard", role="guardrail", higher=False)],
+        [scenario("s1", 3), scenario("s2")],
+        {"m_gate": thr("0.05", "0.6"), "m_guard": thr("0", "0")})
+    assert kinds(base_yardstick(), cand) == ["role_degraded"]
+
+
+def test_adding_a_threshold_where_the_base_had_none_widens_the_noise() -> None:
+    base = yardstick([metric("q")], [scenario("s1")])
+    wide = yardstick([metric("q")], [scenario("s1")], {"q": thr("100")})
+    zero = yardstick([metric("q")], [scenario("s1")], {"q": thr("0", "0.5")})
+    assert kinds(base, wide) == ["noise_widened"]
+    assert kinds(base, zero) == []
+
+
 def test_description_or_alert_changes_are_not_flagged() -> None:
     changed = metric("m_gate").model_copy(update={"description": "otra descripcion"})
     cand = yardstick([changed, metric("m_guard", role="guardrail", higher=False)],

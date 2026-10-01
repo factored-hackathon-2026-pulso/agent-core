@@ -5,7 +5,14 @@ import pytest
 from pydantic import BaseModel
 
 import agent_core.domain.events as events
-from agent_core.domain import METRIC_EVENT_CATALOG, PLATFORM_METRIC_PREFIX, EngineEvent, catalog_fields
+from agent_core.domain import (
+    METRIC_EVENT_CATALOG,
+    PLATFORM_METRIC_PREFIX,
+    EngineEvent,
+    Predicate,
+    catalog_fields,
+    predicate_problems,
+)
 
 # Nombres de campo que nunca pueden ser medibles: son datos de cliente o texto libre (regla 6 de CLAUDE.md).
 FORBIDDEN_FIELDS = {"args", "text", "email", "name", "phone", "document_id", "account_number", "message"}
@@ -87,3 +94,25 @@ def test_catalog_is_read_only() -> None:
 
 def test_platform_prefix_is_reserved_for_the_platform() -> None:
     assert PLATFORM_METRIC_PREFIX == "platform_"
+
+
+def _pred(field: str, op: str, value: object) -> Predicate:
+    return Predicate.model_validate({"field": field, "op": op, "value": value})
+
+
+def test_predicate_problems_valid_and_unknown_event() -> None:
+    assert predicate_problems("engine.agent_step", [_pred("kind", "eq", "x"), _pred("step", "ge", 2)]) == []
+    # el evento fuera del catálogo lo reporta quien llama
+    assert predicate_problems("engine.nope", [_pred("kind", "eq", "x")]) == []
+
+
+def test_predicate_problems_report_index_subpath_and_message() -> None:
+    preds = [
+        _pred("kind", "eq", "x"),
+        _pred("nope", "eq", "x"),
+        _pred("kind", "gt", 1),
+        _pred("step", "eq", "texto"),
+    ]
+    found = predicate_problems("engine.agent_step", preds)
+    assert [(i, sub) for i, sub, _ in found] == [(1, "field"), (2, "field"), (3, "value")]
+    assert all(msg for _, _, msg in found)

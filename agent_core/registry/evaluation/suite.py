@@ -19,6 +19,7 @@ from agent_core.domain import (
     Predicate,
     UtcDatetime,
     catalog_fields,
+    predicate_problems,
 )
 from agent_core.domain.base import Sha256Hex
 
@@ -27,7 +28,11 @@ FiniteDecimal = Annotated[Decimal, Field(allow_inf_nan=False)]
 
 
 class MetricThreshold(Model):
-    """Tolerancia frente a la base y piso mínimo (este último solo cuenta si no hay release base)."""
+    """Tolerancia frente a la base y piso de la vara nueva.
+
+    El piso se exige a toda métrica `gate` o `guardrail` nueva o cambiada, con o sin release base; es un
+    mínimo si mayor es mejor y un máximo si menor es mejor. El margen se aplica en la dirección de la métrica.
+    """
 
     noise_margin: NonNegativeDecimal
     floor: FiniteDecimal | None = None
@@ -45,7 +50,7 @@ class ScriptedSource(Model):
     """Conversación o señal sintética sobre el motor real, con tools simuladas y `Clock` fijo."""
 
     kind: Literal["scripted"] = "scripted"
-    user_turns: list[str] | None = None
+    user_turns: list[str] | None = Field(default=None, min_length=1)
     signal: JsonValue = None
     tool_fixtures: dict[str, JsonValue] = Field(default_factory=dict)
     clock_start: UtcDatetime
@@ -89,6 +94,7 @@ class SuiteProblemCode(StrEnum):
     duplicate_scenario = "duplicate_scenario"
     dataset_source_disabled = "dataset_source_disabled"
     unknown_assertion_event = "unknown_assertion_event"
+    invalid_assertion_filter = "invalid_assertion_filter"
     missing_threshold = "missing_threshold"
     unknown_threshold_metric = "unknown_threshold_metric"
 
@@ -145,6 +151,14 @@ def suite_problems(agent: Agent, suite: EvalSuite | None) -> list[SuiteProblem]:
                         SuiteProblemCode.unknown_assertion_event,
                         f"{at}/assertions/{j}/event",
                         f"evento {assertion.event[:60]} fuera del catálogo",
+                    )
+                )
+            for k, sub, text in predicate_problems(assertion.event, assertion.where):
+                found.append(
+                    _problem(
+                        SuiteProblemCode.invalid_assertion_filter,
+                        f"{at}/assertions/{j}/where/{k}/{sub}",
+                        text,
                     )
                 )
     gating = {m.id for m in agent.metrics if m.role in ("gate", "guardrail")}

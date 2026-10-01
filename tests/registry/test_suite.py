@@ -39,6 +39,33 @@ def test_scripted_source_needs_exactly_one_input() -> None:
             suite([bad])
 
 
+def test_scripted_source_rejects_empty_user_turns() -> None:
+    empty = scenario("s1")
+    empty["source"] = empty["source"] | {"user_turns": []}
+    with pytest.raises(ValidationError):
+        suite([empty])
+
+
+def test_assertion_filters_must_match_the_catalog() -> None:
+    agent = make_agent(metric("m_gate"))
+    typo = scenario("s1", assertions=[
+        {"event": "engine.escalated", "expect": "none",
+         "where": [{"field": "reason_cod", "op": "eq", "value": "x"}]}])
+    bad_type = scenario("s2", assertions=[
+        {"event": "engine.agent_step", "where": [{"field": "step", "op": "eq", "value": "uno"}]}])
+    bad_op = scenario("s3", assertions=[
+        {"event": "engine.escalated",
+         "where": [{"field": "priority", "op": "gt", "value": 1}]}])
+    good = scenario("s4", assertions=[
+        {"event": "engine.agent_step", "where": [{"field": "step", "op": "ge", "value": 2}]}])
+    problems = suite_problems(agent, suite([typo, bad_type, bad_op, good], {"m_gate": thr()}))
+    assert [(p.code.value, p.path) for p in problems] == [
+        ("invalid_assertion_filter", "/scenarios/0/assertions/0/where/0/field"),
+        ("invalid_assertion_filter", "/scenarios/1/assertions/0/where/0/value"),
+        ("invalid_assertion_filter", "/scenarios/2/assertions/0/where/0/field"),
+    ]
+
+
 def test_suite_needs_scenarios_and_positive_repetitions() -> None:
     with pytest.raises(ValidationError):
         suite([])
