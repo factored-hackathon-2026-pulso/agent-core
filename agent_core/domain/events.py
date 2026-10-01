@@ -10,8 +10,10 @@ from typing import Annotated, Literal
 from pydantic import Field, NonNegativeInt, PositiveInt
 
 from agent_core.domain.base import Locale, Model, NodeId, Probability, Sha256Hex, UtcDatetime
+from agent_core.domain.errors import GatewayErrorKind
 from agent_core.domain.identity import AuthLevel, PrincipalType
 from agent_core.domain.json import JsonValue
+from agent_core.domain.knowledge import Purpose
 from agent_core.domain.outcomes import Awaiting, Command, Mode, Outcome, ReasonCodeStr
 from agent_core.domain.refs import EntityRef
 from agent_core.domain.shared import Fingerprint, ToolStatus
@@ -153,15 +155,38 @@ class AgentStepPayload(Model):
     """Payload del evento `agent_step` (vista audit, M0 §2.10, ADR 0019).
 
     Un paso del nodo `agent`. Los argumentos y el resultado de una tool van en su `tool_called` (`call_id`
-    los enlaza); el texto de la respuesta final solo como huella con clave, nunca razonamiento intermedio."""
+    los enlaza); el texto de la respuesta final solo como huella con clave, nunca razonamiento intermedio.
+    `kind = "failed"`: el gateway falló en ese paso y el nodo terminó en `gave_up`."""
     node_id: NodeId
     step: PositiveInt
-    kind: Literal["tool", "final"]
+    kind: Literal["tool", "final", "failed"]
     tool: EntityRef | None = None
     call_id: str | None = None
     status: ToolStatus | None = None
     text_fp: Fingerprint | None = None
+    error_kind: GatewayErrorKind | None = None  # solo con `kind = "failed"`: la falla del gateway
     latency_ms: NonNegativeInt
+
+
+class FilteredPage(Model):
+    """Una página pedida que M12 no entregó, y por qué (nunca lleva su contenido)."""
+    ref: str
+    reason: Literal["audience", "not_approved", "expired", "not_yet_valid", "lang", "snapshot", "view"]
+
+
+class KnowledgeReadPayload(Model):
+    """Payload del evento `knowledge_read` (vista audit, M12 §6). Solo referencias y motivos, nunca texto.
+
+    `result` es la rama del nodo. `refs` son las páginas entregadas; `filtered_out`, las que el servicio
+    devolvió y M12 retuvo; `missing`, las que el servicio no devolvió. `reason` distingue las causas que el
+    esquema del nodo no separa: fuente caída, sin snapshot o `navigate` sin ejecutar."""
+    node_id: NodeId
+    purpose: Purpose
+    result: Literal["ok", "not_found", "denied"]
+    refs: list[str] = Field(default_factory=list)
+    filtered_out: list[FilteredPage] = Field(default_factory=list)
+    missing: list[str] = Field(default_factory=list)
+    reason: Literal["source_unavailable", "navigate_unavailable", "no_snapshot"] | None = None
 
 
 class StepUpRequestedPayload(Model):
@@ -372,6 +397,12 @@ class AgentStep(EngineEvent):
     payload: AgentStepPayload
 
 
+class KnowledgeRead(EngineEvent):
+    """Evento `knowledge_read` de la cadena de auditoría (M12 §6)."""
+    type: Literal["knowledge_read"] = "knowledge_read"
+    payload: KnowledgeReadPayload
+
+
 class StepUpRequested(EngineEvent):
     """Evento `step_up_requested` de la cadena de auditoría (M0 §2.10)."""
     type: Literal["step_up_requested"] = "step_up_requested"
@@ -465,6 +496,7 @@ AnyEvent = Annotated[
     | RuleEvaluated
     | ToolCalled
     | AgentStep
+    | KnowledgeRead
     | StepUpRequested
     | ActionConfirmed
     | ActionCancelled
@@ -484,7 +516,8 @@ AnyEvent = Annotated[
 
 _EVENT_CLASSES: tuple[type[EngineEvent], ...] = (
     RunStarted, TurnStarted, CommandEmitted, NodeEntered, DecisionMade, RuleEvaluated, ToolCalled,
-    AgentStep, StepUpRequested, ActionConfirmed, ActionCancelled, ActionDispatched, ActionVerified,
+    AgentStep, KnowledgeRead, StepUpRequested, ActionConfirmed, ActionCancelled, ActionDispatched,
+    ActionVerified,
     ExpiryEvaluated, ResponseEmitted, ResponseFailed, TurnCompleted, InjectionFlagged, AccessDenied,
     Escalated, HandoffResolved, RunClosed,
 )
@@ -506,6 +539,7 @@ EVENT_EMITTERS: Mapping[str, frozenset[str]] = MappingProxyType(
         "step_up_requested": frozenset({"M2"}),
         "tool_called": frozenset({"M2", "M3"}),
         "agent_step": frozenset({"M2"}),
+        "knowledge_read": frozenset({"M12"}),
         "decision_made": frozenset({"M5"}),
         "action_confirmed": frozenset({"M3"}),
         "action_cancelled": frozenset({"M3"}),

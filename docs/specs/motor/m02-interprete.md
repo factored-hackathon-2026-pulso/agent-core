@@ -1,10 +1,10 @@
 # M2 — Intérprete de nodos
 
-- Estado: implementado (rev. 3) · Fase 1
+- Estado: implementado (rev. 4: nodo `knowledge`, M12) · Fase 1
 - Paquete: `agent_core.interpreter`
 - Origen: spec general §4.7, §5, §8 (slots, hechos, decisiones), §10 (fallas de tools y presupuesto)
 - ADRs: 0004 (flows deterministas), 0010 (step-up), 0011 (`compute`), 0009 (`rule` con `policy`)
-- Usa: M0, M1 (`derive_claims`, `release_view`, `JSONLOGIC_OPS`, rutas y plantillas), M3, M5, M7, M8 · Lo usa: M4
+- Usa: M0, M1 (`derive_claims`, `release_view`, `JSONLOGIC_OPS`, rutas y plantillas), M3, M5, M7, M8, M12 (interfaz pública: `KnowledgeService`, `KnowledgeContext`) · Lo usa: M4
 
 ## 1. Propósito y límites
 
@@ -23,6 +23,7 @@ class StepContext:                    # dataclass congelada
     responder: ResponderPort          # puerto local de M2; M8 lo adapta (D1)
     views: ViewService; vault: TokenVault                                       # M7
     ids: IdSource; uow_factory: UnitOfWorkFactory                               # D2
+    knowledge: KnowledgeService | None = None    # M12; sin él, un nodo `knowledge` es error de cableado
     bound_params: Mapping[str, str] = {}
     record: EventRecorder = append_events                                       # M3; M4 lo reemplaza
     turn_id: str | None = None
@@ -90,6 +91,7 @@ Rutas permitidas en `args`, plantillas y `rule`: `slots.<x>`, `facts.<x>.value[.
 | `confirm` | Sin `resume`: `ctx.actions.propose(...)` → para en `awaiting_confirmation` con el `ConfirmationPrompt`. Con `confirm_answer`: `ctx.actions.answer(...)` → `yes`/`no`/`unclear`/`max_attempts` |
 | `verify` | `ctx.actions.verify(...)` → `verified`/`failed`; guarda el readback en `facts[save_as]` |
 | `respond` | `template_ref`: M2 renderiza la plantilla del `locale` con los hechos (vista `model`); emite `response_emitted` con `kind=template` (`validator.ok`, `llm=None`, `claims` de M1; D6 resuelto 2026-09-30); M4 rellena `transcript_fp`. `generate`: `ctx.responder.generate(...)`; en modo degradado usa `fallback_template_ref` sin llamar al modelo. Si `await: true`, avanza el puntero a `next` y para en `awaiting_user` (D16); si no, sigue por `next` |
+| `knowledge` | Delega en `ctx.knowledge.read(node, state, KnowledgeContext(release, clock, ids, views, vault, turn_id))` (M12): M12 escribe `RunState.pages` y construye `knowledge_read`; el handler solo entrega el estado nuevo, el evento y la rama (`ok`, `not_found` o `denied`). No usa el modelo, así que el modo degradado no lo impide. Sin `ctx.knowledge` lanza `IllegalTransition` (cableado, como el `AgentPort`) |
 | `escalate` | Devuelve `EscalationRequest{reason_code, target_queue = agent.default_target_queue, priority: priority_expr evaluada o "normal"}` (D13); `stop = terminal` |
 | `end` | `end_outcome = config.outcome`; aplica `output_map` en modo task; `stop = terminal` |
 
@@ -111,9 +113,11 @@ Subconjunto cerrado: `JSONLOGIC_OPS` de M1 (`var`, `==`, `!=`, `>`, `>=`, `<`, `
 
 ReAct acotado de **solo lectura y cálculo**. Lo usan el copiloto del asesor y el agente constructor. M2 solo conoce el puerto `AgentPort`; su adaptador real es `LLMAgentPort` (unidad 5, spec del gateway §3.8).
 
-**Configuración** (M0, m00 §2.5): `tools_allowed`, `max_steps`, `prompt_ref`, `goal`, `save_as` (nombre del hecho donde entra la salida) y `output_schema` (JSON Schema de la respuesta final).
+**Configuración** (M0, m00 §2.5): `tools_allowed`, `max_steps`, `prompt_ref`, `goal`, `save_as` (nombre del hecho donde entra la salida), `output_schema` (JSON Schema de la respuesta final) e `input_view` (rutas `slots.*`/`facts.*` que el modelo ve; vacío por defecto).
 
-**Puerto.** `AgentPort.step(AgentRequest, state) → AgentStepResult`: un paso del modelo, que devuelve `AgentToolCall(tool, args)` o `AgentFinal(output)` más `model_calls`, `tokens` y `cost_usd`. `AgentRequest` lleva las `observations` de los pasos previos (en vista `model`) y, tras una salida rechazada, un `feedback` sin datos. `StepContext.agents` lo inyecta; sin él, un nodo `agent` es un error de cableado (`IllegalTransition`). Doble: `testing/fakes/agent.py` (`ScriptedAgent`).
+**Entradas** (2026-09-30). Antes del primer paso, `input_view` se proyecta **una vez** con la misma función que `decide` (`projection.model_inputs`): vista `model`, slots envueltos como `untrusted_text` (D8) y hechos tokenizados según su origen. Es la vía por la que el modelo ve lo que pidió la persona (un `collect` previo) o lo que ya se leyó. Una ruta que no resuelve (ausente o slot `claimed`, D7) termina el nodo en `gave_up` **sin llamar al modelo**. Las mismas entradas viajan en todos los pasos.
+
+**Puerto.** `AgentPort.step(AgentRequest, state) → AgentStepResult`: un paso del modelo, que devuelve `AgentToolCall(tool, args)` o `AgentFinal(output)` más `model_calls`, `tokens` y `cost_usd`. `AgentRequest` lleva las `inputs`, las `observations` de los pasos previos (en vista `model`) y, tras una salida rechazada, un `feedback` sin datos. `StepContext.agents` lo inyecta; sin él, un nodo `agent` es un error de cableado (`IllegalTransition`). Doble: `testing/fakes/agent.py` (`ScriptedAgent`).
 
 **Bucle.** Hasta `max_steps` pasos. Antes de cada uno se revisan los presupuestos (modelo, tokens, costo y tiempo de pared): agotados → `EscalationRequest(budget_exceeded)`. Cada paso descuenta lo que informa el puerto.
 - **Tool.** Se ejecuta solo si está en `tools_allowed` (referencia exacta de la release) y es `read` o `compute`; si no, `access_denied` (`tool_denied`) y el modelo recibe `denied`. Los argumentos que son exactamente un token del run (`⟦tag:n⟧`) vuelven a su valor antes de ejecutar: la tool nunca ve el token y el modelo nunca ve el valor. Usa el circuit breaker como el nodo `tool`. La autorización por llamada es de `ToolExecutor` (ADR 0006). El resultado vuelve al modelo en vista `model`. Un `error`, `timeout` o `denied` vuelve como resultado y cuenta como paso; `step_up_required` se trata como `denied` (no se puede elevar el nivel a mitad del bucle).
@@ -121,13 +125,13 @@ ReAct acotado de **solo lectura y cálculo**. Lo usan el copiloto del asesor y e
 
 **Falla del gateway.** Un `GatewayError` de `AgentPort.step` termina el nodo en `gave_up` y carga al presupuesto el uso que informe el error (la llamada cuenta aunque no informe tokens ni costo); cualquier otra excepción sube. Esta ruta no deja evento en el log (ver gateway spec §11).
 
-**Resultados.** `answered`: `facts[save_as] = {value, source: {kind: agent, ref: <id del nodo>, inputs: <call_id de las tools del bucle>}}`. `gave_up`: se agotó `max_steps`, no hubo una salida válida, o el turno está en modo degradado.
+**Resultados.** `answered`: `facts[save_as] = {value, source: {kind: agent, ref: <id del nodo>, inputs: <fact_id leídos por input_view, luego call_id de las tools del bucle>}}`. `gave_up`: se agotó `max_steps`, no hubo una salida válida, faltó una entrada de `input_view` o el turno está en modo degradado.
 
 **Modo degradado** (spec general §4.1 paso 6): con `injection_flagged` el nodo no llama al modelo y devuelve `gave_up`.
 
 **Presupuestos.** El nodo cuenta como un nodo (`max_nodes_per_turn`).
 
-**Eventos.** Cada tool ejecutada emite su `tool_called` (argumentos y resultado en vista `audit`), y cada paso un `agent_step` (M0): `node_id`, `step`, `kind` (`tool`/`final`), `tool`, `call_id` (enlaza con su `tool_called`), `status`, `text_fp` (huella con clave de la respuesta final) y `latency_ms`. Nunca el razonamiento intermedio.
+**Eventos.** Cada tool ejecutada emite su `tool_called` (argumentos y resultado en vista `audit`), y cada paso un `agent_step` (M0): `node_id`, `step`, `kind` (`tool`/`final`/`failed`), `tool`, `call_id` (enlaza con su `tool_called`), `status`, `text_fp` (huella con clave de la respuesta final), `error_kind` (solo con `failed`: el `GatewayErrorKind` que llevó a `gave_up`) y `latency_ms`. Nunca el razonamiento intermedio.
 
 **Determinismo y replay.** El bucle usa solo puertos inyectados: con un `AgentPort` guionado produce los mismos eventos. El replay `audit` verifica la cadena de `agent_step` sin volver a llamar al modelo.
 
@@ -137,7 +141,7 @@ ReAct acotado de **solo lectura y cálculo**. Lo usan el copiloto del asesor y e
 - G0-22 impide que esa salida alimente una escritura, una `rule` o un `verify`.
 - Los campos de la salida se clasifican por nombre en M7 (origen `agent`); los que no estén clasificados se tokenizan.
 
-**Pruebas:** `tests/m02/test_agent.py` (16, más T-U5-17 para el `GatewayError`) y `tests/m02/test_output_schema.py`.
+**Pruebas:** `tests/m02/test_agent.py` (16, más T-U5-17 para el `GatewayError` y 4 de `input_view`) y `tests/m02/test_output_schema.py`.
 
 ## 4. Invariantes
 
@@ -160,7 +164,7 @@ ReAct acotado de **solo lectura y cálculo**. Lo usan el copiloto del asesor y e
 
 ## 6. Eventos que emite
 
-`node_entered`, `rule_evaluated`, `tool_called` (lectura y `compute`), `step_up_requested`, `access_denied` (`tool_denied`). `decision_made` lo emite M5 y los de acciones M3; M2 los agrega a la lista del `StepOutcome`. Los eventos que devuelve `execute_write` ya los persistió el `EventRecorder` dentro de los commits de M3: no vuelven a agregarse. Para que el orden persistido sea `node_entered…`, `action_confirmed`, `action_dispatched`, `tool_called`, `advance` entrega a los handlers un `StepContext` cuyo `record` envuelve al de M4: antes de cada commit propio de M3 llama `record(uow, state, [*pendientes, *nuevos])` y vacía los pendientes (los eventos acumulados hasta ese momento, incluido el `node_entered` del nodo actual). Lo ya volcado así no se repite en `StepOutcome.events` ni se vuelca dos veces.
+`node_entered`, `rule_evaluated`, `tool_called` (lectura y `compute`), `step_up_requested`, `access_denied` (`tool_denied`). El `knowledge_read` lo construye M12 y M2 lo agrega a la lista del `StepOutcome`. `decision_made` lo emite M5 y los de acciones M3; M2 los agrega a la lista del `StepOutcome`. Los eventos que devuelve `execute_write` ya los persistió el `EventRecorder` dentro de los commits de M3: no vuelven a agregarse. Para que el orden persistido sea `node_entered…`, `action_confirmed`, `action_dispatched`, `tool_called`, `advance` entrega a los handlers un `StepContext` cuyo `record` envuelve al de M4: antes de cada commit propio de M3 llama `record(uow, state, [*pendientes, *nuevos])` y vacía los pendientes (los eventos acumulados hasta ese momento, incluido el `node_entered` del nodo actual). Lo ya volcado así no se repite en `StepOutcome.events` ni se vuelca dos veces.
 
 ## 7. Pruebas
 
@@ -186,6 +190,7 @@ Tabla por tipo de nodo con `FakeToolExecutor`, `ScriptedProvider` y `FakeClock`.
 | T-M2-16 | `respond(generate)`: entrega, cobra presupuestos, respeta `max_model_calls`, reclamos por `derive_claims` y escalamiento del responder (`test_respond_generate`) | — |
 | T-M2-17 | `disputa-cargo` con monto alto escala por `policy:escalamiento-disputa-monto` sin escribir nada (`test_disputa_cargo`) | — |
 | T-M2-18 | Interfaz pública exacta e importar `agent_core.interpreter` no arrastra guards/handoff/audit/turn/api/registry/adapters (`test_public_api`) | — |
+| T-M2-19 | Nodo `knowledge` (M12): sigue por `ok`, `not_found` y `denied`; emite `knowledge_read` después de `node_entered`; fuente caída sale por `not_found`; `navigate` cerrado; sin servicio es error de cableado (`tests/m02/test_knowledge.py`) | — |
 
 Mapeo de archivos: 01 y 11 → `test_disputa_cargo`; 02/03/12 → `test_rule`; 04/09 → `test_tool` y `test_write`; 05 → `test_collect`; 06/07 → `test_tool` y `test_write`; 08 → `test_loop`, `test_budgets`, `test_decide`, `test_respond_generate`; 10 → `test_respond_generate`.
 
@@ -208,6 +213,7 @@ Vía `tool_called` (lectura y `compute`), por `tool@v`: latencia p50/p95, tasa p
 - [x] Interfaz pública exportada y tipada; `import-linter`, `mypy` y `ruff` en verde; los eventos se construyen con los modelos de M0 (`Events`); `agentcore contracts --check` sin cambios (M2 no toca M0).
 - [x] LOC registradas: `agent_core/interpreter` 1.356; `tests/m02` + `testing/fakes/decision.py` + `testing/fakes/responder.py` 1.524; total 2.880 (sobre la estimación de 1.500–2.000 con pruebas; el paquete solo queda dentro).
 - [x] Sin TODO sin issue.
+- [x] Handler `knowledge` (rev. 4, M12): T-M2-19 en verde; `StepContext.knowledge` y su cableado en `composition`.
 
 ## Decisiones D1–D16
 
@@ -226,13 +232,13 @@ Vía `tool_called` (lectura y `compute`), por `tool@v`: latencia p50/p95, tasa p
 | D11 | El evaluador registra las rutas que lee (`reads`) para `rule_evaluated.inputs` |
 | D12 | Nodos sin rama `error`: `escalate(validation_failed)`; `decide` → `low_confidence`; `rule` → `null` |
 | D13 | Escalamientos del motor: cola por defecto del agente y prioridad `normal`; `priority_expr` no string → `normal` |
-| D14 | Validadores de `collect`: `type`, `regex` (`fullmatch`), `enum` (sin mayúsculas); `decide` pendiente |
+| D14 | Validadores de `collect`: `type`, `regex` (`fullmatch`), `enum` (sin mayúsculas); `decide` pendiente: M1 lo rechaza en G0-01 (2026-09-30) para que ninguna release llegue a ejecutarlo |
 | D15 | `repair_turns_used` lo suma M2 (`collect`); M4 lo lee (y suma en `confirm`) |
 | D16 | `respond(await)` avanza el puntero antes de parar en `awaiting_user` |
 
 ## 11. Abiertos
 
-- Validador `decide` de `collect`: no se sabe qué campo de la decisión valida (hoy `NotImplementedError`, D14).
+- ~~Validador `decide` de `collect`~~ **Decidido 2026-09-30 (tema #15):** no se soporta hasta la fase 2; M1 lo rechaza en G0-01 y `NotImplementedError` queda como defensa (D14). Contrato previsto: el `decision_model` declara un campo calibrado `valid` (booleano); el slot se acepta si es verdadero y supera el umbral, y si no cuenta como intento fallido.
 - Quién llena `open_questions` (índice §10).
 - **Nodo `agent` (§3.7, ADR 0019):**
   - ~~Falta el **adaptador real de `AgentPort`**~~ **Resuelto 2026-09-30:** `LLMAgentPort` (unidad 5), en `docs/specs/2026-09-28-llm-gateway-design.md` §3.8. El texto del prompt del bucle vive en el registro de la demo (gateway spec §11).

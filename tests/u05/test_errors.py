@@ -117,6 +117,7 @@ def test_success_with_usage_without_token_fields_reports_zero(respx_mock: MockRo
     respx_mock.post(CHAT).respond(200, json=body)
     result = make_world().gateway.generate(PROMPT, INPUTS, "es")
     assert (result.tokens_in, result.tokens_out, result.cost_usd) == (0, 0, Decimal("0"))
+    assert result.usage_known is False
 
 
 @pytest.mark.parametrize("body", [[1, 2], "texto", {"choices": "no-es-lista"}])

@@ -37,11 +37,13 @@ La spec general describe el motor completo en un solo documento. Aquí se parte 
 | M9 | Acceso y API | `m09-acceso-y-api.md` | `agent_core.api` | 3 | §3, §4.1–4.2, §4.7 (step-up) | 0006, 0010 |
 | M10 | Escalamiento y handoff | `m10-escalamiento-y-handoff.md` | `agent_core.handoff` | 2 | §9 | 0013 |
 | M11 | Auditoría, transcript y replay | `m11-auditoria-transcript-replay.md` | `agent_core.audit` | 2 y 5 | §8.4, §11 | 0003, 0008 |
-| M12 | Conocimiento | `m12-conocimiento.md` | `agent_core.knowledge` | por decidir | ADR 0015 | 0015 |
+| M12 | Conocimiento | `m12-conocimiento.md` | `agent_core.knowledge` | 2 (`read` implementado 2026-09-30; `navigate` fuera) | ADR 0015 | 0015 |
 
-**Fuera de esta tabla:** el registry (unidad 2) tiene su propia spec, `../2026-09-29-registry-design.md`. Añade `EntityKind.knowledge_snapshot` y `Release.knowledge_snapshot` a M0, y M1 le aporta las funciones puras de validación y `pin_release` (ver §15 de esa spec).
+**Fuera de esta tabla:** el registry (unidad 2) tiene su propia spec, `../2026-09-29-registry-design.md` (rev. 2: alcance de entrega y fase 2). Añade `EntityKind.knowledge_snapshot` y `Release.knowledge_snapshot` a M0, y M1 le aporta las funciones puras de validación y `pin_release` (ver §15 de esa spec).
 
-**Documentos relacionados:** evaluación y métricas por agente (`Agent.metrics`, `eval_suite`, gate con doble vara), en `../2026-09-30-evaluacion-y-metricas-design.md` y `../../adr/0020-evaluacion-y-metricas-por-agente.md`. Añade a M0 los tipos del DSL de métricas (`SCHEMA_VERSION` 0.5.0) y a M1 las reglas `MT-01` a `MT-06`.
+Paquete `agent_core.registry/` (unidad 2): implementado (rev. 2, entrega). Solo lo importa `composition` (evaluador, servicio y CLI; la API lo monta como extensión `registry_extension`); ningún módulo del motor lo importa.
+
+**Documentos relacionados:** evaluación y métricas por agente (`Agent.metrics`, `eval_suite`, gate con doble vara), en `../2026-09-30-evaluacion-y-metricas-design.md` y `../../adr/0020-evaluacion-y-metricas-por-agente.md`. Añade a M0 los tipos del DSL de métricas (`SCHEMA_VERSION` 1.2.0) y a M1 las reglas `MT-01` a `MT-06`.
 
 ## 3. Dependencias
 
@@ -56,12 +58,12 @@ Un módulo solo importa `agent_core.domain`, `agent_core.ports` y la **interfaz 
 | M5 | M0, M7 | M2 (`decide`), M4 (Understand) |
 | M3 | M0 | M2, M4 |
 | M8 | M0, M6, M7 | M2 (`respond`), M10 (resumen) |
-| M2 | M0, M1 (análisis compartido), M3, M5, M7, M8 | M4 |
+| M2 | M0, M1 (análisis compartido), M3, M5, M7, M8, M12 (interfaz pública) | M4 |
 | M10 | M0, M7 | M4, M9 |
 | M11 | M0, M7 | M4, M9 |
 | M4 | M0, M2, M3, M5, M6, M10, M11 | M9 |
 | M9 | M0, M4, M10, M11 | apps |
-| M12 | M0, M7 | M2 (nodo `knowledge`), M8 |
+| M12 | M0, M7 | M2 (nodo `knowledge`; interfaz pública), M8 (solo los tipos de M0) |
 
 **Raíces de composición (2026-09-29):** `agent_core.cli` y `agent_core.composition` no son módulos: cablean M2–M11 con adaptadores y pueden importarlo todo; ningún módulo puede importarlas (`.importlinter` las prohíbe en todos los contratos y `test_lint_rules` lo exige). `composition` contiene `build_turn_engine`, el `RuntimeFactory` real sobre M7 y los adaptadores M5 → `DecisionPort` y M8 → `ResponderPort`.
 
@@ -85,7 +87,7 @@ Las unidades 2–7 aún no existen. El motor habla con ellas solo por estos puer
 | `LLMGateway` | unidad 5: `OpenAICompatGateway` (`agent_core.adapters.llm`) | `ScriptedGateway` | M8 | M8, M5 (`llm_structured`) |
 | `AgentPort` | unidad 5: `LLMAgentPort` (sobre `LLMGateway`, `prompted`) | `ScriptedAgent` | M2 | M2 (nodo `agent`) |
 | `TranscriptStore` | unidad 7 | `InMemoryTranscript` | M11 | M11, M5 (`recent_turns`) |
-| `KnowledgeSource` | unidad 7 | `FileKnowledgeSource` | M12 (provisional, tema #10) | M12 |
+| `KnowledgeSource` | unidad 7 | `FileKnowledgeSource` / `InMemoryKnowledgeSource` (`testing/fakes/knowledge.py`) | M12 (definitivo, rev. 2; contrato en `tests/contracts/test_knowledge_contract.py`) | M12 |
 | `KeyProvider` | gestor de secretos | `FakeKeyProvider` / `EnvKeyProvider` (etiquetado) | M0 | M7 |
 | `CostCounters` | unidad 5 | `InMemoryCostCounters` | M4 (`UnitOfWork.add_usage`, ADR 0016 punto 4) | M9 |
 
@@ -109,7 +111,7 @@ Todo JSON que entra al núcleo se lee con `agent_core.domain.loads` (números co
 | `active_flow`, `slots`, `facts`, `decisions`, `node_attempts`, `budgets_used`, `open_questions` | M2 |
 | `actions` | M3 |
 | `token_map` | M7 |
-| `pages` (si se aprueba M12) | M12 |
+| `pages` | M12 |
 
 `open_questions`: ningún módulo define todavía cómo se llena; queda como abierto de M2/M10.
 
@@ -121,6 +123,7 @@ M0 define el esquema de cada evento; M11 los encadena y persiste. El módulo emi
 |---|---|
 | `run_started`, `turn_started`, `command_emitted`, `expiry_evaluated`, `turn_completed`, `run_closed` | M4 |
 | `node_entered`, `rule_evaluated`, `tool_called` (lectura y `compute`), `agent_step`, `step_up_requested` | M2 |
+| `knowledge_read` | M12 (lo construye; el handler de M2 lo entrega al turno) |
 | `decision_made` | M5 |
 | `action_confirmed`, `action_cancelled`, `action_dispatched`, `tool_called` (escritura), `action_verified` | M3 |
 | `response_failed` | M8 (cuando `respond(generate)` escala) |
@@ -140,14 +143,14 @@ M0 define el esquema de cada evento; M11 los encadena y persiste. El módulo emi
 | 3 · Seguridad | 01–02/10 | M9, M7 | IDOR, credenciales, vistas, renderer y huellas |
 | 4 · Inteligencia | 02/10 | M5 (classifier primero, JEV después), M6, M8 | Understand calibrado, idioma ES/PT, validador numérico |
 | 5 · Cierre | 02/10 | M1 (reglas G0-07 a G0-16), M11 (replay) | replay `fixture` en CI; replay `audit` si alcanza |
-| — | por decidir | M12 | depende del tema #10 |
+| 2 · Conocimiento | 30/09 (construido, fuera del MVP de la demo) | M12 (`read`) | nodo `knowledge`, `knowledge_from`/`purpose`, G0-17…G0-21 y comprobaciones 6 y 7; `navigate` queda fuera |
 
 **Recortes en orden** si falta tiempo (no tocan los invariantes del reto):
 
 1. replay en modo `audit`;
 2. rotación de `kid` (queda una sola clave);
 3. histéresis de idioma (quedan `short` y `undetermined`);
-4. modo `navigate` de M12.
+4. modo `navigate` de M12 (hoy fuera de la construcción: el esquema y G0-20 existen y el runtime sale por `not_found`).
 
 ## 8. Convenciones comunes
 
@@ -220,7 +223,7 @@ M0 define el esquema de cada evento; M11 los encadena y persiste. El módulo emi
 
 | Tema | Módulo | Estado |
 |---|---|---|
-| #10 Integración de ADR 0015 (conocimiento) | M12 (propuesta de integración), M1, M8 | abierto; M12 trae una propuesta |
+| #10 Integración de ADR 0015 (conocimiento) | M12, M1, M8 | **resuelto** (diseño 2026-09-30) y **`read` construido** (2026-09-30, `SCHEMA_VERSION` 1.0.0); `navigate` y `search` siguen fuera |
 | Formato numérico por país: el `locale` del run es `es`/`pt`, pero ADR 0011 parsea por `es-CO`/`es-MX`/`es-AR`/`pt` | M8 | **resuelto** en M8 rev. 2 (parcial): `number_format` es dato opcional del contexto producido fuera de M8; sin él, solo lecturas inequívocas |
 | Detector de injection: la spec dice "marca y cuenta" pero no define el método | M6 | **resuelto** en M6 rev. 2: reglas regex/frase versionadas en la release, texto normalizado; reemplazable por un clasificador detrás de `scan_injection` |
 | Generalización de `pii_quasi` sin definir (qué hace con la fecha de nacimiento o el código postal) | M7 | **resuelto** en M7 rev. 2: regla como dato (`QuasiRule`: `drop`, `age_bucket`), por defecto `drop` |
@@ -235,5 +238,5 @@ M0 define el esquema de cada evento; M11 los encadena y persiste. El módulo emi
 | Formato de la credencial (`raw_credential`) | M9 | **Resuelto (2026-09-29)**: JWS compacto Ed25519 con `kid` (m09 §3.8); no cambia el puerto |
 | G0-15 reclamada por el gateway (ADR 0016) y por M12 | M1, M12 | **resuelto** en M1 rev. 2: G0-15 = `model_profile` de prompts, G0-16 = flows task sin nodos que esperan; M12 propone G0-17…G0-21 |
 | Fase 1 "en modo task" con un flow conversacional | M1, M2, M4 | **resuelto** en M1 rev. 2: arnés sobre M2 en la fase 1; G0-16 impide nodos que esperan en flows task |
-| Agentes internos (copiloto del asesor y constructor): nodo `agent` de solo lectura, clase `write_draft`, G0-22, G0-23, AG-02, identidad acotada del constructor | M0, M1, M2, M3, M9; registry (§18) | **nodo `agent` implementado** (M0, M1 con G0-22, M2; ADR 0019). **Pendiente:** clase `write_draft` (G0-23, AG-02, ruta de M3), el registry. El adaptador real de `AgentPort` (`LLMAgentPort`) quedó implementado en la unidad 5. `AuthzPort` ya tiene su prueba de contrato |
+| Agentes internos (copiloto del asesor y constructor): nodo `agent` de solo lectura, clase `write_draft`, G0-22, G0-23, AG-02, identidad acotada del constructor | M0, M1, M2, M3, M9; registry (§18) | **nodo `agent` implementado** (M0, M1 con G0-22, M2; ADR 0019). **Pendiente:** clase `write_draft` (G0-23, AG-02, ruta de M3) y las dependencias del constructor sobre el registry (registry §18; el registry ya existe, el adaptador y los topes no). El adaptador real de `AgentPort` (`LLMAgentPort`) quedó implementado en la unidad 5. `AuthzPort` ya tiene su prueba de contrato |
 | Sintaxis de plantilla y `Template.reads` sin definir | M1, M2, M8 | **resuelto** en M1 rev. 2: `{{ ruta }}` y `reads` derivado al cargar |

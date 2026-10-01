@@ -1,6 +1,6 @@
 # Spec — Motor de decisión (unidad 1: orquestación + JEV)
 
-- Estado: **borrador para revisión final**. Todos los hallazgos de la revisión externa quedaron resueltos (§16). Los temas de la auto-revisión posterior se siguen en `TEMAS-ABIERTOS-PENDIENTES.md`.
+- Estado: **borrador para revisión final**. El nodo `knowledge` del ADR 0015 se integra en `motor/m12-conocimiento.md` (diseño aprobado el 2026-09-30, construcción en fase 2); esta spec no lo repite. Todos los hallazgos de la revisión externa quedaron resueltos (§16). Los temas de la auto-revisión posterior se siguen en `TEMAS-ABIERTOS-PENDIENTES.md`.
 - Fecha: 2026-09-28
   - rev. 2: resoluciones C1, C2 y C7.
   - rev. 3: resoluciones de severidad alta y corte MVP.
@@ -16,6 +16,7 @@
   - rev. 14: métricas de eficiencia y tiempos en el log de auditoría: `latency_ms` en `tool_called`, `llm` en `response_emitted`, evento `turn_completed`, `Clock.monotonic_ns()` y campos de medición excluidos del replay (M0 rev. 3; §11, §12).
   - rev. 15: revisión de M1 (`specs/motor/m01-validacion-estatica.md` rev. 2): G0-04 por grafo sin nodos que esperan; G0-05 con paso por `confirm.yes`, `verify` enlazado por estructura, tools de escritura solo por `action_from` y reclamos también desde el `confirm`; reclamos derivados conservadores (toda tool, `decide`, plantilla de respaldo, `end.output_map`); reglas 15 (`model_profile` de prompts, ADR 0016) y 16 (flows task sin nodos que esperan); sintaxis de plantilla `{{ ruta }}` con `reads` derivado. El detalle manda en M1.
   - rev. 13: revisión de M0 (`specs/motor/m00-dominio-y-contratos.md` rev. 2): `ActionState` con `uncertain`/`denied`; `Awaiting.input`; `on_behalf_of.grantee` y `403 delegation_mismatch`/`agent_forbidden`; `execute` devuelve solo `result_full` (las vistas las calcula el núcleo); IDs por `IdSource` inyectado; `Decimal` y JCS en M0; referencias de autoría (`RefSpec`) frente a runtime (exactas). El detalle de tipos manda en M0.
+  - rev. 16: nodo `knowledge` (M12, `motor/m12-conocimiento.md`; M0 rev. 10, `SCHEMA_VERSION` 1.0.0): `respond.generate` cambia `knowledge_refs` por `knowledge_from` y `purpose`; G0-17…G0-21 y comprobaciones 6 y 7 del validador.
   - rev. 15: M3 rev. 2: el token de confirmación se rota en la reentrada; M3 recibe un `ActionContext` con ganchos y `execute_write` devuelve también `step_up_required`.
 - Repo: `agent-core`
 - Autor: Juan Zapata, con Claude
@@ -295,10 +296,11 @@ Cada nodo tiene `id`, `type`, `config` y `next`, que mapea resultado → id de n
 | `tool` (escritura `write_*`) | `action_from: <id de un confirm>`, `save_as` | `ok`, `denied`, `uncertain` |
 | `confirm` | `action: {tool, args}`, `summary_template`, `reprompt_template?`, `max_attempts` (2 por defecto). Congela args, crea `action_id` y emite el token; al reentrar con la acción `proposed` y el token vigente, repite la misma acción (§8.2) | `yes`, `no`, `unclear`, `max_attempts` |
 | `verify` | `readback: tool_id@v`, `by: idempotency_key \| fact:<ruta>`, `predicate`, `save_as` | `verified`, `failed` |
-| `respond` | `template_ref` **o** `generate: {prompt_ref, allowed_facts[], knowledge_refs[], fallback_template_ref}`, `await: bool`, `claims: [<id de confirm>]` (opcional, `[]` por defecto) | `next` |
+| `respond` | `template_ref` **o** `generate: {prompt_ref, allowed_facts[], knowledge_from[], purpose, fallback_template_ref}` (conocimiento: `motor/m12-conocimiento.md`), `await: bool`, `claims: [<id de confirm>]` (opcional, `[]` por defecto) | `next` |
 | `escalate` | `reason_code`, `target_queue`, `priority_expr?` | terminal |
 | `end` | `outcome: resolved\|abstained\|cancelled\|clarify_exhausted` (modo task: `completed\|failed`), `output_map?`. `abandoned` y `escalated` no se declaran: los asigna el motor (§4.1, §4.10, §9) | terminal |
-| `agent` *(producción)* | `tools_allowed[]` (clases `read` y `compute`), `max_steps`, `prompt_ref`, `goal`. Sus lecturas entran como hechos y su salida pasa por el validador | `answered`, `gave_up` |
+| `knowledge` | `mode: read` (M12): `pages[]` (`ruta` o `ruta#ancla`, fijas en el snapshot de la release), `purpose`, `save_as`; deja `RunState.pages[save_as]`. `mode: navigate` (`scope`, `selector`) está en el esquema pero no se ejecuta | `ok`, `not_found`, `denied` (`navigate`: más `low_confidence`) |
+| `agent` *(producción)* | `tools_allowed[]` (clases `read` y `compute`), `max_steps`, `prompt_ref`, `goal`, `input_view` (lo que el modelo ve del estado, en vista `model`). Sus lecturas entran como hechos y su salida pasa por el validador | `answered`, `gave_up` |
 | `subflow` *(producción)* | `flow: flow@v`, `map_in`, `map_out` | resultados declarados por el subflow |
 | `await_approval` *(producción, ADR 0014)* | `approver: {principal_type, roles[]}`, `summary_template`, `timeout` | `approved`, `rejected`, `timeout` |
 

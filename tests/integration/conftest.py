@@ -48,3 +48,24 @@ def app_conn(admin_conn: "psycopg.Connection[Any]") -> Iterator["psycopg.Connect
         assert row is not None and row[0] == APP_ROLE, "app_conn no usa el rol de aplicación"
         conn.rollback()
         yield conn
+
+
+REG_ROLE, REG_PASSWORD = "agentcore_registry_app", "registry-dev-only"
+
+
+@pytest.fixture
+def registry_store(admin_conn: "psycopg.Connection[Any]"):  # type: ignore[no-untyped-def]
+    """`PgRegistryStore` con el rol de aplicación del registry (sin UPDATE/DELETE en tablas inmutables)."""
+    from agent_core.registry.postgres.store import PgRegistryStore, apply_registry_schema
+
+    admin_conn.execute(
+        f"DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{REG_ROLE}') THEN "
+        f"CREATE ROLE {REG_ROLE} LOGIN PASSWORD '{REG_PASSWORD}'; END IF; END $$")
+    admin_conn.execute(f"GRANT USAGE ON SCHEMA {SCHEMA} TO {REG_ROLE}")
+    apply_registry_schema(admin_conn, app_role=REG_ROLE)
+    dsn = ADMIN_DSN.replace("agentcore:agentcore-dev-only", f"{REG_ROLE}:{REG_PASSWORD}")
+
+    def connect() -> "psycopg.Connection[Any]":
+        return psycopg.connect(dsn, autocommit=False, options=f"-c search_path={SCHEMA}")
+
+    return PgRegistryStore(connect)

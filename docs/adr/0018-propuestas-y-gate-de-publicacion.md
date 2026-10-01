@@ -45,3 +45,15 @@
 - La unidad 6 debe implementar `EvalPort` (`run(suite, release) → reporte`).
 - Un aprobador sin rol de dueño no puede aprobar el cambio de una política protegida (ADR 0009); las páginas de conocimiento solo las aprueba un humano.
 - Queda abierto el salto semver, los topes del agente autónomo y la autoaprobación.
+
+## Enmienda 2026-09-30 (alcance de entrega)
+Acordada al recortar el registry a la entrega del 05/10 (spec rev. 2, §0 y §16). Reemplaza lo que contradiga a las secciones anteriores:
+
+1. **Evaluación por agente, no por entidad.** Una mejora puede venir de un prompt, del modelo de decisión, de un flow o de varias entidades a la vez. La `eval_suite` se liga al agente y consiste en escenarios corridos con el motor real, el LLM real y acciones contra un **sandbox** aislado (`SandboxPort`, lo implementa la unidad 3; `LocalSandbox` como respaldo). Las suites por entidad pasan a fase 2.
+2. **Métrica principal determinista:** la proporción de corridas cuyo resultado cumple el `expect` del escenario, calificada desde los eventos del motor. Un juez LLM es opcional e informativo, y no entra al veredicto.
+3. **El registry implementa el evaluador determinista** (`ScenarioEvaluator`). Los escenarios de negocio de la demo y el juez los hace otra persona del equipo.
+4. **Una persona puede recorrer el ciclo completo** y aprobar su propia propuesta: los roles `constructor` y `aprobador` se acumulan. La barrera dura es el actor: un principal no humano (el constructor o el detector, que autentican como `builder` con credencial propia; un principal es humano solo con `attrs.actor = "human"` firmado) nunca aprueba, publica, promueve ni revoca, aunque tenga el rol. Esto cierra el tema abierto de la autoaprobación.
+5. **Ciclo simplificado:** `validated` se absorbe en `freeze`, `reject` devuelve a `draft`, y `stale` se detecta al publicar (la propuesta vuelve a `draft` con la base nueva). Los estados `stale` y `abandoned` como estados propios pasan a fase 2.
+6. **La candidata se evalúa en memoria** (`SnapshotRegistry`). Las versiones no publicadas nunca entran en las tablas publicadas, así que el motor no puede verlas por construcción.
+7. **Salto semver:** lo fija quien propone; `validate` exige que sea mayor que el de la base.
+8. Políticas protegidas, aprobación humana de páginas, presupuestos del agente autónomo y escáner de secretos quedan como diseño de fase 2 (spec §16).

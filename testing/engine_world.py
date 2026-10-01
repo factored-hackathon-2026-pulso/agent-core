@@ -19,20 +19,23 @@ from agent_core.domain import (
     EntityKind,
     EntityRef,
     JsonValue,
+    KnowledgeView,
     Locale,
     OnBehalfOf,
     Principal,
+    Purpose,
     Release,
     RunInput,
     SubjectRef,
     ToolDef,
     TurnInput,
 )
-from agent_core.ports import AuditSink, AuthzDecision, GenerationResult, UnitOfWorkFactory
+from agent_core.ports import AuditSink, AuthzDecision, GenerationResult, KnowledgeSource, UnitOfWorkFactory
 from agent_core.turn import TurnEngine
 from agent_core.views import DEFAULT_CATALOG, FieldClassifier, FieldRule
 from testing.builders import NOW
 from testing.builders import principal as make_principal
+from testing.fakes.authz import TableAuthz
 from testing.fakes.clock import FakeClock
 from testing.fakes.gateway import ScriptedGateway
 from testing.fakes.ids import FakeIds
@@ -97,6 +100,9 @@ class SyntheticAuthz:
 
     def can_read_field(self, reader: Principal, obo: OnBehalfOf | None, field: str, purpose: str) -> bool:
         return True
+
+    def knowledge_view(self, principal: Principal, purpose: Purpose) -> KnowledgeView:
+        return TableAuthz().knowledge_view(principal, purpose)
 
     def reportable_attrs(self) -> frozenset[str]:
         return frozenset({"country"})
@@ -189,7 +195,8 @@ class EngineWorld:
     def __init__(self, *, registry_root: Path = REGISTRY_DEMO, uow_factory: UnitOfWorkFactory | None = None,
                  audit: AuditSink | None = None, config: EngineConfig | None = None,
                  gateway: ScriptedGateway | None = None, record: bool = False,
-                 clock: FakeClock | None = None, ids: FakeIds | None = None) -> None:
+                 clock: FakeClock | None = None, ids: FakeIds | None = None,
+                 knowledge: KnowledgeSource | None = None) -> None:
         self.clock = clock or FakeClock()
         self.ids = ids or FakeIds()
         self.registry = registry_from_directory(registry_root, RELEASE_ID)
@@ -213,7 +220,7 @@ class EngineWorld:
             providers={"jev": self.jev, "classifier": self.classifier},
             calibrations=InMemoryCalibrationSource({"cal-demo": demo_calibration()}),
             transcript=self.transcript, authz=SyntheticAuthz(), classifier=FieldClassifier(CATALOG),
-            config=config or EngineConfig())
+            config=config or EngineConfig(), knowledge=knowledge)
         self.engine: TurnEngine = build_turn_engine(self.deps)
         self.runtimes = self.engine._runtimes  # RuntimeFactory real
         self.driver = Driver(self.engine)

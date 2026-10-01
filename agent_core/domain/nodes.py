@@ -23,14 +23,12 @@ from pydantic import (
     model_validator,
 )
 
-from agent_core.domain.base import Model, NodeId
+from agent_core.domain.base import Model, NodeId, SaveAs
 from agent_core.domain.identity import PrincipalType
 from agent_core.domain.json import JsonValue
+from agent_core.domain.knowledge import PagePath, Purpose, parse_page_spec
 from agent_core.domain.outcomes import Outcome, ReasonCodeStr
 from agent_core.domain.refs import RefSpec
-
-# Patrones solo ASCII; el motor de regex de pydantic no admite un salto de línea final tras `$`.
-SaveAs = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]*$")]
 
 
 def _positive(value: timedelta) -> timedelta:
@@ -116,10 +114,14 @@ class VerifyConfig(Model):
 
 
 class GenerateConfig(Model):
-    """Configuración del nodo `generate` (M0 §2.5)."""
+    """Configuración del nodo `generate` (M0 §2.5).
+
+    `knowledge_from` lista los `save_as` de nodos `knowledge` cuyas páginas puede citar la respuesta, y
+    `purpose` dice para quién es (M12 §2: reemplaza a `knowledge_refs`). El defecto es el más estricto."""
     prompt_ref: RefSpec
     allowed_facts: list[str] = Field(default_factory=list)
-    knowledge_refs: list[str] = Field(default_factory=list)  # se reemplaza al cerrar el tema #10
+    knowledge_from: list[SaveAs] = Field(default_factory=list)
+    purpose: Purpose = "customer_answer"
     fallback_template_ref: RefSpec
 
 
@@ -150,16 +152,53 @@ class EndConfig(Model):
     output_map: dict[str, str] | None = None
 
 
+def _page_specs(pages: list[str]) -> list[str]:
+    for text in pages:
+        parse_page_spec(text)
+    return pages
+
+
+class KnowledgeConfig(Model):
+    """Configuración del nodo `knowledge` (M0 §2.5, M12, ADR 0015).
+
+    `read`: `pages` fijas (`ruta` o `ruta#ancla`), resueltas contra el snapshot de la release.
+    `navigate`: `scope` (un directorio del snapshot) y `selector` (un `decision_model` sobre las rutas del
+    scope); el modo está en el esquema, pero M12 todavía no lo ejecuta (sale por `not_found`)."""
+
+    mode: Literal["read", "navigate"]
+    pages: Annotated[list[str], AfterValidator(_page_specs)] = Field(default_factory=list)
+    scope: PagePath | None = None
+    selector: RefSpec | None = None
+    purpose: Purpose
+    save_as: SaveAs
+
+    @model_validator(mode="after")
+    def _shape_of_the_mode(self) -> "KnowledgeConfig":
+        if self.mode == "read":
+            if not self.pages:
+                raise ValueError("knowledge read necesita al menos una página")
+            if self.scope is not None or self.selector is not None:
+                raise ValueError("scope y selector son solo de navigate")
+        else:
+            if self.scope is None or self.selector is None:
+                raise ValueError("knowledge navigate necesita scope y selector")
+            if self.pages:
+                raise ValueError("pages es solo de read")
+        return self
+
+
 class AgentNodeConfig(Model):
     """Configuración del nodo `agent` (M0 §2.5, ADR 0019).
 
-    `save_as` nombra el hecho donde entra la salida; `output_schema` es el JSON Schema de esa salida."""
+    `save_as` nombra el hecho donde entra la salida; `output_schema` es el JSON Schema de esa salida.
+    `input_view` son las rutas (`slots`, `facts`) que el modelo ve en vista `model`; vacío, no ve ninguna."""
     tools_allowed: list[RefSpec]
     max_steps: PositiveInt
     prompt_ref: RefSpec
     goal: str
     save_as: SaveAs
     output_schema: dict[str, JsonValue]
+    input_view: list[str] = Field(default_factory=list)
 
 
 class SubflowConfig(Model):
@@ -247,6 +286,12 @@ class EndNode(_NodeBase):
     config: EndConfig
 
 
+class KnowledgeNode(_NodeBase):
+    """Nodo `knowledge` de un flow (M0 §2.5, M12)."""
+    type: Literal["knowledge"]
+    config: KnowledgeConfig
+
+
 class AgentNode(_NodeBase):
     """Nodo `agent` de un flow (M0 §2.5)."""
     type: Literal["agent"]
@@ -290,6 +335,7 @@ Node = Annotated[
     | Annotated[RespondNode, Tag("respond")]
     | Annotated[EscalateNode, Tag("escalate")]
     | Annotated[EndNode, Tag("end")]
+    | Annotated[KnowledgeNode, Tag("knowledge")]
     | Annotated[AgentNode, Tag("agent")]
     | Annotated[SubflowNode, Tag("subflow")]
     | Annotated[AwaitApprovalNode, Tag("await_approval")],
@@ -308,6 +354,8 @@ RESULTS: Mapping[str, frozenset[str]] = MappingProxyType(
         "respond": frozenset({"next"}),
         "escalate": frozenset(),
         "end": frozenset(),
+        # `low_confidence` es solo de `navigate`; un `read` cablea ok, not_found y denied (M1 G0-03)
+        "knowledge": frozenset({"ok", "not_found", "denied", "low_confidence"}),
         "agent": frozenset({"answered", "gave_up"}),
         "subflow": frozenset(),  # los declara el subflow
         "await_approval": frozenset({"approved", "rejected", "timeout"}),

@@ -12,9 +12,10 @@ def test_domain_exports() -> None:
                  "ToolDef",
                  "AnyEvent", "EngineEvent", "EngineError", "ProblemCode", "canonical_bytes", "loads", "dumps",
                  "EscalationRequest", "RejectedDraft", "ConfirmationPrompt", "TurnResult", "SCHEMA_VERSION",
-                 "GatewayError", "GatewayErrorKind", "KnowledgePage", "KnowledgeSnapshot"]:
+                 "GatewayError", "GatewayErrorKind", "KnowledgePage", "KnowledgeSnapshot", "KnowledgeNode",
+                 "KnowledgeView", "PageMeta", "PageView", "PageRecord", "Purpose", "KnowledgeRead"]:
         assert hasattr(domain, name), name
-    assert domain.SCHEMA_VERSION == "0.5.0"
+    assert domain.SCHEMA_VERSION == "1.2.0"
 
 
 def test_ports_exports() -> None:
@@ -27,7 +28,8 @@ def test_ports_exports() -> None:
 
 
 # Constantes de módulo que son detalle interno o un import (`UTC`), no contrato.
-_INTERNAL = {"UTC", "MAX_DECIMAL_EXPONENT", "NUM_PATTERN", "ID_PATTERN", "EXACT_VERSION_PATTERN"}
+_INTERNAL = {"UTC", "MAX_DECIMAL_EXPONENT", "NUM_PATTERN", "ID_PATTERN", "EXACT_VERSION_PATTERN",
+             "MAX_PAGE_SOURCE_REFS", "TYPE_CHECKING"}
 
 
 def _public_defs(module_name: str) -> set[str]:
@@ -83,7 +85,7 @@ SPEC_METHODS: dict[str, set[str]] = {
     "IdSource": {"new_id", "secret_token"},
     "RegistryPort": {"resolve_release", "release_status", "get"},
     "ToolExecutor": {"execute", "definition"},
-    "AuthzPort": {"authorize_agent", "authorize_subject", "bind_params", "can_read_field",
+    "AuthzPort": {"authorize_agent", "authorize_subject", "bind_params", "can_read_field", "knowledge_view",
                   "reportable_attrs"},
     "IdentityVerifier": {"verify", "verify_delegation", "grant_active"},
     "UnitOfWork": {"acquire_turn", "release_turn", "load_run", "find_run_by_session", "save_run",
@@ -94,7 +96,7 @@ SPEC_METHODS: dict[str, set[str]] = {
     "Outbox": {"pending", "mark_delivered"},
     "LLMGateway": {"generate"},
     "TranscriptStore": {"append", "read", "recent_turns"},
-    "KnowledgeSource": {"capabilities", "read"},
+    "KnowledgeSource": {"capabilities", "index", "read"},
     "KeyProvider": {"current_kid", "key"},
     "CostCounters": {"spent_today", "hits"},
 }
@@ -113,7 +115,7 @@ def test_every_port_is_a_protocol_with_exactly_the_spec_methods() -> None:
 
 def test_generation_result_reports_tokens_in_and_out() -> None:
     fields = set(ports.GenerationResult.model_fields)
-    assert fields == {"output", "tokens_in", "tokens_out", "cost_usd", "model"}
+    assert fields == {"output", "tokens_in", "tokens_out", "cost_usd", "model", "usage_known"}
 
 
 def test_tool_result_fields_match_spec() -> None:
@@ -125,7 +127,8 @@ def test_tool_result_fields_match_spec() -> None:
 
 def test_id_kinds_match_spec() -> None:
     assert {k.value for k in ports.IdKind} == {
-        "run", "session", "turn", "action", "decision", "fact", "call", "handoff", "event", "message"}
+        "run", "session", "turn", "action", "decision", "fact", "call", "handoff", "event", "message",
+        "proposal", "eval_run"}
     assert {k.value for k in ports.KeyPurpose} == {"fingerprint", "token_map"}
 
 

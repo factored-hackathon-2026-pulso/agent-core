@@ -46,6 +46,8 @@ class UsageMeter:
         self._tokens_in += result.tokens_in
         self._tokens_out += result.tokens_out
         self._cost += result.cost_usd
+        if not result.usage_known:
+            self._cost_known = False
         self._add_model(result.model)
         return result
 

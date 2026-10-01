@@ -1,8 +1,8 @@
 # Spec — LLM gateway (unidad 5)
 
-- Estado: rev. 2, implementada (2026-09-30; falta la prueba de humo manual contra OpenRouter) · se construye sobre `origin/main` (3bf8afc); M8 lo necesita para la demo antes del congelamiento (02/10)
+- Estado: rev. 2, implementada e integrada en `origin/main` (PR del registry, 2026-09-30; falta la prueba de humo manual contra OpenRouter); M8 lo necesita para la demo antes del congelamiento (02/10)
 - Fecha: 2026-09-28 (rev. 2: 2026-09-30)
-- Repo: `agent-core` · rama `feat/llm-gateway` (worktree `.claude/worktrees/llm-gateway`)
+- Repo: `agent-core` · rama `feat/llm-gateway` (ya integrada en `main`)
 - Paquete: `agent_core.adapters.llm`
 - ADRs: 0016 (gateway propio compatible con OpenAI, enmendado en rev. 2), 0019 (agentes internos), 0001 (stack), 0003 (observabilidad), 0008 (vista `model`)
 - Usa: M0 (`LLMGateway`, `RegistryPort`, `ModelProfile`, `Prompt`, `ToolDef`, `GatewayError`) · Lo usan: M8 (`respond(generate)`), M2 (nodo `agent`, por `LLMAgentPort`), M5 (`llm_structured`, solo baseline)
@@ -173,10 +173,10 @@ Implementa `AgentPort.step(request, state) -> AgentStepResult` sobre `LLMGateway
 1. **Tools del catálogo.** Para cada `ref` de `request.config.tools_allowed`, `registry.get(resolve_ref(EntityKind.tool, ref), ToolDef)`. Cada entrada del catálogo es `{tool: "id@version", description, args_schema}`. Si una tool no tiene `description` o `args_schema`, es un error de programación (G0-24 lo impide): lanza `SchemaError`.
 2. **Entradas** (`inputs_model_view`):
    ```
-   {goal, step, tools: [<catálogo>], observations: [{tool, args, status, result, error}],
+   {goal, inputs, step, tools: [<catálogo>], observations: [{tool, args, status, result, error}],
     feedback, output_schema}
    ```
-   Las `observations` ya vienen en vista `model` (m02 §3.7). `feedback` es el motivo sin datos de la última salida rechazada, o `null`.
+   `inputs` es `request.inputs`: las rutas del `input_view` del nodo, ya proyectadas por M2 (2026-09-30; `{}` si el nodo no declara ninguna). Las `observations` también vienen en vista `model` (m02 §3.7). `feedback` es el motivo sin datos de la última salida rechazada, o `null`.
 3. **Prompt.** `resolve_ref(EntityKind.prompt, request.config.prompt_ref)` (un `Prompt` con su `model_profile`); el texto describe el bucle y el formato del paso. La llamada es `generate(prompt, inputs, state.locale, schema=STEP_SCHEMA)`.
 4. **Esquema del paso** (plano, dentro del subconjunto de §3.7):
    ```json
@@ -218,7 +218,7 @@ Implementa `AgentPort.step(request, state) -> AgentStepResult` sobre `LLMGateway
 | Alias del perfil sin configurar | `unavailable` y log de error con el alias (sin secretos). Al arrancar, la demo avisa por cada perfil de la release activa cuyo alias falte |
 | El modelo o proveedor rechaza `max_tokens`/`temperature` | 400 → `unavailable`; se corrige con otro perfil (versión nueva) |
 | OpenRouter enruta a un modelo sin soporte de un parámetro | con `prompted` no se envía `response_format`, así que el riesgo se reduce a `invalid_output` por salida mal formada |
-| Respuesta exitosa sin `usage` | tokens y costo en 0 y un aviso en el log técnico (sin contenido); el turno sigue. La tasa de avisos se vigila en la prueba de humo |
+| Respuesta exitosa sin `usage` | tokens y costo en 0, `usage_known = false` (M8 marca `cost_known = false`) y un aviso en el log técnico (sin contenido); el turno sigue. La tasa de avisos se vigila en la prueba de humo |
 | Salida truncada por `max_tokens` | `invalid_output` si hay esquema; texto truncado si no (M8 lo valida) |
 | Paso del nodo `agent` con forma inválida | `GatewayError(invalid_output)` con uso; M2 → `gave_up` |
 | Precio desactualizado | el costo reportado difiere de la factura; se corrige publicando otra versión del perfil |
@@ -303,13 +303,13 @@ Comparar dos perfiles es comparar dos releases (unidad 6).
 
 ## 11. Abiertos
 
-- **Modelo concreto de la demo en OpenRouter:** sin elegir. No bloquea la construcción; se necesita para la prueba de humo. Debe soportar salida JSON obediente en modo `prompted` y ES/PT.
+- **Modelo concreto de la demo en OpenRouter:** **aprobado el 2026-09-30, sujeto a la prueba de humo** (`llm-smoke` con la key del usuario; si no pasa, se usa la alternativa). Debe soportar salida JSON obediente en modo `prompted` y ES/PT. Elegido: `meta-llama/llama-3.3-70b-instruct` (USD 0,10 entrada / 0,32 salida por millón de tokens, catálogo de OpenRouter del 2026-09-30; soporta `response_format`); alternativa `google/gemini-2.5-flash-lite` (0,10 / 0,40). El soporte de ES/PT de Llama 3.3 70B no está verificado: lo comprueba la prueba de humo. Las tarifas cambian: la del `ModelProfile` se toma del catálogo el día de la prueba de humo.
 - **Prompt del bucle del nodo `agent`:** el texto concreto del `Prompt` (instrucciones del formato `kind/tool/args/output`) se escribe en el registro de la demo, no en el código. La spec fija el contrato, no la redacción.
 - **Regla de M1 para `output_schema`:** m02 §11 anota que falta detectar al validar el flow un `output_schema` fuera del subconjunto. G0-24 cubre `args_schema`; extenderla a `output_schema` es trivial pero no está en el alcance de esta rev.
-- **`GatewayError` sin evento en el nodo `agent`:** cuando `AgentPort.step` lanza un `GatewayError`, M2 carga el uso y termina en `gave_up` sin dejar ningún evento en el log de auditoría (`agent_step` solo se emite en pasos que devolvieron). Abierto: si `agent_step` debe registrar el fallo (`status` con el `kind`) para que la auditoría explique el `gave_up`.
-- **`SCHEMA_VERSION` sin subir:** `ToolDef.description` y `args_schema` se agregaron como campos opcionales sin subir `SCHEMA_VERSION` (`0.4.0`). Abierto: decidir si un campo opcional nuevo exige subirla y regenerar `contracts/` con otra versión.
+- ~~**`GatewayError` sin evento en el nodo `agent`**~~ **Resuelto (2026-09-30, auditoría):** `handle_agent` emite un `agent_step` con `kind = "failed"` y `error_kind` (M0 `SCHEMA_VERSION` 0.7.0) antes de terminar en `gave_up`. Prueba: `tests/m02/test_agent.py::test_a_gateway_error_leaves_a_failed_agent_step_that_explains_the_gave_up`.
+- ~~**`SCHEMA_VERSION` sin subir**~~ **Resuelto (2026-09-30, auditoría):** M0 §9 ya dice que un campo opcional nuevo sube la versión menor. La entrada de `ToolDef` queda cubierta en la rev. 9 de M0 (0.4.0) y los cambios de esta auditoría suben a 0.6.0 y 0.7.0.
 - **`llm_structured` en M5:** cómo su `ProviderSpec` referencia un `Prompt`. Se resuelve al construir M5; el gateway no cambia.
-- **Respuesta exitosa sin `usage`:** hoy devuelve costo 0 y M8 deja `cost_known = true`, lo que contradice la intención de §3.3 (`cost_known = false`). Abierto: decidirlo con un indicador en `GenerationResult` (p. ej. `usage_known`) que M8 lea.
+- ~~**Respuesta exitosa sin `usage`**~~ **Resuelto (2026-09-30, auditoría):** `GenerationResult.usage_known` (por defecto `true`); el gateway lo deja en `false` cuando el proveedor no informa el uso y `UsageMeter` de M8 marca `cost_known = false`. Pruebas: `tests/u05/test_generate.py`, `tests/u05/test_errors.py`, `tests/m08/test_usage.py`.
 - **Aviso de arranque por alias faltante:** §5 dice que la demo avisa al arrancar de los perfiles con alias sin configurar; no está cableado. Seguimiento para el bootstrap de la API.
 - **Un cliente nuevo por llamada:** sin keep-alive, así que las latencias de la prueba de humo incluyen el establecimiento de TCP/TLS. Abierto: reutilizar el cliente por alias si la latencia importa.
 - **Perfil del prompt del nodo `agent`:** debe ser `structured: prompted` (§3.8); `LLMAgentPort` lo verifica en ejecución. Abierto: regla G0-25 de M1 que lo detecte en la validación estática.

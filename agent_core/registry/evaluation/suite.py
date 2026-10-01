@@ -65,7 +65,7 @@ class ScriptedSource(Model):
 
 
 class DatasetSource(Model):
-    """Casos de un dataset real, referenciado por id y hash. DESACTIVADA (ADR 0020, tema #13)."""
+    """Casos de un dataset real, referenciado por id y hash. DESACTIVADA (ADR 0020, tema #19)."""
 
     kind: Literal["dataset"] = "dataset"
     dataset_id: str = Field(min_length=1, max_length=120)

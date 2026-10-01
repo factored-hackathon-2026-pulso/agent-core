@@ -2,8 +2,8 @@ from typing import Any
 
 import pytest
 
-from agent_core.registry.evaluation import classify_yardstick_change
-from tests.registry.support import metric, scenario, thr, yardstick
+from agent_core.registry.evaluation.yardstick import classify_yardstick_change
+from tests.registry.yardstick.support import metric, scenario, thr, yardstick
 
 
 def kinds(base: Any, cand: Any) -> list[str]:

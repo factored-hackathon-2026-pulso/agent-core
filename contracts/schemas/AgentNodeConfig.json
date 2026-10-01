@@ -67,11 +67,18 @@
     }
   },
   "additionalProperties": false,
-  "description": "Configuración del nodo `agent` (M0 §2.5, ADR 0019).\n\n`save_as` nombra el hecho donde entra la salida; `output_schema` es el JSON Schema de esa salida.",
+  "description": "Configuración del nodo `agent` (M0 §2.5, ADR 0019).\n\n`save_as` nombra el hecho donde entra la salida; `output_schema` es el JSON Schema de esa salida.\n`input_view` son las rutas (`slots`, `facts`) que el modelo ve en vista `model`; vacío, no ve ninguna.",
   "properties": {
     "goal": {
       "title": "Goal",
       "type": "string"
+    },
+    "input_view": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Input View",
+      "type": "array"
     },
     "max_steps": {
       "exclusiveMinimum": 0,

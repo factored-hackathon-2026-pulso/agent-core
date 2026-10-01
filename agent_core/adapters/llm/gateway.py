@@ -87,8 +87,11 @@ class OpenAICompatGateway:
             _LOG.error("variable de key vacía alias=%s", endpoint.alias)
             raise GatewayError(GatewayErrorKind.unavailable, model=profile.model)
         try:
-            client = self._client_factory(endpoint, api_key, profile.timeout_s)
             kwargs = _request(profile, text, inputs, schema)
+        except (TypeError, ValueError):  # no serializable: error de programación
+            raise SchemaError("las entradas del prompt no son JSON canónico") from None
+        try:
+            client = self._client_factory(endpoint, api_key, profile.timeout_s)
             response = _create(client, kwargs, profile, endpoint.alias)
             return _result(response, profile, schema)
         except GatewayError:
@@ -196,4 +199,5 @@ def _result(response: Any, profile: ModelProfile, schema: dict[str, JsonValue] |
     if cost is None:
         _LOG.warning("respuesta sin usage model=%s", model)
     return GenerationResult(output=output, tokens_in=tokens_in or 0, tokens_out=tokens_out or 0,
-                            cost_usd=cost if cost is not None else Decimal("0"), model=model)
+                            cost_usd=cost if cost is not None else Decimal("0"), model=model,
+                            usage_known=cost is not None)

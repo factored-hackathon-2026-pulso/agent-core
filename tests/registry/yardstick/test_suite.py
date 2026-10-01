@@ -5,14 +5,10 @@ import pytest
 from pydantic import ValidationError
 
 from agent_core.domain import Agent
-from agent_core.registry.evaluation import (
-    PLATFORM_GUARDRAILS,
-    EvalSuite,
-    SuiteProblemCode,
-    suite_problems,
-)
+from agent_core.registry.evaluation.platform import PLATFORM_GUARDRAILS
+from agent_core.registry.evaluation.suite import EvalSuite, SuiteProblemCode, suite_problems
 from tests.m01.cases import AGENT
-from tests.registry.support import metric, scenario, suite, thr
+from tests.registry.yardstick.support import metric, scenario, suite, thr
 
 
 def make_agent(*metrics: Any) -> Agent:

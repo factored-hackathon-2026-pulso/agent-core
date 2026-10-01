@@ -1,7 +1,8 @@
 from typing import Any
 
 from agent_core.domain import MetricDef
-from agent_core.registry.evaluation import EvalSuite, Yardstick
+from agent_core.registry.evaluation.suite import EvalSuite
+from agent_core.registry.evaluation.yardstick import Yardstick
 
 
 def metric(mid: str, role: str = "gate", higher: bool = True, event: str = "engine.turn_completed",

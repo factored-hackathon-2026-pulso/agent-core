@@ -54,3 +54,20 @@ def test_los_eventos_de_m5_y_m8_llevan_el_turno_en_que_se_produjeron() -> None:
     events = [e for e in w.audit.read(started.run_id) if e.type in ("decision_made", "response_emitted")]
     assert {e.type for e in events} == {"decision_made", "response_emitted"}
     assert [e.type for e in events if e.turn_id is None] == []
+
+
+def test_build_engine_expone_manejadores_y_lector_de_transcript() -> None:
+    from agent_core.composition import BuiltEngine, build_engine
+
+    built = build_engine(EngineWorld().deps)
+    assert isinstance(built, BuiltEngine)
+    assert callable(built.turns.start_run)
+    assert callable(built.handoffs.get)
+    assert callable(built.transcripts.read_rendered)
+
+
+def test_build_turn_engine_sigue_devolviendo_el_motor() -> None:
+    from agent_core.composition import build_turn_engine
+    from agent_core.turn import TurnEngine
+
+    assert isinstance(build_turn_engine(EngineWorld().deps), TurnEngine)

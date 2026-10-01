@@ -1,6 +1,6 @@
 # M0 — Dominio y contratos
 
-- Estado: **rev. 8 · implementado** (fase 1) · Fase 1
+- Estado: **rev. 10 · implementado** (fase 1; M12 y `SCHEMA_VERSION` 1.0.0, 2026-09-30) · Fase 1
 - Paquetes: `agent_core.domain`, `agent_core.ports`, `testing/fakes`
 - Origen: spec general §2, §5 (esquemas de nodos), §8 (estado), §10 (códigos), §14 (dependencias)
 - ADRs: 0001 (stack), 0002 (contratos), 0006 (principal y delegación), 0007 (acciones), 0008 (vistas y claves)
@@ -54,6 +54,21 @@
   - `Release.knowledge_snapshot: EntityRef | None = None` (exacta; `None` = sin conocimiento);
   - `SCHEMA_VERSION` 0.1.0 → 0.2.0 (menor: no rompe a los consumidores de 0.1.0) y `contracts/` regenerado;
   - `RegistryPort` no cambia; `eval_suite`, la documentación por versión y los errores de la API del registry viven en `agent_core.registry`, no aquí.
+- rev. 9 (2026-09-30), auditoría del gateway y del registry (`SCHEMA_VERSION` 0.3.0 → 0.4.0 → 0.5.0 → 0.6.0 → **0.7.0**). Pone al día la trazabilidad de versiones y aplica §9 (un campo opcional nuevo sube la versión menor):
+  - 0.4.0: ADR 0019 (`AgentNodeConfig.save_as`/`output_schema`, `FactSource.kind = "agent"`, evento `agent_step`) y `ToolDef.description`/`args_schema` del gateway, que se agregaron sin subir la versión y quedan cubiertos por esta entrada;
+  - 0.5.0: `IdKind.proposal` e `IdKind.eval_run` (registry);
+  - 0.6.0: `GenerationResult.usage_known: bool = True` (`false` si el proveedor no informó el uso; M8 marca `cost_known = false`);
+  - 0.7.0: `AgentStepPayload.kind` admite `"failed"` y gana `error_kind: GatewayErrorKind | None = None` (el nodo `agent` deja un `agent_step` cuando el gateway falla, para que la auditoría explique el `gave_up`).
+- rev. 10 (2026-09-30), M12 `read` (`SCHEMA_VERSION` 0.7.0 → **1.0.0**, mayor: M0 §9, agregar un tipo de nodo y reemplazar un campo de `generate`). Cierra el Abierto "dependiente del tema #10":
+  - nodo `knowledge` (`KnowledgeConfig`, `KnowledgeNode`, `RESULTS["knowledge"]`; `low_confidence` es solo de `navigate`);
+  - `GenerateConfig`: `knowledge_refs` se elimina y entran `knowledge_from: list[SaveAs]` y `purpose: Purpose = "customer_answer"`;
+  - `RunState.pages: dict[SaveAs, list[PageView]]`; `SaveAs` pasa a `domain/base.py`;
+  - `domain/knowledge.py` (§2.12): `Purpose`, `PageMeta`, `PageView`, `PageRecord`, `KnowledgeView`, `PageRef`/`PageSpec` y sus parsers;
+  - evento `knowledge_read` (`KnowledgeReadPayload`, `FilteredPage`; emisor M12);
+  - puertos: `KnowledgeSource` definitivo (`capabilities`, `index`, `read`) y `AuthzPort.knowledge_view(principal, purpose) -> KnowledgeView`.
+  Los estados guardados con la versión anterior siguen cargando (`pages` tiene valor por defecto); los flows con `knowledge_refs` dejan de validar.
+- rev. 11 (2026-09-30), entrada del nodo `agent` (`SCHEMA_VERSION` 1.0.0 → **1.1.0**, menor: un campo opcional nuevo). `AgentNodeConfig.input_view: list[str] = []`: rutas `slots.*` y `facts.*` que el modelo ve en vista `model` (M1 §3.2, m02 §3.7). Sin él, el modelo solo veía el `goal` fijo y no podía atender lo que pidió la persona. Los flows existentes no cambian (vacío = no ve nada).
+- rev. 12 (2026-09-30), métricas por agente, ADR 0020 (`SCHEMA_VERSION` 1.1.0 → **1.2.0**, menor: un campo opcional nuevo). `Agent.metrics: list[MetricDef] = []` y los tipos del DSL de métricas (`domain/metrics.py`, `domain/metric_catalog.py`; §2.4). Los agentes existentes no cambian (lista vacía). Antes de unirse con la rama del registry esta entrada se numeraba 0.5.0; la numeración vigente es la de esta línea.
 - implementación de M0 (2026-09-29), decisiones que el spec no cubría:
   - `loads` rechaza claves duplicadas; `to_jsonable` rechaza claves que colisionan tras `str()`; `RecursionError` se convierte en `ValueError`; se rechaza un `Decimal` con |exponente| > 1000;
   - `dumps` escribe `Decimal` con `format(d, "f")` (no `str(d)`, que puede emitir `1E+3`);
@@ -222,7 +237,7 @@ Validadores: `default_locale ∈ supported_locales`; `ToolDef` de escritura exig
 
 `LanguageDetection` e `InjectionRuleset` son solo datos; la lógica es de M6. El formato de `thresholds_from` (artefacto de calibración) lo define M5.
 
-**`Agent.metrics` (ADR 0020, `SCHEMA_VERSION` 0.5.0).** Lista opcional de `MetricDef` (máximo 32): las métricas que el agente declara para el gate de evaluación y el monitoreo. El motor las ignora en runtime. Los tipos del DSL están en `domain/metrics.py` y el catálogo cerrado de eventos medibles en `domain/metric_catalog.py`. Spec: `docs/specs/2026-09-30-evaluacion-y-metricas-design.md`.
+**`Agent.metrics` (ADR 0020, `SCHEMA_VERSION` 1.2.0).** Lista opcional de `MetricDef` (máximo 32): las métricas que el agente declara para el gate de evaluación y el monitoreo. El motor las ignora en runtime. Los tipos del DSL están en `domain/metrics.py` y el catálogo cerrado de eventos medibles en `domain/metric_catalog.py`. Spec: `docs/specs/2026-09-30-evaluacion-y-metricas-design.md`.
 
 ### 2.5 Esquemas de nodos (`domain/nodes.py`)
 
@@ -239,19 +254,25 @@ class ConfirmConfig:  action: {tool: RefSpec, args: dict[str, JsonValue]}; summa
                       reprompt_template: RefSpec | None; max_attempts: int = 2
 class VerifyConfig:   readback: RefSpec; by: str; predicate: JsonValue; save_as: str
                       # by: "idempotency_key" | "fact:<ruta>"
-class GenerateConfig: prompt_ref: RefSpec; allowed_facts: list[str]; knowledge_refs: list[str] = []
-                      fallback_template_ref: RefSpec
+class GenerateConfig: prompt_ref: RefSpec; allowed_facts: list[str]; fallback_template_ref: RefSpec
+                      knowledge_from: list[SaveAs] = []        # save_as de nodos `knowledge` (M12; antes knowledge_refs)
+                      purpose: Purpose = "customer_answer"     # para quién es la respuesta (el más estricto por defecto)
 class RespondConfig:  template_ref: RefSpec | None; generate: GenerateConfig | None   # exactamente uno
                       await_: bool = False (alias "await"); claims: list[str] = []
 class EscalateConfig: reason_code: ReasonCodeStr; target_queue: str | None; priority_expr: JsonValue | None
 class EndConfig:      outcome: Outcome; output_map: dict[str, str] | None
+class KnowledgeConfig: mode: Literal["read", "navigate"]; pages: list[str] = []   # read: "ruta" | "ruta#ancla"
+                      scope: PagePath | None; selector: RefSpec | None             # navigate
+                      purpose: Purpose; save_as: SaveAs
+                      # read exige pages y prohíbe scope/selector; navigate al revés (M12)
 # Producción (G0-01 los rechaza en el MVP): AgentNodeConfig, SubflowConfig, AwaitApprovalConfig
 # ADR 0019 (SCHEMA_VERSION 0.4.0): `agent` se habilitó. AgentNodeConfig gana `save_as` y
 # `output_schema: dict[str, JsonValue]`; FactSource.kind gana "agent"; nuevo evento `agent_step` (emisor M2).
+# rev. 11 (SCHEMA_VERSION 1.1.0): AgentNodeConfig gana `input_view: list[str] = []` (rutas slots/facts).
 # Sin implementar: RiskClass.write_draft (efecto confinado a un borrador del registry; m01 §3.13).
 
 Node = Annotated[DecideNode | RuleNode | CollectNode | ToolNode | WriteToolNode | ConfirmNode
-                 | VerifyNode | RespondNode | EscalateNode | EndNode
+                 | VerifyNode | RespondNode | EscalateNode | EndNode | KnowledgeNode
                  | AgentNode | SubflowNode | AwaitApprovalNode, Discriminator(node_kind)]
 RESULTS: Mapping[str, frozenset[str]]     # por clave de nodo; "tool" y "tool_write" separados
 TERMINAL: frozenset[str] = {"escalate", "end"}
@@ -263,7 +284,7 @@ WAITING:  frozenset[str] = {"collect", "confirm"}   # más respond con await: tr
 - `ReasonCodeStr`: §2.7.
 - `target_queue` None en `escalate` significa `agent.default_target_queue`.
 - **Los esquemas validan forma, no semántica del grafo.** Alcanzabilidad, dominancia, reclamos y demás son reglas G0 de M1.
-- El nodo `knowledge` (ADR 0015) **no** entra hasta cerrar el tema #10. `knowledge_refs` se mantiene como en la spec general hasta entonces.
+- **Nodo `knowledge` (ADR 0015, M12, rev. 10):** `RESULTS["knowledge"] = {ok, not_found, denied, low_confidence}`; un `read` cablea solo los tres primeros (M1 G0-03) y `low_confidence` es de `navigate`. No es terminal ni espera.
 
 ### 2.6 Estado del run (`domain/state.py`)
 
@@ -297,6 +318,8 @@ class RunState:       run_id: str; session_id: str | None; state_version: int
                       awaiting: Awaiting = none; awaiting_node_id: str | None
                       active_flow: ActiveFlow | None; pending_intents: list[PendingIntent]; pending_offer: str | None
                       slots: dict[str, Slot]; facts: dict[str, Fact]; decisions: dict[str, Decision]
+                      pages: dict[save_as, list[PageView]]       # páginas de conocimiento, vista model; solo M12
+                      pages: dict[save_as, list[PageView]]      # páginas de conocimiento (vista model); solo M12
                       actions: list[Action]; token_map: EncryptedBlob | None; open_questions: list[str]
                       budgets_used: BudgetsUsed; turn_count: int; clarifications_used: int
                       node_attempts: dict[str, int]; repair_turns_used: int; degraded_turns: list[int]
@@ -401,6 +424,7 @@ class AuthzPort:
     def authorize_subject(self, principal: Principal, obo: OnBehalfOf | None, subject: SubjectRef | None) -> AuthzDecision
     def bind_params(self, principal: Principal, obo: OnBehalfOf | None, subject: SubjectRef | None) -> dict[str, str]
     def can_read_field(self, reader: Principal, obo: OnBehalfOf | None, field: str, purpose: str) -> bool
+    def knowledge_view(self, principal: Principal, purpose: Purpose) -> KnowledgeView    # M12: qué páginas puede leer
     def reportable_attrs(self) -> frozenset[str]
 
 class IdentityVerifier:
@@ -438,6 +462,7 @@ class Outbox:                        # lo consume la unidad 4; se escribe por la
     def mark_delivered(self, message_id: str) -> None
 
 class GenerationResult: output: JsonValue; tokens_in: int; tokens_out: int; cost_usd: Decimal; model: str
+                        usage_known: bool = True   # false: el proveedor no informó el uso (M8 marca cost_known = false)
 # generate falla con GatewayError (§2.11); detalle en la spec de la unidad 5
 class LLMGateway:
     def generate(self, prompt: EntityRef, inputs_model_view: dict[str, JsonValue], locale: Locale,
@@ -448,9 +473,10 @@ class TranscriptStore:
     def read(self, run_id: str) -> list[TranscriptEntry]
     def recent_turns(self, run_id: str, n: int) -> list[TranscriptEntry]
 
-class KnowledgeSource:               # PROVISIONAL hasta cerrar el tema #10 (M12); no se implementa en fase 1
+class KnowledgeSource:               # M12 (rev. 10); `search` no existe todavía
     def capabilities(self) -> frozenset[str]
-    def read(self, path: str, snapshot: str, view: str) -> dict[str, JsonValue] | None
+    def index(self, snapshot: str, view: KnowledgeView) -> list[PageMeta]          # visibles con `view`, por ruta
+    def read(self, path: str, snapshot: str, view: KnowledgeView) -> PageRecord | None   # None: ausente o fuera de la vista
 
 class KeyPurpose(StrEnum): fingerprint, token_map
 class KeyProvider:
@@ -496,6 +522,7 @@ Todo payload está en **vista `audit`**: sin `pii_direct` en claro, sin tokens r
 | `decision_made` | `decision_id, model: EntityRef, provider_used, model_version, fallback_depth, value (audit), p_cal, p_raw, top_k, above_threshold, latency_ms, tokens, cost_usd, locale` | M5 |
 | `rule_evaluated` | `node_id, policy: EntityRef?, inputs (audit), result: bool` | M2 |
 | `tool_called` | `node_id, tool: EntityRef, call_id, status, args (audit), result (audit)?, result_fp?, error?, attempt, action_id?, latency_ms` | M2 (lectura y `compute`), M3 (escritura) |
+| `knowledge_read` | `node_id, purpose, result: ok\|not_found\|denied, refs, filtered_out: [{ref, reason}], missing, reason?: source_unavailable\|navigate_unavailable\|no_snapshot` (solo referencias y motivos, nunca texto de páginas) | M12 |
 | `step_up_requested` | `node_id, required_level, attempt` | M2 |
 | `action_confirmed` | `action_id, source: understand\|button` | M3 |
 | `action_cancelled` | `action_id, reason: InvalidationReason` | M3 |
@@ -556,6 +583,30 @@ class EngineError(Exception): code: ProblemCode; detail: str
 - Cualquier otro `DomainError` que llegue a M9 es un `500 internal_error` con `trace_id`, sin detalle interno.
 - `idempotency_conflict`: la misma `Idempotency-Key` y el mismo principal con otro body.
 - `agent_forbidden`: falla `authorize_agent` (tipo de principal, `subject_kind` o nivel de autenticación).
+
+### 2.12 Conocimiento (`domain/knowledge.py`)
+
+Tipos de M12 que cruzan fronteras (M1 valida el nodo, M8 valida las citas, M12 lee y filtra; entre ellos no se pueden importar). Ver `m12-conocimiento.md` §2.
+
+```python
+Audience = Literal["public", "internal", "agent_only"]; PageStatus = Literal["draft", "approved"]
+Purpose = Literal["customer_answer", "advisor_view", "agent_guidance"]
+class PageMeta:    path; anchor; snapshot; type; audience; status; approved_by; lang; translation_of
+                   valid_from; valid_to; source_refs      # aprobada ⇔ tiene approved_by; valid_from ≤ valid_to
+class PageView:    ref: str; meta: PageMeta; content_model: str     # ref = "ruta@snapshot#ancla", coincide con meta
+                   source -> FactSource{kind: knowledge, ref}       # propiedad derivada
+class PageRecord:  meta: PageMeta; content: str                     # vista full; `content` fuera de repr y de la serialización
+class KnowledgeView: audiences: frozenset[Audience]; approved_only: bool
+class PageRef:     path; snapshot; anchor | None                    # "ruta@snapshot#ancla"
+class PageSpec:    path; anchor | None                              # "ruta#ancla" (autoría)
+def page_ref(path, snapshot, anchor=None) -> str
+def parse_page_ref(text) -> PageRef | None       # None si no es una cita a una página (un fact_id nunca lo es)
+def parse_page_spec(text) -> PageSpec            # lanza ValueError
+def check_page_path(path) -> str                 # rechaza `..`, `//` y `/` final
+```
+
+- La ruta solo admite `[A-Za-z0-9_./-]` y no admite `@`; el primer `@` de una cita separa ruta y snapshot, y el snapshot (`id@versión`) puede llevar `@`.
+- `KnowledgePage` (manifiesto del snapshot, §2.4) reutiliza `PagePath`, `Audience` y `PageStatus`.
 
 ## 3. Comportamiento
 
@@ -649,6 +700,6 @@ No tiene métricas propias. Los esquemas de eventos son la entrada de la unidad 
 ## 11. Abiertos
 
 - Ninguno bloqueante para la fase 1.
-- **Agentes internos (ADR 0019):** `AgentNodeConfig.save_as`/`output_schema`, `FactSource.kind = "agent"` y el evento `agent_step` están implementados (SCHEMA_VERSION 0.4.0, `contracts/` regenerado). `RiskClass.write_draft` sigue solo diseñado. Falta decidir si `Agent.default_target_queue` pasa a ser opcional para agentes que nunca escalan.
-- **Dependiente del tema #10:** el nodo `knowledge`, `RunState.pages`, `PageView` y la forma final de `KnowledgeSource` entran cuando se apruebe M12 (versión mayor del esquema de flows, versión menor del resto).
+- **Agentes internos (ADR 0019):** `AgentNodeConfig.save_as`/`output_schema`, `FactSource.kind = "agent"` y el evento `agent_step` están implementados (SCHEMA_VERSION 0.4.0, `contracts/` regenerado; hoy 0.7.0). `RiskClass.write_draft` sigue solo diseñado. Falta decidir si `Agent.default_target_queue` pasa a ser opcional para agentes que nunca escalan.
+- ~~**Dependiente del tema #10:** el nodo `knowledge`, `RunState.pages`, `PageView` y la forma final de `KnowledgeSource`~~ **Resuelto 2026-09-30 (rev. 10, `SCHEMA_VERSION` 1.0.0):** entraron con M12 `read`.
 - ~~**Formato de la credencial** (`raw_credential`)~~ **Resuelto 2026-09-29 (M9 §3.8):** JWS compacto Ed25519 con `kid`; no cambia el puerto.

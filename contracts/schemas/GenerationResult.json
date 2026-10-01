@@ -69,6 +69,11 @@
       "minimum": 0,
       "title": "Tokens Out",
       "type": "integer"
+    },
+    "usage_known": {
+      "default": true,
+      "title": "Usage Known",
+      "type": "boolean"
     }
   },
   "required": [

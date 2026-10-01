@@ -18,6 +18,7 @@ from agent_core.domain import (
     Fact,
     FactSource,
     GatewayError,
+    GatewayErrorKind,
     IllegalTransition,
     JsonValue,
     RiskClass,
@@ -34,7 +35,9 @@ from agent_core.interpreter.events import Events
 from agent_core.interpreter.handlers.base import NodeResult, escalate_now
 from agent_core.interpreter.handlers.tool import call_tool
 from agent_core.interpreter.ports import AgentFinal, AgentObservation, AgentRequest, AgentToolCall
+from agent_core.interpreter.projection import model_inputs
 from agent_core.interpreter.refs import exact_ref
+from agent_core.interpreter.resolve import MissingPath, parse_runtime_path
 from agent_core.ports import IdKind, ToolStatus
 from agent_core.views import TOKEN_PATTERN, TokenVault
 
@@ -56,15 +59,28 @@ def _detokenize(value: Any, vault: TokenVault) -> Any:
     return value
 
 
+def _read_fact_ids(node: AgentNode, state: RunState) -> list[str]:
+    """Los `fact_id` que lee `input_view`, en orden y sin repetir: parte de la procedencia de la salida."""
+    ids: list[str] = []
+    for raw in node.config.input_view:
+        path = parse_runtime_path(raw)
+        fact = state.facts.get(path.name or "") if path is not None and path.ns == "facts" else None
+        if fact is not None and fact.fact_id not in ids:
+            ids.append(fact.fact_id)
+    return ids
+
+
 class _Loop:
     """El estado mutable de un nodo `agent` mientras corre; un `handle_agent` por instancia."""
 
-    def __init__(self, node: AgentNode, state: RunState, ctx: StepContext) -> None:
-        self.node, self.state, self.ctx = node, state, ctx
+    def __init__(self, node: AgentNode, state: RunState, ctx: StepContext,
+                 inputs: dict[str, JsonValue]) -> None:
+        self.node, self.state, self.ctx, self.inputs = node, state, ctx, inputs
         self.events = Events(ctx)
         self.emitted: list[EngineEvent] = []
         self.observations: list[AgentObservation] = []
         self.call_ids: list[str] = []
+        self.read_ids = _read_fact_ids(node, state)
         self.allowed = {exact_ref(ctx, EntityKind.tool, ref) for ref in node.config.tools_allowed}
 
     def _ms(self, started: int) -> int:
@@ -74,6 +90,10 @@ class _Loop:
         payload = AgentStepPayload(node_id=self.node.id, step=step, latency_ms=self._ms(started), **fields)
         self.emitted.append(self.events.agent_step(self.state, payload))
 
+    def failed(self, step: int, started: int, kind: GatewayErrorKind) -> None:
+        """Deja rastro del fallo del gateway para que la auditoría explique el `gave_up`."""
+        self._step_event(step, started, kind="failed", error_kind=kind)
+
     def final(self, step: int, started: int, output: JsonValue) -> str | None:
         """`None` si la salida entró como hecho; si no, el motivo (sin datos) para regenerar."""
         error = check_output(self.node.config.output_schema, output)
@@ -81,8 +101,8 @@ class _Loop:
         self._step_event(step, started, kind="final", text_fp=fingerprint)
         if error is not None:
             return error
-        fact = Fact(fact_id=self.ctx.ids.new_id(IdKind.fact), value=output,
-                    source=FactSource(kind="agent", ref=self.node.id, inputs=list(self.call_ids)),
+        source = FactSource(kind="agent", ref=self.node.id, inputs=[*self.read_ids, *self.call_ids])
+        fact = Fact(fact_id=self.ctx.ids.new_id(IdKind.fact), value=output, source=source,
                     ts=self.ctx.clock.now())
         facts = {**self.state.facts, self.node.config.save_as: fact}
         self.state = self.state.model_copy(update={"facts": facts})
@@ -135,21 +155,26 @@ def handle_agent(node: AgentNode, state: RunState, ctx: StepContext, resume: Res
         return NodeResult(state, result_key="gave_up")
     if ctx.agents is None:
         raise IllegalTransition(f"el nodo agent {node.id} necesita un AgentPort en el StepContext")
-    loop = _Loop(node, state, ctx)
+    try:
+        inputs = model_inputs(node.config.input_view, state, ctx)
+    except MissingPath:
+        return NodeResult(state, result_key="gave_up")  # sin lo que debe ver, el modelo no se llama
+    loop = _Loop(node, state, ctx, inputs)
     feedback: str | None = None
     regenerated = False
     for step in range(1, node.config.max_steps + 1):
         if run_budget_exhausted(loop.state, ctx):
             return escalate_now(loop.state, ctx, "budget_exceeded", loop.emitted)
         started = ctx.clock.monotonic_ns()
+        request = AgentRequest(node.id, node.config, step, tuple(loop.observations), feedback, loop.inputs)
         try:
-            result = ctx.agents.step(
-                AgentRequest(node.id, node.config, step, tuple(loop.observations), feedback), loop.state)
+            result = ctx.agents.step(request, loop.state)
         except GatewayError as failure:
             # La falla del modelo no escapa del turno: el nodo se rinde y cuenta lo que el proveedor informó.
             loop.state = charge_model(
                 loop.state, calls=1, tokens=(failure.tokens_in or 0) + (failure.tokens_out or 0),
                 cost=failure.cost_usd or Decimal("0"))
+            loop.failed(step, started, failure.kind)
             break
         loop.state = charge_model(loop.state, calls=result.model_calls, tokens=result.tokens,
                                   cost=result.cost_usd)

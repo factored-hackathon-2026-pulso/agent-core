@@ -11,7 +11,9 @@
     "call",
     "handoff",
     "event",
-    "message"
+    "message",
+    "proposal",
+    "eval_run"
   ],
   "title": "IdKind",
   "type": "string"

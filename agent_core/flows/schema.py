@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from agent_core.domain import (
     PRODUCTION_NODE_KINDS,
+    AgentNode,
     CollectNode,
     ConfirmNode,
     DecideNode,
@@ -16,7 +17,6 @@ from agent_core.domain import (
     Flow,
     JsonValue,
     Node,
-    RefSpec,
     RespondNode,
     RuleNode,
     SlotValidator,
@@ -150,7 +150,7 @@ def _required_paths(node: Node) -> Iterator[tuple[str, str]]:
     if isinstance(node, EndNode) and node.config.output_map:
         for key, text in sorted(node.config.output_map.items()):
             yield (f"/config/output_map/{pointer_segment(key)}", text)
-    if isinstance(node, DecideNode) and node.config.input_view:
+    if isinstance(node, DecideNode | AgentNode) and node.config.input_view:
         for i, text in enumerate(node.config.input_view):
             yield (f"/config/input_view/{i}", text)
     if isinstance(node, VerifyNode) and node.config.by.startswith("fact:"):
@@ -251,13 +251,9 @@ def validator_problems(validator: SlotValidator) -> list[str]:
         strings = [v for v in items if isinstance(v, str)]
         ok = bool(strings) and len(strings) == len(items) and len(set(strings)) == len(strings)
         return [] if ok else ["el enum debe ser una lista no vacía de strings sin repetidos"]
-    if isinstance(value, str):
-        try:
-            RefSpec.parse(value)
-            return []
-        except ValueError:
-            pass
-    return [f"el validador decide necesita una referencia a un decision_model: {clip(value)!r}"]
+    # `decide`: el intérprete aún no lo ejecuta (m02 D14: no se sabe qué campo de la decisión valida); se
+    # rechaza aquí para que una release no se publique con un flow que fallaría en ejecución.
+    return ["el validador decide no está soportado todavía (m02 D14)"]
 
 
 def schema_violations(flow: Flow) -> list[Violation]:
@@ -281,12 +277,6 @@ def schema_violations(flow: Flow) -> list[Violation]:
         if node_kind(node) in PRODUCTION_NODE_KINDS:
             add("tipo de producción no habilitado")
             continue
-        if (
-            isinstance(node, RespondNode)
-            and node.config.generate is not None
-            and node.config.generate.knowledge_refs
-        ):
-            add("conocimiento no habilitado (tema #10)", "/config/generate/knowledge_refs")
         for sub, expr in _jsonlogic_fields(node):
             for problem in jsonlogic_problems(expr):
                 add(f"JSON Logic {clip(problem, 2 * MAX_ECHO)}", sub)
