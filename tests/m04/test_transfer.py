@@ -1,12 +1,16 @@
 """Transfer end to end in M4 (ADR 0021, T-TR-01, T-TR-02, T-TR-07, T-TR-08): the target run opens and
 answers in the same turn, inside the same unit of work."""
 
+from typing import Any
+
 import pytest
 
 from agent_core.audit import AuditLog, check_chain
-from agent_core.domain import TurnResult
+from agent_core.domain import DecisionModelDef, IllegalTransition, TurnResult
+from testing.fakes.decision import make_decision
 from testing.fakes.storage import SimulatedCrash
-from tests.m04.harness import RUN_ID, SPECIALIST_RELEASE_ID, World
+from tests.m02.harness import tool_def
+from tests.m04.harness import RUN_ID, SPECIALIST_RELEASE_ID, World, flow, node
 from tests.m04.helpers import cmd
 
 TEXT = "no reconozco un cargo"
@@ -159,9 +163,14 @@ def test_crash_on_commit_leaves_nothing() -> None:  # T-TR-07, Review Focus 5
     assert [r.agent.id for r in runs] == ["recepcion"] and runs[0].status == "open"
     assert len(w.store.runs) == 1 and w.audit.read(RUN_ID) == []
     assert w.store.turn_results == {}
+    assert w.store.events == {}  # no event under any run id, the target's included
+    # Outside the UoW: the transcript entries of both runs were written and stay orphaned (m04 §3.8.7).
+    assert [call[0] for call in w.recorder.calls] == [RUN_ID, "run-0002"]
     # The retry with the same client_turn_id runs the whole transfer again (the lease was released).
     _transfer(w, client_turn_id="c-1")
-    assert [r.agent.id for r in w.session_runs()] == ["recepcion", "disputas"]
+    runs = w.session_runs()
+    assert [r.agent.id for r in runs] == ["recepcion", "disputas"]
+    assert runs[1].run_id != "run-0002"  # `to_run_id` comes from the IdSource again: it changes on retry
 
 
 def test_origin_is_saved_before_the_target() -> None:
@@ -201,3 +210,114 @@ def test_next_turn_goes_to_the_target() -> None:
     result = w.turn("un cargo de cincuenta")
     _, target = w.session_runs()
     assert result.run_id == target.run_id and result.confirmation is not None
+
+
+# --- review fixes (2026-10-01) ---------------------------------------------------------------------------
+
+
+def test_crash_on_commit_leaves_orphan_transcript_entries_and_no_events() -> None:  # I1
+    """The turn's UoW covers runs, event chains, usage and turn results. The transcript is written by the
+    `TurnRecorder` outside it (M11): after a crash its entries for both runs stay, orphaned."""
+    w = _world()
+    w.understand.push(cmd("continue"), cmd("start_flow", flow="disputa"))
+    w.store.inject("on_commit")
+    with pytest.raises(SimulatedCrash):
+        w.turn(TEXT, client_turn_id="c-1")
+    recorded = [call[0] for call in w.recorder.calls]
+    assert recorded == [RUN_ID, "run-0002"]  # origin, then the target that was never committed
+    assert w.store.events == {} and w.store.usage == {}
+    assert set(w.store.runs) == {RUN_ID} and w.store.sessions == {"session-0001": [RUN_ID]}
+
+
+def test_plain_chain_without_hashes_rolls_back_cleanly() -> None:  # M3
+    w = World()  # PlainChain: events carry no hash, so there is nothing to link the target to
+    w.reception()
+    before = w.store.runs[RUN_ID]
+    w.understand.push(cmd("continue"), cmd("start_flow", flow="disputa"))
+    with pytest.raises(IllegalTransition):
+        w.turn(TEXT, client_turn_id="c-1")
+    assert w.store.runs == {RUN_ID: before} and w.store.events == {} and w.store.turn_results == {}
+    assert w.store.leases == {}  # an exception (not a crash) releases the lease
+
+
+def test_target_escalating_in_its_first_turn_is_the_turns_result() -> None:  # I3 (a)
+    w = _world()
+    w.understand.push(cmd("continue"), cmd("handoff"))
+    first = w.turn(TEXT, client_turn_id="c-1")
+    source, target = w.session_runs()
+    assert source.outcome is not None and source.outcome.value == "transferred"
+    assert target.status == "escalated" and first.status == "escalated"
+    assert first.run_id == target.run_id and first.agent == target.agent
+    assert w.store.turn_results[(target.run_id, "c-1")] == first
+    opened = w.runtimes.opened
+    assert w.turn(TEXT, client_turn_id="c-1") == first and w.runtimes.opened == opened
+
+
+ROUTER = DecisionModelDef.model_validate({
+    "id": "router", "version": "1.0.0", "output_schema": {"type": "object"}, "calibrated_fields": ["choice"],
+    "input_view": [], "providers": [{"provider": "llm_structured"}], "calibration": {"method": "none"}})
+# A specialist flow that reads the directory, chooses and transfers again (I3 b).
+REENVIO = flow(
+    "reenvio",
+    20,
+    node("leer", "tool", {"tool": "leer_directorio@1.0.0", "args": {}, "save_as": "directorio"},
+         ok="elegir", failed="esc"),
+    node("elegir", "decide",
+         {"model": "router@1.0.0", "branch_on": "choice", "save_as": "ruta",
+          "choices_from": "facts.directorio.value.choices", "input_view": []},
+         chosen="transferir", none="esc", low_confidence="esc"),
+    node("transferir", "transfer",
+         {"target_from": "decisions.ruta.choice", "directory_from": "directorio",
+          "packet": {"reason": "routed", "slots": ["problema"]}},
+         rejected="esc"),
+    node("esc", "escalate", {"reason_code": "policy:transfer_rejected"}),
+)
+
+
+def test_a_transfer_from_the_target_hits_the_session_limit() -> None:  # I3 (b), P5
+    w = World(chain_factory=AuditLog)
+    w.add(ROUTER, REENVIO)
+    served: dict[str, Any] = {}  # the tool serves the same directory the reception read
+    w.add_tool(tool_def("leer_directorio", "read"), handler=lambda _: served["directorio"])
+    state = w.reception()
+    assert state is not None
+    served["directorio"] = state.facts["directorio"].value
+    w.decisions.push(make_decision({"choice": "disputas"}, {"choice": True}))
+    w.understand.push(cmd("continue"), cmd("start_flow", flow="reenvio"))
+    result = w.turn(TEXT, client_turn_id="c-1")
+    runs = w.session_runs()
+    assert [r.agent.id for r in runs] == ["recepcion", "disputas"]  # no third run
+    target = runs[1]
+    assert target.origin is not None and target.origin.depth == 1
+    rejected = [e for e in w.audit.read(target.run_id) if e.type == "transfer_rejected"]
+    assert [e.payload.reason_code for e in rejected] == ["transfer_limit"]
+    assert target.status == "escalated" and result.status == "escalated" and result.run_id == target.run_id
+    assert w.decisions.choice_calls[0][2] == ["disputas"]
+
+
+CONFIRMAR_PRIMERO = flow(
+    "confirmar-primero",
+    20,
+    node("confirmar", "confirm",
+         {"action": {"tool": "radicar_pqr@1.0.0", "args": {"descripcion": "slots.problema"}},
+          "summary_template": "t-resumen@1.0.0", "reprompt_template": "t-reprompt@1.0.0", "max_attempts": 5},
+         yes="radicar", no="fin", unclear="confirmar", max_attempts="fin"),
+    node("radicar", "tool", {"action_from": "confirmar", "save_as": "pqr"},
+         ok="fin", uncertain="fin", denied="fin"),
+    node("fin", "end", {"outcome": "resolved"}),
+)
+
+
+def test_the_target_can_only_propose_a_write_in_the_transfer_turn() -> None:  # I2, current behaviour
+    """A write needs a proposal confirmed in a later turn of the same run, so the target's first turn can
+    only propose it: no M3 commit of its own happens inside the transfer turn (m04 §11, Abierto)."""
+    w = World(chain_factory=AuditLog)
+    w.add(CONFIRMAR_PRIMERO)
+    w.reception()
+    w.uow_factory.commits = 0  # type: ignore[attr-defined]
+    w.understand.push(cmd("continue"), cmd("start_flow", flow="confirmar-primero"))
+    result = w.turn(TEXT)
+    _, target = w.session_runs()
+    assert result.confirmation is not None and result.run_id == target.run_id
+    assert [a.state for a in target.actions] == ["proposed"]
+    assert w.write_calls() == [] and w.uow_factory.commits == 1  # type: ignore[attr-defined]
