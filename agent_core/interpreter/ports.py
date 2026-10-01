@@ -41,6 +41,11 @@ class DecisionPort(Protocol):
     def decide(self, model: EntityRef, inputs_model_view: dict[str, JsonValue],
                locale: Locale) -> DecisionResult: ...
 
+    def decide_choice(self, model: EntityRef, inputs_model_view: dict[str, JsonValue], choices: list[str],
+                      locale: Locale) -> DecisionResult:
+        """Picks one of `choices` or `"none"`; the decision value is `{"choice": ...}` (ADR 0021)."""
+        ...
+
 
 @dataclass(frozen=True)
 class GenerateRequest:
