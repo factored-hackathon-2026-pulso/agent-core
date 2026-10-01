@@ -15,3 +15,8 @@ def test_error_carries_code_detail_and_payload() -> None:
     err = RegistryError(RegistryErrorCode.gate_failed, "no pasa", payload={"x": 1})
     assert (err.code, err.detail, err.payload) == (RegistryErrorCode.gate_failed, "no pasa", {"x": 1})
     assert IntegrityError("blob").code is RegistryErrorCode.integrity_error
+
+
+def test_new_codes_have_http_status() -> None:
+    assert HTTP_STATUS[RegistryErrorCode.idempotency_conflict] == 409
+    assert HTTP_STATUS[RegistryErrorCode.quota_exceeded] == 429
