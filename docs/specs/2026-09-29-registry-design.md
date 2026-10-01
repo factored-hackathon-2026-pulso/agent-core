@@ -268,12 +268,12 @@ class SandboxPort(Protocol):                                       # lo implemen
 ```python
 class RegistryService:
     # Construcción (rol constructor)
-    def create_proposal(self, actor, agent_id, origin, title) -> Proposal
-    def put_draft(self, actor, proposal_id, changes: list[EntityDraft], expected_rev: int) -> Proposal
+    def create_proposal(self, actor, agent_id, origin, title, *, idempotency_key=None, audit=None) -> Proposal
+    def put_draft(self, actor, proposal_id, changes: list[EntityDraft], expected_rev: int, *, idempotency_key=None, audit=None) -> Proposal
     def validate(self, actor, proposal_id) -> ValidationReport
-    def freeze(self, actor, proposal_id) -> Candidate
-    def evaluate(self, actor, proposal_id, suite: EntityRef) -> EvalReport
-    def reopen(self, actor, proposal_id) -> Proposal
+    def freeze(self, actor, proposal_id, *, idempotency_key=None, audit=None) -> Candidate
+    def evaluate(self, actor, proposal_id, suite: EntityRef, *, idempotency_key=None, audit=None) -> EvalReport
+    def reopen(self, actor, proposal_id, *, idempotency_key=None, audit=None) -> Proposal
 
     # Decisiones (rol aprobador, principal humano)
     def approve(self, actor, proposal_id, candidate_hash: str) -> Approval
@@ -286,6 +286,7 @@ class RegistryService:
     # Lecturas (cualquier builder autenticado)
     def get_proposal(self, proposal_id) -> ProposalDetail            # cambios, violaciones, candidata, último reporte
     def get_entity(self, kind, entity_id, version: str | None) -> EntityVersion
+    def get_write(self, idempotency_key) -> WriteRecord | None       # readback de las escrituras con clave
     def list_versions(self, kind, entity_id) -> list[VersionSummary]
     def get_release(self, release_id) -> ReleaseDetail
     def diff_releases(self, a: str, b: str) -> ReleaseDiff           # refs añadidas, quitadas y cambiadas, con VersionDocs
@@ -341,6 +342,8 @@ Se monta en la app FastAPI de M9 como `ApiExtension` (`ApiDeps.extensions`, por 
 | `forbidden_role` | 403 | falta el rol, el principal no es `builder` o no es humano donde se exige |
 | `step_up_required` | 403 | una operación de `aprobador` o `admin` sin autenticación reforzada |
 | `integrity_error` | 500 | el hash de un contenido no coincide |
+| `idempotency_conflict` | 409 | una clave de idempotencia reutilizada con otro contenido |
+| `quota_exceeded` | 429 | tope del constructor autónomo (propuestas por día o evaluaciones por propuesta) |
 
 ### 7.5 CLI (`agentcore registry …`)
 
@@ -369,6 +372,7 @@ Quién es quién (decisión 2026-09-30, tema #14): el **supervisor** es una pers
 - **Contenido no confiable:** todo lo que propone un agente o un LLM se valida contra el esquema estricto, nunca se ejecuta y tiene límites de tamaño y cantidad.
 - **Lo que el constructor lee** (trazas, documentación, páginas) es dato, no instrucción (ADR 0008, M12).
 - **Datos:** las suites y los `seed` del sandbox usan solo datos sintéticos.
+- **Topes del constructor autónomo (tema #16):** `create_proposal` con `origin = auto_detect` falla con `quota_exceeded` (429) si ya hay 10 creadas en las últimas 24 h (ventana móvil con el `Clock`), y `evaluate` sobre una propuesta `auto_detect` falla igual si ya tiene 20 evaluaciones (incluidas `failed_infra`). Se aplican en el servicio. El tope de costo por propuesta está diferido.
 
 ## 9. Linaje por ejecución
 
@@ -541,7 +545,7 @@ Diseño conservado de la rev. 1, que no se construye antes del 05/10:
 1. **Calibración de la suite de la demo:** `repetitions`, `noise_margin` y `floor` se fijan con corridas reales contra el LLM.
 2. **Entrega del `SandboxPort` real** por la unidad 3 (fecha y forma del `seed`). Mientras tanto, `LocalSandbox`.
 3. ~~**Límites concretos**~~ **Decidido 2026-09-30 (tema #16):** 50 cambios por propuesta, 262 144 bytes por entidad y 200 nodos por flow (`registry/validation.py`, `Limits`).
-4. ~~**Retención**~~ **Decidido 2026-09-30 (tema #16):** se conserva todo en el MVP; fase 2: purgar propuestas abandonadas de más de 90 días y conservar las últimas N evaluaciones por propuesta.
+4. ~~**Retención**~~ **Decidido 2026-09-30 (tema #16):** se conserva todo en el MVP; fase 2: purgar propuestas abandonadas de más de 90 días y conservar las últimas N evaluaciones por propuesta. Los topes del constructor autónomo (10 y 20) están implementados.
 
 ## 18. Dependencias del motor y de los agentes internos (ADR 0019)
 
@@ -551,7 +555,7 @@ Lo que el motor y los agentes internos (constructor, copiloto del asesor) necesi
 
 | # | Dependencia | Quién la necesita | Nota |
 |---|---|---|---|
-| 1 | **Borradores reversibles e idempotentes** (`put_draft` con `expected_rev`, reintento con la misma `idempotency_key` sin duplicar) y **`readback_by`** para verificar la escritura | tools `write_draft` del constructor | La clase `write_draft` solo es admisible si ninguna release publicada lee un borrador (§2 regla 7). Si no se garantiza, el constructor vuelve a `confirm → act → verify` |
+| 1 | **Borradores reversibles e idempotentes** (`put_draft` con `expected_rev`, reintento con la misma `idempotency_key` sin duplicar) y **`readback_by`** para verificar la escritura | tools `write_draft` del constructor | La clase `write_draft` solo es admisible si ninguna release publicada lee un borrador (§2 regla 8). Si no se garantiza, el constructor vuelve a `confirm → act → verify`. **Construido (2026-09-30, spec write-draft fase 1):** `reg_draft_writes`, `idempotency_key` en `create_proposal`, `put_draft`, `freeze`, `reopen` y `evaluate`, y `get_write`. La regla 8 la guardan `tests/registry/test_rule8_invariant.py` y la prueba de contrato de `tests/integration/test_registry_postgres.py` |
 | 2 | **Adaptador de `ToolExecutor`** que envuelva la API de §6 (crear propuesta, editar borrador, validar, congelar, evaluar) con su propia credencial de rol `constructor` | constructor | `FakeToolExecutor` cubre las pruebas mientras tanto |
 | 3 | **`forbidden_role` en `ProblemCode`** (M0) y su verificación en el servidor | constructor | Hoy no existe en `agent_core` |
 | 4 | **Puerto de escritura de propuestas.** `RegistryPort` (M0) es solo lectura | constructor | Un puerto nuevo cambia M0 y `contracts/` |

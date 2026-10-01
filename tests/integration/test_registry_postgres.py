@@ -371,3 +371,21 @@ def test_counts_for_the_autonomous_builder_quotas(registry_store: PgRegistryStor
         assert tx.count_created_after("manual", NOW - timedelta(hours=24)) == 1
         assert tx.count_eval_runs("p") == 0
         assert tx.get_eval_run("nada") is None
+
+
+def test_a_draft_is_never_served_as_executable_content(registry_store: PgRegistryStore) -> None:  # regla 8
+    from agent_core.domain import Prompt
+
+    service = _service(registry_store)
+    service.import_seed(admin(), REGISTRY_DEMO)
+    runtime = PostgresRegistry(registry_store, FakeClock())
+    before = runtime.resolve_release(AgentSelector.parse(AGENT), principal())
+    p = service.create_proposal(ANA, AGENT, Origin.manual, "borrador")
+    service.put_draft(ANA, p.proposal_id,
+                      [prompt_draft(version="9.9.9"), prompt_draft(version="1.0.0", id="p/solo_borrador")],
+                      expected_rev=0)
+    for ref in ("p/resumen_radicado@9.9.9", "p/solo_borrador@1.0.0"):  # versión nueva y entidad nueva
+        with pytest.raises(KeyError):
+            runtime.get(EntityRef.parse(ref), Prompt)
+    after = runtime.resolve_release(AgentSelector.parse(AGENT), principal())
+    assert after.id == before.id  # un borrador no mueve el alias ni crea una release
