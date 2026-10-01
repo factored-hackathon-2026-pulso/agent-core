@@ -34,6 +34,7 @@ class ActionManager:
         -> tuple[RunState, Literal["yes", "no", "unclear", "max_attempts"], list[EngineEvent]]
     def execute_write(self, state, write_node, ctx)
         -> tuple[RunState, Literal["ok", "denied", "uncertain", "step_up_required"], list[EngineEvent]]  # eventos ya persistidos
+    def freeze_draft_write(self, state, write_node, resolved_args, tool_def, ctx) -> RunState   # ADR 0019: sin confirm, sin token
     def verify(self, state, verify_node, ctx) -> tuple[RunState, Literal["verified", "failed"], list[EngineEvent]]
     def pending_recovery(self, state) -> list[str]           # action_ids en `executing`
     def invalidate(self, state, reason: InvalidationReason, *, turn_id: str | None = None) -> tuple[RunState, list[EngineEvent]]
@@ -66,6 +67,7 @@ class ActionManager:
 | `executing` | `step_up_required` (commit 2) | `confirmed` |
 | `executed` · `uncertain` | `verify` | `verified` · `failed` |
 | `executing` (al cargar) | recuperación | → `verify` |
+| — | `freeze_draft_write` (ADR 0019, §3.7) | `confirmed` (sin token) |
 
 Cualquier otra transición lanza `IllegalTransition` (bug, no error de usuario).
 
@@ -102,6 +104,10 @@ Solo admite `by: idempotency_key` (otro valor → `ValueError`). Actúa sobre la
 
 - `pending_recovery`: al cargar un run (M4), toda acción en `executing` se lleva a su `verify` **sin re-ejecutar**. M4 posiciona el flow en el `verify` que sigue al nodo de escritura (lo resuelve con `write_node.next.uncertain`).
 - `invalidate`: toda acción `proposed` o `confirmed` pasa a `cancelled`. Las `executing` o posteriores **no** se tocan.
+
+### 3.7 Escritura `draft` (ADR 0019)
+
+Una tool `write_draft` se invoca con un nodo `tool` con `draft: true` y **sin `confirm`**. `freeze_draft_write` crea la acción directamente en `confirmed`: `write_node_id` es el nodo; `confirm_node_id`, token y vencimiento son nulos; `idempotency_key = action_id`. Con una acción `confirmed` de ese nodo en el flow activo (reentrada tras un `step_up_required`) conserva la acción congelada y sus args. Lanza `ValueError` si el nodo no es draft o la tool no es la `write_draft` que declara, e `IllegalTransition` sin flow activo. `execute_write` busca la acción por `write_node_id` en vez de por `action_from`. Desde ahí siguen `execute_write` (commit 1, tool, commit 2), `verify` y la recuperación `executing → verify` exactamente como en §3.4 a §3.6. `invalidate` cancela una acción draft `confirmed` que aún no corrió; `expire_tokens` la ignora (no tiene token). Pruebas: `tests/m03/test_draft_write.py`.
 
 ## 4. Invariantes
 
