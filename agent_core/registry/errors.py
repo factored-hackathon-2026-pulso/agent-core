@@ -17,6 +17,8 @@ class RegistryErrorCode(StrEnum):
     step_up_required = "step_up_required"
     integrity_error = "integrity_error"
     not_found = "not_found"
+    idempotency_conflict = "idempotency_conflict"
+    quota_exceeded = "quota_exceeded"
 
 
 HTTP_STATUS: Mapping[RegistryErrorCode, int] = MappingProxyType({
@@ -29,6 +31,8 @@ HTTP_STATUS: Mapping[RegistryErrorCode, int] = MappingProxyType({
     RegistryErrorCode.step_up_required: 403,
     RegistryErrorCode.integrity_error: 500,
     RegistryErrorCode.not_found: 404,
+    RegistryErrorCode.idempotency_conflict: 409,
+    RegistryErrorCode.quota_exceeded: 429,
 })
 
 

@@ -349,3 +349,14 @@ def test_tool_def_documentation_fields_are_optional_and_round_trip() -> None:
     assert bare.description is None and bare.args_schema is None
     doc = ToolDef.model_validate(base | {"description": "Lee un cargo", "args_schema": {"type": "object"}})
     assert doc.description == "Lee un cargo" and doc.args_schema == {"type": "object"}
+
+
+def test_write_draft_is_a_write_and_needs_readback() -> None:
+    from agent_core.domain import RiskClass, ToolDef
+
+    base = {"id": "guardar", "version": "1.0.0", "risk_class": "write_draft", "min_auth_level": "session",
+            "idempotent": True}
+    with pytest.raises(ValidationError):
+        ToolDef.model_validate(base)
+    tool = ToolDef.model_validate(base | {"readback_by": "idempotency_key"})
+    assert tool.risk_class is RiskClass.write_draft and tool.is_write

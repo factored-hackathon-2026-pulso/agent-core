@@ -276,9 +276,12 @@ class ModelProfile(Model):
 
 
 class RiskClass(StrEnum):
-    """Clase de riesgo de una tool; determina si escribe y qué confirmación exige (M0 §2.4)."""
+    """Clase de riesgo de una tool; determina si escribe y qué confirmación exige (M0 §2.4).
+
+    `write_draft` es la escritura confinada a un borrador del registry: va sin `confirm` (ADR 0019)."""
     read = "read"
     compute = "compute"
+    write_draft = "write_draft"
     write_reversible = "write_reversible"
     write_irreversible = "write_irreversible"
     money_movement = "money_movement"

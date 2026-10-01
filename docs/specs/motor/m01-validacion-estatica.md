@@ -202,6 +202,10 @@ campo   := [A-Za-z0-9_]+
 | G0-24 | Tool de un nodo `agent` sin documentar | Toda tool de `tools_allowed` de un nodo `agent` lleva `description` y un `args_schema` dentro del subconjunto cerrado (`domain.schema`); el mensaje nombra la tool y la palabra clave fuera del subconjunto (§3.13) | 5 |
 | G0-26 | `transfer` sin origen de destino o de directorio que lo domine | `target_from` (`decisions.<save_as>.choice`) nombra un `decide` con `choices_from` y `directory_from` es el `save_as` de un nodo `tool` de `directory/list`; quitando la arista `chosen` del `decide` (`none` y `low_confidence` no producen `choice`) y todas las aristas de salida del `tool`, el `transfer` no es alcanzable desde la entrada (ADR 0021, spec de transferencia §6) | 7 |
 | G0-27 | Slot del paquete de transferencia no recolectado | Cada `packet.slots[i]` es el `slot` de algún `collect` del flow | 7 |
+| G0-23 | Escritura `draft` sin `confirm` mal formada | La tool es `write_draft` con `readback_by: idempotency_key`; `ok` y `uncertain` van al mismo `verify` con `by: idempotency_key`, que ningún otro nodo de escritura comparte; el flow solo vuelve al nodo desde `verified` (§3.13) | 5 |
+| G0-25 | Prompt de un nodo `agent` en modo nativo | El `model_profile` del prompt del `agent` es `structured: prompted` (§3.13) | 5 |
+| G0-26 | `transfer` sin origen de destino o de directorio que lo domine | `target_from` (`decisions.<save_as>.choice`) nombra un `decide` con `choices_from` y `directory_from` es el `save_as` de un nodo `tool` de `directory/list`; quitando la arista `chosen` del `decide` (`none` y `low_confidence` no producen `choice`) y todas las aristas de salida del `tool`, el `transfer` no es alcanzable desde la entrada (ADR 0021, spec de transferencia §6) | 7 |
+| G0-27 | Slot del paquete de transferencia no recolectado | Cada `packet.slots[i]` es el `slot` de algún `collect` del flow | 7 |
 
 **Consecuencia de G0-16:** en el MVP un agente task no puede escribir, porque toda escritura exige un `confirm` (G0-05). G0-16 **no se relaja** (ADR 0019): un flow task escribe solo con tools `write_draft` (§3.13) o, en producción, con `await_approval` (ADR 0014).
 
@@ -234,7 +238,7 @@ Definiciones:
 
 Condiciones por nodo (sin escrituras de por medio):
 
-1. Todo nodo `tool` **sin** `action_from` usa una tool de clase `read` o `compute`. Una tool de escritura solo se invoca desde un nodo con `action_from`.
+1. Todo nodo `tool` **sin** `action_from` ni `draft: true` usa una tool de clase `read` o `compute`. Una tool de escritura solo se invoca desde un nodo con `action_from` (con `confirm`) o con `draft: true` (solo `write_draft`, G0-23).
 2. Todo `verify.readback` es una tool de clase `read`.
 
 Condiciones para cada nodo de escritura W con `action_from: C`:
@@ -427,16 +431,22 @@ Cualquier error de `load_yaml` es una sola `Violation` G0-01 con la ruta del arc
 - **G0-06** no cambia: `transfer` no cuenta como salida segura, pero el `transfer` de un flow de recepción se alcanza por el resultado `chosen` de un `decide` (no una rama de fallo) y su `rejected` va a un `escalate`.
 - **AG-03** (`validate_flow_for_agent` y `validate_agent`): un flow con `transfer` exige `agent.mode == conversational`; un agente con `accepts` exige `routing`, `understand` y modo conversacional.
 - Pruebas: `tests/m01/test_transfer_rules.py` (T-M1-47).
+**Implementado (clase `write_draft`, fase 3 de la spec write-draft, 2026-09-30):**
+- **Forma `draft` del nodo de escritura:** `tool` con `draft: true` declara su propia `tool` y `args` (sin `action_from`). Es un nodo `tool_write` más: ramas `ok`, `uncertain` y `denied`.
+- **G0-05.1:** un nodo `tool` normal admite `read` y `compute`; una escritura va en un nodo con `action_from` (con `confirm`) o con `draft: true` (G0-23).
+- **G0-23:** la tool de una escritura draft es `write_draft` con `readback_by: idempotency_key`; `next.ok == next.uncertain == V`, con V un `verify` con `by: idempotency_key`; ningún otro nodo de escritura tiene a V como destino de `ok` o `uncertain`; el flow solo vuelve al nodo desde la rama `verified` de V. No exige `confirm`.
+- **Reclamos:** `respond.claims` y `derive_claims` usan el id del nodo draft como identificador de la acción (en vez del `confirm`); G0-13 acepta ese id; el invariante de G0-05.8 es el mismo.
+- **G0-22, excepción acotada (ADR 0019 §1):** el `config.args` de una escritura draft puede leer **solo** `facts.<save_as>.value.changes` de un nodo `agent` cuyo `output_schema` es `agent_core.flows.DRAFT_OUTPUT_SCHEMA` (si dos agentes comparten `save_as`, valen las condiciones de todos); el resto de los `args` (p. ej. `origin`, `proposal_id`) lo fija el flow. El `save_as` de esa escritura queda marcado como salida de agente: no lo puede leer una `rule`, un `verify`, un `confirm` ni un `end`. Todos los demás destinos siguen vetados.
+- **G0-25:** el prompt del `prompt_ref` de un nodo `agent` tiene un `model_profile` con `structured: prompted`.
+- **AG-02** (`validate_flow_for_agent`): un agente cuyos flows referencian una tool `write_draft` tiene `invocable_by ⊆ {builder}` y `subject_kinds` vacío (los `subject_kinds` son cadenas libres: una lista de «datos de clientes» no es comprobable; con la lista vacía el agente nunca recibe subject, M9 §85).
+- Pruebas: `tests/m01/test_draft_writes.py` y `tests/m01/test_agent_node.py`.
 
-**Diseñado, no implementado (clase `write_draft`, constructor por señal):** depende de que el registry garantice borradores reversibles (registry §18) y de especificar la ruta sin `confirm` en M3.
-
-| Regla | Qué comprueba | Fase |
-|---|---|---|
-| G0-23 | Un `write_draft` se invoca con un nodo `tool_write` con `verify` enlazado como en G0-05.7, `readback` de clase `read` e `idempotency_key`; no exige `confirm` | pendiente |
-| AG-02 | Un agente cuyos flows usan un `write_draft` tiene `invocable_by ⊆ {builder}` y `subject_kinds` sin datos de clientes | pendiente |
-
-- G0-05 pasará a aceptar `write_draft` sin `confirm` (`action_from` opcional solo para esa clase). Las demás clases no cambian.
-- `RiskClass` aún no tiene `write_draft`: mientras tanto, cualquier tool de escritura exige `confirm`, así que **falla cerrado**.
+**Transferencia entre agentes (ADR 0021, rev. 5):**
+- **`decide.choices_from`:** solo admite una ruta `facts.<x>.value...` (un literal o una ruta mal formada → G0-01; otro espacio de nombres o falta `.value` → G0-10). Ver G0-03 y G0-11 en §3.4.
+- **G0-26 y G0-27** (§3.4) son reglas de flow (`FLOW_RULES`). Para G0-26 solo la arista `chosen` del `decide` cuenta como productora del `choice`: un `none` o `low_confidence` que llegue al `transfer` es violación.
+- **G0-06** no cambia: `transfer` no cuenta como salida segura, pero el `transfer` de un flow de recepción se alcanza por el resultado `chosen` de un `decide` (no una rama de fallo) y su `rejected` va a un `escalate`.
+- **AG-03** (`validate_flow_for_agent` y `validate_agent`): un flow con `transfer` exige `agent.mode == conversational`; un agente con `accepts` exige `routing`, `understand` y modo conversacional.
+- Pruebas: `tests/m01/test_transfer_rules.py` (T-M1-47).
 
 ## 4. Invariantes
 

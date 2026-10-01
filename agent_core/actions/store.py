@@ -26,9 +26,9 @@ def proposed_for(state: RunState, confirm_node_id: str) -> Action | None:
                  if a.confirm_node_id == confirm_node_id and a.state is ActionState.proposed), None)
 
 
-def single_action(state: RunState, states: Collection[ActionState],
-                  confirm_node_id: str | None = None) -> Action:
-    """La única acción del flow activo en `states` (y del `confirm` dado).
+def single_action(state: RunState, states: Collection[ActionState], confirm_node_id: str | None = None,
+                  write_node_id: str | None = None) -> Action:
+    """La única acción del flow activo en `states` (y del `confirm` o del nodo draft dados).
 
     Ninguna o varias: bug del llamador."""
     if state.active_flow is None:
@@ -36,7 +36,8 @@ def single_action(state: RunState, states: Collection[ActionState],
     flow = state.active_flow.flow
     found = [a for a in state.actions
              if a.flow == flow and a.state in states
-             and (confirm_node_id is None or a.confirm_node_id == confirm_node_id)]
+             and (confirm_node_id is None or a.confirm_node_id == confirm_node_id)
+             and (write_node_id is None or a.write_node_id == write_node_id)]
     if len(found) != 1:
         wanted = sorted(s.value for s in states)
         raise IllegalTransition(f"se esperaba una acción en {wanted}, hay {len(found)}")

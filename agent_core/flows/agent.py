@@ -1,6 +1,17 @@
 """Chequeos por agente: G0-12 (locales), AG-01 (modo) y referencias del agente (M1 §3.8)."""
 
-from agent_core.domain import Agent, EntityKind, Flow, Prompt, StartFlowAction, Template, TransferNode
+from agent_core.domain import (
+    Agent,
+    EntityKind,
+    Flow,
+    PrincipalType,
+    Prompt,
+    RiskClass,
+    StartFlowAction,
+    Template,
+    ToolDef,
+    TransferNode,
+)
 from agent_core.flows.graph import flow_mode
 from agent_core.flows.refs import TEMPLATE_KINDS, agent_ref_sites, flow_ref_sites, pointer_str
 from agent_core.flows.registry import AuthoringRegistry, ReleaseDecl
@@ -23,6 +34,17 @@ def _locales_message(ref: object, missing: list[str], agent: Agent) -> str:
     return clip(f"{ref} no tiene los locales {shown} del agente {_agent_label(agent)}", 240)
 
 
+def _uses_write_draft(flow: Flow, reg: RegistryView) -> bool:
+    """True si algún nodo del flow referencia una tool `write_draft` (escritura draft o confirm)."""
+    for site in flow_ref_sites(flow):
+        if site.kind is not EntityKind.tool:
+            continue
+        tool = reg.resolve(site.kind, site.ref)
+        if isinstance(tool, ToolDef) and tool.risk_class is RiskClass.write_draft:
+            return True
+    return False
+
+
 def validate_flow_for_agent(flow: Flow, agent: Agent, reg: RegistryView) -> list[Violation]:
     """AG-01 y G0-12 de un flow frente a un agente. Total: una referencia sin resolver se omite (G0-02)."""
     label = clip(f"{flow.id}@{flow.version}", 160)
@@ -35,6 +57,15 @@ def validate_flow_for_agent(flow: Flow, agent: Agent, reg: RegistryView) -> list
         found.append(Violation(rule="AG-03", flow=label,
                                message=f"el agente {_agent_label(agent)} es {agent.mode}: transfer solo en "
                                "agentes conversacionales"))
+    if _uses_write_draft(flow, reg):
+        outside = sorted({p.value for p in agent.invocable_by} - {PrincipalType.builder.value})
+        if outside:
+            who = ", ".join(outside)
+            text = f"el flow usa una tool write_draft y {_agent_label(agent)} es invocable por {who}"
+            found.append(Violation(rule="AG-02", flow=label, message=clip(text, 240)))
+        if agent.subject_kinds:
+            text = f"el flow usa una tool write_draft y {_agent_label(agent)} declara subject_kinds"
+            found.append(Violation(rule="AG-02", flow=label, message=clip(text, 240)))
     for site in flow_ref_sites(flow):
         if site.kind not in TEMPLATE_KINDS:
             continue
