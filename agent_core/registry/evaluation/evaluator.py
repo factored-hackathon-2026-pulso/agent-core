@@ -46,7 +46,8 @@ class ScenarioEvaluator:
 
     def run(self, suite: EvalSuite, candidate: EvalTarget, base: EvalTarget | None) -> EvalReport:
         targets = [candidate] if base is None else [candidate, base]
-        jobs = [_Job(t, s, r) for t in targets for s in suite.scenarios for r in range(suite.repetitions)]
+        jobs = [_Job(t, s, r) for t in targets for s in suite.scripted()
+                for r in range(suite.repetitions_of(s))]
         pool = ThreadPoolExecutor(max_workers=self._max_workers)
         try:
             futures = [pool.submit(self._one, suite, job) for job in jobs]
