@@ -279,3 +279,14 @@ def test_items_carry_value_base_and_threshold() -> None:
         Decimal("0.05"),
         "gate",
     )
+
+
+@pytest.mark.parametrize("which", ["base_on_old", "cand_on_old"])
+def test_a_platform_guardrail_unmeasured_on_the_old_suite_fails_with_a_base(which: str) -> None:
+    base = base_yardstick()
+    full = report({"quality": "0.8", "speed": "0.5", "leaks": "0"})
+    gap = PLATFORM_GUARDRAILS[-1]
+    partial = EvalReport(metrics={k: v for k, v in full.metrics.items() if k != gap}, scenarios={"s1": True})
+    reports = {"base_on_old": full, "cand_on_old": full} | {which: partial}
+    verdict = evaluate_gate(base, base, GateRuns(**reports, cand_on_new=full))
+    assert verdict.status == "failed" and failed(verdict) == [gap]

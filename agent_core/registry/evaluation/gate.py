@@ -155,12 +155,15 @@ def _new_items(base: Yardstick | None, cand: Yardstick, run: EvalReport) -> list
 
 def _platform_items(runs: GateRuns) -> list[GateItem]:
     items: list[GateItem] = []
+    has_base = runs.base_on_old is not None and runs.cand_on_old is not None
     for guardrail in PLATFORM_GUARDRAILS:
         value = runs.cand_on_new.metrics.get(guardrail)
         base_value = runs.base_on_old.metrics.get(guardrail) if runs.base_on_old else None
         old_value = runs.cand_on_old.metrics.get(guardrail) if runs.cand_on_old else None
         if value is None:
             ok, reason = False, "el guardarraíl de plataforma no se midió"
+        elif has_base and (base_value is None or old_value is None):
+            ok, reason = False, "el guardarraíl de plataforma no se midió en la suite vieja"
         elif value != 0:
             ok, reason = False, "el guardarraíl de plataforma debe valer 0"
         elif base_value is not None and old_value is not None and old_value > base_value:
