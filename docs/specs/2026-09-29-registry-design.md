@@ -462,7 +462,7 @@ Las que necesitan Postgres van en `tests/integration/`; el resto usa dobles en m
 - [x] T-REG-01 a T-REG-27 en verde (suite completa con Postgres: 2956 pasaron, 1 omitida por `AGENT_CORE_PERF`, ajena al registry). Trazabilidad abajo.
 - [x] `lint-imports`, `mypy` y `ruff` en verde.
 - [x] API montada en M9 (`registry_extension`, `ApiDeps.extensions`) y CLI (`agentcore registry …`).
-- [x] La composición del motor usa `PostgresRegistry` (`agentcore serve`, 2026-09-30, tema #13). **Pendiente:** `serve` todavía no monta `registry_extension` (falta el evaluador y el harness reales); `build_api_deps` ya acepta un `registry_service`.
+- [x] La composición del motor usa `PostgresRegistry` (`agentcore serve`, 2026-09-30, tema #13). `serve --registry-api` monta `registry_extension` con evaluador real y el verificador del staff (`registry_extension(service, verifier)`), spec `2026-09-30-serve-registry-api-design.md`.
 - [x] `contracts/` regenerado (`agentcore contracts --check` en verde).
 - [x] Sin TODO sin issue (no hay `TODO` en `agent_core/`, `testing/` ni `tests/`).
 

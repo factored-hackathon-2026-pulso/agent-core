@@ -87,7 +87,7 @@ Pendiente de construcción: las vistas SQL y la conexión a Phoenix; no bloquean
 | Catálogo de `FieldClassifier` (clasificación de campos publicada por el equipo de datos, m07) | `--field-classifier` | equipo de datos (sin unidad asignada) |
 | Servicio de identidad real con `grant_active` | `--grant-active` (y `--identity-keys`) | servicio de identidad (sin unidad asignada) |
 
-- **No montado todavía:** `serve` no expone la API HTTP del registry (`build_api_deps` ya acepta un `registry_service`; falta cablear el evaluador y el harness reales). El CLI `agentcore registry` no cambia.
+- **API HTTP del registry:** `serve --registry-api` (opt-in) la monta con evaluación real (gateway, JEV y calibración de `serve`; tools en `LocalSandbox`), verificador del staff (`--staff-keys`) y base propia de evaluaciones (`--eval-dsn`). Spec: `docs/superpowers/specs/2026-09-30-serve-registry-api-design.md`. Abiertos de esa spec: una caída de JEV no marca `failed_infra`, la evaluación es síncrona y los transcripts de evaluación van al almacén de `serve`. El CLI `agentcore registry` no cambia.
 - **Aviso de alias de LLM sin configurar (gateway §5):** cableado con `--agents` (o `AGENTCORE_SERVE_AGENTS`); revisa la release `prod` de cada agente indicado y solo avisa.
 
 ## 14. Roles del registry y `attrs.actor` — resuelto

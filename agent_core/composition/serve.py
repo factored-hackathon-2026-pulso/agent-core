@@ -11,6 +11,7 @@ from agent_core.api.security_log import OtelSecurityLog
 from agent_core.audit import AuditLog
 from agent_core.composition.engine import EngineDeps, build_engine
 from agent_core.composition.serve_ports import ServeConfigError, ServePorts, resolve_ports
+from agent_core.composition.serve_registry import build_registry_service_for_serve
 from agent_core.domain import (
     AgentSelector,
     AuthInfo,
@@ -37,7 +38,8 @@ def build_api_deps(ports: ServePorts, *, registry_service: RegistryService | Non
         counters=ports.counters, clock=ports.clock, ids=ports.ids, turns=built.turns,
         handoffs=built.handoffs, transcripts=built.transcripts,
         denials=AuditLog(ports.audit, ports.uow_factory), security=OtelSecurityLog(),
-        extensions=() if registry_service is None else (registry_extension(registry_service),))
+        extensions=() if registry_service is None else (registry_extension(
+            registry_service, None if ports.registry_api is None else ports.registry_api.staff_verifier),))
 
 
 def model_alias_warnings(registry: RegistryPort, agents: Iterable[str],
@@ -84,7 +86,8 @@ def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Map
               file=sys.stderr)
     for warning in model_alias_warnings(ports.registry, ports.agents, ports.endpoints, env, ports.clock):
         print(f"AVISO: {warning}", file=sys.stderr)
-    app = create_app(build_api_deps(ports))
+    registry_service = build_registry_service_for_serve(ports) if ports.registry_api is not None else None
+    app = create_app(build_api_deps(ports, registry_service=registry_service))
     if serve is None:
         import uvicorn
 

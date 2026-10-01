@@ -76,3 +76,18 @@ def test_a_repeated_key_fails_closed(tmp_path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
     with pytest.raises(SchemaError, match="repetid"):
         load_identity_verifier(path, lambda ref, now: True)
+
+
+def test_without_delegation_keys_the_staff_verifier_loads_and_rejects_any_delegation(tmp_path: Path) -> None:
+    from agent_core.domain import CredentialsInvalid
+
+    issuer = TestIdentityIssuer(FakeClock())
+    path = tmp_path / "staff.yaml"
+    path.write_text(json.dumps({"principal_keys": {issuer.principal_kid: _pub(issuer.principal_key)}}),
+                    encoding="utf-8")
+    verifier = load_identity_verifier(path, lambda ref, now: False, delegation=False)
+    assert verifier.verify(issuer.customer()).id == "cust-001"
+    with pytest.raises(CredentialsInvalid):
+        verifier.verify_delegation(issuer.advisor()[1])
+    with pytest.raises(SchemaError):  # por defecto la delegación sigue siendo obligatoria
+        load_identity_verifier(path, lambda ref, now: False)
