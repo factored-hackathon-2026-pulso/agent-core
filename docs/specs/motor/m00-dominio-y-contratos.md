@@ -222,6 +222,8 @@ Validadores: `default_locale ∈ supported_locales`; `ToolDef` de escritura exig
 
 `LanguageDetection` e `InjectionRuleset` son solo datos; la lógica es de M6. El formato de `thresholds_from` (artefacto de calibración) lo define M5.
 
+**`Agent.metrics` (ADR 0020, `SCHEMA_VERSION` 0.5.0).** Lista opcional de `MetricDef` (máximo 32): las métricas que el agente declara para el gate de evaluación y el monitoreo. El motor las ignora en runtime. Los tipos del DSL están en `domain/metrics.py` y el catálogo cerrado de eventos medibles en `domain/metric_catalog.py`. Spec: `docs/specs/2026-09-30-evaluacion-y-metricas-design.md`.
+
 ### 2.5 Esquemas de nodos (`domain/nodes.py`)
 
 Un modelo por tipo, con `id`, `type`, `config` y `next: dict[str, str]` (resultado → id de nodo). Los esquemas salen de la tabla de §5 de la spec general.
@@ -244,7 +246,7 @@ class RespondConfig:  template_ref: RefSpec | None; generate: GenerateConfig | N
 class EscalateConfig: reason_code: ReasonCodeStr; target_queue: str | None; priority_expr: JsonValue | None
 class EndConfig:      outcome: Outcome; output_map: dict[str, str] | None
 # Producción (G0-01 los rechaza en el MVP): AgentNodeConfig, SubflowConfig, AwaitApprovalConfig
-# ADR 0019 (SCHEMA_VERSION 0.4.0): `agent` se habilitó. AgentNodeConfig gana `save_as` y
+# ADR 0019 (SCHEMA_VERSION 0.5.0): `agent` se habilitó. AgentNodeConfig gana `save_as` y
 # `output_schema: dict[str, JsonValue]`; FactSource.kind gana "agent"; nuevo evento `agent_step` (emisor M2).
 # Sin implementar: RiskClass.write_draft (efecto confinado a un borrador del registry; m01 §3.13).
 
@@ -647,6 +649,6 @@ No tiene métricas propias. Los esquemas de eventos son la entrada de la unidad 
 ## 11. Abiertos
 
 - Ninguno bloqueante para la fase 1.
-- **Agentes internos (ADR 0019):** `AgentNodeConfig.save_as`/`output_schema`, `FactSource.kind = "agent"` y el evento `agent_step` están implementados (SCHEMA_VERSION 0.4.0, `contracts/` regenerado). `RiskClass.write_draft` sigue solo diseñado. Falta decidir si `Agent.default_target_queue` pasa a ser opcional para agentes que nunca escalan.
+- **Agentes internos (ADR 0019):** `AgentNodeConfig.save_as`/`output_schema`, `FactSource.kind = "agent"` y el evento `agent_step` están implementados (SCHEMA_VERSION 0.5.0, `contracts/` regenerado). `RiskClass.write_draft` sigue solo diseñado. Falta decidir si `Agent.default_target_queue` pasa a ser opcional para agentes que nunca escalan.
 - **Dependiente del tema #10:** el nodo `knowledge`, `RunState.pages`, `PageView` y la forma final de `KnowledgeSource` entran cuando se apruebe M12 (versión mayor del esquema de flows, versión menor del resto).
 - ~~**Formato de la credencial** (`raw_credential`)~~ **Resuelto 2026-09-29 (M9 §3.8):** JWS compacto Ed25519 con `kid`; no cambia el puerto.

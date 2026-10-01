@@ -14,6 +14,7 @@ from agent_core.domain.base import EntityId, ExactVersion, Locale, Model, Sha256
 from agent_core.domain.errors import InvalidRuntimeRef
 from agent_core.domain.identity import AuthLevel, PrincipalType
 from agent_core.domain.json import JsonValue
+from agent_core.domain.metrics import MetricDef
 from agent_core.domain.nodes import Node, PositiveTimedelta
 from agent_core.domain.outcomes import Mode
 from agent_core.domain.refs import EntityKind, EntityRef, RefSpec, require_exact_refs
@@ -68,6 +69,7 @@ class Agent(Model):
     on_clarify_exhausted: Literal["end", "escalate"]
     default_target_queue: str = Field(min_length=1)
     max_repair_turns_per_run: PositiveInt = 8
+    metrics: list[MetricDef] = Field(default_factory=list, max_length=32)  # ADR 0020; el motor no las ejecuta
 
     @model_validator(mode="after")
     def _default_locale_supported(self) -> "Agent":
