@@ -997,6 +997,139 @@
         "summary": "Transcript renderizado"
       }
     },
+    "/v1/sessions/{session_id}/lineage": {
+      "get": {
+        "operationId": "get_session_lineage",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Principal firmado (`IdentityVerifier`).",
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Principal firmado (`IdentityVerifier`).",
+              "title": "Authorization"
+            }
+          },
+          {
+            "description": "Delegación firmada (solo asesores).",
+            "in": "header",
+            "name": "X-On-Behalf-Of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Delegación firmada (solo asesores).",
+              "title": "X-On-Behalf-Of"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "credentials_invalid | principal_expired"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "subject_forbidden | agent_forbidden | version_pin_forbidden | delegation_expired | delegation_mismatch | principal_mismatch"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "not_found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "turn_in_progress | handoff_already_resolved | idempotency_conflict"
+          },
+          "410": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "run_closed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "invalid_request"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "rate_limited | cost_budget_exceeded"
+          }
+        },
+        "summary": "Linaje de la sesión"
+      }
+    },
     "/v1/sessions/{session_id}/turns": {
       "post": {
         "operationId": "post_turn",

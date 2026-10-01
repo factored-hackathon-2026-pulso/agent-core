@@ -137,6 +137,8 @@ def _expr_site(sub: str, expr: JsonValue, allowed: frozenset[str]) -> _Site:
 
 
 def _read_sites(ctx: Ctx, node: object) -> Iterator[_Site]:
+    if isinstance(node, DecideNode) and node.config.choices_from is not None:
+        yield _Site("/config/choices_from", _parsed([node.config.choices_from]), frozenset({"facts"}))
     if isinstance(node, ToolNode):
         tool = ctx.tool(node.config.tool)
         if tool is None:
@@ -204,7 +206,9 @@ def g0_11(ctx: Ctx) -> Iterator[Violation]:
             if model is None:
                 continue  # G0-02
             properties = model.output_schema.get("properties")
-            if not isinstance(properties, dict) or node.config.branch_on not in properties:
+            if node.config.choices_from is None and (
+                not isinstance(properties, dict) or node.config.branch_on not in properties
+            ):
                 continue  # G0-03(e) ya reporta un branch_on que no es propiedad del esquema
             if node.config.branch_on not in model.calibrated_fields:
                 yield ctx.v(

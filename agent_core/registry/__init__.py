@@ -4,6 +4,7 @@ Spec: docs/specs/2026-09-29-registry-design.md (rev. 2). ADR 0017 y 0018.
 Otros módulos importan solo de aquí."""
 
 from agent_core.registry.blobs import BlobStore, InMemoryBlobStore
+from agent_core.registry.directory import RegistryDirectory
 from agent_core.registry.errors import HTTP_STATUS, IntegrityError, RegistryError, RegistryErrorCode
 from agent_core.registry.evaluation import (
     EvalPort,
@@ -41,9 +42,9 @@ __all__ = [
     "DEFAULT_QUOTAS", "HTTP_STATUS", "AuditContext", "BlobStore", "DraftWrite", "EntityDraft", "EvalPort",
     "EvalReport", "EvalSuite", "EvalTarget",
     "HarnessUnavailable", "InMemoryBlobStore", "InMemoryRegistryStore", "IntegrityError", "Judge",
-    "LocalSandbox", "Origin", "PgRegistryStore", "PostgresRegistry", "Proposal", "ProposalState", "Quotas",
-    "RegistryError",
-    "RegistryErrorCode", "RegistryService", "RegistryStore", "RunReleaseReader", "SandboxHandle",
+    "LocalSandbox", "Origin", "PgRegistryStore", "PostgresRegistry", "ProposalState", "RegistryDirectory",
+    "RegistryError", "RegistryErrorCode", "RegistryService", "RegistryStore", "RunReleaseReader",
+    "Proposal", "Quotas", "SandboxHandle",
     "SandboxPort", "SandboxSeed", "Scenario",
     "ScenarioEvaluator", "ScenarioHarness", "SnapshotRegistry", "Step", "VersionDocs", "VersionRef",
     "WriteRecord", "apply_registry_schema",

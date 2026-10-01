@@ -88,7 +88,8 @@ SPEC_METHODS: dict[str, set[str]] = {
     "AuthzPort": {"authorize_agent", "authorize_subject", "bind_params", "can_read_field", "knowledge_view",
                   "reportable_attrs"},
     "IdentityVerifier": {"verify", "verify_delegation", "grant_active"},
-    "UnitOfWork": {"acquire_turn", "release_turn", "load_run", "find_run_by_session", "save_run",
+    "UnitOfWork": {"acquire_turn", "release_turn", "load_run", "find_run_by_session", "list_runs_by_session",
+                   "save_run",
                    "get_turn_result", "put_turn_result", "get_run_idempotency", "put_run_idempotency",
                    "put_handoff", "get_handoff", "append_events", "last_event", "enqueue_outbox", "add_usage",
                    "list_inactive", "commit", "__enter__", "__exit__"},
@@ -128,7 +129,7 @@ def test_tool_result_fields_match_spec() -> None:
 def test_id_kinds_match_spec() -> None:
     assert {k.value for k in ports.IdKind} == {
         "run", "session", "turn", "action", "decision", "fact", "call", "handoff", "event", "message",
-        "proposal", "eval_run"}
+        "proposal", "eval_run", "transfer"}
     assert {k.value for k in ports.KeyPurpose} == {"fingerprint", "token_map"}
 
 

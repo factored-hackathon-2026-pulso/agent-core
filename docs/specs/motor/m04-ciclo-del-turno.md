@@ -1,9 +1,9 @@
 # M4 — Ciclo del turno
 
-- Estado: rev. 3 (2026-09-29) · Fase 2 · Fase A implementada con dobles · Fase B: grabador y cadena de M11 verificados y Understand cableado a M5 · Fase C (Postgres) implementada
+- Estado: rev. 5 (2026-10-01: el run destino de una transferencia abre y responde en el mismo turno, §3.8 y paso 12b) · rev. 4 (2026-10-01: transferencia entre agentes, validación y rama `rejected`, §3.8) · rev. 3 (2026-09-29) · Fase 2 · Fase A implementada con dobles · Fase B: grabador y cadena de M11 verificados y Understand cableado a M5 · Fase C (Postgres) implementada
 - Paquete: `agent_core.turn`
 - Origen: spec general §4.1 (estado, release, revocación, recuperación, abandono), §4.4 (uso del resultado de Understand), §4.5, §4.6, §4.8, §4.9, §4.10, invalidación de §4
-- ADRs: 0004 (intenciones e interrupciones), 0007 (precedencia con `confirm` pendiente), 0013 (cierre por escalamiento)
+- ADRs: 0004 (intenciones e interrupciones), 0007 (precedencia con `confirm` pendiente), 0013 (cierre por escalamiento), 0021 (transferencia entre agentes)
 - Usa: M0, M2, M3, M5, M6, M10, M11 · Lo usa: M9
 
 ## 1. Propósito y límites
@@ -21,14 +21,14 @@ class TurnEngine:
     def sweep(self, now: datetime) -> SweepReport                                        # barrido periódico
 ```
 
-Dependencias por constructor (solo por nombre): `uow_factory`, `registry`, `clock`, `ids`, `guards` (`GuardsPort`, M6), `understand` (`UnderstandPort`, M5), `actions` (`ActionManager`, M3), `handoff` (`HandoffService`, M10), `recorder` (`TurnRecorderPort`, M11), `chain` (`EventChain`, M11), `audit` (`AuditSink`), `runtimes` (`RuntimeFactory`, puente con M7), `trace` (`TraceIds`), `config` (`TurnConfig`) y, opcional, `authz` (solo `reportable_attrs()` para `run_started`). M2 son funciones (`advance`, `start_flow`, `begin_turn`), no una clase `Interpreter`.
+Dependencias por constructor (solo por nombre): `uow_factory`, `registry`, `clock`, `ids`, `guards` (`GuardsPort`, M6), `understand` (`UnderstandPort`, M5), `actions` (`ActionManager`, M3), `handoff` (`HandoffService`, M10), `recorder` (`TurnRecorderPort`, M11), `chain` (`EventChain`, M11), `audit` (`AuditSink`), `runtimes` (`RuntimeFactory`, puente con M7), `trace` (`TraceIds`), `config` (`TurnConfig`) y, opcional, `authz` (`reportable_attrs()` para `run_started` y, al transferir, `authorize_agent` y `authorize_subject` sobre el destino, §3.8). M2 son funciones (`advance`, `start_flow`, `begin_turn`), no una clase `Interpreter`.
 
 ## 3. Comportamiento
 
 ### 3.1 Pipeline de `handle_turn`
 
-1. **Deduplicación:** si `client_turn_id` ya tiene resultado guardado, se devuelve ese `TurnResult` sin reprocesar.
-2. **Cargar:** `uow.find_run_by_session(session_id)`; `uow.acquire_turn(run_id, turn_id, now, ttl)` toma el lease del turno **antes** de trabajar (M0 §2.9): si otro turno lo tiene → `TurnInProgress` → `409 turn_in_progress`. Run cerrado → `410 run_closed`. Cada commit usa `save_run(expected_version)` como defensa; el lease se libera en el commit final.
+1. **Deduplicación:** si `client_turn_id` ya tiene resultado guardado, se devuelve ese `TurnResult` sin reprocesar. Se busca bajo el run que devuelve `find_run_by_session` y, si no está, bajo los demás runs de la sesión (`list_runs_by_session`): tras una transferencia, el reintento de un turno que respondió el run origen devuelve su resultado y no se procesa en el destino.
+2. **Cargar:** `uow.find_run_by_session(session_id)` (la sesión puede tener varios runs; se carga el abierto o, si no hay, el más nuevo — ADR 0021; `list_runs_by_session` los lista en orden de creación); `uow.acquire_turn(run_id, turn_id, now, ttl)` toma el lease del turno **antes** de trabajar (M0 §2.9): si otro turno lo tiene → `TurnInProgress` → `409 turn_in_progress`. Run cerrado → `410 run_closed`. Cada commit usa `save_run(expected_version)` como defensa; el lease se libera en el commit final.
 3. **Release:** si está `revoked` → `escalate(release_revoked)` sin ejecutar nodos.
 4. **Abandono:** si `now − last_activity_at > inactivity_ttl` → M4 cierra el run con `abandoned` (ver 3.6), invalida las acciones y responde `410 run_closed` **sin procesar el mensaje**. La app abre un run nuevo (M9); el motor no reabre el run por su cuenta (decisión P2, 2026-09-29).
 5. **Recuperación:** `actions.pending_recovery(state)` no vacío → posicionar el flow en el `verify` correspondiente y avanzar desde ahí antes de procesar el mensaje. El nodo de escritura de una acción se encuentra por `write_node_id` si es una escritura `draft` y por `action_from` si lleva `confirm`; una acción draft nunca se asocia a una escritura con confirm (spec write-draft §7).
@@ -40,7 +40,8 @@ Dependencias por constructor (solo por nombre): `uow_factory`, `registry`, `cloc
 9. **Manejadores globales** (3.2) → pueden terminar el turno.
 10. **Flow e intenciones** (3.3).
 11. **Avanzar:** `interpreter.advance(state, ctx, resume)`.
-12. **Cierre:** si `StepOutcome.escalation` → `handoff.escalate(...)`; si `end_outcome` → cerrar el run (3.6). Al terminar un flow con pendientes, ofrecer la primera (3.3).
+12. **Cierre:** si `StepOutcome.transfer` → validar la transferencia (3.8); si `StepOutcome.escalation` → `handoff.escalate(...)`; si `end_outcome` → cerrar el run (3.6). Al terminar un flow con pendientes, ofrecer la primera (3.3).
+12b. **Transferencia** (3.8, ADR 0021): si la transferencia fue válida, el run origen termina su turno (pasos 13 a 14 sin `commit`) y el **mismo turno** sigue en el run destino: se crea, se emiten `run_started{origin}` y `transfer_received` y se procesa el texto del cliente desde el paso 3. Los dos runs, sus cadenas de eventos, el uso (`add_usage`) y el resultado por `client_turn_id` van en la misma UoW: un único `commit` los guarda todos o ninguno. El lease es solo el del run origen; el destino es un run nuevo, sin commitear, que nadie más ve. Quedan **fuera** de esa UoW el transcript (M11 `TurnRecorder`) y las escrituras de M3 (sus propios commits), como en cualquier turno (3.8 punto 7). El `TurnResult` del turno es el del destino (`run_id` y `agent` del especialista) con los mensajes del origen primero; se guarda bajo `(run destino, client_turn_id)`.
 13. **Responder y registrar:** `recorder.record_turn(...)` (transcript + `response_emitted`, M11).
 13b. **Medir:** emitir `turn_completed` (3.7) como último evento del turno.
 14. **Persistir:** una transacción con `state` (`state_version + 1`), eventos del turno (los que devuelve `execute_write` ya los persistió el `EventRecorder` dentro de los commits de M3 y no se vuelven a agregar; el recorder de M4 vuelca primero los eventos pendientes del turno), outbox y resultado por `client_turn_id`.
@@ -113,13 +114,47 @@ Después de `record_turn`, M4 rellena `response_emitted.payload.transcript_fp` c
 - `awaiting`: `RunState.awaiting` al terminar el turno; `none` si el run cerró. `degraded`: si el turno corrió en modo degradado.
 - Los campos de medición no participan en ninguna decisión ni en la comparación del replay (M0 §2.10).
 
+### 3.8 Transferencia entre agentes (ADR 0021; spec `2026-09-30-transferencia-entre-agentes-design.md` §5.2)
+
+El nodo `transfer` **no** es terminal en M0 (`TERMINAL` no lo incluye, decisión R2): M2 se detiene con `Stop.terminal`, deja el puntero en el nodo `transfer` y devuelve un `TransferRequest` (`StepOutcome.transfer`). `Closer.apply_outcome` lo guarda en `TurnFrame.pending_transfer` y `TurnEngine._resolve_transfer` (`agent_core/turn/transfer.py`, `Transferer`) lo resuelve dentro del mismo turno, de la misma etapa `flow` y de la misma UoW:
+
+1. **Validación**, en el orden de la spec §5.2; el primer fallo da el `reason_code` de `transfer_rejected`:
+   - `no_turn` (decisión P6 del plan, antes de las demás): la transferencia se alcanzó en `start_run`; no hay texto del cliente para continuar;
+   - `not_in_directory`: no hay decisión (o es `none`), no hay hecho `directory_from` legible, o el destino no está en `choices` del directorio que leyó este run, aunque exista y esté publicado;
+   - `no_active_release`: `agent_id@prod` no resuelve (el `KeyError` del registry se convierte en rechazo, no en un 500), la release está `revoked`, no fija al agente o fija una versión que el registry no sirve (`KeyError`/`TypeError` de `get`);
+   - `not_eligible`: `transfer_ineligibility` de M0 (modo, contrato, `invocable_by`, `subject_kinds`, locale, `min_auth_level`) y, si hay `authz`, `authorize_agent(principal, destino, subject)` y `authorize_subject(principal, on_behalf_of, subject)`;
+   - `accepts_mismatch`: `packet_problem` contra el `accepts` del agente de la release resuelta **ahora**;
+   - `transfer_limit`: `(origin.depth o 0) + 1 > TurnConfig.max_transfers_per_session` (1 por defecto, decisión P5).
+2. **Rechazo:** `transfer_rejected {transfer_id, to_agent, reason_code, directory, directory_hash}` en el run origen; el puntero sigue por `next["rejected"]` y `advance` continúa en el mismo turno (en la recepción típica, `escalate`). `to_agent` solo repite el destino si es uno de los `choices` del directorio que leyó el run (si no, `None`): nunca texto libre de una decisión. La recursión está acotada: `rejected` no vuelve al mismo `transfer` sin pasar por un nodo que espera (M1 G0-04).
+3. **Transferencia válida:** se arma el `TransferPacket` (`reason`, `trigger` = texto del turno en vista `model`, slots `validated`), su huella `packet_fp` es la HMAC con clave de M7 (`views.project(...).fingerprint` del `StepContext`, ADR 0008) y se emite `run_transferred {transfer_id, to_agent, to_release_id, to_run_id, reason, packet_fp, directory, directory_hash, candidates}`; luego `run_closed {outcome: transferred, closed_by: transfer}`. `closed_by="transfer"` conserva `active_flow` (el linaje muestra dónde ocurrió). El plan validado queda en `TurnFrame.transfer_plan`.
+4. **Sin valores:** ningún evento lleva valores de slots ni el texto del turno (T-TR-15): el paquete aparece solo como `packet_fp` y como nombres de slots. Efecto lateral conocido: `project` tokeniza las hojas del paquete en el vault del run origen (igual que la salida de un nodo `agent`); la huella no depende de eso.
+
+5. **Apertura del destino** (`TurnEngine._continue_in_target`, paso 12b). Cuando `_finish` del origen ya guardó el run (`save_run`) y encadenó sus eventos, el turno sigue en un `RunState` nuevo construido con `_new_state`, igual que en `start_run`:
+   - `run_id` = `to_run_id`, con la misma `session_id`, el mismo principal (con el `auth` del turno), `on_behalf_of`, subject y locale;
+   - la release resuelta al validar y el agente que esa release fija;
+   - `origin = RunOrigin{transfer, transfer_id, from_run_id, from_agent, from_release_id, from_event_hash, depth}`. `from_event_hash` es el hash del `turn_completed` del origen, el último evento de su cadena al cerrar el turno (decisión P2: cubre `run_transferred` y `run_closed` por encadenamiento). Si la cadena no tiene hash (sin M11), es un error de configuración (`IllegalTransition`).
+   - **Siembra:** cada slot del paquete entra como `Slot(value, status="validated", source_turn=1)`. M0 no tiene un campo `source` en `Slot`: la procedencia la dan `RunState.origin` y los `accepted_slots` de `transfer_received` (spec de transferencia §5.2.5). Hechos, decisiones y acciones del origen no viajan.
+
+   Los eventos de apertura son `run_started{origin}` (con los `reportable_attrs` de `start_run`) y `transfer_received{transfer_id, accepted_slots (solo nombres, ordenados), packet_fp}`. Van como **preludio** del buffer (`EventBuffer.add_prelude`), antes del `turn_started` del destino. Después, el destino procesa el turno desde el paso 3 (release, abandono, recuperación, tokens, guardas, Understand, flow) con el mismo `turn_id` y el texto del cliente (decisión P4). Abre su propio runtime: su vault es el de su `run_id` y los tokens del origen no pasan. Se guarda con `save_run` **después** del origen. Así, si un día se agrega a la base una restricción "un run abierto por sesión", el orden ya la respeta; hoy no existe, decisión pendiente.
+6. **Resultado e idempotencia:** todo `TurnResult` lleva `agent` = el agente del run que respondió (`build_turn_result`). El `TurnResult` del origen no se guarda por separado. El del turno es el del destino, con `messages` = mensajes del origen (p. ej. "te comunico con…") seguidos de los del destino, y queda guardado bajo `(run destino, client_turn_id)`. Un reintento lo encuentra porque `find_run_by_session` devuelve el destino abierto: devuelve el mismo resultado y no abre un tercer run (Review Focus 1).
+7. **Atomicidad (alcance):**
+   - **Dentro** de la UoW del turno: los dos `save_run`, las dos cadenas de eventos, el uso y el resultado. Una caída en el `commit` no deja el origen cerrado sin destino, ni un destino sin origen, ni eventos bajo ningún `run_id` (T-TR-07).
+   - **Fuera** de ella:
+     - El transcript: `TurnRecorder.record_turn` escribe en su propio almacén durante el paso 13 de cada run. Tras la caída quedan entradas huérfanas del origen y de un destino que nunca existió (`test_crash_on_commit_leaves_nothing` lo fija).
+     - Las escrituras de M3, con sus dos commits propios (3.8 Abierto, §11).
+   - El reintento con el mismo `client_turn_id` rehace la transferencia completa. El `to_run_id` sale otra vez del `IdSource`, así que **cambia**, y el transcript del origen recibe otra vez las entradas del turno.
+   - Si el origen no tiene cadena con hash (sin M11), `IllegalTransition` se lanza antes del `commit`: no se guarda nada y el lease se libera. Si el destino transfiere a su vez (solo con `max_transfers_per_session > 1`), el paso 12b se repite y el resultado se guarda una vez, bajo el último run.
+
+`transfer_id` y `to_run_id` salen del `IdSource` (`IdKind.transfer`, `IdKind.run`); el `transfer_id` se pide antes de validar, así que un rechazo también lo lleva.
+
 ## 4. Invariantes
 
 - Un turno produce **una** transacción de estado (más las dos por escritura de M3).
-- `client_turn_id` repetido nunca reprocesa.
+- `client_turn_id` repetido nunca reprocesa. Debe ser único **por sesión**, no solo por run: tras una transferencia, la deduplicación (paso 1) busca en todos los runs de la sesión, así que reusar el `client_turn_id` de un turno del origen devuelve aquel resultado.
 - Nunca hay más de un flow activo.
 - Con un `confirm` pendiente, ningún comando cierra el run salvo interrupción, `cancel` y `handoff`.
 - Todo instante sale del `Clock`.
+- Solo un run abierto por sesión: una transferencia cierra el origen y abre el destino en la misma transacción. Lo garantiza el motor; la base no tiene todavía una restricción para esto (decisión pendiente).
 
 ## 5. Fallas
 
@@ -127,13 +162,14 @@ Después de `record_turn`, M4 rellena `response_emitted.payload.transcript_fp` c
 |---|---|
 | Turnos concurrentes | `409 turn_in_progress` (MVP; buzón en producción) |
 | Turno en run cerrado o escalado | `410 run_closed` |
+| Turno concurrente con una transferencia | `find_run_by_session` se lee antes del lease. Si otro turno transfiere y commitea en medio, el estado fresco del origen está cerrado y la respuesta es `410 run_closed`, aunque la sesión ya tenga el destino abierto. El reintento del cliente encuentra el destino. No se cambia (borde conocido). |
 | Caída a mitad del turno | la transacción no se commitea; el reintento con el mismo `client_turn_id` rehace el turno |
 | Release revocada | `escalate(release_revoked)` |
 | Idioma no soportado | plantilla en `default_locale`; el flow no avanza |
 
 ## 6. Eventos que emite
 
-`run_started`, `turn_started` (con la salida de M6 y el instante del `Clock`), `command_emitted`, `expiry_evaluated`, `turn_completed`, `run_closed`. `injection_flagged` lo construye M6 y M4 lo agrega.
+`run_started` (con `origin` en un run transferido), `turn_started` (con la salida de M6 y el instante del `Clock`), `command_emitted`, `expiry_evaluated`, `turn_completed`, `run_closed`, `run_transferred` y `transfer_rejected` (run origen, §3.8) y `transfer_received` (run destino, después de su `run_started` y antes de su `turn_started`, §3.8 paso 5). `injection_flagged` lo construye M6 y M4 lo agrega.
 
 ## 7. Pruebas
 
@@ -159,6 +195,9 @@ Con todos los dobles, `FakeClock` y un flow de prueba con dos intenciones y una 
 | T-M4-16 | Con `FakeClock` que avanza dentro de cada etapa, `turn_completed` reporta `duration_ms` y `stages` exactos; respuesta por botón deja `understand_ms = None` | — |
 | T-M4-17 | Un turno deduplicado, un `409` y un `410` no emiten `turn_completed`; un turno con idioma `unsupported` sí, con `flow_ms = None` | — |
 | T-M4-18 | `start_run` repetido con la misma clave y body devuelve el mismo `RunResult` sin crear otro run; otro body → `409 idempotency_conflict`; la clave es por principal; run y clave se confirman en una transacción (crash en el commit no deja ninguno) | 12 |
+| T-M4-19 | Transferencia (`tests/m04/test_transfer_validation.py`): destino fuera del directorio leído (aunque publicado) o `none` → `not_in_directory`; especialista revocado → `no_active_release`; principal no elegible, sin contrato o denegado por `authorize_agent`/`authorize_subject` → `not_eligible`; paquete fuera del contrato → `accepts_mismatch`; `origin.depth` en el tope → `transfer_limit`; el orden de §3.8; en `start_run` → `no_turn`. Todo rechazo sigue por `rejected` en el mismo turno | — |
+| T-M4-20 | Transferencia válida: `run_transferred` con `packet_fp` HMAC verificable del paquete y `run_closed{transferred, transfer}`. T-TR-15 con PII sintética como disparador y slot: no aparece en ningún evento del turno (transferencia válida o rechazada), ni los valores que quedaron en el vault del origen. También: contrato de la release resuelta ahora (no el del directorio leído), alias `prod` ausente y versión fijada inexistente → `no_active_release`, `to_agent` solo para ids del directorio leído | — |
+| T-M4-21 | Run destino en el mismo turno (`tests/m04/test_transfer.py`, T-TR-01, 02, 07 y 08). El especialista responde con la release del especialista, el mismo `turn_id` y slots sembrados `validated`; `run_started{origin}` → `transfer_received` → `turn_started`. `origin.from_event_hash` es el hash del `turn_completed` del origen; las dos cadenas verifican y alterar un evento del origen rompe la suya. Los mensajes del origen van antes que los del destino. Hay un solo `commit`, el origen se guarda antes que el destino y el destino abre su propio vault. Un reintento del turno de la transferencia, o de un turno anterior del origen, devuelve lo guardado sin abrir un tercer run. Una caída en el `commit` no deja nada. Principal, subject y `on_behalf_of` se conservan. El turno siguiente va al destino. Revisión: una caída en el `commit` no deja eventos bajo ningún run y deja entradas huérfanas en el transcript; sin cadena con hash → `IllegalTransition`, sin nada guardado; el destino escala en su primer turno (el resultado queda bajo el destino y el reintento lo devuelve); una transferencia pedida por el destino → `transfer_limit`, rama `rejected`, sin tercer run; el destino solo puede proponer una escritura en ese turno. Buffer: `test_prelude_goes_before_turn_started` | — |
 
 ## 8. Evaluación
 
@@ -180,9 +219,17 @@ Tiempos, todos desde el log de auditoría (no dependen del muestreo de trazas):
 
 - [x] Pipeline completo con dobles, T-M4-01…18 en verde.
 - [x] Integración con Postgres: bloqueo optimista, `409` con dos conexiones y transacción única por turno (`tests/integration/test_m4_postgres.py`, más la suite de contrato de `UnitOfWork` sobre Postgres y T-M3-03/04 en `tests/integration/`).
+- [x] Transferencia: validación y rama `rejected` (§3.8), T-M4-19 y T-M4-20 en verde.
+- [x] Transferencia: run destino en el mismo turno, atómico e idempotente (§3.8 pasos 5 a 7, paso 12b), T-M4-21 en verde.
 - [x] `sweep` invocable por un comando (`agentcore sweep --dsn … --registry …`) sobre Postgres real (`tests/integration/test_sweep_postgres.py`).
 
 ## 11. Abiertos
+
+- **Escrituras de M3 en el turno de una transferencia (ADR 0021; pendiente de la spec, no se decide aquí).** M3 hace sus dos commits en UoW propias (`commit_point`), fuera de la UoW del turno.
+  - Comportamiento actual del destino: en el turno de la transferencia no puede ejecutar una escritura. Una escritura exige una propuesta de un `confirm` del mismo run, confirmada en un turno posterior; el destino a lo sumo propone (`test_the_target_can_only_propose_a_write_in_the_transfer_turn`: sin commits de M3, un solo `commit`).
+  - El origen sí puede escribir antes de transferir en el mismo turno (`confirm` sí → `tool` → … → `transfer`). Esos commits de M3 guardan el run origen abierto antes del `commit` final. Una caída en ese `commit` deja el origen abierto con la acción ya aplicada y sin destino. El reintento genera otro `to_run_id`, así que una clave de idempotencia derivada del `run_id` (no es el caso de `action_id`) podría reejecutar.
+  - Si en el futuro el destino pudiera escribir en ese turno, una caída en el `commit` final podría dejar abiertos el origen y el destino a la vez.
+  - Falta decidir si una transferencia admite escrituras en el mismo turno.
 
 Los dos abiertos originales quedaron resueltos el 2026-09-29 por el usuario (las confirmaciones C1–C15 del plan de implementación quedaron aprobadas; ver §13):
 

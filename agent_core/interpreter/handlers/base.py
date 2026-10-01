@@ -16,7 +16,7 @@ from agent_core.domain import (
     RunState,
     StepUpPrompt,
 )
-from agent_core.interpreter.context import Resume, StepContext, Stop
+from agent_core.interpreter.context import Resume, StepContext, Stop, TransferRequest
 from agent_core.interpreter.events import Events
 
 DEFAULT_PRIORITY = "normal"
@@ -37,6 +37,7 @@ class NodeResult:
     step_up: StepUpPrompt | None = None
     output: dict[str, JsonValue] | None = None
     rejected: list[RejectedDraft] = field(default_factory=list)
+    transfer: TransferRequest | None = None
 
 
 NodeHandler = Callable[[Any, RunState, StepContext, Resume], NodeResult]

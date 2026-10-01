@@ -31,7 +31,13 @@ class UnitOfWork(Protocol):
 
     def load_run(self, run_id: str) -> RunState | None: ...
 
-    def find_run_by_session(self, session_id: str) -> RunState | None: ...
+    def find_run_by_session(self, session_id: str) -> RunState | None:
+        """The open run of the session or, if none is open, the newest one."""
+        ...
+
+    def list_runs_by_session(self, session_id: str) -> list[RunState]:
+        """In creation order; reads its own writes."""
+        ...
 
     def save_run(self, state: RunState, expected_version: int) -> RunState:
         """Versión distinta → `VersionConflict`. Devuelve el estado con `state_version` = esperada + 1."""

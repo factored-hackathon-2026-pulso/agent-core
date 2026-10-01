@@ -119,7 +119,7 @@ M0 define el esquema de cada evento; M11 los encadena y persiste. El módulo emi
 
 | Evento | Emisor |
 |---|---|
-| `run_started`, `turn_started`, `command_emitted`, `expiry_evaluated`, `turn_completed`, `run_closed` | M4 |
+| `run_started`, `turn_started`, `command_emitted`, `expiry_evaluated`, `turn_completed`, `run_closed`, `run_transferred`, `transfer_received`, `transfer_rejected` | M4 |
 | `node_entered`, `rule_evaluated`, `tool_called` (lectura y `compute`), `agent_step`, `step_up_requested` | M2 |
 | `knowledge_read` | M12 (lo construye; el handler de M2 lo entrega al turno) |
 | `decision_made` | M5 |
@@ -221,6 +221,7 @@ M0 define el esquema de cada evento; M11 los encadena y persiste. El módulo emi
 
 | Tema | Módulo | Estado |
 |---|---|---|
+| Transferencia entre agentes (ADR 0021) | M0, M1, M2, M4, M5, M9, M11, registry, composition | **implementada en la rama `feat/transferencia-entre-agentes`** (fases 1 a 6, `SCHEMA_VERSION` 1.2.0, sin spans OTel), pendiente de aprobación. Pendientes y abiertos: `TEMAS-ABIERTOS-PENDIENTES.md` #19 y §12 de la spec |
 | #10 Integración de ADR 0015 (conocimiento) | M12, M1, M8 | **resuelto** (diseño 2026-09-30) y **`read` construido** (2026-09-30, `SCHEMA_VERSION` 1.0.0); `navigate` y `search` siguen fuera |
 | Formato numérico por país: el `locale` del run es `es`/`pt`, pero ADR 0011 parsea por `es-CO`/`es-MX`/`es-AR`/`pt` | M8 | **resuelto** en M8 rev. 2 (parcial): `number_format` es dato opcional del contexto producido fuera de M8; sin él, solo lecturas inequívocas |
 | Detector de injection: la spec dice "marca y cuenta" pero no define el método | M6 | **resuelto** en M6 rev. 2: reglas regex/frase versionadas en la release, texto normalizado; reemplazable por un clasificador detrás de `scan_injection` |

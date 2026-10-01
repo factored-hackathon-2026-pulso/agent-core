@@ -22,6 +22,7 @@ from agent_core.domain.json import JsonValue
 from agent_core.domain.knowledge import PageView
 from agent_core.domain.outcomes import Awaiting, Mode, Outcome
 from agent_core.domain.refs import EntityRef
+from agent_core.domain.transfer import RunOrigin
 
 RunStatus = Literal["open", "closed", "escalated"]
 
@@ -178,6 +179,7 @@ class RunState(MutableModel):
     repair_turns_used: NonNegativeInt = 0
     degraded_turns: list[NonNegativeInt] = Field(default_factory=list)
     handoff_ref: str | None = None
+    origin: RunOrigin | None = None
 
     @model_validator(mode="after")
     def _coherence(self) -> "RunState":

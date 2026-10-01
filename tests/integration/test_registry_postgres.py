@@ -325,6 +325,54 @@ def test_cli_cycle_on_postgres_with_export_to_disk(registry_store: PgRegistrySto
     assert any(tmp_path.rglob("*.yaml"))
 
 
+def _seed_directory_agent(store: PgRegistryStore, agent_id: str, tag: str | None, *, release_id: str) -> None:
+    from agent_core.domain import Agent
+    from agent_core.registry.entities import content_hash, encode_entity, version_ref
+    from agent_core.registry.models import AliasChange, StoredRelease, StoredVersion, VersionDocs
+    from testing.builders import NOW
+    from tests.m04.harness import agent_data
+
+    card = None if tag is None else {"directory": tag, "summary": agent_id, "examples": []}
+    agent = Agent.model_validate(agent_data(agent_id, routing=card, accepts={"slots": {}},
+                                            understand="understand@1.0.0"))
+    release = Release.model_validate({
+        "id": release_id, "status": "active", "language_detection": "lang@1.0.0",
+        "entities": {"agent": {agent_id: "1.0.0"}}})
+    ref = version_ref(agent)
+    with store.transaction() as tx:
+        tx.blobs.put(encode_entity(agent))
+        tx.insert_version(StoredVersion(ref=ref, content_hash=content_hash(agent),
+                                        docs=VersionDocs(description="d", rationale="", changelog=""),
+                                        proposal_id=None, created_by="t", created_at=NOW))
+        tx.insert_release(StoredRelease(release=release, release_hash="h" * 64, agent_id=agent_id,
+                                        agent_version="1.0.0", base_release_id=None, proposal_id=None,
+                                        published_by="t", published_at=NOW), [ref])
+        tx.set_alias(AliasChange(agent_id=agent_id, alias="prod", before=None, after=release_id, actor="t",
+                                 reason="r", at=NOW))
+
+
+def test_registry_directory_members_are_prod_agents_with_the_tag(registry_store: PgRegistryStore) -> None:
+    from agent_core.registry import RegistryDirectory
+
+    for agent_id, tag in (("disputas", "customer-care"), ("saldos", "customer-care"), ("interno", "staff"),
+                          ("sin-ficha", None)):
+        _seed_directory_agent(registry_store, agent_id, tag, release_id=f"rel-{agent_id}")
+    runtime = PostgresRegistry(registry_store, FakeClock())
+    directory = RegistryDirectory(registry_store, runtime, runtime.release)
+    assert [(rid, a.id) for rid, a in directory.members("customer-care")] == [
+        ("rel-disputas", "disputas"), ("rel-saldos", "saldos")]
+
+
+def test_registry_directory_skips_revoked_releases(registry_store: PgRegistryStore) -> None:
+    from agent_core.registry import RegistryDirectory
+
+    _seed_directory_agent(registry_store, "disputas", "customer-care", release_id="rel-1")
+    with registry_store.transaction() as tx:
+        tx.set_release_status("rel-1", "revoked")
+    runtime = PostgresRegistry(registry_store, FakeClock())
+    assert RegistryDirectory(registry_store, runtime, runtime.release).members("customer-care") == []
+
+
 def test_draft_writes_round_trip_and_are_insert_only(registry_store: PgRegistryStore,
                                                      admin_conn: "psycopg.Connection[Any]") -> None:
     from agent_core.registry.models import AuditContext, DraftWrite

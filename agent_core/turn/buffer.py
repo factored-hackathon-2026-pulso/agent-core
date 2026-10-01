@@ -14,6 +14,7 @@ class EventBuffer:
     def __init__(self, turn_id: str | None = None) -> None:
         self._turn_id = turn_id
         self._events: list[EngineEvent] = []
+        self._prelude: list[EngineEvent] = []
         self._reserved = False
         self._turn_started: EngineEvent | None = None
 
@@ -28,6 +29,11 @@ class EventBuffer:
     def add(self, *events: EngineEvent) -> None:
         # Los puertos de M2 (`DecisionPort`, `ResponderPort`) no reciben `turn_id`: sus eventos llegan sin él.
         self._events.extend(self._with_turn(event) for event in events)
+
+    def add_prelude(self, *events: EngineEvent) -> None:
+        """Events that go before `turn_started` (ADR 0021: the transfer target's `run_started` and
+        `transfer_received` open its chain). They keep their own `turn_id`."""
+        self._prelude.extend(events)
 
     def _with_turn(self, event: EngineEvent) -> EngineEvent:
         if event.turn_id is not None or self._turn_id is None:
@@ -50,12 +56,13 @@ class EventBuffer:
 
     def peek(self) -> list[EngineEvent]:
         head = [self._turn_started] if self._turn_started is not None else []
-        return [*head, *self._events]
+        return [*self._prelude, *head, *self._events]
 
     def drain(self) -> list[EngineEvent]:
         if self._reserved and self._turn_started is None:
             raise RuntimeError("turn_started reservado y sin llenar")
         out = self.peek()
+        self._prelude = []
         self._events = []
         self._turn_started = None
         self._reserved = False

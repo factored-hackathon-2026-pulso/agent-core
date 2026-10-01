@@ -11,7 +11,8 @@
         "completed",
         "failed",
         "abandoned",
-        "escalated"
+        "escalated",
+        "transferred"
       ],
       "title": "Outcome",
       "type": "string"
@@ -25,7 +26,8 @@
         "flow",
         "abandonment",
         "escalation",
-        "revocation"
+        "revocation",
+        "transfer"
       ],
       "title": "Closed By",
       "type": "string"

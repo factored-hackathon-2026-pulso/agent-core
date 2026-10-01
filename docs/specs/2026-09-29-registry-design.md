@@ -263,6 +263,15 @@ class SandboxPort(Protocol):                                       # lo implemen
 
 `PostgresRegistry`: `resolve_release` sigue el alias (`prod` por defecto, `staging` si el selector lo pide) y cachea la release por `release_id`. `release_status` se consulta con un TTL corto para que una revocación surta efecto rápido. `get` verifica el hash al leer; si no coincide, `IntegrityError` y el motor escala.
 
+### 7.1b Directorio de agentes (ADR 0021)
+
+El directorio de transferencias es el puerto `AgentDirectory` (M0, `members(directory) -> [(release_id, Agent)]`, ordenado por `agent.id`). Lo sirven los agentes **publicados**: los que tienen el alias `prod` apuntando a una release `active` y cuya ficha de ruteo (`Agent.routing`) lleva la etiqueta pedida. No filtra por principal; la elegibilidad es de quien lo llama.
+
+- `RegistryTx.aliases_named(alias) -> [(agent_id, release_id)]`, ordenado por `agent_id`, en la memoria y en Postgres (`reg_aliases`). Es el único cambio del store.
+- `RegistryDirectory(store, registry, releases)` implementa el puerto: lee los alias `prod` en una transacción, descarta las releases revocadas (`release_status`), resuelve la versión del agente en la release (`releases`, un `Callable[[str], Release]` como `EngineDeps.releases`, normalmente `PostgresRegistry.release`) y lo lee con `RegistryPort.get`. Una release `prod` revocada no aparece, así que `directory_hash` cambia al publicar, promover o revocar.
+- `InMemoryDirectory` (`testing/fakes`) cumple la misma suite de contrato (`tests/contracts/test_directory_contract.py`); la de Postgres está en `tests/integration/test_registry_postgres.py`.
+- La tool `directory/list@1.0.0` (riesgo `read`) no vive aquí: la sirve `composition` (§18, fila 11).
+
 ### 7.2 `RegistryService` (gestión)
 
 ```python
@@ -565,3 +574,4 @@ Lo que el motor y los agentes internos (constructor, copiloto del asesor) necesi
 | 8 | **Publicación de conocimiento aprobado**, si el copiloto lo consulta | copiloto | Depende también de M12 y de habilitar `knowledge_refs` (G0-01) |
 | 9 | **Catálogo de campos y plantillas de handoff como entidades versionadas**, solo si se elige esa vía | M7, M10 | Hoy son valores por defecto en código |
 | 10 | **Topes del agente autónomo** (§17.4) | constructor por señal | Sin valores, el constructor `task` no debería activarse **Construido (2026-09-30):** 10 propuestas por día y 20 evaluaciones por propuesta aplicados en `RegistryService`; sigue diferido el tope de costo, así que el constructor `task` aún no debe activarse. |
+| 11 | **Directorio de agentes y tool `directory/list`** | agente de recepción (transferencia, ADR 0021) | Implementado en la unidad de transferencia, **sin cablear en la raíz de composición** (solo lo usan las pruebas): `AgentDirectory`, `RegistryDirectory` (§7.1b) y `DirectoryToolExecutor` en `composition`, que envuelve al `ToolExecutor`. Cierra el abierto 5 de la spec de transferencia (dueño de la tool). La tool recibe `directory` y `locale` como argumentos, porque `ToolCallContext` no trae el idioma |
