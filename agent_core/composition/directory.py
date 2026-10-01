@@ -1,10 +1,13 @@
 """`directory/list` tool (ADR 0021, spec §4): the directory filtered for the caller, served by composition."""
 
+from pydantic import TypeAdapter, ValidationError
+
 from agent_core.domain import (
     DirectoryEntry,
     DirectorySnapshot,
     EntityRef,
     JsonValue,
+    Locale,
     ToolDef,
     directory_hash,
     transfer_ineligibility,
@@ -28,6 +31,8 @@ DIRECTORY_TOOL = ToolDef.model_validate({
                     "properties": {"directory": {"type": "string"}, "locale": {"type": "string"}},
                     "required": ["directory", "locale"]},
 })
+
+_LOCALE = TypeAdapter(Locale)
 
 
 def _is_directory_tool(tool: EntityRef) -> bool:
@@ -54,7 +59,11 @@ class DirectoryToolExecutor:
         name, locale = args.get("directory"), args.get("locale")
         if not isinstance(name, str) or not isinstance(locale, str):
             return ToolResult(status=ToolStatus.error, call_id=call_id, error="bad_args")
-        members = self._directory.members(name)
+        try:
+            _LOCALE.validate_python(locale)
+        except ValidationError:
+            return ToolResult(status=ToolStatus.error, call_id=call_id, error="bad_args")
+        members = sorted(self._directory.members(name), key=lambda member: member[1].id)
         entries = [
             DirectoryEntry(agent_id=agent.id, release_id=release_id, summary=agent.routing.summary,
                            examples=list(agent.routing.examples), accepts=agent.accepts,

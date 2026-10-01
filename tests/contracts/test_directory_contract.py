@@ -41,6 +41,16 @@ def test_members_are_prod_agents_with_the_tag(memory: tuple[InMemoryRegistry, Ag
         ("rel-disputas", "disputas"), ("rel-saldos", "saldos")]
 
 
+def test_members_are_sorted_by_codepoint_whatever_the_insertion_order(
+        memory: tuple[InMemoryRegistry, AgentDirectory]) -> None:
+    registry, directory = memory
+    for agent_id in ("a_b", "ab", "a-z", "a/b"):  # collations disagree with codepoint order on these
+        agent = _agent(agent_id)
+        registry.add(agent)
+        registry.add_release(_release(f"rel-{agent_id.replace('/', '-')}", agent), agent_id, alias="prod")
+    assert [a.id for _, a in directory.members("customer-care")] == ["a-z", "a/b", "a_b", "ab"]
+
+
 def test_revoked_releases_are_not_members(memory: tuple[InMemoryRegistry, AgentDirectory]) -> None:
     registry, directory = memory
     agent = _agent("disputas")

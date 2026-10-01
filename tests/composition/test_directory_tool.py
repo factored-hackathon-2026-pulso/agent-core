@@ -5,8 +5,8 @@ from typing import Any
 import pytest
 
 from agent_core.composition.directory import DIRECTORY_TOOL, DirectoryToolExecutor
-from agent_core.domain import Agent, EntityRef, Principal, Release, SubjectRef, directory_hash
-from agent_core.ports import AuthzDecision, ToolCallContext, ToolStatus
+from agent_core.domain import Agent, EntityRef, JsonValue, Principal, Release, SubjectRef, directory_hash
+from agent_core.ports import AuthzDecision, DirectoryMember, ToolCallContext, ToolStatus
 from testing.builders import principal
 from testing.fakes.directory import InMemoryDirectory
 from testing.fakes.ids import FakeIds
@@ -66,6 +66,33 @@ def test_locale_not_supported_excludes_everyone() -> None:
     result = executor.execute(TOOL, {"directory": "customer-care", "locale": "fr"}, {}, ctx)
     assert isinstance(result.result_full, dict)
     assert result.result_full["choices"] == []
+
+
+class _Unsorted:
+    """A directory whose implementation returns members in a collation-like order."""
+
+    def __init__(self, inner: InMemoryDirectory) -> None:
+        self._inner = inner
+
+    def members(self, directory: str) -> list[DirectoryMember]:
+        return list(reversed(self._inner.members(directory)))
+
+
+def test_choices_and_hash_do_not_depend_on_the_directory_order() -> None:
+    executor, ctx = _world()
+    reordered = DirectoryToolExecutor(
+        FakeToolExecutor(FakeIds()), _Unsorted(executor._directory),  # type: ignore[arg-type]
+        _Authz(), FakeIds())
+    args: dict[str, JsonValue] = {"directory": "customer-care", "locale": "es"}
+    plain, flipped = executor.execute(TOOL, args, {}, ctx), reordered.execute(TOOL, args, {}, ctx)
+    assert isinstance(flipped.result_full, dict) and isinstance(plain.result_full, dict)
+    assert flipped.result_full["choices"] == plain.result_full["choices"] == ["disputas", "vetado"]
+
+
+def test_malformed_locale_is_bad_args() -> None:
+    executor, ctx = _world()
+    result = executor.execute(TOOL, {"directory": "customer-care", "locale": "ES-co"}, {}, ctx)
+    assert result.status is ToolStatus.error and result.error == "bad_args"
 
 
 def test_bad_arguments_are_an_error_result() -> None:

@@ -26,4 +26,4 @@ class RegistryDirectory:
             agent = self._registry.get(EntityRef(id=agent_id, version=version), Agent)
             if agent.routing is not None and agent.routing.directory == directory:
                 found.append((release_id, agent))
-        return found
+        return sorted(found, key=lambda member: member[1].id)  # codepoint order, not DB collation
