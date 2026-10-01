@@ -1,8 +1,11 @@
 """Escritura `draft` (ADR 0019, m01 §3.13): G0-05, G0-23, reclamos y referencias."""
 
+from typing import Any
+
 from agent_core.domain import EntityKind
-from agent_core.flows import derive_claims, entity_ref_sites
-from tests.m01.cases import check, draft_base, flow, node, registry, rules
+from agent_core.domain.schema import check_output, unsupported_keyword
+from agent_core.flows import DRAFT_OUTPUT_SCHEMA, derive_claims, entity_ref_sites
+from tests.m01.cases import agent_node, check, draft_base, flow, node, registry, rules
 
 
 def test_draft_flow_is_valid() -> None:
@@ -80,3 +83,36 @@ def test_an_unresolved_draft_tool_is_g0_02() -> None:
     d = draft_base()
     node(d, "guardar")["config"]["tool"] = "nada@1"
     assert "G0-02" in rules(check(d))
+
+
+def test_the_draft_schema_is_inside_the_supported_subset_and_accepts_a_draft() -> None:
+    assert unsupported_keyword(DRAFT_OUTPUT_SCHEMA) is None
+    good = {"changes": [{"kind": "prompt", "content": {"id": "p/x", "version": "1.0.0"},
+                         "docs": {"description": "d", "rationale": "r", "changelog": "c"}}]}
+    assert check_output(DRAFT_OUTPUT_SCHEMA, good) is None
+    assert check_output(DRAFT_OUTPUT_SCHEMA, {"changes": [{"kind": "prompt"}]}) is not None
+    assert check_output(DRAFT_OUTPUT_SCHEMA, {}) is not None
+
+
+def _agent_into_draft(schema: dict[str, Any]) -> dict[str, Any]:
+    d = draft_base()
+    node(d, "pedir")["next"]["ok"] = "investigar"
+    investigar = agent_node(output_schema=schema, save_as="hallazgo")
+    investigar["next"]["answered"] = "guardar"
+    d["nodes"].append(investigar)
+    node(d, "guardar")["config"]["args"] = {"changes": "facts.hallazgo.value.changes"}
+    return d
+
+
+def test_agent_output_may_feed_a_draft_write_when_its_schema_is_the_draft_schema() -> None:
+    assert check(_agent_into_draft(dict(DRAFT_OUTPUT_SCHEMA))) == []
+
+
+def test_agent_output_with_another_schema_cannot_feed_a_draft_write() -> None:
+    assert rules(check(_agent_into_draft({"type": "object"}))) == {"G0-22"}
+
+
+def test_agent_output_still_cannot_feed_a_verify_even_with_the_draft_schema() -> None:
+    d = _agent_into_draft(dict(DRAFT_OUTPUT_SCHEMA))
+    node(d, "verificar")["config"]["predicate"] = {"==": [{"var": "facts.hallazgo.value.changes"}, []]}
+    assert "G0-22" in rules(check(d))

@@ -31,6 +31,7 @@ from agent_core.domain import (
     unsupported_keyword,
 )
 from agent_core.flows.context import Ctx
+from agent_core.flows.draft_schema import DRAFT_OUTPUT_SCHEMA
 from agent_core.flows.graph import draft_writes, end_modes, flow_mode, is_waiting
 from agent_core.flows.jsonlogic import MAX_DEPTH, exceeds_max_depth, expr_literals, expr_paths
 from agent_core.flows.paths import Path, parse_path, value_paths
@@ -300,16 +301,23 @@ def g0_24(ctx: Ctx) -> Iterator[Violation]:
 
 
 def g0_22(ctx: Ctx) -> Iterator[Violation]:
-    """Lo que el modelo genera no alimenta decisiones ni escrituras (m01 §3.13)."""
-    produced = {n.config.save_as for n in ctx.flow.nodes if isinstance(n, AgentNode)}
+    """Lo que el modelo genera no alimenta decisiones ni escrituras (m01 §3.13).
+
+    Excepción acotada (ADR 0019 §1, enmienda del 2026-09-30): el `args` de una escritura `draft` puede leer la
+    salida de un nodo `agent` cuyo `output_schema` es `DRAFT_OUTPUT_SCHEMA`."""
+    produced = {n.config.save_as: n.config.output_schema == DRAFT_OUTPUT_SCHEMA
+                for n in ctx.flow.nodes if isinstance(n, AgentNode)}
     if not produced:
         return
     for node in ctx.flow.nodes:
+        draft_args = isinstance(node, WriteToolNode) and node.config.draft
         for site in _read_sites(ctx, node):
             if site.sub in _AGENT_OUTPUT_SITES:
                 continue
             for path in site.paths:
                 if path.ns == "facts" and path.name in produced:
+                    if draft_args and site.sub == "/config/args" and produced[path.name]:
+                        continue
                     yield ctx.v(
                         "G0-22",
                         node.id,
