@@ -1,6 +1,7 @@
 """Carga las claves públicas de identidad (principal y delegación) desde un archivo y arma el verificador.
 
 Formato: `{"principal_keys": {kid: b64url}, "delegation_keys": {kid: b64url}}` (32 bytes Ed25519 por clave).
+El archivo del staff puede omitir `delegation_keys`.
 Falla cerrado: cualquier irregularidad es un `SchemaError` que nombra el mapa y el `kid`, nunca el valor."""
 
 from collections.abc import Callable, Hashable
@@ -49,12 +50,15 @@ def _keys(data: dict[str, object], name: str) -> dict[str, Ed25519PublicKey]:
     return out
 
 
-def load_identity_verifier(path: Path,
-                           grant_active: Callable[[str, datetime], bool]) -> JwsIdentityVerifier:
+def load_identity_verifier(path: Path, grant_active: Callable[[str, datetime], bool], *,
+                           delegation: bool = True) -> JwsIdentityVerifier:
+    """`delegation=False` (staff): `delegation_keys` es opcional; sin él, toda delegación se rechaza."""
     try:
         data = yaml.load(path.read_bytes(), Loader=_UniqueKeyLoader)
     except (OSError, yaml.YAMLError):
         raise SchemaError(f"no se pudo leer el archivo de claves de identidad ({path.name})") from None
     if not isinstance(data, dict):
         raise SchemaError("el archivo de claves de identidad debe ser un mapa")
-    return JwsIdentityVerifier(_keys(data, "principal_keys"), _keys(data, "delegation_keys"), grant_active)
+    principal_keys = _keys(data, "principal_keys")
+    delegation_keys = _keys(data, "delegation_keys") if delegation or "delegation_keys" in data else {}
+    return JwsIdentityVerifier(principal_keys, delegation_keys, grant_active)

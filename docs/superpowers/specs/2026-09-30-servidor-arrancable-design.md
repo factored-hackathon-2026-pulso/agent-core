@@ -25,7 +25,7 @@ Puertos por ruta `modulo:atributo`, el mismo patrón de la CLI del registry (`--
 
 ### 3.1 Fábrica de composición
 
-`agent_core/composition/serve.py` expone `build_api_deps(settings: ServeSettings) -> ApiDeps`. Arma `EngineDeps`, llama a `build_turn_engine` y monta el registry como `ApiExtension`. Solo `composition` importa adaptadores concretos (regla de fronteras de `.importlinter`; se añade el contrato si hace falta).
+`agent_core/composition/serve.py` expone `build_api_deps(ports: ServePorts, *, registry_service=None) -> ApiDeps` (`ServePorts` lo arma `resolve_ports`). Arma `EngineDeps`, llama a `build_engine` y, solo si recibe un `registry_service`, monta el registry como `ApiExtension` (§8). Solo `composition` importa adaptadores concretos (regla de fronteras de `.importlinter`; se añade el contrato si hace falta).
 
 ### 3.2 Piezas reales
 
@@ -43,7 +43,7 @@ Archivo YAML con dos mapas por `kid`: `principal_keys` y `delegation_keys` (clav
 
 ### 3.4 Dobles etiquetados
 
-Solo con `AGENTCORE_ALLOW_DEMO=1`: `FakeToolExecutor` o `LocalSandboxTools`, `TableAuthz`, `InMemoryTranscript`, calibración y clasificador de demo. Cada uno se elige con una opción de ruta (`--tools`, `--authz`, `--transcript`, `--calibration`, `--classifier`) y tiene como valor de demo la ruta al doble.
+Solo con `AGENTCORE_ALLOW_DEMO=1`: `FakeToolExecutor` (vía `LazyDemoTools`), `SyntheticAuthz`, `InMemoryTranscript`, calibración y clasificador de demo. Cada uno se elige con una opción de ruta (`--tools`, `--authz`, `--transcript`, `--calibration`, `--classifier`) y tiene como valor de demo la ruta al doble.
 - Sin la variable y con alguna pieza sin ruta: código 2 y un mensaje que nombra cada pieza faltante.
 - Con la variable: al arrancar se imprime la lista de piezas que son dobles.
 
@@ -71,7 +71,7 @@ Subcomando `serve` en `agent_core/cli.py` con `--host`, `--port` y las rutas ant
 
 - Tema #13 pasa a "Resuelto salvo las piezas reales de las unidades 3, 6 y 7", con enlace a esta spec.
 - m09 §11 "Cableado real" se marca resuelto y documenta el formato del archivo de claves.
-- Registry §14: `serve` monta el registry como extensión.
+- Registry §14: `build_api_deps` acepta el `registry_service`; `serve` lo monta cuando tenga evaluador y harness reales (§8).
 - `AGENTCORE_ALLOW_DEMO=1` queda documentado como el mecanismo oficial de la demo para todo el núcleo, no solo para el registry.
 
 ## 7. Abiertos
@@ -84,5 +84,5 @@ Subcomando `serve` en `agent_core/cli.py` con `--host`, `--port` y las rutas ant
 - `resolve_ports` y `run_serve` reciben el entorno como `Mapping[str, str]`: el gateway lee claves de API por nombres de variable arbitrarios.
 - La clave de JEV se lee de `AGENTCORE_JEV_API_KEY` solo al llamar; construir el servidor no la exige.
 - Sin `--identity-keys`, en demo el verificador es `testing.registry_demo:demo_verifier` y `identity` figura entre los dobles.
-- `serve` **no** monta todavía la API HTTP del registry: `build_api_deps` acepta un `registry_service`, pero falta cablear el evaluador y el harness reales. El CLI `agentcore registry` no cambia.
-- El aviso de alias de LLM sin configurar (gateway §5) queda fuera de esta entrega.
+- La API HTTP del registry se monta con `--registry-api` (opt-in; `2026-09-30-serve-registry-api-design.md`): evaluador y harness reales, `--staff-keys` y `--eval-dsn`. Sin la bandera, `serve` no la expone. El CLI `agentcore registry` no cambia.
+- **Aviso de alias de LLM (gateway §5), añadido el 2026-09-30:** `--agents a,b` (o `AGENTCORE_SERVE_AGENTS`). Al arrancar, `model_alias_warnings` resuelve la release `prod` de cada agente, lee sus entidades `model_profile` y avisa por cada `endpoint_alias` sin entrada en `LLM_ENDPOINTS` o con la variable de key vacía (nombra la variable, nunca el valor), y por cada agente sin release `prod`. Solo avisa: no bloquea el arranque. Sin `--agents` no revisa nada. Solo se revisa `prod`; `staging` queda fuera.

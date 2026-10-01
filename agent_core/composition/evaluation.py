@@ -6,7 +6,7 @@ from datetime import timedelta
 from typing import Any
 
 from agent_core.composition.engine import EngineConfig, EngineDeps, build_turn_engine
-from agent_core.decision import DecisionProvider
+from agent_core.decision import DecisionProvider, ProviderError, ProviderTimeout, RawPrediction
 from agent_core.decision.calibration.artifact import CalibrationSource
 from agent_core.domain import (
     AgentSelector,
@@ -17,6 +17,7 @@ from agent_core.domain import (
     JsonValue,
     Locale,
     Principal,
+    ProviderSpec,
     RunInput,
     TurnInput,
 )
@@ -59,6 +60,23 @@ class _ProbingGateway:
             raise
 
 
+class _ProbingProvider:
+    """Igual que la sonda del gateway: el motor absorbe las fallas de proveedor (cae al siguiente de la
+    cadena o degrada), así que la sonda las recuerda para marcar `failed_infra` (registry §6.2 punto 6)."""
+
+    def __init__(self, inner: DecisionProvider, failures: list[str]) -> None:
+        self._inner, self._failures = inner, failures
+        self.name = inner.name
+
+    def predict(self, spec: ProviderSpec, inputs_model_view: dict[str, JsonValue],
+                schema: dict[str, JsonValue], locale: Locale) -> RawPrediction:
+        try:
+            return self._inner.predict(spec, inputs_model_view, schema, locale)
+        except (ProviderError, ProviderTimeout):
+            self._failures.append(self.name)
+            raise
+
+
 class EngineScenarioHarness:
     def __init__(self, *, clock: Clock, ids: IdSource, keys: KeyProvider, gateway: LLMGateway,
                  providers: Callable[[str], Mapping[str, DecisionProvider]],
@@ -80,10 +98,13 @@ class EngineScenarioHarness:
             tools: ToolExecutor) -> list[EngineEvent]:
         storage = self._storage()
         probe = _ProbingGateway(self._gateway)
+        provider_failures: list[str] = []
+        providers = {name: _ProbingProvider(p, provider_failures)
+                     for name, p in self._providers(scenario.id).items()}
         engine = build_turn_engine(EngineDeps(
             clock=self._clock, ids=self._ids, keys=self._keys, uow_factory=storage.uow_factory,
             audit=storage.audit, registry=target.registry, releases=lambda _rid: target.release, tools=tools,
-            gateway=probe, providers=self._providers(scenario.id), calibrations=self._calibrations,
+            gateway=probe, providers=providers, calibrations=self._calibrations,
             transcript=storage.transcript, authz=self._authz, classifier=self._classifier,
             config=self._config))
         run_id: str | None = None
@@ -109,6 +130,9 @@ class EngineScenarioHarness:
             token = turn.confirmation.token if turn is not None and turn.confirmation is not None else None
         if probe.failed:
             raise HarnessUnavailable("el gateway falló durante el escenario")
+        if provider_failures:
+            raise HarnessUnavailable(f"un proveedor de decisión falló durante el escenario: "
+                                     f"{sorted(set(provider_failures))}")
         if run_id is None:
             raise HarnessUnavailable("el escenario no inició ningún run")
         return storage.audit.read(run_id)

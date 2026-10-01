@@ -2,14 +2,27 @@
 
 import argparse
 import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
+from datetime import timedelta
 
+from agent_core.adapters.llm import EndpointConfig
 from agent_core.api.app import ApiDeps, create_app
 from agent_core.api.security_log import OtelSecurityLog
 from agent_core.audit import AuditLog
 from agent_core.composition.engine import EngineDeps, build_engine
 from agent_core.composition.serve_ports import ServeConfigError, ServePorts, resolve_ports
-from agent_core.ports import Clock, IdSource
+from agent_core.composition.serve_registry import build_registry_service_for_serve
+from agent_core.domain import (
+    AgentSelector,
+    AuthInfo,
+    AuthLevel,
+    EntityKind,
+    EntityRef,
+    ModelProfile,
+    Principal,
+    PrincipalType,
+)
+from agent_core.ports import Clock, IdSource, RegistryPort
 from agent_core.registry import RegistryService
 from agent_core.registry.http import registry_extension
 
@@ -25,7 +38,37 @@ def build_api_deps(ports: ServePorts, *, registry_service: RegistryService | Non
         counters=ports.counters, clock=ports.clock, ids=ports.ids, turns=built.turns,
         handoffs=built.handoffs, transcripts=built.transcripts,
         denials=AuditLog(ports.audit, ports.uow_factory), security=OtelSecurityLog(),
-        extensions=() if registry_service is None else (registry_extension(registry_service),))
+        extensions=() if registry_service is None else (registry_extension(
+            registry_service, None if ports.registry_api is None else ports.registry_api.staff_verifier),))
+
+
+def model_alias_warnings(registry: RegistryPort, agents: Iterable[str],
+                         endpoints: Mapping[str, EndpointConfig], env: Mapping[str, str],
+                         clock: Clock) -> list[str]:
+    """Perfiles de la release `prod` de cada agente cuyo alias de LLM no tiene endpoint o cuya variable de key
+    está vacía (gateway §5). Solo avisos: el arranque no se bloquea y nunca se imprime el valor de una key."""
+    now = clock.now()
+    startup = Principal(type=PrincipalType.service, id="serve-startup",
+                        auth=AuthInfo(level=AuthLevel.session, at=now), exp=now + timedelta(minutes=1))
+    warnings: list[str] = []
+    for agent in agents:
+        try:
+            release = registry.resolve_release(AgentSelector(id=agent, alias="prod"), startup)
+        except KeyError:
+            warnings.append(f"el agente `{agent}` no tiene una release `prod` activa; "
+                            "no se revisaron sus perfiles")
+            continue
+        for pid, version in sorted(release.entities.get(EntityKind.model_profile, {}).items()):
+            profile = registry.get(EntityRef(id=pid, version=version), ModelProfile)
+            endpoint = endpoints.get(profile.endpoint_alias)
+            where = f"perfil {pid}@{version}, agente {agent}"
+            if endpoint is None:
+                warnings.append(f"alias de LLM `{profile.endpoint_alias}` sin endpoint en LLM_ENDPOINTS "
+                                f"({where})")
+            elif not env.get(endpoint.api_key_env, "").strip():
+                warnings.append(f"alias de LLM `{profile.endpoint_alias}`: la variable "
+                                f"{endpoint.api_key_env} está vacía ({where})")
+    return warnings
 
 
 def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Mapping[str, str],
@@ -41,7 +84,10 @@ def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Map
     if ports.doubles:
         print("AVISO: piezas que son DOBLES de demo (no producción): " + ", ".join(ports.doubles),
               file=sys.stderr)
-    app = create_app(build_api_deps(ports))
+    for warning in model_alias_warnings(ports.registry, ports.agents, ports.endpoints, env, ports.clock):
+        print(f"AVISO: {warning}", file=sys.stderr)
+    registry_service = build_registry_service_for_serve(ports) if ports.registry_api is not None else None
+    app = create_app(build_api_deps(ports, registry_service=registry_service))
     if serve is None:
         import uvicorn
 

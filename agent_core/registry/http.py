@@ -8,6 +8,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from agent_core.domain import CredentialsInvalid, Principal, dumps
+from agent_core.ports import IdentityVerifier
 from agent_core.registry.errors import HTTP_STATUS, RegistryError, RegistryErrorCode
 from agent_core.registry.models import EntityDraft, Origin
 from agent_core.registry.roles import require_builder
@@ -77,7 +78,15 @@ def _problem(request: Request, exc: RegistryError) -> Response:
     return _Problem(dumps(body), status_code=status)
 
 
-def registry_extension(service: RegistryService) -> Callable[[FastAPI, Authenticate], None]:
+def _bearer(authorization: str | None) -> str:
+    scheme, _, rest = (authorization or "").strip().partition(" ")
+    return rest.strip() if scheme.lower() == "bearer" else (authorization or "").strip()
+
+
+def registry_extension(service: RegistryService,
+                       verifier: IdentityVerifier | None = None) -> Callable[[FastAPI, Authenticate], None]:
+    """Con `verifier` (el del staff, spec §8) la API verifica solo con esas claves; sin él usa el
+    `authenticate` de M9."""
     def install(app: FastAPI, authenticate: Authenticate) -> None:
         router = APIRouter(prefix="/v1/registry")
 
@@ -93,7 +102,13 @@ def registry_extension(service: RegistryService) -> Callable[[FastAPI, Authentic
                 return _Problem(dumps(body), status_code=401)
 
         def who(request: Request, authorization: str | None) -> Principal:
-            principal = authenticate(request, authorization)
+            if verifier is None:
+                principal = authenticate(request, authorization)
+            else:
+                credential = _bearer(authorization)
+                if not credential:
+                    raise CredentialsInvalid("credencial ausente")
+                principal = verifier.verify(credential)
             require_builder(principal)  # incluye las lecturas
             return principal
 

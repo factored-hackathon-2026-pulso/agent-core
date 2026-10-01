@@ -34,18 +34,24 @@ def test_a_credential_signed_by_the_issuer_verifies(tmp_path: Path) -> None:
     assert verifier.verify(issuer.customer()).id == "cust-001"
 
 
-@pytest.mark.parametrize("bad", [
-    {"principal_keys": {}},                        # mapa vacío
-    {"principal_keys": {"k1": "no-es-b64url!"}},   # base64url inválido
-    {"principal_keys": {"k1": "AAAA"}},            # longitud distinta de 32 bytes
-    {"principal_keys": {"k1": 5}},                 # no es texto
-    {"delegation_keys": {}},
+@pytest.mark.parametrize(("bad", "value"), [
+    ({"principal_keys": {}}, None),                              # mapa vacío
+    ({"principal_keys": {"k1": "no-es-b64url!"}}, "no-es-b64url"),  # base64url inválido
+    ({"principal_keys": {"k1": "QUJDRA"}}, "QUJDRA"),            # longitud distinta de 32 bytes
+    ({"principal_keys": {"k1": 5}}, None),                       # no es texto
+    ({"delegation_keys": {}}, None),
+    ({"delegation_keys": {"d1": "no-es-b64url!"}}, "no-es-b64url"),
 ])
-def test_invalid_key_files_fail_closed_without_echoing_the_value(tmp_path: Path, bad: dict[str, Any]) -> None:
+def test_invalid_key_files_fail_closed_without_echoing_the_value(
+        tmp_path: Path, bad: dict[str, Any], value: str | None) -> None:
     issuer = TestIdentityIssuer(FakeClock())
     with pytest.raises(SchemaError) as info:
         load_identity_verifier(_file(tmp_path, issuer, **bad), lambda ref, now: True)
-    assert "no-es-b64url" not in str(info.value)
+    message = str(info.value)
+    if value is not None:
+        assert value not in message
+    for key in (issuer.principal_key, issuer.delegation_key):  # ninguna clave válida del archivo se imprime
+        assert _pub(key) not in message
 
 
 def test_missing_file_is_a_schema_error(tmp_path: Path) -> None:
@@ -70,3 +76,18 @@ def test_a_repeated_key_fails_closed(tmp_path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
     with pytest.raises(SchemaError, match="repetid"):
         load_identity_verifier(path, lambda ref, now: True)
+
+
+def test_without_delegation_keys_the_staff_verifier_loads_and_rejects_any_delegation(tmp_path: Path) -> None:
+    from agent_core.domain import CredentialsInvalid
+
+    issuer = TestIdentityIssuer(FakeClock())
+    path = tmp_path / "staff.yaml"
+    path.write_text(json.dumps({"principal_keys": {issuer.principal_kid: _pub(issuer.principal_key)}}),
+                    encoding="utf-8")
+    verifier = load_identity_verifier(path, lambda ref, now: False, delegation=False)
+    assert verifier.verify(issuer.customer()).id == "cust-001"
+    with pytest.raises(CredentialsInvalid):
+        verifier.verify_delegation(issuer.advisor()[1])
+    with pytest.raises(SchemaError):  # por defecto la delegación sigue siendo obligatoria
+        load_identity_verifier(path, lambda ref, now: False)

@@ -223,7 +223,7 @@ Para la candidata y para la base (si existe), con la misma suite congelada:
 3. **Califica desde los eventos del motor.** Una corrida pasa si cumple todo el `expect`. La métrica principal es la proporción de corridas que pasan.
 4. **Guardarraíles** (conteos sobre los eventos): afirmación de éxito sin `verify`, escritura sin verificación y datos de vista `full` en la respuesta o en un evento. Los emiten M2, M3, M6 y M8.
 5. Corre en paralelo con un tope de concurrencia configurable.
-6. Una falla del gateway durante una corrida (la detecta una sonda del harness, porque el motor la absorbe) o del sandbox → `failed_infra`, igual que el tiempo vencido. Toda la evaluación queda `failed_infra`. Nunca hay un pase parcial.
+6. Una falla del gateway o de un proveedor de decisión (JEV, classifier) durante una corrida (la detecta una sonda del harness, porque el motor la absorbe) o del sandbox → `failed_infra`, igual que el tiempo vencido. Toda la evaluación queda `failed_infra`. Nunca hay un pase parcial.
 
 Costo orientativo: 2 releases × N escenarios × k corridas. Con 10 escenarios y k = 3, son 60 conversaciones por evaluación.
 
@@ -462,7 +462,7 @@ Las que necesitan Postgres van en `tests/integration/`; el resto usa dobles en m
 - [x] T-REG-01 a T-REG-27 en verde (suite completa con Postgres: 2956 pasaron, 1 omitida por `AGENT_CORE_PERF`, ajena al registry). Trazabilidad abajo.
 - [x] `lint-imports`, `mypy` y `ruff` en verde.
 - [x] API montada en M9 (`registry_extension`, `ApiDeps.extensions`) y CLI (`agentcore registry …`).
-- [x] La composición del motor usa `PostgresRegistry` (`agentcore serve`, 2026-09-30, tema #13). **Pendiente:** `serve` todavía no monta `registry_extension` (falta el evaluador y el harness reales); `build_api_deps` ya acepta un `registry_service`.
+- [x] La composición del motor usa `PostgresRegistry` (`agentcore serve`, 2026-09-30, tema #13). `serve --registry-api` monta `registry_extension` con evaluador real y el verificador del staff (`registry_extension(service, verifier)`), spec `2026-09-30-serve-registry-api-design.md`.
 - [x] `contracts/` regenerado (`agentcore contracts --check` en verde).
 - [x] Sin TODO sin issue (no hay `TODO` en `agent_core/`, `testing/` ni `tests/`).
 
