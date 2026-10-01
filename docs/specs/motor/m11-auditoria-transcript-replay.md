@@ -60,7 +60,7 @@ class Replayer:
 `verify_transfer_link(target, sink)` comprueba que la cadena de un run destino está atada a la del origen. Solo lee; devuelve la lista de problemas (vacía = enlace válido).
 
 - **No aplica:** si `target.origin` es `None` (el run no nació de una transferencia) devuelve `[]`.
-- **Qué ata:** `RunOrigin.from_event_hash` es el hash del `turn_completed` del origen del turno que transfirió (no el de `run_transferred`: ADR 0021 P2; el spec de transferencia §3.3 se reconcilia en consecuencia).
+- **Qué ata:** `RunOrigin.from_event_hash` es el hash del `turn_completed` del origen del turno que transfirió (no el de `run_transferred`: ADR 0021 P2).
 - **Búsqueda, no posición:** el hash se busca en toda la cadena de origen; no tiene que ser el último evento. Un evento posterior (p. ej. `access_denied` por una lectura sobre el run ya cerrado) no rompe el enlace.
 - **Comprobaciones:** (1) la cadena de origen existe y pasa `check_chain`; (2) el hash está en ella y es el de un `turn_completed`; (3) hasta ese evento hay exactamente un `run_transferred` con el `transfer_id` del origen y su `to_run_id` es el run destino, y el `turn_id` del `turn_completed` es el del `run_transferred`; (4) el primer evento del origen es un `run_started` cuyo agente y `release` coinciden con `origin.from_agent` y `origin.from_release_id`; (5) el primer evento del destino es un `run_started` de ese `run_id` cuyo `origin` es idéntico al del estado, y cuyo agente y `release` coinciden con `to_agent` y `to_release_id` del `run_transferred`. Así un `RunOrigin` con `from_run_id`, hash y `transfer_id` reales pero agente o release falsos no pasa.
 - **Alcance:** solo el enlace. La integridad de la cadena del destino la da `AuditLog.verify_chain`.

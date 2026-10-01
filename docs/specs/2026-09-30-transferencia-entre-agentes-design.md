@@ -133,6 +133,7 @@ class RunOrigin(Model):
   - el agente tiene `accepts`;
   - `AuthzPort.authorize_agent` autoriza al principal sobre el agente.
 - **Tool `directory/list@1.0.0`** (clase `read`, `args: {directory, locale}`): `locale` es un argumento (el run lo pasa) y se valida; uno mal formado da `error` (`bad_args`). La sirve `DirectoryToolExecutor` en `agent_core/composition/directory.py`, que envuelve al `ToolExecutor` real y delega las demás tools. **El dueño queda cerrado: vive en `composition`** (registry §18, fila 11). Devuelve la vista filtrada más `choices` (lista de `agent_id`). El nodo `tool` emite un `tool_called` normal (P1).
+- **Cableado:** `DirectoryToolExecutor` y `RegistryDirectory` no se exportan desde `composition/__init__.py` y `build_turn_engine`/`EngineDeps` no envuelven `deps.tools` con ellos; hoy solo las pruebas los usan (por eso `tests/m04/harness.py` importa el módulo interno `agent_core.composition.directory`). Cablearlos queda para la fase 7.
 - **Frescura:** `PostgresRegistry.release_status` tiene una caché con TTL; una release revocada puede seguir en el directorio hasta un TTL (registry §7.1).
 - **Caché:** el motor lee el directorio por run; no hay caché entre runs en la demo.
 
@@ -179,7 +180,7 @@ entender (collect / agent con input_view) → directorio (tool directory/list) �
 | G0-03 | `transfer` cablea solo `rejected`; `decide` con `choices_from` cablea `chosen`, `none` y `low_confidence` |
 | G0-26 | `target_from` lee un `decide` con `choices_from` que domina al `transfer`; `directory_from` es el `save_as` de un nodo `tool` con `directory/list` que también lo domina |
 | G0-27 | los `packet.slots` son slots de un `collect` del flow |
-| G0-22 | la salida de un `agent` no puede ser `target_from` ni entrar en `packet.slots` sin pasar por un `collect` |
+| G0-22 | **sin cambios en esta entrega** y sin prueba de transferencia. La garantía real contra un destino inventado es G0-26/G0-27 más la comprobación de M4 (el destino debe estar en `snapshot.choices`). Pendiente de endurecer: un `decide` con `choices_from` puede leer un hecho de un nodo `agent` |
 | AG-03 | un agente con `transfer` es `conversational`; uno con `accepts` necesita `routing`, `understand` y ser `conversational` |
 | REL-T1 (**no construida**, P7) | al publicar recepción: para cada destino posible del directorio en `prod`, los slots del paquete cumplen su `accepts` (con los tipos del `collect` de origen) |
 
@@ -200,7 +201,7 @@ entender (collect / agent con input_view) → directorio (tool directory/list) �
 - **Correlación:** `session_id` en todo evento (ya existe en `EngineEvent`) y `transfer_id` en los tres eventos de transferencia.
 - **Enlace verificable:** `RunOrigin.from_event_hash` ata la cadena del destino al `turn_completed` exacto del origen. `verify_transfer_link(target, sink)` (M11, `agent_core/audit/links.py`) lo comprueba: la cadena de origen verifica, el hash es de un `turn_completed` del turno que transfirió, hay un único `run_transferred` que apunta al destino, y los agentes y releases de `origin`, de los `run_started` y de `run_transferred` coinciden. Comprueba solo el enlace, no la integridad de la cadena del destino. **Pendiente:** conectarlo a `agentcore replay` (§12.10).
 - **OTel (pendiente, P7; no construido):** span `agentcore.transfer` (atributos `transfer_id`, `from_agent`, `to_agent`, `to_release_id`, `outcome`) y un *span link* del primer span del run destino al span de la transferencia.
-- **Linaje por sesión:** §5.3. El linaje por run (`lineage_for_run`) incluye `origin`.
+- **Linaje por sesión:** §5.3. **Pendiente:** el linaje por run del registry (`RunLineage`, `lineage_for_run`) no tiene `origin` y no lo lee; hoy `origin` solo se ve en el linaje por sesión (§5.3).
 - **Sin PII:** el paquete solo aparece como `packet_fp`; los slots viajan por las vistas de M7.
 
 ## 9. Fallas
@@ -231,7 +232,7 @@ entender (collect / agent con input_view) → directorio (tool directory/list) �
 | T-TR-08 | `principal_mismatch` se mantiene en toda la sesión |
 | T-TR-09 | Replay de una sesión con transferencia reproduce los dos runs y verifica el enlace (hoy solo la verificación del enlace, `verify_transfer_link`; el replay de sesión queda pendiente) |
 | T-TR-10 | `GET /v1/sessions/{id}/lineage` devuelve la cadena con releases y `transfer_id`; **el hash del directorio no está** (§12.9) |
-| T-TR-11 | M1: G0-26, G0-27, G0-22 (salida de `agent` como destino) y AG-03 |
+| T-TR-11 | M1: G0-26, G0-27 y AG-03 (`tests/m01/test_transfer_rules.py`). G0-22 no tiene prueba de transferencia (ver §6) |
 | T-TR-12 | Evaluación: en la suite de recepción el escenario termina en `transfer` y no abre el destino |
 | T-TR-13 | Gate del especialista: una ficha que roba escenarios de otro especialista hace fallar el gate |
 | T-TR-14 | Un `accepts` que rompe a la recepción publicada se marca `yardstick_loosened` |
@@ -243,7 +244,7 @@ entender (collect / agent con input_view) → directorio (tool directory/list) �
 |---|---|---|
 | 1 | M0: tipos, nodo, outcome, eventos, `RunOrigin`, `IdKind.transfer`; `contracts/` | hecha |
 | 2 | M1: reglas de §6 (sin REL-T1) | hecha |
-| 3 | Registry: directorio, hash y tool `directory/list` (adaptador en `composition`) | hecha |
+| 3 | Registry: directorio, hash y tool `directory/list` (adaptador en `composition`) | implementada, **sin cablear en la raíz de composición** (solo la usan las pruebas; cableado pendiente, fase 7) |
 | 4 | M5 y M2: `decide` con `choices_from` y manejador de `transfer` | hecha |
 | 5 | M4 y M9: sesión con varios runs, transferencia atómica, `TurnResult.run_id`/`agent`, linaje por sesión | hecha |
 | 6 | M11: enlace por hash (`verify_transfer_link`) | hecha, **sin spans OTel** ni replay de sesión |
@@ -266,9 +267,13 @@ Abiertos nuevos de la implementación (no resueltos aquí):
 
 8. **Una restricción en la base para "a lo sumo un run abierto por sesión".** La §5.3 dice que la base la impone; `adapters/sql/schema.sql` no tiene ninguna y el doble en memoria tampoco. Candidato: índice único parcial `ON runs (session_id) WHERE status = 'open' AND session_id IS NOT NULL`. Riesgos señalados en la revisión: el orden de escritura (el origen se guarda cerrado antes que el destino) y que hoy solo el motor lo garantiza. Decide el usuario.
 9. **Hash del directorio en el linaje de la sesión** (§5.3, T-TR-10). Opciones: (a) leer `run_transferred` de la cadena del origen con un puerto de lectura nuevo en `ApiDeps`; (b) `directory_hash` opcional en `RunOrigin` (cambio de M0: regenerar `contracts/`); (c) retirarlo de la spec y dejarlo solo en el replay. Registrado en m09 §11.
-10. **Replay de sesión.** `agentcore replay` no enlaza las cadenas de una sesión; solo existe `verify_transfer_link`.
+10. **Replay de sesión.** `agentcore replay` no enlaza las cadenas de una sesión; solo existe `verify_transfer_link`. Además, **por lectura del código (no ejecutado)**, reproducir solo el run origen que transfirió diverge: `RecordedIds.from_events` (`audit/replay/ports.py:113-122`) no recoge `run_transferred.to_run_id` ni `transfer_id`; `IdKind.run` está en `_RECORDED_KINDS` (`testing/replay/runner.py`), así que `Transferer.validate` recibe `run-replay-0001`; el motor reproducido seguiría hacia el run destino; y el runner conoce una sola release.
 11. **Alcance de la atomicidad y escrituras de M3 en el turno de una transferencia** (§5.2.7, m04 §11): ¿puede el destino escribir en ese turno?, ¿qué pasa con una escritura del origen seguida de una caída antes del `commit`?
 12. **`client_turn_id` único por sesión:** el reintento busca el resultado entre los runs de la sesión; hoy se documenta como requisito, no se comprueba.
 13. **Rutas de Postgres sin verificar** (no hubo docker): `aliases_named` del registry y los métodos de sesión de la unidad de trabajo (`find_run_by_session`, `list_runs_by_session`). Hay que correr `docker compose up -d postgres && uv run pytest tests/integration`.
 14. **Catálogos de campos de producción:** deben clasificar como `public` los campos del directorio (`choices`, `agent_id`, `release_id`); si no, `decide_choice` recibe las opciones tokenizadas (§3.2).
 15. **Pendientes de las fases 6 a 8:** REL-T1, evaluación (§7), agentes de la demo, spans OTel; ver `TEMAS-ABIERTOS-PENDIENTES.md` #19.
+16. **Cableado de `directory/list` en la raíz de composición** (fase 7): hoy solo lo usan las pruebas (§4).
+17. **Autorización de la tool y de M4 no coinciden del todo:** `DirectoryToolExecutor` filtra con `authorize_agent` solamente, mientras M4 llama también `authorize_subject`; y `locale` es un argumento del flow (la prueba de punta a punta fija `"es"`). Un especialista listado puede entonces rechazarse con `not_eligible` (falla seguro).
+18. **Endurecer G0-22/G0-26:** `decide.choices_from` puede leer un hecho de un nodo `agent` (§6).
+19. **Linaje por run del registry sin `origin`** (§8).
