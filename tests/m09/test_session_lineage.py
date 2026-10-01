@@ -74,8 +74,8 @@ def test_another_customer_cannot_read_it_and_it_is_recorded() -> None:
     w = seeded()
     w.verifier.register("tok-other", principal(id="cust-002"))
     resp = w.call("GET", "/v1/sessions/session-0001/lineage", "tok-other")
-    assert resp.status_code == 403, resp.text
-    assert resp.headers["content-type"].startswith("application/problem+json")
+    body = problem(resp, 403, "principal_mismatch")
+    assert body["code"] == "principal_mismatch"
     assert w.denials.calls
 
 
@@ -95,3 +95,22 @@ def test_an_advisor_is_not_the_session_owner_and_gets_principal_mismatch() -> No
 def test_it_appears_in_the_openapi() -> None:
     w: Any = World()
     assert "/v1/sessions/{session_id}/lineage" in w.client.get("/openapi.json").json()["paths"]
+
+
+def test_a_stale_run_of_another_principal_is_denied_by_the_per_run_read_check() -> None:
+    w = World()
+    other = principal(id="cust-002")
+    w.seed_run(
+        run_id="run-0001",
+        principal=other,
+        subject={"kind": "customer", "ref": "cust-002"},
+        status="closed",
+        outcome="transferred",
+        closed_at=NOW,
+        inactive_after=None,
+    )
+    with w.store.uow() as uow:
+        uow.save_run(run_state(run_id="run-0002"), 0)  # open run, owned by the default customer
+        uow.commit()
+    problem(w.call("GET", "/v1/sessions/session-0001/lineage"), 403, "subject_forbidden")
+    assert w.denials.calls[0][1][0].payload.reason == "subject_forbidden"
