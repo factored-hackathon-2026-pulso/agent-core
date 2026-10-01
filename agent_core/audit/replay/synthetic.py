@@ -68,7 +68,9 @@ def check_fixture(
         if strict and text not in catalog.values:
             bad.append(path)
         elif _SHA256_HEX.fullmatch(text):
-            continue  # a content hash (e.g. the directory hash, ADR 0021), as in `events`: not personal data
+            # Exactly 64 lowercase hex characters, nothing else: a sha256 content hash (e.g. the directory
+            # hash, ADR 0021), the reason `events` are not scanned either. Not personal data.
+            continue
         elif any(m.group(1) not in catalog.email_domains for m in _EMAIL.finditer(text)):
             bad.append(path)
         elif any(m.group(0) not in catalog.numbers for m in _DIGITS.finditer(text)):

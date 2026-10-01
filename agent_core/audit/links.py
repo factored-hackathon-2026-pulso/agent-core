@@ -7,7 +7,7 @@ they never include payload data, hashes or identifiers.
 """
 
 from agent_core.audit.chain import check_chain
-from agent_core.domain import RunStarted, RunState, RunTransferred, TurnCompleted
+from agent_core.domain import EngineEvent, RunOrigin, RunStarted, RunState, RunTransferred, TurnCompleted
 from agent_core.ports import AuditSink
 
 
@@ -20,10 +20,19 @@ def verify_transfer_link(target: RunState, sink: AuditSink) -> list[str]:
     origin = target.origin
     if origin is None:
         return []
-    problems: list[str] = []
     source_events = sink.read(origin.from_run_id)
     if not source_events:
         return ["la cadena de origen no está disponible"]
+    return link_problems(origin, target.run_id, source_events, sink.read(target.run_id))
+
+
+def link_problems(
+    origin: RunOrigin, target_run_id: str, source_events: list[EngineEvent], target_events: list[EngineEvent]
+) -> list[str]:
+    """Pure core of `verify_transfer_link`, over chains already read (also the replay's, M11 decision 24).
+
+    `origin` is the one the target is expected to carry; `source_events` must not be empty."""
+    problems: list[str] = []
     if not check_chain(origin.from_run_id, source_events).ok:
         problems.append("la cadena de origen no verifica")
     at = next((i for i, e in enumerate(source_events) if e.hash == origin.from_event_hash), None)
@@ -37,7 +46,7 @@ def verify_transfer_link(target: RunState, sink: AuditSink) -> list[str]:
         for e in source_events[: at + 1]
         if isinstance(e, RunTransferred) and e.payload.transfer_id == origin.transfer_id
     ]
-    if len(transferred) != 1 or transferred[0].payload.to_run_id != target.run_id:
+    if len(transferred) != 1 or transferred[0].payload.to_run_id != target_run_id:
         problems.append("no hay un run_transferred que apunte a este run")
     event = transferred[0] if len(transferred) == 1 else None
     if event is not None and isinstance(completed, TurnCompleted) and completed.turn_id != event.turn_id:
@@ -49,12 +58,11 @@ def verify_transfer_link(target: RunState, sink: AuditSink) -> list[str]:
         or source_started.release != origin.from_release_id
     ):
         problems.append("el agente o la release de origen no coinciden con el run_started del origen")
-    target_events = sink.read(target.run_id)
     first = target_events[0] if target_events else None
     if not isinstance(first, RunStarted):
         problems.append("el run_started del destino no lleva este origen")
         return problems
-    if first.run_id != target.run_id or first.payload.origin != origin:
+    if first.run_id != target_run_id or first.payload.origin != origin:
         problems.append("el run_started del destino no lleva este origen")
     if event is not None and (
         first.payload.agent != event.payload.to_agent or first.release != event.payload.to_release_id

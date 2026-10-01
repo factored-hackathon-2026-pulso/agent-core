@@ -35,11 +35,13 @@ class TranscriptReader:
     def __init__(self, store, uow_factory, views: ViewService, keys, ids)
     def read_rendered(self, run_id, reader, on_behalf_of) -> list[RenderedEntry]      # M7 render, purpose "transcript_read"
 def verify_transfer_link(target: RunState, sink: AuditSink) -> list[str]   # enlace entre cadenas (§3.1b); [] = válido
+def link_problems(origin: RunOrigin, target_run_id, source_events, target_events) -> list[str]  # núcleo puro (interno)
 # agent-telemetry
 def span(name, **attrs) -> ContextManager       # agrega run_id, turn_id, session_id, agentcore.release
 # Replay
 class ReplayReport: mode; run_id; release; verdict: Literal["match", "diverged", "chain_broken"]
                     first_divergence: {event_seq, expected, actual} | None; chain_broken_at: int | None; duration_ms: int | None
+                    chain_broken_run: str | None; chain_broken_reason: str | None   # decisión 24
 class Replayer:
     def __init__(self, engine: EngineRunner, clock: Clock, *, audit: AuditSink | None = None,
                  transcript: TranscriptStore | None = None, definitions: ToolDefinitions | None = None)
@@ -65,7 +67,8 @@ class Replayer:
 - **Comprobaciones:** (1) la cadena de origen existe y pasa `check_chain`; (2) el hash está en ella y es el de un `turn_completed`; (3) hasta ese evento hay exactamente un `run_transferred` con el `transfer_id` del origen y su `to_run_id` es el run destino, y el `turn_id` del `turn_completed` es el del `run_transferred`; (4) el primer evento del origen es un `run_started` cuyo agente y `release` coinciden con `origin.from_agent` y `origin.from_release_id`; (5) el primer evento del destino es un `run_started` de ese `run_id` cuyo `origin` es idéntico al del estado, y cuyo agente y `release` coinciden con `to_agent` y `to_release_id` del `run_transferred`. Así un `RunOrigin` con `from_run_id`, hash y `transfer_id` reales pero agente o release falsos no pasa.
 - **Alcance:** solo el enlace. La integridad de la cadena del destino la da `AuditLog.verify_chain`.
 - **Sin datos:** los problemas son mensajes fijos, sin hashes, ids, slots ni texto. Con la cadena de origen ausente devuelve un único problema (no se puede comprobar más).
-- `agentcore replay` usa esta función al reproducir una sesión (spec de transferencia §8); el cableado en el CLI no forma parte de esta unidad.
+- El núcleo es puro (`link_problems(origin, target_run_id, source_events, target_events)`, en `audit/links.py`): `verify_transfer_link` lee las dos cadenas del `AuditSink` y lo llama. El replay `fixture` de una sesión lo usa sobre las cadenas del fixture antes de correr el motor (decisión 24).
+- Conectar `verify_transfer_link` (sobre el almacén de auditoría) a `agentcore replay` por `run_id` sigue pendiente (spec de transferencia §8 y §12.10).
 
 ### 3.2 Spans
 
@@ -142,7 +145,7 @@ Ninguno de dominio. Encadena y persiste los de todos los módulos.
 | T-M11-09 | Todo span y evento lleva `run_id` y `agentcore.release`; `trace_id` en respuestas | — |
 | T-M11-10 | Un run grabado cuyos campos de medición difieren de los recalculados da `match`; un cambio en cualquier otro campo del mismo evento da `diverged` | 2 |
 | T-M11-11 | Enlace de transferencia (§3.1b): válido; un evento posterior en el origen no lo rompe; origen alterado, hash falsificado o de otro evento, `from_agent`, `from_release_id`, `to_agent` o `to_release_id` falsos (cada uno solo, sobre cadenas re-encadenadas válidas), `turn_completed` de otro turno, cadena de origen ausente, `run_transferred` ausente, con otro `transfer_id` o con otro `to_run_id`, y `run_started` del destino con otro origen dan problemas legibles sin datos; un run sin origen da `[]` (`tests/m11/test_transfer_links.py`) | — |
-| T-M11-12 | Sesión con transferencia (decisión 24): `RecordedIds` reparte `to_run_id` y `transfer_id`; un fixture sin `linked` se escribe sin la clave y uno con `linked` va y vuelve; `from_event_hash` no se compara pero el resto de `origin` sí; un evento cambiado o un run ausente en `linked` diverge; una cadena enlazada alterada da `chain_broken`; solo un sha256 hex exacto en minúsculas queda exento en `check_fixture` (`tests/m11/test_replay_transfer.py`) | 2 |
+| T-M11-12 | Sesión con transferencia (decisión 24): `RecordedIds` reparte `to_run_id` y `transfer_id` sin repetir el run destino; un fixture sin `linked` se escribe sin la clave, los seis fixtures commiteados cargan con `linked == []` y se reescriben byte a byte, y uno con `linked` va y vuelve con `linked` como última clave; `from_event_hash` no se compara pero `transfer_id`, `from_run_id` y `depth` sí; el motor recibe `events + linked`, y un evento cambiado o un run ausente en lo producido diverge; una cadena enlazada alterada da `chain_broken` con `chain_broken_run` y motivo, y una del origen sin `chain_broken_run`; **enlace roto → `chain_broken` antes de correr el motor** (aunque el motor de prueba daría `match`): hash falsificado (`"0"*64`), cadena cambiada de otra grabación con los mismos ids, hash de otro evento, `transfer_id` del intento rechazado, `from_run_id`/`from_agent`/`from_release_id` falsos, agente del destino distinto de `to_agent`, run no nombrado por ningún `to_run_id`, run repetido del origen y run sin `origin`; un segundo run enlazado cuyo origen es el primero (profundidad 2) da `match`; solo un sha256 hex exacto en minúsculas queda exento en `check_fixture`, y no en un campo `pii_direct` (`tests/m11/test_replay_transfer.py`) | 2 |
 
 ## 8. Evaluación
 
@@ -197,11 +200,12 @@ Es la **fuente de datos** de la unidad 6 y de la auto-mejora: exportación de ev
 
 24. **Sesión con transferencia (ADR 0021, fase 7; decisión del usuario).** El origen transfiere y el destino corre en el mismo turno (llama a Understand y a sus tools), así que reproducir solo el run origen no alcanza:
     - **Formato:** `Fixture.linked: list[AnyEvent]` (último campo, vacío por defecto) con las cadenas de los runs destino, en orden de creación. `build_fixture(..., linked=...)` lo llena al grabar; `dump_fixture` lo omite si está vacío.
-    - **Cadenas:** primero `check_chain` del run origen y después el de cada run de `linked` (agrupado por `run_id` en orden de aparición); la primera rota da `chain_broken` con su `seq` (`run_id` del reporte: el del origen).
+    - **Cadenas y enlace, antes de correr el motor** (función pura sobre el fixture, sin `RunState` ni `AuditSink`): primero `check_chain` del run reproducido; después, para cada run de `linked` (agrupado por `run_id` en orden de aparición): (1) no repite un run anterior de la sesión; (2) su cadena pasa `check_chain`; (3) empieza con un `run_started` con `origin`; (4) `origin.from_run_id` es el run reproducido o un run enlazado anterior; (5) `link_problems` (el núcleo de `verify_transfer_link`, §3.1b) no encuentra problemas contra esa cadena: `from_event_hash` es el hash del `turn_completed` que cierra el turno del `run_transferred` con ese `transfer_id`, cuyo `to_run_id` es este run; `from_agent`/`from_release_id` coinciden con el `run_started` del origen; `to_agent`/`to_release_id` con el `run_started` del destino. Así todo run enlazado está nombrado por un `to_run_id`.
+    - **Veredicto:** la primera falla da `chain_broken` con `chain_broken_at` (el `seq` roto, o `0` si falla el enlace), `chain_broken_run` (el run enlazado; `None` si se rompió la cadena del run reproducido) y `chain_broken_reason` (el motivo de `check_chain` o el primer mensaje de `link_problems`: textos fijos, sin datos). El `run_id` del reporte sigue siendo el del run reproducido. `agentcore replay` muestra el run enlazado y el motivo.
     - **Puertos grabados** sobre `events + linked`: reloj, IDs, tools, decisiones y lecturas de las dos cadenas.
     - **Comparación** sobre `events + linked` contra lo que devuelve el `EngineRunner`. Un run de más o de menos es una divergencia. `first_divergence.event_seq` es el `seq` dentro de la cadena de su run (el `run_id` va en `expected`).
-    - **No se compara** `run_started.payload.origin.from_event_hash`: es un hash de cadena y el replay no reproduce hashes (`ts`, `duration_ms`), por lo mismo que se ignoran `hash` y `prev_hash`. El resto de `origin` sí se compara.
-    - **Pendiente:** `verify_transfer_link` todavía no forma parte de `agentcore replay` (ni hay veredicto para un enlace roto); el enlace se verifica sobre las cadenas grabadas con esa función (§3.1b).
+    - **No se compara** `run_started.payload.origin.from_event_hash`: es un hash de cadena y el replay no reproduce hashes (`ts`, `duration_ms`), por lo mismo que se ignoran `hash` y `prev_hash`. El resto de `origin` sí se compara. El hash no queda sin comprobar: lo comprueba el paso de enlace sobre lo grabado (arriba).
+    - **Pendiente:** `verify_transfer_link` sobre el almacén de auditoría todavía no está conectado a `agentcore replay` (el replay `fixture` usa su núcleo puro sobre el fixture).
     - **Pendiente:** el replay por `run_id` (modo `audit`) no sigue la sesión: `linked` queda vacío y un run origen que transfirió diverge.
 
 ### Riesgos / abiertos para Task 14 (integración)
