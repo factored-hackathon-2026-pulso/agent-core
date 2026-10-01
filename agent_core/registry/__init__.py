@@ -18,20 +18,32 @@ from agent_core.registry.evaluation import (
     ScenarioHarness,
 )
 from agent_core.registry.memory import InMemoryRegistryStore
-from agent_core.registry.models import EntityDraft, Origin, ProposalState, VersionDocs, VersionRef
+from agent_core.registry.models import (
+    AuditContext,
+    DraftWrite,
+    EntityDraft,
+    Origin,
+    ProposalState,
+    VersionDocs,
+    VersionRef,
+    WriteRecord,
+)
 from agent_core.registry.postgres.runtime import PostgresRegistry
 from agent_core.registry.postgres.store import PgRegistryStore, apply_registry_schema
+from agent_core.registry.quotas import DEFAULT_QUOTAS, Quotas
 from agent_core.registry.service import RegistryService, RunReleaseReader
 from agent_core.registry.snapshot import SnapshotRegistry
 from agent_core.registry.store import RegistryStore
 from agent_core.registry.suite import EvalSuite, SandboxSeed, Scenario, Step
 
 __all__ = [
-    "HTTP_STATUS", "BlobStore", "EntityDraft", "EvalPort", "EvalReport", "EvalSuite", "EvalTarget",
+    "DEFAULT_QUOTAS", "HTTP_STATUS", "AuditContext", "BlobStore", "DraftWrite", "EntityDraft", "EvalPort",
+    "EvalReport", "EvalSuite", "EvalTarget",
     "HarnessUnavailable", "InMemoryBlobStore", "InMemoryRegistryStore", "IntegrityError", "Judge",
-    "LocalSandbox", "Origin", "PgRegistryStore", "PostgresRegistry", "ProposalState", "RegistryError",
+    "LocalSandbox", "Origin", "PgRegistryStore", "PostgresRegistry", "ProposalState", "Quotas",
+    "RegistryError",
     "RegistryErrorCode", "RegistryService", "RegistryStore", "RunReleaseReader", "SandboxHandle",
     "SandboxPort", "SandboxSeed", "Scenario",
     "ScenarioEvaluator", "ScenarioHarness", "SnapshotRegistry", "Step", "VersionDocs", "VersionRef",
-    "apply_registry_schema",
+    "WriteRecord", "apply_registry_schema",
 ]

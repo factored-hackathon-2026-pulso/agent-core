@@ -2,12 +2,14 @@
 
 from collections.abc import Sequence
 from contextlib import AbstractContextManager
+from datetime import datetime
 from typing import Literal, Protocol
 
 from agent_core.registry.blobs import BlobStore
 from agent_core.registry.models import (
     AliasChange,
     Approval,
+    DraftWrite,
     EntityDraft,
     EvalRun,
     Proposal,
@@ -52,6 +54,13 @@ class RegistryTx(Protocol):
     def events(self) -> list[RegistryEvent]: ...
     def get_publish_key(self, key: str) -> tuple[str, str] | None: ...
     def put_publish_key(self, key: str, proposal_id: str, release_id: str) -> None: ...
+    def get_draft_write(self, key: str) -> DraftWrite | None: ...
+    def put_draft_write(self, write: DraftWrite) -> None: ...
+    def get_eval_run(self, eval_run_id: str) -> EvalRun | None: ...
+    def count_created_after(self, origin: str, after: datetime) -> int:
+        """Propuestas creadas con ese origen en `at > after` (ventana móvil de los topes)."""
+        ...
+    def count_eval_runs(self, proposal_id: str) -> int: ...
 
 
 class RegistryStore(Protocol):
