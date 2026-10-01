@@ -1,6 +1,6 @@
 # Temas abiertos — Motor de decisión (spec 2026-09-28)
 
-- Estado: **9 de 9 temas originales resueltos; 3 temas nuevos abiertos (#10, alta; #11 y #12, media).** Reemplaza la versión anterior de este documento, cuyo contenido se descartó por basarse en hallazgos incorrectos.
+- Estado: **9 de 9 temas originales resueltos; 4 temas nuevos abiertos (#10, alta; #11, #12 y #13, media).** Reemplaza la versión anterior de este documento, cuyo contenido se descartó por basarse en hallazgos incorrectos.
 - Fecha: 2026-09-28
 - Spec: `2026-09-28-motor-de-decision-design.md` (rev. 15)
 - Regla de trabajo: antes de resolver cada tema se lee el ADR que lo gobierna.
@@ -30,6 +30,7 @@ Tampoco eran temas abiertos: la cadena de hash y `reportable_attrs` (ADR 0003), 
 | 10 | ADR de conocimiento (0015) aceptado pero no integrado en la spec | **Alta** | **Abierto** |
 | 11 | Capa de analítica (cálculo y visualización de métricas) sin spec | Media | **Abierto** |
 | 12 | Política del contexto conversacional (`recent_turns`) sin definir | Media | **Abierto** |
+| 13 | Conector de datasets reales para las evals de los agentes | Media | **Abierto** |
 
 ## Resueltos
 - **#1 (rev. 6):** `respond.claims` declarado + derivado; invariante por camino hasta `verified`; `respond` seguro = sin reclamos. Spec §2, §5, §6.1, §8.2, §11, §13.3, §14, §15; ADR 0007.
@@ -61,7 +62,18 @@ Encontrado al agregar las métricas de eficiencia (spec rev. 14). Los eventos ya
 - **Comparación entre releases:** qué diferencia de latencia o costo bloquea una promoción, con qué tamaño de muestra.
 - **Retención:** cuánto tiempo se guardan los eventos para calcular tendencias.
 
+Actualización (2026-09-30): el DSL de métricas por agente, el catálogo de eventos y la regla de que no hay acción automática en producción se decidieron en el ADR 0020; este tema conserva el cálculo, la visualización, las alertas y la retención.
+
 Por qué es media: no bloquea la fase 1 porque los eventos ya capturan los datos, pero sin esto las métricas no se pueden mostrar en la demo del 03–05/10.
+
+## 13. Conector de datasets reales para las evals — abierto
+Encontrado al diseñar la evaluación por agente (`2026-09-30-evaluacion-y-metricas-design.md`, ADR 0020). Las evals podrán correr sobre casos de un dataset real, pero la fuente `dataset` está diseñada y desactivada. Falta decidir:
+- **Origen:** BD transaccional o warehouse, y quién es el dueño de los datos.
+- **Autorización:** el ADR firmado por el dueño que enmiende la regla 5 de CLAUDE.md y el registry §7.
+- **Protección:** paso por las vistas tokenizadas de M7 (ADR 0008), sin PII hacia modelos, logs ni eventos.
+- **Etiquetas:** cuándo el resultado histórico (por ejemplo, lo que hizo el asesor humano) sirve como referencia.
+
+Los datos reales no viven en el repo ni en el registry; el registry solo guarda `dataset_id` y `dataset_hash`. Por qué es media: no bloquea la fase 1, porque la suite `scripted` es la base obligatoria del gate.
 
 ## 12. Política del contexto conversacional — abierto
 M5 (`m05-decision-model.md` §3.2) incluye `recent_turns` (unidad 7, vista `model`) en su única llamada por turno, y `TranscriptStore.recent_turns(run_id, n)` está en M0. Pero ningún documento define cómo se arma ese contexto. Falta decidir:

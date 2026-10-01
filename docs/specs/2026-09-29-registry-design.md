@@ -1,6 +1,6 @@
 # Spec — Registry (unidad 2: entidades, versionado y publicación)
 
-- Estado: **borrador para revisión**
+- Estado: **borrador para revisión** (§5.2 enmendado por el ADR 0020)
 - Fecha: 2026-09-29
 - Repo: `agent-core`
 - Paquete: `agent_core.registry`
@@ -51,7 +51,7 @@ Los diez de M0 (`agent`, `flow`, `decision_model`, `policy`, `template`, `prompt
 | Tabla | Contenido | ¿Mutable? |
 |---|---|---|
 | `entity_versions` | `(kind, id, version)`, contenido (referencia al `BlobStore`), `content_hash`, documentación (§3.3), `created_by`, `origin`, `created_at` | **Nunca**: solo `INSERT` |
-| `releases` | `release_id`, lista exacta de `kind/id@version`, `knowledge_snapshot`, `proposal_id` de origen, `published_by`, `published_at`, `status` | Solo `status` (`active` ↔ `revoked`) |
+| `releases` | `release_id`, lista exacta de `kind/id@version`, `knowledge_snapshot`, `eval_suite_refs` (suites usadas; metadato de gobierno que el motor no lee, ADR 0020), `proposal_id` de origen, `published_by`, `published_at`, `status` | Solo `status` (`active` ↔ `revoked`) |
 | `release_entities` | `(release_id, kind, id, version)`; permite `where_used` | Nunca |
 | `aliases` | `(agent_id, alias) → release_id` (`staging`, `prod`) | Solo por `promote`; toda promoción queda en la bitácora |
 | `alias_log` | historial de promociones y reversiones | Solo inserción |
@@ -126,6 +126,8 @@ Ejecuta, sobre la candidata en memoria y sin escribir en Postgres:
 Devuelve una lista de `Violation` (la de M1) con `rule`, `entity`, `path` y un mensaje en lenguaje claro para personas no técnicas.
 
 ### 5.2 Gate de evaluación (`evaluate`)
+
+> **Enmendado por el ADR 0020** (2026-09-30): las métricas las declara cada agente (`Agent.metrics`), puede haber N métricas `gate` evaluadas por separado en lugar de una sola métrica principal, y el gate aplica una doble vara (suite y métricas de la base, más las de la candidata). El algoritmo vigente está en `docs/specs/2026-09-30-evaluacion-y-metricas-design.md` §6; el texto de abajo queda como contexto histórico.
 
 Cada entidad relevante lleva una `eval_suite` versionada. El registry ejecuta, vía `EvalPort`, la suite sobre la candidata y sobre la release base, y decide:
 
@@ -235,7 +237,7 @@ Sigue el patrón de M9: `problem+json`, `trace_id` en toda respuesta e `Idempote
 - **Solo aprobación humana.** El campo `actor` de `approve` debe ser una persona. La aprobación automática queda fuera hasta que se especifique (§17).
 - **Contenido no confiable.** Todo lo que propone un agente o un LLM se valida contra el esquema estricto, nunca se ejecuta, y tiene límites de tamaño y de cantidad. Las expresiones regulares de reglas de injection pasan por una guarda contra ReDoS.
 - **Lo que el constructor lee** (trazas, documentación, páginas) es dato y no instrucción. Las páginas de conocimiento se tratan como `untrusted_text` (ADR 0008, M12).
-- **Secretos y PII.** El escáner de §5.1 impide credenciales dentro de entidades. Las suites de evaluación usan solo datos sintéticos.
+- **Secretos y PII.** El escáner de §5.1 impide credenciales dentro de entidades. Las suites de evaluación usan solo datos sintéticos (fuente `scripted`). La fuente `dataset` para datos reales está diseñada y desactivada hasta un ADR aparte (ADR 0020).
 - **Presupuestos del agente autónomo.** Cada propuesta tiene un tope de borradores, de evaluaciones y de costo, para impedir bucles. Los valores concretos están abiertos (§17).
 
 ## 8. Linaje por ejecución
