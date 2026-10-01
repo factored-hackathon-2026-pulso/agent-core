@@ -17,8 +17,8 @@ def test_public_interface_is_exactly_the_spec() -> None:
 
 
 def test_no_unlisted_public_name_leaks() -> None:
-    submodules = {"agent", "claims", "cli_validate", "closure", "context", "draft_schema", "graph", "jsonlogic",
-                  "paths", "pin", "refs", "registry", "rules", "schema", "validate", "view", "violations",
+    submodules = {"agent", "claims", "cli_validate", "closure", "context", "draft_schema", "graph",
+                  "jsonlogic", "paths", "pin", "refs", "registry", "rules", "schema", "validate", "view", "violations",
                   "yaml_loader"}
     leaked = [n for n in vars(flows) if not n.startswith("_") and n not in PUBLIC and n not in submodules]
     assert leaked == []
