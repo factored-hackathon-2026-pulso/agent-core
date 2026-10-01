@@ -84,11 +84,27 @@ class ToolConfig(Model):
 
 
 class WriteToolConfig(Model):
-    """Escritura: sin `args` propios; usa la acción congelada del `confirm` (ADR 0007)."""
+    """Escritura de un nodo `tool`.
 
-    action_from: NodeId
+    Con `action_from` usa la acción congelada de un `confirm` (ADR 0007) y no admite `tool` ni `args`.
+    Con `draft: true` (ADR 0019) invoca una tool `write_draft` con sus propios `args`: no hay `confirm`; la
+    acción se congela al entrar al nodo."""
+
+    action_from: NodeId | None = None
+    draft: bool = False
+    tool: RefSpec | None = None
+    args: dict[str, JsonValue] = Field(default_factory=dict)
     save_as: SaveAs
     step_up_max_attempts: PositiveInt = 2
+
+    @model_validator(mode="after")
+    def _one_form(self) -> "WriteToolConfig":
+        if self.draft:
+            if self.action_from is not None or self.tool is None:
+                raise ValueError("una escritura draft declara `tool` y no `action_from`")
+        elif self.action_from is None or self.tool is not None or self.args:
+            raise ValueError("una escritura con confirm declara solo `action_from` (sin `tool` ni `args`)")
+        return self
 
 
 class ActionSpec(Model):
@@ -309,11 +325,12 @@ class AwaitApprovalNode(_NodeBase):
 
 
 def node_kind(value: Any) -> str | None:
-    """Discriminador: `type`, salvo `tool` con `action_from` → `tool_write`."""
+    """Discriminador: `type`, salvo `tool` con `action_from` o con `draft: true` → `tool_write`."""
     if isinstance(value, dict):
         kind = value.get("type")
         config = value.get("config")
-        if kind == "tool" and isinstance(config, dict) and "action_from" in config:
+        if kind == "tool" and isinstance(config, dict) and (
+                "action_from" in config or config.get("draft") is True):
             return "tool_write"
         return kind if isinstance(kind, str) else None
     if isinstance(value, WriteToolNode):

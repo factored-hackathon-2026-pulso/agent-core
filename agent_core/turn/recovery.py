@@ -17,7 +17,7 @@ def position_at_verify(state: RunState, action_ids: Sequence[str], flow: Flow) -
     for node in flow.nodes:
         if node_kind(node) == "tool_write":
             assert isinstance(node, WriteToolNode)
-            if node.config.action_from == action.confirm_node_id:
+            if node.config.action_from is not None and node.config.action_from == action.confirm_node_id:
                 target = node.next.get("uncertain") or node.next.get("ok")
                 if target is None:
                     break

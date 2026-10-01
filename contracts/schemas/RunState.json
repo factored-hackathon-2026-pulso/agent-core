@@ -33,14 +33,30 @@
           "default": null
         },
         "confirm_node_id": {
-          "pattern": "^[a-z0-9][a-z0-9_]*$",
-          "title": "Confirm Node Id",
-          "type": "string"
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confirm Node Id"
         },
         "confirmation_token_hash": {
-          "pattern": "^[0-9a-f]{64}$",
-          "title": "Confirmation Token Hash",
-          "type": "string"
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confirmation Token Hash"
         },
         "created_at": {
           "format": "date-time",
@@ -58,24 +74,42 @@
           "$ref": "#/$defs/ActionState"
         },
         "token_exp": {
-          "format": "date-time",
-          "title": "Token Exp",
-          "type": "string"
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Token Exp"
         },
         "tool": {
           "$ref": "#/$defs/EntityRef"
+        },
+        "write_node_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Write Node Id"
         }
       },
       "required": [
         "action_id",
-        "confirm_node_id",
         "flow",
         "tool",
         "args",
         "args_hash",
         "state",
-        "confirmation_token_hash",
-        "token_exp",
         "idempotency_key",
         "created_at"
       ],

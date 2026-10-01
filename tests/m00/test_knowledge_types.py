@@ -200,4 +200,4 @@ def test_knowledge_read_payload_reasons_are_closed() -> None:
 
 
 def test_schema_version_is_major_one() -> None:
-    assert domain.SCHEMA_VERSION == "1.0.0"
+    assert domain.SCHEMA_VERSION == "1.1.0"  # 1.1.0: write_draft (ADR 0019); la mayor sigue siendo 1

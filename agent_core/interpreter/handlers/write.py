@@ -41,7 +41,7 @@ def handle_confirm(node: ConfirmNode, state: RunState, ctx: StepContext, resume:
 
 def _action_tool(state: RunState, node: WriteToolNode) -> EntityRef:
     for action in reversed(state.actions):
-        if action.confirm_node_id == node.config.action_from:
+        if node.config.action_from is not None and action.confirm_node_id == node.config.action_from:
             return action.tool
     raise IllegalTransition(f"no hay acción para el confirm {node.config.action_from}")
 

@@ -73,7 +73,7 @@ def is_waiting(node: Node) -> bool:
 def writes_by_confirm(flow: Flow) -> dict[str, list[WriteToolNode]]:
     grouped: dict[str, list[WriteToolNode]] = {}
     for node in flow.nodes:
-        if isinstance(node, WriteToolNode):
+        if isinstance(node, WriteToolNode) and node.config.action_from is not None:
             grouped.setdefault(node.config.action_from, []).append(node)
     return grouped
 
