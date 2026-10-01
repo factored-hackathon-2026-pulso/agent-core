@@ -271,10 +271,23 @@ class RegistryService:
             return ValidationReport(violations=[], candidate_hash=cand.candidate_hash,
                                     auto_bumped=list(cand.auto_bumped))
 
-    def freeze(self, actor: Principal, proposal_id: str) -> CandidateView:
+    @staticmethod
+    def _view(proposal_id: str, cand: Candidate) -> CandidateView:
+        return CandidateView(proposal_id=proposal_id, candidate_hash=cand.candidate_hash,
+                             release_id_preview=release_id_for(cand.candidate_hash),
+                             new_versions=list(cand.new_versions), auto_bumped=list(cand.auto_bumped))
+
+    def freeze(self, actor: Principal, proposal_id: str, *, idempotency_key: str | None = None,
+               audit: AuditContext | None = None) -> CandidateView:
         require_constructor(actor)
+        request = _request_hash("freeze", {"proposal_id": proposal_id})
         with self._store.transaction() as tx:
             p = self._proposal(tx, proposal_id)
+            if self._replayed(tx, idempotency_key, "freeze", request) is not None:
+                if p.candidate_hash is None:
+                    raise RegistryError(RegistryErrorCode.illegal_transition,
+                                        "la propuesta ya no está congelada")
+                return self._view(proposal_id, self._rebuild(tx, p, "la candidata cambió desde freeze"))
             self._expect(p, ProposalState.draft)
             try:
                 cand = self._candidate(tx, p)
@@ -285,18 +298,22 @@ class RegistryService:
             else:
                 p = self._save(tx, p, state=ProposalState.candidate, candidate_hash=cand.candidate_hash)
                 self._event(tx, "frozen", actor, p)
-                return CandidateView(proposal_id=proposal_id, candidate_hash=cand.candidate_hash,
-                                     release_id_preview=release_id_for(cand.candidate_hash),
-                                     new_versions=list(cand.new_versions), auto_bumped=list(cand.auto_bumped))
+                self._remember(tx, idempotency_key, "freeze", p, request, audit)
+                return self._view(proposal_id, cand)
         raise failure
 
-    def reopen(self, actor: Principal, proposal_id: str) -> Proposal:
+    def reopen(self, actor: Principal, proposal_id: str, *, idempotency_key: str | None = None,
+               audit: AuditContext | None = None) -> Proposal:
         require_constructor(actor)
+        request = _request_hash("reopen", {"proposal_id": proposal_id})
         with self._store.transaction() as tx:
             p = self._proposal(tx, proposal_id)
+            if self._replayed(tx, idempotency_key, "reopen", request) is not None:
+                return p
             self._expect(p, ProposalState.candidate, ProposalState.evaluated, ProposalState.approved)
             p = self._save(tx, p, state=ProposalState.draft, candidate_hash=None, rev=p.rev + 1)
             self._event(tx, "reopened", actor, p)
+            self._remember(tx, idempotency_key, "reopen", p, request, audit)
             return p
 
     def get_proposal(self, proposal_id: str) -> ProposalDetail:
@@ -339,11 +356,28 @@ class RegistryService:
                                 f"la suite {suite_id} no es del agente {cand.agent_id}")
         return entity
 
+    @staticmethod
+    def _stored_eval(tx: RegistryTx, prior: DraftWrite) -> EvalReport:
+        """El resultado de una evaluación ya hecha con esta clave: el reporte, o `gate_failed` si no pasó."""
+        run = tx.get_eval_run(prior.result_ref) if prior.result_ref is not None else None
+        if run is None:
+            raise RegistryError(RegistryErrorCode.integrity_error, "la evaluación guardada no existe")
+        if run.verdict == "fail":
+            raise RegistryError(RegistryErrorCode.gate_failed, "la candidata no pasa el gate",
+                                payload=run.report.model_dump(mode="json"))
+        return run.report
+
     def evaluate(self, actor: Principal, proposal_id: str, suite_id: str,
-                 suite_version: str | None = None) -> EvalReport:
+                 suite_version: str | None = None, *, idempotency_key: str | None = None,
+                 audit: AuditContext | None = None) -> EvalReport:
         require_constructor(actor)
+        request = _request_hash("evaluate", {"proposal_id": proposal_id, "suite_id": suite_id,
+                                             "suite_version": suite_version})
         with self._store.transaction() as tx:
             p = self._proposal(tx, proposal_id, for_update=False)
+            prior = self._replayed(tx, idempotency_key, "evaluate", request)
+            if prior is not None:
+                return self._stored_eval(tx, prior)
             self._expect(p, ProposalState.candidate)
             cand = self._rebuild(tx, p, "la candidata cambió desde freeze")
             if cand.candidate_hash != p.candidate_hash:
@@ -358,18 +392,23 @@ class RegistryService:
 
         with self._store.transaction() as tx:
             p = self._proposal(tx, proposal_id)
+            again = self._replayed(tx, idempotency_key, "evaluate", request)  # otra llamada con la clave ganó
+            if again is not None:
+                return self._stored_eval(tx, again)
             if p.state is not ProposalState.candidate or p.candidate_hash != cand.candidate_hash:
                 raise RegistryError(RegistryErrorCode.candidate_changed,
                                     "la propuesta cambió durante la evaluación")
-            tx.insert_eval_run(EvalRun(
+            run = EvalRun(
                 eval_run_id=self._ids.new_id(IdKind.eval_run), proposal_id=proposal_id,
                 candidate_hash=cand.candidate_hash, base_release_id=p.base_release_id,
-                suite=version_ref(suite), verdict=report.verdict, report=report, at=self._clock.now()))
+                suite=version_ref(suite), verdict=report.verdict, report=report, at=self._clock.now())
+            tx.insert_eval_run(run)
             if report.verdict == "pass":
                 p = self._save(tx, p, state=ProposalState.evaluated)
             elif report.verdict == "fail":
                 p = self._save(tx, p, state=ProposalState.draft, candidate_hash=None, rev=p.rev + 1)
             self._event(tx, "evaluated", actor, p)
+            self._remember(tx, idempotency_key, "evaluate", p, request, audit, result_ref=run.eval_run_id)
         if report.verdict == "fail":
             raise RegistryError(RegistryErrorCode.gate_failed, "la candidata no pasa el gate",
                                 payload=report.model_dump(mode="json"))
