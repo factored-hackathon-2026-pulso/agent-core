@@ -1,0 +1,30 @@
+"""Evaluación del registry (ADR 0020): suite, aflojamientos de la vara y veredicto del gate.
+
+Funciones puras y sin Postgres; el servicio del registry y la unidad 6 (`EvalPort`) las consumen.
+"""
+
+from agent_core.registry.evaluation.platform import PLATFORM_GUARDRAILS
+from agent_core.registry.evaluation.suite import (
+    Assertion,
+    DatasetSource,
+    EvalSuite,
+    MetricThreshold,
+    Scenario,
+    ScriptedSource,
+    SuiteProblem,
+    SuiteProblemCode,
+    suite_problems,
+)
+
+__all__ = [
+    "PLATFORM_GUARDRAILS",
+    "Assertion",
+    "DatasetSource",
+    "EvalSuite",
+    "MetricThreshold",
+    "Scenario",
+    "ScriptedSource",
+    "SuiteProblem",
+    "SuiteProblemCode",
+    "suite_problems",
+]
