@@ -293,9 +293,9 @@ def g0_16(ctx: Ctx) -> Iterator[Violation]:
             yield ctx.v("G0-16", node.id, "un flow de modo task no tiene nodos que esperan al principal")
 
 
-# Los únicos lugares donde la salida de un `agent` puede leerse: lo que se le muestra a la persona o lo que
-# alimenta a un modelo (el `input_view` de un `decide`, que valida su propia salida, o de otro `agent`, cuya
-# salida cae bajo esta misma regla). Ninguno decide ni escribe (ADR 0019).
+# The only places where an `agent` output may be read: what is shown to the person, or what feeds a model
+# (the `input_view` of a `decide`, which validates its own output, or of another `agent`, whose output falls
+# under this same rule). None of them decides or writes (ADR 0019).
 _AGENT_OUTPUT_SITES = frozenset({
     "/config/template_ref",
     "/config/generate/allowed_facts",
