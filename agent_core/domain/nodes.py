@@ -206,13 +206,15 @@ class KnowledgeConfig(Model):
 class AgentNodeConfig(Model):
     """Configuración del nodo `agent` (M0 §2.5, ADR 0019).
 
-    `save_as` nombra el hecho donde entra la salida; `output_schema` es el JSON Schema de esa salida."""
+    `save_as` nombra el hecho donde entra la salida; `output_schema` es el JSON Schema de esa salida.
+    `input_view` son las rutas (`slots`, `facts`) que el modelo ve en vista `model`; vacío, no ve ninguna."""
     tools_allowed: list[RefSpec]
     max_steps: PositiveInt
     prompt_ref: RefSpec
     goal: str
     save_as: SaveAs
     output_schema: dict[str, JsonValue]
+    input_view: list[str] = Field(default_factory=list)
 
 
 class SubflowConfig(Model):

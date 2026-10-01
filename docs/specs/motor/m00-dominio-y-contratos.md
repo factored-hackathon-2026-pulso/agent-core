@@ -1,6 +1,6 @@
 # M0 — Dominio y contratos
 
-- Estado: **rev. 11 · implementado** (fase 1; `write_draft` y `SCHEMA_VERSION` 1.1.0, 2026-09-30) · Fase 1
+- Estado: **rev. 12 · implementado** (fase 1; `write_draft` y `SCHEMA_VERSION` 1.2.0, 2026-09-30) · Fase 1
 - Paquetes: `agent_core.domain`, `agent_core.ports`, `testing/fakes`
 - Origen: spec general §2, §5 (esquemas de nodos), §8 (estado), §10 (códigos), §14 (dependencias)
 - ADRs: 0001 (stack), 0002 (contratos), 0006 (principal y delegación), 0007 (acciones), 0008 (vistas y claves)
@@ -59,7 +59,7 @@
   - 0.5.0: `IdKind.proposal` e `IdKind.eval_run` (registry);
   - 0.6.0: `GenerationResult.usage_known: bool = True` (`false` si el proveedor no informó el uso; M8 marca `cost_known = false`);
   - 0.7.0: `AgentStepPayload.kind` admite `"failed"` y gana `error_kind: GatewayErrorKind | None = None` (el nodo `agent` deja un `agent_step` cuando el gateway falla, para que la auditoría explique el `gave_up`).
-- rev. 11 (2026-09-30), `write_draft` (ADR 0019, spec write-draft; `SCHEMA_VERSION` 1.0.0 → **1.1.0**, menor: solo aditivos y relajaciones):
+- rev. 12 (2026-09-30), `write_draft` (ADR 0019, spec write-draft; `SCHEMA_VERSION` 1.1.0 → **1.2.0**, menor: solo aditivos y relajaciones):
   - `RiskClass.write_draft`: escritura confinada a un borrador del registry, sin `confirm`; `ToolDef.is_write` la cuenta y exige `readback_by`;
   - `WriteToolConfig` gana la forma `draft: true` con `tool` y `args` propios (`action_from` pasa a opcional; se declara uno u otro); `node_kind` trata ambas como `tool_write`;
   - `Action.write_node_id` identifica el nodo `draft` que creó la acción; `confirm_node_id`, `confirmation_token_hash` y `token_exp` pasan a opcionales y solo se omiten (los tres) en una acción con `write_node_id`;
@@ -72,6 +72,7 @@
   - evento `knowledge_read` (`KnowledgeReadPayload`, `FilteredPage`; emisor M12);
   - puertos: `KnowledgeSource` definitivo (`capabilities`, `index`, `read`) y `AuthzPort.knowledge_view(principal, purpose) -> KnowledgeView`.
   Los estados guardados con la versión anterior siguen cargando (`pages` tiene valor por defecto); los flows con `knowledge_refs` dejan de validar.
+- rev. 11 (2026-09-30), entrada del nodo `agent` (`SCHEMA_VERSION` 1.0.0 → **1.1.0**, menor: un campo opcional nuevo). `AgentNodeConfig.input_view: list[str] = []`: rutas `slots.*` y `facts.*` que el modelo ve en vista `model` (M1 §3.2, m02 §3.7). Sin él, el modelo solo veía el `goal` fijo y no podía atender lo que pidió la persona. Los flows existentes no cambian (vacío = no ve nada).
 - implementación de M0 (2026-09-29), decisiones que el spec no cubría:
   - `loads` rechaza claves duplicadas; `to_jsonable` rechaza claves que colisionan tras `str()`; `RecursionError` se convierte en `ValueError`; se rechaza un `Decimal` con |exponente| > 1000;
   - `dumps` escribe `Decimal` con `format(d, "f")` (no `str(d)`, que puede emitir `1E+3`);
@@ -270,7 +271,8 @@ class KnowledgeConfig: mode: Literal["read", "navigate"]; pages: list[str] = [] 
 # Producción (G0-01 los rechaza en el MVP): AgentNodeConfig, SubflowConfig, AwaitApprovalConfig
 # ADR 0019 (SCHEMA_VERSION 0.4.0): `agent` se habilitó. AgentNodeConfig gana `save_as` y
 # `output_schema: dict[str, JsonValue]`; FactSource.kind gana "agent"; nuevo evento `agent_step` (emisor M2).
-# Implementado (SCHEMA_VERSION 1.1.0): RiskClass.write_draft y WriteToolConfig.draft (m01 §3.13).
+# rev. 11 (SCHEMA_VERSION 1.1.0): AgentNodeConfig gana `input_view: list[str] = []` (rutas slots/facts).
+# rev. 12 (SCHEMA_VERSION 1.2.0): RiskClass.write_draft y WriteToolConfig.draft (m01 §3.13).
 
 Node = Annotated[DecideNode | RuleNode | CollectNode | ToolNode | WriteToolNode | ConfirmNode
                  | VerifyNode | RespondNode | EscalateNode | EndNode | KnowledgeNode
@@ -702,6 +704,6 @@ No tiene métricas propias. Los esquemas de eventos son la entrada de la unidad 
 ## 11. Abiertos
 
 - Ninguno bloqueante para la fase 1.
-- **Agentes internos (ADR 0019):** `AgentNodeConfig.save_as`/`output_schema`, `FactSource.kind = "agent"` y el evento `agent_step` están implementados (SCHEMA_VERSION 0.4.0, `contracts/` regenerado; hoy 0.7.0). `RiskClass.write_draft` se implementó en la rev. 11 (`SCHEMA_VERSION` 1.1.0). Falta decidir si `Agent.default_target_queue` pasa a ser opcional para agentes que nunca escalan.
+- **Agentes internos (ADR 0019):** `AgentNodeConfig.save_as`/`output_schema`, `FactSource.kind = "agent"` y el evento `agent_step` están implementados (SCHEMA_VERSION 0.4.0, `contracts/` regenerado; hoy 0.7.0). `RiskClass.write_draft` se implementó en la rev. 12 (`SCHEMA_VERSION` 1.2.0). Falta decidir si `Agent.default_target_queue` pasa a ser opcional para agentes que nunca escalan.
 - ~~**Dependiente del tema #10:** el nodo `knowledge`, `RunState.pages`, `PageView` y la forma final de `KnowledgeSource`~~ **Resuelto 2026-09-30 (rev. 10, `SCHEMA_VERSION` 1.0.0):** entraron con M12 `read`.
 - ~~**Formato de la credencial** (`raw_credential`)~~ **Resuelto 2026-09-29 (M9 §3.8):** JWS compacto Ed25519 con `kid`; no cambia el puerto.

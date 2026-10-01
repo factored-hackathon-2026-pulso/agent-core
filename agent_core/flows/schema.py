@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from agent_core.domain import (
     PRODUCTION_NODE_KINDS,
+    AgentNode,
     CollectNode,
     ConfirmNode,
     DecideNode,
@@ -150,7 +151,7 @@ def _required_paths(node: Node) -> Iterator[tuple[str, str]]:
     if isinstance(node, EndNode) and node.config.output_map:
         for key, text in sorted(node.config.output_map.items()):
             yield (f"/config/output_map/{pointer_segment(key)}", text)
-    if isinstance(node, DecideNode) and node.config.input_view:
+    if isinstance(node, DecideNode | AgentNode) and node.config.input_view:
         for i, text in enumerate(node.config.input_view):
             yield (f"/config/input_view/{i}", text)
     if isinstance(node, VerifyNode) and node.config.by.startswith("fact:"):

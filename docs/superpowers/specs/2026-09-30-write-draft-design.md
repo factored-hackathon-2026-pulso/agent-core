@@ -76,7 +76,7 @@ Se aplican en `RegistryService`, para propuestas con `origin = auto_detect`:
 - **Nodo:** `WriteToolConfig` gana la forma `draft: true` con `tool` y `args` propios (`action_from` pasa a opcional; se declara uno u otro). El discriminador `node_kind` trata `tool` con `draft: true` como `tool_write`: así reutiliza las ramas `ok/uncertain/denied`, G0-06 y la recuperación. Un nodo `tool` normal (`ToolConfig`) con una tool de escritura sigue siendo violación de G0-05.1.
 - **`Action`** gana `write_node_id` (el nodo `draft` que la creó). `confirm_node_id`, `confirmation_token_hash` y `token_exp` pasan a opcionales con un validador: una acción con `write_node_id` no lleva ninguno de los tres; una sin él, los tres.
 - **No hay evento nuevo:** `action_dispatched`, `tool_called` y `action_verified` son la auditoría de cada escritura.
-- `SCHEMA_VERSION` 1.0.0 → 1.1.0 (menor), `uv run agentcore contracts` y `contracts --check`. **Aviso de cambio de interfaz al terminar la fase.**
+- `SCHEMA_VERSION` 1.1.0 → 1.2.0 (menor; la 1.1.0 la usó `input_view` del nodo `agent` en `main`), `uv run agentcore contracts` y `contracts --check`. **Aviso de cambio de interfaz al terminar la fase.**
 
 ## 6. Fase 3 — M1
 

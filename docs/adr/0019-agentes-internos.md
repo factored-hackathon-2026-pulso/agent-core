@@ -1,6 +1,6 @@
 # ADR 0019 — Agentes internos: copiloto del asesor y agente constructor
 
-- Estado: aceptado (2026-09-30). **Implementado:** nodo `agent` de solo lectura y cálculo (M0, M1 con G0-22, M2) y la prueba de contrato de `AuthzPort`. **Implementado también (2026-09-30, fases 1 a 5 de la spec write-draft):** clase `write_draft` (M0 1.1.0, M1 con G0-05, G0-22 con su excepción, G0-23, G0-25 y AG-02, M2, M3 y M4), borradores idempotentes y topes en el registry y `BuilderToolExecutor`; el adaptador real de `AgentPort` (`LLMAgentPort`) ya existía. **Pendiente:** replay del bucle en M11, los dos agentes del constructor y `await_approval`
+- Estado: aceptado (2026-09-30). **Implementado:** nodo `agent` de solo lectura y cálculo (M0, M1 con G0-22, M2) y la prueba de contrato de `AuthzPort`. **Implementado también (2026-09-30, fases 1 a 5 de la spec write-draft):** clase `write_draft` (M0 1.2.0, M1 con G0-05, G0-22 con su excepción, G0-23, G0-25 y AG-02, M2, M3 y M4), borradores idempotentes y topes en el registry y `BuilderToolExecutor`; el adaptador real de `AgentPort` (`LLMAgentPort`) ya existía. **Pendiente:** replay del bucle en M11, los dos agentes del constructor y `await_approval`
 - Unidad: 1 · Motor de decisión (con dependencias de la unidad 2, registry)
 - Amplía: ADR 0004 (nodo `agent`), ADR 0006 (principales y agentes internos), ADR 0007 (protocolo de escritura)
 - Spec del nodo y de las reglas: `docs/specs/motor/m02-interprete.md` §3.7, `docs/specs/motor/m01-validacion-estatica.md` §3.13

@@ -167,7 +167,7 @@ def _read_sites(ctx: Ctx, node: object) -> Iterator[_Site]:
         yield _Site(
             "/config/output_map", _parsed(v for _, v in sorted(node.config.output_map.items())), SLOTS_FACTS
         )
-    elif isinstance(node, DecideNode) and node.config.input_view:
+    elif isinstance(node, DecideNode | AgentNode) and node.config.input_view:
         yield _Site("/config/input_view", _parsed(node.config.input_view), SLOTS_FACTS)
     elif isinstance(node, CollectNode):
         yield _Site("/config/prompt_ref", _template_paths(ctx, node.config.prompt_ref), SLOTS_FACTS)
@@ -294,7 +294,8 @@ def g0_16(ctx: Ctx) -> Iterator[Violation]:
 
 
 # Los únicos lugares donde la salida de un `agent` puede leerse: lo que se le muestra a la persona o lo que
-# alimenta a un modelo de decisión (que ya valida su propia salida). Ninguno decide ni escribe (ADR 0019).
+# alimenta a un modelo (el `input_view` de un `decide`, que valida su propia salida, o de otro `agent`, cuya
+# salida cae bajo esta misma regla). Ninguno decide ni escribe (ADR 0019).
 _AGENT_OUTPUT_SITES = frozenset({
     "/config/template_ref",
     "/config/generate/allowed_facts",
@@ -353,6 +354,6 @@ def g0_22(ctx: Ctx) -> Iterator[Violation]:
                         "G0-22",
                         node.id,
                         f"{clip(path.raw)} es salida de un nodo agent: solo puede leerla un respond o el "
-                        "input_view de un decide",
+                        "input_view de un decide o de un agent",
                         site.sub,
                     )

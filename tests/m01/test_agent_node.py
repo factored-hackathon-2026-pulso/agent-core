@@ -6,10 +6,24 @@ from typing import Any
 import pytest
 
 from agent_core.domain import EntityKind, Flow, Template
+from agent_core.flows.claims import derive_claims
 from agent_core.flows.pin import pin_release
 from agent_core.flows.refs import entity_ref_sites
 from agent_core.flows.registry import AuthoringRegistry
-from tests.m01.cases import ENTITIES, agent, base, check, flow, node, registry, rules, with_agent
+from agent_core.flows.schema import parse_flow
+from agent_core.flows.violations import FlowSchemaError
+from tests.m01.cases import (
+    ENTITIES,
+    agent,
+    agent_node,
+    base,
+    check,
+    flow,
+    node,
+    registry,
+    rules,
+    with_agent,
+)
 from tests.m01.test_pin import LANG, _decl
 
 READS_HALLAZGO = Template.model_validate(
@@ -108,6 +122,51 @@ def test_g0_22_ignores_other_facts_and_flows_without_agent() -> None:
     assert "G0-22" not in rules(check(base()))
     d = with_agent(save_as="otro")
     assert "G0-22" not in rules(check(d))  # base() lee facts.datos y facts.verif, no facts.otro
+
+
+# --- input_view: lo que el nodo expone al modelo (T1) ----------------------------------------------------
+
+
+def test_input_view_with_slots_and_facts_is_valid() -> None:
+    assert check(with_agent(input_view=["slots.desc", "facts.previo.value.x"])) == []
+
+
+def test_input_view_outside_slots_and_facts_is_g0_10() -> None:
+    found = check(with_agent(input_view=["decisions.d.campo"]))
+    assert rules(found) == {"G0-10"}
+
+
+@pytest.mark.parametrize("entry", ["texto libre", "facts.Mal"])
+def test_input_view_entries_must_be_paths_g0_01(entry: str) -> None:
+    with pytest.raises(FlowSchemaError) as exc:
+        parse_flow(with_agent(input_view=[entry]))
+    assert {v.rule for v in exc.value.violations} == {"G0-01"}
+    assert (exc.value.violations[0].path or "").endswith("/config/input_view/0")
+
+
+def test_input_view_whole_fact_needs_value_g0_10() -> None:
+    assert rules(check(with_agent(input_view=["facts.previo"]))) == {"G0-10"}
+
+
+def test_g0_22_an_agent_may_read_another_agent_output() -> None:
+    d = with_agent()
+    node(d, "investigar")["next"]["answered"] = "otro"
+    d["nodes"].append(agent_node("otro", save_as="otro_hallazgo", input_view=["facts.hallazgo.value.texto"]))
+    assert "G0-22" not in rules(check(d))
+
+
+def test_agent_reading_a_verified_write_carries_its_claim() -> None:
+    """Un `agent` que lee el hecho verificado es productor: un respond que lo lea reclama la acción."""
+    d = with_agent()
+    node(d, "verificar")["next"]["verified"] = "resumir"
+    resumir = agent_node("resumir", save_as="resumen", input_view=["facts.verif.value.status"])
+    resumir["next"] = {"answered": "ok_msg", "gave_up": "esc"}
+    d["nodes"].append(resumir)
+    node(d, "ok_msg")["config"] = {"template_ref": "t/lee_resumen", "claims": []}
+    reads = Template.model_validate({"id": "t/lee_resumen", "version": "1.0.0",
+                                     "locales": {"es": "{{ facts.resumen.value.x }}",
+                                                 "pt": "{{ facts.resumen.value.x }}"}})
+    assert derive_claims(flow(d), registry(reads))["ok_msg"] == {"confirmar"}
 
 
 # --- pin: las referencias del agent quedan exactas ---------------------------------------------------------

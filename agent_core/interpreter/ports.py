@@ -86,13 +86,15 @@ class AgentObservation:
 @dataclass(frozen=True)
 class AgentRequest:
     """Un paso del nodo `agent` (m02 §3.7). `feedback` es el motivo (sin datos) por el que se rechazó la
-    salida anterior, si la hay."""
+    salida anterior, si la hay. `inputs` son las rutas de `input_view` en vista `model` (slots envueltos),
+    iguales en todos los pasos del nodo."""
 
     node_id: NodeId
     config: AgentNodeConfig
     step: int
     observations: tuple[AgentObservation, ...] = ()
     feedback: str | None = None
+    inputs: dict[str, JsonValue] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

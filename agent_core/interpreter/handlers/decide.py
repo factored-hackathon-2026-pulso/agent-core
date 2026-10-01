@@ -1,25 +1,14 @@
 """`decide` (M2 §3.3): entrada en vista `model`, umbral decidido por M5, rama = valor o `low_confidence`."""
 
-from agent_core.domain import DecideNode, DecisionModelDef, EntityKind, JsonValue, RunState
+from agent_core.domain import DecideNode, DecisionModelDef, EntityKind, RunState
 from agent_core.interpreter.budgets import charge_model, model_budget_exhausted
 from agent_core.interpreter.context import Resume, StepContext
 from agent_core.interpreter.handlers.base import NodeResult, escalate_now
-from agent_core.interpreter.projection import Projector
+from agent_core.interpreter.projection import model_inputs
 from agent_core.interpreter.refs import exact_ref
-from agent_core.interpreter.resolve import MissingPath, parse_runtime_path
+from agent_core.interpreter.resolve import MissingPath
 
 LOW_CONFIDENCE = "low_confidence"
-
-
-def _inputs(paths: list[str], state: RunState, ctx: StepContext) -> dict[str, JsonValue]:
-    projector = Projector(state, ctx)
-    inputs: dict[str, JsonValue] = {}
-    for raw in paths:
-        path = parse_runtime_path(raw)
-        if path is None:
-            raise MissingPath(raw)
-        inputs[raw] = projector.model_value(path, wrap_slots=True)
-    return inputs
 
 
 def handle_decide(node: DecideNode, state: RunState, ctx: StepContext, resume: Resume) -> NodeResult:
@@ -30,7 +19,7 @@ def handle_decide(node: DecideNode, state: RunState, ctx: StepContext, resume: R
     model = ctx.registry.get(ref, DecisionModelDef)
     paths = cfg.input_view if cfg.input_view is not None else model.input_view
     try:
-        inputs = _inputs(paths, state, ctx)
+        inputs = model_inputs(paths, state, ctx)
     except MissingPath:
         return NodeResult(state, result_key=LOW_CONFIDENCE)
     result = ctx.decisions.decide(ref, inputs, ctx.locale)

@@ -561,7 +561,7 @@ Lo que el motor y los agentes internos (constructor, copiloto del asesor) necesi
 | 4 | **Puerto de escritura de propuestas.** `RegistryPort` (M0) es solo lectura | constructor | Un puerto nuevo cambia M0 y `contracts/` |
 | 5 | **Roles del registry frente a `Principal.roles`** (lista libre) y sus scopes | constructor, `aprobador` | Definir cómo se emiten y quién los firma |
 | 6 | **Validación de referencias del nodo `agent`** (`prompt_ref`, `tools_allowed`) en el gate G0 | copiloto y constructor | Al levantar G0-01 para `agent` |
-| 7 | **Clase de riesgo de las tools del constructor** declarada en su `ToolDef` (`write_draft`) y comprobada por AG-02 | constructor | m01 §3.13 **Construido (2026-09-30):** `RiskClass.write_draft` (M0 1.1.0) y AG-02 (M1). |
+| 7 | **Clase de riesgo de las tools del constructor** declarada en su `ToolDef` (`write_draft`) y comprobada por AG-02 | constructor | m01 §3.13 **Construido (2026-09-30):** `RiskClass.write_draft` (M0 1.2.0) y AG-02 (M1). |
 | 8 | **Publicación de conocimiento aprobado**, si el copiloto lo consulta | copiloto | Depende también de M12 y de habilitar `knowledge_refs` (G0-01) |
 | 9 | **Catálogo de campos y plantillas de handoff como entidades versionadas**, solo si se elige esa vía | M7, M10 | Hoy son valores por defecto en código |
 | 10 | **Topes del agente autónomo** (§17.4) | constructor por señal | Sin valores, el constructor `task` no debería activarse **Construido (2026-09-30):** 10 propuestas por día y 20 evaluaciones por propuesta aplicados en `RegistryService`; sigue diferido el tope de costo, así que el constructor `task` aún no debe activarse. |
