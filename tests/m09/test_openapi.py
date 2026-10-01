@@ -11,6 +11,7 @@ OPERATIONS = {
     ("post", "/v1/runs"): "create_run",
     ("post", "/v1/sessions/{session_id}/turns"): "post_turn",
     ("get", "/v1/runs/{run_id}"): "get_run",
+    ("get", "/v1/sessions/{session_id}/lineage"): "get_session_lineage",
     ("get", "/v1/runs/{run_id}/transcript"): "get_transcript",
     ("get", "/v1/handoffs/{handoff_ref}"): "get_handoff",
     ("post", "/v1/handoffs/{handoff_ref}/resolution"): "post_resolution",
