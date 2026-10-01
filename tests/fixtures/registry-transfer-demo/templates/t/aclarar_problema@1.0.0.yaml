@@ -1,0 +1,5 @@
+id: t/aclarar_problema
+version: 1.0.0
+locales:
+  es: "No entendí bien qué necesitas. ¿Me lo cuentas con otras palabras?"
+  pt: "Não entendi bem o que você precisa. Pode explicar com outras palavras?"
