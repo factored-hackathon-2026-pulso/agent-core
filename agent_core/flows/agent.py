@@ -1,6 +1,6 @@
 """Chequeos por agente: G0-12 (locales), AG-01 (modo) y referencias del agente (M1 §3.8)."""
 
-from agent_core.domain import Agent, EntityKind, Flow, Prompt, StartFlowAction, Template
+from agent_core.domain import Agent, EntityKind, Flow, Prompt, StartFlowAction, Template, TransferNode
 from agent_core.flows.graph import flow_mode
 from agent_core.flows.refs import TEMPLATE_KINDS, agent_ref_sites, flow_ref_sites, pointer_str
 from agent_core.flows.registry import AuthoringRegistry, ReleaseDecl
@@ -31,6 +31,10 @@ def validate_flow_for_agent(flow: Flow, agent: Agent, reg: RegistryView) -> list
     if mode is not None and mode != agent.mode:
         text = f"el flow es de modo {mode} y el agente {_agent_label(agent)} es {agent.mode}"
         found.append(Violation(rule="AG-01", flow=label, message=text))
+    if agent.mode != "conversational" and any(isinstance(n, TransferNode) for n in flow.nodes):
+        found.append(Violation(rule="AG-03", flow=label,
+                               message=f"el agente {_agent_label(agent)} es {agent.mode}: transfer solo en "
+                               "agentes conversacionales"))
     for site in flow_ref_sites(flow):
         if site.kind not in TEMPLATE_KINDS:
             continue
@@ -58,6 +62,13 @@ def validate_agent(agent: Agent, reg: RegistryView) -> list[Violation]:
         elif site.kind == EntityKind.template and (missing := _missing_locales(entity, agent)):
             text = _locales_message(site.ref, missing, agent)
             found.append(Violation(rule="G0-12", path=path, message=text))
+    if agent.accepts is not None:
+        missing = [name for name, value in (("routing", agent.routing), ("understand", agent.understand))
+                   if value is None]
+        if missing or agent.mode != "conversational":
+            what = ", ".join(missing) if missing else "modo conversacional"
+            found.append(Violation(rule="AG-03", path=where,
+                                   message=clip(f"un agente con accepts necesita {what}", 240)))
     return sort_violations(found)
 
 
