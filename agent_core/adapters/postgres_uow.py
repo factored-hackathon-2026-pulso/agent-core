@@ -259,9 +259,12 @@ class PostgresUoW:
         except psycopg.errors.UniqueViolation as exc:
             if exc.diag.constraint_name == ONE_OPEN_RUN_INDEX:
                 # A second open run in the session (this commit, or another writer that committed first).
+                # Nobody retries: neither M4 nor M9 catches `VersionConflict`, so the client gets
+                # `500 internal_error` from M9's generic handler (m09 §3.5).
                 raise VersionConflict(ONE_OPEN_RUN_MESSAGE) from None
             # Otro escritor encadenó el mismo `seq` (o repitió el `event_id`) sin pasar por `save_run`: es una
-            # carrera de versión, no un error de base. Se aplica nada y quien llama reintenta.
+            # carrera de versión, no un error de base. No se aplica nada; tampoco hay reintento (M9 responde
+            # 500 internal_error).
             raise VersionConflict("la cadena de auditoría cambió: otro escritor commiteó primero") from None
         finally:
             self._done = True

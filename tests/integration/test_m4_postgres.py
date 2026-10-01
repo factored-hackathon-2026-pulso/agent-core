@@ -111,13 +111,15 @@ def test_the_schema_has_the_one_open_run_per_session_index() -> None:
     """Unverified in the phase-7 environment (no docker): run it with `docker compose up -d postgres`."""
     with postgres_store("m4_one_open") as pg, pg.reading() as conn:
         row = conn.execute(
-            "SELECT indexdef FROM pg_indexes WHERE indexname = 'runs_one_open_per_session'").fetchone()
+            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'm4_one_open' "
+            "AND indexname = 'runs_one_open_per_session'").fetchone()
     assert row is not None
     assert "UNIQUE" in row[0] and "WHERE" in row[0] and "status" in row[0] and "session_id" in row[0]
 
 
 def test_two_concurrent_transactions_cannot_both_open_a_run_in_one_session() -> None:
-    """The second writer waits on the index entry of the first and then loses with `VersionConflict`."""
+    """The first writer has already committed, so the second one's INSERT violates the index at once and its
+    commit fails with `VersionConflict`, applying nothing."""
     from testing.builders import run_state
 
     with postgres_store("m4_one_open") as pg:

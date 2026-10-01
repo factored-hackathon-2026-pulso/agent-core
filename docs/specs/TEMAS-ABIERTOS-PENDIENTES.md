@@ -130,7 +130,7 @@ El administrador puede leer runs, transcripts y campos de clientes (ADR 0006, en
 **Pendiente de construcción:** el esquema del evento y su versión, la forma exacta del log de auditoría propio (tabla, retención y quién lo consulta) y el parámetro por el que M9 recibe el motivo. Hay que cerrar esos tres puntos antes de implementar.
 
 ## 19. Transferencia entre agentes: pendientes — abierto
-ADR 0021 (propuesto; implementado en la rama `feat/transferencia-entre-agentes`, fases 1 a 6, sin spans OTel, pendiente de aprobación) y spec `2026-09-30-transferencia-entre-agentes-design.md` (reconciliada con lo construido el 2026-10-01; §12 tiene el detalle). Nada de lo que sigue está decidido aquí.
+ADR 0021 (propuesto; implementado en la rama `feat/transferencia-entre-agentes`, fases 1 a 6, sin spans OTel, pendiente de aprobación) y spec `2026-09-30-transferencia-entre-agentes-design.md` (reconciliada con lo construido el 2026-10-01; §12 tiene el detalle). Lo que sigue no está decidido aquí, salvo lo marcado como cerrado.
 
 **Trabajo fuera de las fases 1 a 6 (decisión P7 del plan):**
 - **REL-T1** (compatibilidad de `accepts` al publicar recepción) y la **evaluación** de la spec §7 (`transferred_to`, `transfer_packet`, `routing_scenarios`, gate del especialista, `yardstick_loosened`). Dependen de `feat/eval-metrics`.
@@ -146,7 +146,7 @@ ADR 0021 (propuesto; implementado en la rama `feat/transferencia-entre-agentes`,
 - ~~**Restricción en la base de "a lo sumo un run abierto por sesión"**~~: **cerrado en la fase 7** con el índice `runs_one_open_per_session` (spec §12.8). La ruta de Postgres está sin verificar (sin docker).
 - **Alcance de la atomicidad:** cubre runs, cadenas, uso y resultados; los transcripts y las escrituras de M3 quedan fuera (m04 §11). Falta decidir si el destino puede escribir en el turno de la transferencia y qué pasa con una escritura del origen seguida de una caída antes del `commit`.
 - **`client_turn_id` único por sesión:** requisito documentado, no comprobado.
-- **Rutas de Postgres sin verificar** (sin docker en la ejecución): `aliases_named` del registry y los métodos de sesión de la unidad de trabajo. Correr `docker compose up -d postgres && uv run pytest tests/integration`.
+- **Rutas de Postgres sin verificar** (sin docker en la ejecución): `aliases_named` del registry, los métodos de sesión de la unidad de trabajo y, desde la fase 7, el índice `runs_one_open_per_session` con su traducción del `UniqueViolation` a `VersionConflict`. Correr `docker compose up -d postgres && uv run pytest tests/integration`.
 - **Catálogos de campos de producción:** deben clasificar como `public` los campos del directorio (`choices`, `agent_id`, `release_id`).
 - **Decisiones tomadas en la ejecución que el usuario debe confirmar:** `transfer` fuera de `TERMINAL` (M4 sigue `rejected`); `Slot` sin `source` (procedencia por `origin` y `accepted_slots`); `from_event_hash` = hash del `turn_completed`; `RunStartedPayload` omite `origin` cuando es `None` para no invalidar cadenas anteriores a 1.2.0; la tool `directory/list` vive en `composition` (cierra el Abierto 5 de la spec).
 - **Más decisiones a confirmar:** `SCHEMA_VERSION` 1.2.0 se asignó en la rama (la spec §12.7 decía "se asigna al integrar"); se usó la rama `feat/transferencia-entre-agentes` en lugar de la rama designada por la sesión.
