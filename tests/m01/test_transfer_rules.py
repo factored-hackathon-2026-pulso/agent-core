@@ -78,8 +78,7 @@ def test_g0_26_directory_must_come_from_directory_list() -> None:
 def test_g0_26_a_path_around_the_decide_is_a_violation() -> None:
     d = reception()
     node(d, "directory")["next"]["ok"] = "transfer"  # skips `route`
-    found = rules(check(d, reg()))
-    assert "G0-26" in found
+    assert rules(check(d, reg())) == {"G0-03", "G0-26"}  # `route` also becomes unreachable
 
 
 def test_g0_27_packet_slots_must_be_collected() -> None:
@@ -97,3 +96,30 @@ def test_ag_03_transfer_needs_a_conversational_agent() -> None:
 def test_ag_03_an_agent_with_accepts_needs_routing_and_understand() -> None:
     agent = Agent.model_validate(AGENT | {"accepts": {"slots": {}}})
     assert "AG-03" in {v.rule for v in validate_agent(agent, reg())}
+
+
+def test_g0_26_none_or_low_confidence_to_transfer_is_a_violation() -> None:
+    # `low_confidence` is a failure branch, so G0-06 also objects (transfer is not a safe exit).
+    for result, expected in (("none", {"G0-26"}), ("low_confidence", {"G0-06", "G0-26"})):
+        d = reception()
+        node(d, "route")["next"][result] = "transfer"
+        assert rules(check(d, reg())) == expected
+
+
+def test_g0_11_choice_must_be_calibrated() -> None:
+    uncalibrated = DecisionModelDef.model_validate(ROUTER.model_dump(mode="json") | {"calibrated_fields": []})
+    assert rules(check(reception(), registry(DIRECTORY_TOOL, uncalibrated))) == {"G0-11"}
+
+
+def test_g0_01_malformed_choices_from() -> None:
+    d = reception()
+    node(d, "route")["config"]["choices_from"] = "facts..bad"
+    assert "G0-01" in rules(check(d, reg()))
+    node(d, "route")["config"]["choices_from"] = "literal"
+    assert "G0-01" in rules(check(d, reg()))
+
+
+def test_g0_10_choices_from_needs_value() -> None:
+    d = reception()
+    node(d, "route")["config"]["choices_from"] = "facts.directory"
+    assert rules(check(d, reg())) == {"G0-10"}

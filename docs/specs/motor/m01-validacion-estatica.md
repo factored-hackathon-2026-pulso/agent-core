@@ -87,9 +87,9 @@ def release_view(port: RegistryPort, release: Release) -> RegistryView          
 
 # --- Validación
 def validate_flow(flow: Flow, reg: RegistryView) -> list[Violation]                        # G0-01…G0-11, G0-13…G0-16
-def validate_flow_for_agent(flow: Flow, agent: Agent, reg: RegistryView) -> list[Violation]  # G0-12 y AG-01
+def validate_flow_for_agent(flow: Flow, agent: Agent, reg: RegistryView) -> list[Violation]  # G0-12, AG-01 y AG-03
 def validate_flow_for_release(flow: Flow, snapshot: KnowledgeSnapshot | None, reg: RegistryView) -> list[Violation]  # G0-17, G0-19, G0-20
-def validate_agent(agent: Agent, reg: RegistryView) -> list[Violation]                     # G0-02 y G0-12 sobre el agente
+def validate_agent(agent: Agent, reg: RegistryView) -> list[Violation]                     # G0-02, G0-12 y AG-03 sobre el agente
 def derive_claims(flow: Flow, reg: RegistryView) -> Mapping[str, frozenset[str]]           # lector → ids de confirm
 
 # --- Análisis compartido con runtime
@@ -200,7 +200,7 @@ campo   := [A-Za-z0-9_]+
 | G0-20 | `navigate` con selector que no cubre el scope | `output_schema.properties.path.enum` del selector == rutas del snapshot bajo `scope/` (sin `index.md`), sin repetidos; sin snapshot no se puede verificar. Solo en `validate_flow_for_release` | 5 |
 | G0-21 | `knowledge_from` sin un nodo `knowledge` que domine al `respond` | Cada nombre es el `save_as` de algún nodo `knowledge`, y quitando las aristas de salida de esos nodos el `respond` no es alcanzable desde la entrada | 5 |
 | G0-24 | Tool de un nodo `agent` sin documentar | Toda tool de `tools_allowed` de un nodo `agent` lleva `description` y un `args_schema` dentro del subconjunto cerrado (`domain.schema`); el mensaje nombra la tool y la palabra clave fuera del subconjunto (§3.13) | 5 |
-| G0-26 | `transfer` sin origen de destino o de directorio que lo domine | `target_from` (`decisions.<save_as>.choice`) nombra un `decide` con `choices_from` y `directory_from` es el `save_as` de un nodo `tool` de `directory/list`; quitando las aristas de salida de esos nodos, el `transfer` no es alcanzable desde la entrada (ADR 0021, spec de transferencia §6) | 7 |
+| G0-26 | `transfer` sin origen de destino o de directorio que lo domine | `target_from` (`decisions.<save_as>.choice`) nombra un `decide` con `choices_from` y `directory_from` es el `save_as` de un nodo `tool` de `directory/list`; quitando la arista `chosen` del `decide` (`none` y `low_confidence` no producen `choice`) y todas las aristas de salida del `tool`, el `transfer` no es alcanzable desde la entrada (ADR 0021, spec de transferencia §6) | 7 |
 | G0-27 | Slot del paquete de transferencia no recolectado | Cada `packet.slots[i]` es el `slot` de algún `collect` del flow | 7 |
 
 **Consecuencia de G0-16:** en el MVP un agente task no puede escribir, porque toda escritura exige un `confirm` (G0-05). G0-16 **no se relaja** (ADR 0019): un flow task escribe solo con tools `write_draft` (§3.13) o, en producción, con `await_approval` (ADR 0014).
@@ -423,7 +423,7 @@ Cualquier error de `load_yaml` es una sola `Violation` G0-01 con la ruta del arc
 
 **Transferencia entre agentes (ADR 0021, rev. 5):**
 - **`decide.choices_from`:** solo admite una ruta `facts.<x>.value...` (un literal o una ruta mal formada → G0-01; otro espacio de nombres o falta `.value` → G0-10). Ver G0-03 y G0-11 en §3.4.
-- **G0-26 y G0-27** (§3.4) son reglas de flow (`FLOW_RULES`).
+- **G0-26 y G0-27** (§3.4) son reglas de flow (`FLOW_RULES`). Para G0-26 solo la arista `chosen` del `decide` cuenta como productora del `choice`: un `none` o `low_confidence` que llegue al `transfer` es violación.
 - **G0-06** no cambia: `transfer` no cuenta como salida segura, pero el `transfer` de un flow de recepción se alcanza por el resultado `chosen` de un `decide` (no una rama de fallo) y su `rejected` va a un `escalate`.
 - **AG-03** (`validate_flow_for_agent` y `validate_agent`): un flow con `transfer` exige `agent.mode == conversational`; un agente con `accepts` exige `routing`, `understand` y modo conversacional.
 - Pruebas: `tests/m01/test_transfer_rules.py` (T-M1-47).
