@@ -47,11 +47,13 @@ class TransferPlan:
 
 
 def event_target(request: TransferRequest) -> str | None:
-    """The target as `transfer_rejected.to_agent`: only a well-formed agent id, never free text."""
-    if request.target is None:
+    """The target as `transfer_rejected.to_agent`: echoed only when it is one of the agent ids of the
+    directory this run read (and well formed); anything else, e.g. free text from a decision, is `None`."""
+    target, snapshot = request.target, request.snapshot
+    if target is None or snapshot is None or target not in snapshot.choices:
         return None
     try:
-        return _ENTITY_ID.validate_python(request.target)
+        return _ENTITY_ID.validate_python(target)
     except ValidationError:
         return None
 
@@ -87,7 +89,10 @@ class Transferer:
         if version is None:
             return "no_active_release"
         target_ref = EntityRef(id=request.target, version=version)
-        target = self._registry.get(target_ref, Agent)
+        try:
+            target = self._registry.get(target_ref, Agent)
+        except (KeyError, TypeError):  # the release pins an agent the registry cannot serve
+            return "no_active_release"
         if not self._eligible(frame, target):
             return "not_eligible"
         assert target.accepts is not None  # `transfer_ineligibility` rejects an agent without a contract

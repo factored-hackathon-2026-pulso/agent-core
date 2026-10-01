@@ -569,11 +569,14 @@ class World:
         accepts: dict[str, Any] | None = None,
         origin_depth: int | None = None,
         open_run: bool = True,
+        snapshot_accepts: dict[str, Any] | None = None,
+        publish_specialist: bool = True,
     ) -> RunState | None:
         """Registers `recepcion` and `recepcion-directa`, the specialist `disputas` and a published `saldos`
         left out of the snapshot, each under `prod` with its own release. Then (unless `open_run=False`, for
         `start_run` tests) opens the reception run waiting on `entender`, with the directory fact and the
-        routing decision already in its state."""
+        routing decision already in its state. `snapshot_accepts` sets the contract the directory entry
+        shows (by default, the specialist's); `publish_specialist=False` leaves `disputas` without `prod`."""
         contract = accepts if accepts is not None else DEFAULT_ACCEPTS
         disputas = self._specialist("disputas", contract, specialist_over)
         saldos = self._specialist("saldos", DEFAULT_ACCEPTS)
@@ -583,11 +586,13 @@ class World:
         full = self.release()
         for agent_id in ("recepcion", "recepcion-directa"):
             self.registry.add_release(full.model_copy(update={"id": RECEPTION_RELEASE_ID}), agent_id)
-        self.registry.add_release(full.model_copy(update={"id": SPECIALIST_RELEASE_ID}), "disputas")
+        if publish_specialist:
+            self.registry.add_release(full.model_copy(update={"id": SPECIALIST_RELEASE_ID}), "disputas")
         self.registry.add_release(full.model_copy(update={"id": OTHER_RELEASE_ID}), "saldos")
         entry = {
             "agent_id": "disputas", "release_id": SPECIALIST_RELEASE_ID, "summary": "disputas (sintético)",
-            "examples": [], "accepts": contract, "supported_locales": ["es", "pt"],
+            "examples": [], "accepts": snapshot_accepts if snapshot_accepts is not None else contract,
+            "supported_locales": ["es", "pt"],
         }
         snapshot = DirectorySnapshot.model_validate({
             "directory": DIRECTORY,
