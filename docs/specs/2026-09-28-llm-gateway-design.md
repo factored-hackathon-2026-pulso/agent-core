@@ -303,7 +303,7 @@ Comparar dos perfiles es comparar dos releases (unidad 6).
 
 ## 11. Abiertos
 
-- **Modelo concreto de la demo en OpenRouter:** sin elegir. No bloquea la construcción; se necesita para la prueba de humo. Debe soportar salida JSON obediente en modo `prompted` y ES/PT.
+- **Modelo concreto de la demo en OpenRouter:** sin elegir. No bloquea la construcción; se necesita para la prueba de humo. Debe soportar salida JSON obediente en modo `prompted` y ES/PT. **Propuesta (2026-09-30, pendiente de aprobación y de `llm-smoke` con la key del usuario):** `meta-llama/llama-3.3-70b-instruct` (USD 0,10 entrada / 0,32 salida por millón de tokens, catálogo de OpenRouter del 2026-09-30; soporta `response_format`); alternativa `google/gemini-2.5-flash-lite` (0,10 / 0,40). Las tarifas cambian: la del `ModelProfile` se toma del catálogo el día de la prueba de humo.
 - **Prompt del bucle del nodo `agent`:** el texto concreto del `Prompt` (instrucciones del formato `kind/tool/args/output`) se escribe en el registro de la demo, no en el código. La spec fija el contrato, no la redacción.
 - **Regla de M1 para `output_schema`:** m02 §11 anota que falta detectar al validar el flow un `output_schema` fuera del subconjunto. G0-24 cubre `args_schema`; extenderla a `output_schema` es trivial pero no está en el alcance de esta rev.
 - ~~**`GatewayError` sin evento en el nodo `agent`**~~ **Resuelto (2026-09-30, auditoría):** `handle_agent` emite un `agent_step` con `kind = "failed"` y `error_kind` (M0 `SCHEMA_VERSION` 0.7.0) antes de terminar en `gave_up`. Prueba: `tests/m02/test_agent.py::test_a_gateway_error_leaves_a_failed_agent_step_that_explains_the_gave_up`.

@@ -1,6 +1,6 @@
 # Temas abiertos — Motor de decisión (spec 2026-09-28)
 
-- Estado: **9 de 9 temas originales resueltos; #10 (`read` construido), #11, #12, #14, #15 y #16 cerrados el 2026-09-30 (decisiones abajo); #13 resuelto salvo las piezas reales de las unidades 3, 6 y 7 (2026-09-30); siguen abiertos #17 y #18 (medios).** Reemplaza la versión anterior de este documento, cuyo contenido se descartó por basarse en hallazgos incorrectos.
+- Estado: **9 de 9 temas originales resueltos; #10 (`read` construido), #11, #12, #14, #15 y #16 cerrados el 2026-09-30 (decisiones abajo); #13 resuelto salvo las piezas reales de las unidades 3, 6 y 7 (2026-09-30); #18 decidido el 2026-09-30 (construcción pendiente); sigue abierto #17 (medio).** Reemplaza la versión anterior de este documento, cuyo contenido se descartó por basarse en hallazgos incorrectos.
 - Fecha: 2026-09-28
 - Spec: `2026-09-28-motor-de-decision-design.md` (rev. 15)
 - Regla de trabajo: antes de resolver cada tema se lee el ADR que lo gobierna.
@@ -33,9 +33,9 @@ Tampoco eran temas abiertos: la cadena de hash y `reportable_attrs` (ADR 0003), 
 | 13 | Servidor arrancable: faltan las piezas externas del cableado | Alta | **Resuelto salvo las piezas reales de las unidades 3, 6 y 7 (2026-09-30)** |
 | 14 | Emisión y firma de los roles `constructor`/`aprobador` y de `attrs.actor` | Alta | **Resuelto (2026-09-30)** |
 | 15 | Validador `decide` de `collect`: qué campo de la decisión valida | Media | **Resuelto: no soportado hasta la fase 2 (2026-09-30)** |
-| 16 | Límites, retención y topes del agente autónomo (registry) | Media | **Resuelto salvo los topes, que esperan a activar el constructor `task` (2026-09-30)** |
+| 16 | Límites, retención y topes del agente autónomo (registry) | Media | **Resuelto salvo el monto del tope de costo, que se fija al activar el constructor `task` (2026-09-30)** |
 | 17 | Clase `write_draft` y dependencias del constructor sobre el registry | Media | **Abierto** |
-| 18 | Auditoría de las lecturas de datos de clientes del administrador | Media | **Abierto** |
+| 18 | Auditoría de las lecturas de datos de clientes del administrador | Media | **Decidido (2026-09-30); construcción pendiente** |
 
 ## Resueltos
 - **#1 (rev. 6):** `respond.claims` declarado + derivado; invariante por camino hasta `verified`; `respond` seguro = sin reclamos. Spec §2, §5, §6.1, §8.2, §11, §13.3, §14, §15; ADR 0007.
@@ -115,10 +115,15 @@ Pendiente de construcción: las vistas SQL y la conexión a Phoenix; no bloquean
 **Decidido el 2026-09-30:**
 - **Límites:** se ratifican los valores que ya aplica `registry/validation.py`: 50 cambios por propuesta, 262 144 bytes por entidad y 200 nodos por flow.
 - **Retención:** se conserva todo en el MVP. Fase 2: purgar propuestas abandonadas de más de 90 días y conservar las últimas N evaluaciones por propuesta.
-- **Topes del constructor autónomo:** se difieren; el constructor en modo `task` no se activa en la demo. Al activarlo hay que fijar propuestas por día, evaluaciones por propuesta y costo máximo por propuesta (punto de partida a discutir: 10, 20 y un tope de costo).
+- **Topes del constructor autónomo (decidido el 2026-09-30):** 10 propuestas por día y 20 evaluaciones por propuesta. Sigue sin fijar el **monto del tope de costo por propuesta** (USD); se fija al activar el constructor en modo `task`, que no se activa en la demo. Aún no hay código que aplique los topes.
 
 ## 17. `write_draft` y dependencias del constructor — abierto
 Registry §18: clase de riesgo `write_draft` (G0-23, AG-02, ruta de M3), regla G0-25 del gateway (el prompt del nodo `agent` debe ser `structured: prompted`), adaptador de `ToolExecutor` del constructor con su propia credencial, `readback_by` de borradores y catálogo de campos y plantillas de handoff como entidades versionadas. Nada de esto está construido; el constructor solo puede correr de solo lectura.
 
-## 18. Auditoría de las lecturas de datos de clientes del administrador — abierto
-El administrador puede leer runs, transcripts y campos de clientes (ADR 0006, enmienda 2026-09-30), pero una lectura autorizada no deja hoy ningún evento: solo se registran los rechazos (`access_denied`). Decidir el evento (por ejemplo `privileged_read` con principal, subject, propósito y `trace_id`, sin el contenido), en qué cadena se anota cuando la lectura es de un run y dónde cuando no lo es, y si el motivo de la lectura es obligatorio. Es un cambio de M0 (evento nuevo, versión menor) y de M9.
+## 18. Auditoría de las lecturas de datos de clientes del administrador — decidido; construcción pendiente
+El administrador puede leer runs, transcripts y campos de clientes (ADR 0006, enmienda 2026-09-30), pero una lectura autorizada no deja hoy ningún evento: solo se registran los rechazos (`access_denied`).
+**Decidido el 2026-09-30:**
+- **Evento `privileged_read`** con principal, subject, propósito y `trace_id`, **sin el contenido leído**. Es un cambio de M0 (evento nuevo, versión menor: regenerar `contracts/` y avisar) y de M9 (emitirlo en cada lectura autorizada del administrador).
+- **Dónde se anota:** en la cadena de eventos del run cuando la lectura es de un run; cuando no lo es, en un log de auditoría propio.
+- **Motivo de la lectura obligatorio.**
+**Pendiente de construcción:** el esquema del evento y su versión, la forma exacta del log de auditoría propio (tabla, retención y quién lo consulta) y el parámetro por el que M9 recibe el motivo. Hay que cerrar esos tres puntos antes de implementar.
