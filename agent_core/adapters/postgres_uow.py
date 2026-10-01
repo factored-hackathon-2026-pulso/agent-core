@@ -128,14 +128,19 @@ class PostgresUoW:
             return local.model_copy(deep=True)
         return self._committed_run(run_id)
 
+    def list_runs_by_session(self, session_id: str) -> list[RunState]:
+        rows = self._conn.execute(
+            "SELECT run_id FROM runs WHERE session_id = %s ORDER BY run_seq", (session_id,)).fetchall()
+        ids = [row[0] for row in rows]
+        ids += [rid for rid, s in self._runs.items() if s.session_id == session_id and rid not in ids]
+        return [state for rid in ids if (state := self.load_run(rid)) is not None]
+
     def find_run_by_session(self, session_id: str) -> RunState | None:
-        for state in self._runs.values():
-            if state.session_id == session_id:
-                return state.model_copy(deep=True)
-        row = self._conn.execute(
-            "SELECT run_id FROM runs WHERE session_id = %s ORDER BY run_seq DESC LIMIT 1",
-            (session_id,)).fetchone()
-        return self.load_run(row[0]) if row else None
+        runs = self.list_runs_by_session(session_id)
+        open_runs = [r for r in runs if r.status == "open"]
+        if open_runs:
+            return open_runs[-1]
+        return runs[-1] if runs else None
 
     def save_run(self, state: RunState, expected_version: int) -> RunState:
         self._check_open()

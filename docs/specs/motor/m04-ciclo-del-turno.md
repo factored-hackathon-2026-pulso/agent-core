@@ -28,7 +28,7 @@ Dependencias por constructor (solo por nombre): `uow_factory`, `registry`, `cloc
 ### 3.1 Pipeline de `handle_turn`
 
 1. **Deduplicación:** si `client_turn_id` ya tiene resultado guardado, se devuelve ese `TurnResult` sin reprocesar.
-2. **Cargar:** `uow.find_run_by_session(session_id)`; `uow.acquire_turn(run_id, turn_id, now, ttl)` toma el lease del turno **antes** de trabajar (M0 §2.9): si otro turno lo tiene → `TurnInProgress` → `409 turn_in_progress`. Run cerrado → `410 run_closed`. Cada commit usa `save_run(expected_version)` como defensa; el lease se libera en el commit final.
+2. **Cargar:** `uow.find_run_by_session(session_id)` (la sesión puede tener varios runs; se carga el abierto o, si no hay, el más nuevo — ADR 0021; `list_runs_by_session` los lista en orden de creación); `uow.acquire_turn(run_id, turn_id, now, ttl)` toma el lease del turno **antes** de trabajar (M0 §2.9): si otro turno lo tiene → `TurnInProgress` → `409 turn_in_progress`. Run cerrado → `410 run_closed`. Cada commit usa `save_run(expected_version)` como defensa; el lease se libera en el commit final.
 3. **Release:** si está `revoked` → `escalate(release_revoked)` sin ejecutar nodos.
 4. **Abandono:** si `now − last_activity_at > inactivity_ttl` → M4 cierra el run con `abandoned` (ver 3.6), invalida las acciones y responde `410 run_closed` **sin procesar el mensaje**. La app abre un run nuevo (M9); el motor no reabre el run por su cuenta (decisión P2, 2026-09-29).
 5. **Recuperación:** `actions.pending_recovery(state)` no vacío → posicionar el flow en el `verify` correspondiente y avanzar desde ahí antes de procesar el mensaje.

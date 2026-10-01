@@ -451,6 +451,7 @@ class UnitOfWork(Protocol):          # context manager; una instancia = una tran
     def release_turn(self, run_id: str, turn_id: str) -> None                                         # se aplica con commit()
     def load_run(self, run_id: str) -> RunState | None
     def find_run_by_session(self, session_id: str) -> RunState | None
+    def list_runs_by_session(self, session_id: str) -> list[RunState]   # en orden de creación; find_ prefiere el run abierto
     def save_run(self, state: RunState, expected_version: int) -> RunState   # versión distinta → VersionConflict; devuelve state_version + 1
     def get_turn_result(self, run_id: str, client_turn_id: str) -> TurnResult | None
     def put_turn_result(self, run_id: str, client_turn_id: str, result: TurnResult) -> None
