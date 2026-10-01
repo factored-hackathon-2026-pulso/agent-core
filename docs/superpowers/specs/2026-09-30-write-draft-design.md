@@ -1,7 +1,7 @@
 # `write_draft` y el agente constructor — diseño
 
 - Fecha: 2026-09-30
-- Estado: **borrador para aprobación** (las secciones de diseño 1 a 6 se aprobaron en la conversación; falta la revisión de este documento)
+- Estado: **aprobada; fases 1 a 5 implementadas (2026-09-30)**; fases 6 a 8 pendientes
 - Gobierna: tema #17 (y #16 en lo que aplica los topes) de `docs/specs/TEMAS-ABIERTOS-PENDIENTES.md`
 - ADRs: 0019 (agentes internos), 0007 (protocolo de escritura), 0006 (principales), 0014 (`await_approval`), 0004 (nodos)
 - Specs que toca: m00, m01 §3.13, m02 §3.3 y §3.7, m03, m11, registry §2, §7.2, §8, §17 y §18, spec del gateway (G0-25)
