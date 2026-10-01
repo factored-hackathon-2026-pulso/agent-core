@@ -5,6 +5,7 @@ from agent_core.domain import GatewayError, GatewayErrorKind, Outcome, RunClosed
 from agent_core.registry import EvalSuite, EvalTarget, HarnessUnavailable, LocalSandbox, SnapshotRegistry
 from agent_core.registry.evaluation.scoring import score_run
 from testing.fakes.ids import FakeIds
+from testing.fakes.provider import Failure, Timeout
 from testing.registry_demo import build_harness, demo_suite
 from tests.registry.helpers import AGENT, demo_pinned
 
@@ -32,4 +33,13 @@ def test_gateway_failure_becomes_harness_unavailable() -> None:
     scenario = next(s for s in demo_suite().scenarios if s.id == "resuelto")
     sandbox = LocalSandbox(FakeIds())
     with pytest.raises(HarnessUnavailable):
+        harness.run(_target(), AGENT, scenario, sandbox.tools(sandbox.provision(scenario.seed, _target())))
+
+
+@pytest.mark.parametrize("failure", [Failure("jev caído"), Timeout(after_ms=100)])
+def test_a_provider_failure_becomes_harness_unavailable(failure: Failure | Timeout) -> None:
+    harness = build_harness(provider_failure=failure)
+    scenario = next(s for s in demo_suite().scenarios if s.id == "resuelto")
+    sandbox = LocalSandbox(FakeIds())
+    with pytest.raises(HarnessUnavailable, match="proveedor"):
         harness.run(_target(), AGENT, scenario, sandbox.tools(sandbox.provision(scenario.seed, _target())))

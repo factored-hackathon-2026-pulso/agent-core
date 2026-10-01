@@ -21,7 +21,7 @@ from testing.fakes.clock import FakeClock
 from testing.fakes.identity import TestStaffIssuer
 from testing.fakes.ids import FakeIds
 from testing.fakes.keys import FakeKeyProvider
-from testing.fakes.provider import ScriptedProvider
+from testing.fakes.provider import ScriptedProvider, Step
 from testing.fakes.storage import InMemoryAuditSink, InMemoryStore
 from testing.fakes.transcript import InMemoryTranscript
 
@@ -74,7 +74,8 @@ def demo_suite() -> EvalSuite:
             "expect": {"outcome": "resolved", "actions_verified": ["radicar_pqr"], "escalated": False}}]})
 
 
-def build_harness(gateway_error: GatewayError | None = None) -> EngineScenarioHarness:
+def build_harness(gateway_error: GatewayError | None = None,
+                  provider_failure: Step | None = None) -> EngineScenarioHarness:
     clock, ids = FakeClock(), FakeIds()
 
     class _Gateway(CitingGateway):
@@ -86,7 +87,9 @@ def build_harness(gateway_error: GatewayError | None = None) -> EngineScenarioHa
     def providers(scenario_id: str) -> Mapping[str, DecisionProvider]:
         jev, classifier = ScriptedProvider("jev", clock=clock), ScriptedProvider("classifier", clock=clock)
         script = DEMO_SCRIPTS.get(scenario_id)
-        if script is not None:
+        if provider_failure is not None:
+            jev.push(provider_failure)  # la primera llamada de JEV falla
+        elif script is not None:
             script(jev, classifier)
         return {"jev": jev, "classifier": classifier}
 

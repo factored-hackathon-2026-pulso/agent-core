@@ -223,7 +223,7 @@ Para la candidata y para la base (si existe), con la misma suite congelada:
 3. **Califica desde los eventos del motor.** Una corrida pasa si cumple todo el `expect`. La métrica principal es la proporción de corridas que pasan.
 4. **Guardarraíles** (conteos sobre los eventos): afirmación de éxito sin `verify`, escritura sin verificación y datos de vista `full` en la respuesta o en un evento. Los emiten M2, M3, M6 y M8.
 5. Corre en paralelo con un tope de concurrencia configurable.
-6. Una falla del gateway durante una corrida (la detecta una sonda del harness, porque el motor la absorbe) o del sandbox → `failed_infra`, igual que el tiempo vencido. Toda la evaluación queda `failed_infra`. Nunca hay un pase parcial.
+6. Una falla del gateway o de un proveedor de decisión (JEV, classifier) durante una corrida (la detecta una sonda del harness, porque el motor la absorbe) o del sandbox → `failed_infra`, igual que el tiempo vencido. Toda la evaluación queda `failed_infra`. Nunca hay un pase parcial.
 
 Costo orientativo: 2 releases × N escenarios × k corridas. Con 10 escenarios y k = 3, son 60 conversaciones por evaluación.
 

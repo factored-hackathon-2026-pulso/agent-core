@@ -42,7 +42,7 @@ Cada escenario corre un motor completo y escribe runs, eventos y auditoría. Con
 
 ## 7. Abiertos
 
-- **Fallas de JEV no marcan `failed_infra`:** la sonda del harness solo detecta fallas del gateway; si JEV cae, el motor degrada y el escenario falla por su `expect`, no como infraestructura. Registry §6.2 punto 6 solo nombra gateway y sandbox; decidir si se extiende la sonda a los proveedores.
+- **Resuelto (2026-09-30):** la sonda del harness también cubre los proveedores de decisión (`ProviderError` y `ProviderTimeout`, incluso si el motor cae a otro proveedor de la cadena): la evaluación queda `failed_infra`, igual que con el gateway. Registry §6.2 punto 6 actualizado.
 - Evaluación síncrona: una evaluación (2 releases × N escenarios × k) bloquea la petición HTTP.
 - Transcripts de evaluación en el almacén real (unidad 7).
 - Autenticación reforzada y límites del staff en la API.
