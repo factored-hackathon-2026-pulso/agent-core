@@ -2,6 +2,7 @@
 
 from agent_core.domain import Agent, EntityKind, Flow, Prompt, StartFlowAction, Template
 from agent_core.flows.graph import flow_mode
+from agent_core.flows.metrics import validate_agent_metrics
 from agent_core.flows.refs import TEMPLATE_KINDS, agent_ref_sites, flow_ref_sites, pointer_str
 from agent_core.flows.registry import AuthoringRegistry, ReleaseDecl
 from agent_core.flows.view import RegistryView
@@ -43,7 +44,8 @@ def validate_flow_for_agent(flow: Flow, agent: Agent, reg: RegistryView) -> list
 
 
 def validate_agent(agent: Agent, reg: RegistryView) -> list[Violation]:
-    """G0-02 sobre las referencias del agente y G0-12 sobre sus plantillas del motor."""
+    """G0-02 sobre las referencias del agente, G0-12 sobre sus plantillas del motor y MT-01 a MT-06
+    sobre sus métricas."""
     found: list[Violation] = []
     source = None
     if isinstance(reg, AuthoringRegistry):
@@ -58,6 +60,7 @@ def validate_agent(agent: Agent, reg: RegistryView) -> list[Violation]:
         elif site.kind == EntityKind.template and (missing := _missing_locales(entity, agent)):
             text = _locales_message(site.ref, missing, agent)
             found.append(Violation(rule="G0-12", path=path, message=text))
+    found += validate_agent_metrics(agent, where, reg)
     return sort_violations(found)
 
 
