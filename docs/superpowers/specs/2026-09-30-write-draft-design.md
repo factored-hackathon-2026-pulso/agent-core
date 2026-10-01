@@ -85,7 +85,7 @@ Se aplican en `RegistryService`, para propuestas con `origin = auto_detect`:
 - **Reclamos:** `respond.claims` y `derive_claims` referencian el id del nodo de escritura cuando no hay `confirm`; el invariante de G0-05.8 no cambia.
 - **AG-02:** un agente cuyos flows usan un `write_draft` tiene `invocable_by ⊆ {builder}` y `subject_kinds == []` (D11).
 - **G0-25:** el prompt del `prompt_ref` de un nodo `agent` tiene un perfil `structured: prompted`.
-- **G0-22 con la excepción de D9:** ninguna ruta `facts.<save_as>` de un nodo `agent` se lee en `rule.expr`, `verify.predicate`, `confirm.action.args`, `escalate.priority_expr` ni `end.output_map`, ni en el `tool.args` de una tool que no sea `write_draft`. En el `tool.args` de un `write_draft` se puede leer solo si el `output_schema` del agente coincide con el esquema del borrador.
+- **G0-22 con la excepción de D9:** ninguna ruta `facts.<save_as>` de un nodo `agent` se lee en `rule.expr`, `verify.predicate`, `confirm.action.args`, `escalate.priority_expr` ni `end.output_map`, ni en el `tool.args` de una tool que no sea `write_draft`. En el `tool.args` de un `write_draft` se puede leer solo `facts.<agente>.value.changes`, y solo si el `output_schema` de todos los agentes con ese `save_as` coincide con el esquema del borrador; el `save_as` de la escritura draft queda marcado como salida de agente (ajuste tras la revisión final, 2026-09-30).
 - **G0-16 no cambia.**
 
 ## 7. Fase 4 — M3 y M2
@@ -98,6 +98,7 @@ Se aplican en `RegistryService`, para propuestas con `origin = auto_detect`:
 En `agent_core/composition/`, implementa `ToolExecutor` sobre `RegistryService`.
 
 - **Credencial:** de servicio, con rol `constructor` y sin `attrs.actor = "human"`, verificada con el verificador del staff. El permiso lo decide el servicio con esa credencial; el principal del run solo viaja en `audit` (D13).
+- **`origin`:** `registry/create_proposal` solo admite `builder_chat` y `auto_detect` (con `manual` o `import` el constructor esquivaría los topes de `auto_detect`).
 - **Tools y su clase:**
   - `write_draft`: `registry/create_proposal`, `registry/put_draft`, `registry/freeze`, `registry/reopen`, `registry/evaluate`.
   - `compute`: `registry/validate`.

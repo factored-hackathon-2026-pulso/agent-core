@@ -327,10 +327,18 @@ def g0_22(ctx: Ctx) -> Iterator[Violation]:
 
     Excepción acotada (ADR 0019 §1, enmienda del 2026-09-30): el `args` de una escritura `draft` puede leer la
     salida de un nodo `agent` cuyo `output_schema` es `DRAFT_OUTPUT_SCHEMA`."""
-    produced = {n.config.save_as: n.config.output_schema == DRAFT_OUTPUT_SCHEMA
-                for n in ctx.flow.nodes if isinstance(n, AgentNode)}
+    produced: dict[str, bool] = {}  # hecho → ¿puede leerlo una escritura draft? (todos sus productores)
+    for n in ctx.flow.nodes:
+        if isinstance(n, AgentNode):
+            fits = n.config.output_schema == DRAFT_OUTPUT_SCHEMA
+            produced[n.config.save_as] = produced.get(n.config.save_as, True) and fits
     if not produced:
         return
+    for n in ctx.flow.nodes:  # el resultado de una escritura draft alimentada por un agente sigue siendo suyo
+        if isinstance(n, WriteToolNode) and n.config.draft:
+            reads = {p.name for p in value_paths(dict(n.config.args), strict=False) if p.ns == "facts"}
+            if reads & produced.keys():
+                produced[n.config.save_as] = False
     for node in ctx.flow.nodes:
         draft_args = isinstance(node, WriteToolNode) and node.config.draft
         for site in _read_sites(ctx, node):
@@ -338,7 +346,8 @@ def g0_22(ctx: Ctx) -> Iterator[Violation]:
                 continue
             for path in site.paths:
                 if path.ns == "facts" and path.name in produced:
-                    if draft_args and site.sub == "/config/args" and produced[path.name]:
+                    only_changes = path.rest == ("value", "changes")  # el resto del args lo fija el flow
+                    if draft_args and site.sub == "/config/args" and produced[path.name] and only_changes:
                         continue
                     yield ctx.v(
                         "G0-22",

@@ -137,3 +137,34 @@ def test_write_draft_is_closed_to_agents_that_declare_subjects() -> None:
 
 def test_a_flow_without_write_draft_has_no_ag_02() -> None:
     assert "AG-02" not in _ag02(base())  # el agente de prueba es invocable por customer
+
+
+def _with_second_agent(d: dict[str, Any], *, before: bool) -> dict[str, Any]:
+    """Un segundo agente con el MISMO `save_as` y un esquema libre, antes o después del bueno en `nodes`."""
+    libre = agent_node("libre", output_schema={"type": "object"}, save_as="hallazgo")
+    libre["next"]["answered"] = "guardar"
+    node(d, "investigar")["next"]["answered"] = "libre"
+    if before:
+        d["nodes"].insert(1, libre)
+    else:
+        d["nodes"].append(libre)
+    return d
+
+
+def test_two_agents_sharing_a_save_as_cannot_launder_a_free_output_into_a_draft() -> None:
+    for before in (True, False):  # el orden de los nodos no debe decidir el resultado
+        d = _with_second_agent(_agent_into_draft(dict(DRAFT_OUTPUT_SCHEMA)), before=before)
+        assert "G0-22" in rules(check(d)), before
+
+
+def test_the_draft_exception_covers_only_the_changes_argument() -> None:
+    d = _agent_into_draft(dict(DRAFT_OUTPUT_SCHEMA))
+    node(d, "guardar")["config"]["args"] = {"changes": "facts.hallazgo.value.changes",
+                                            "title": "facts.hallazgo.value.changes.0.kind"}
+    assert "G0-22" in rules(check(d))
+
+
+def test_the_result_of_a_draft_write_fed_by_an_agent_is_still_agent_output() -> None:
+    d = _agent_into_draft(dict(DRAFT_OUTPUT_SCHEMA))
+    node(d, "verificar")["config"]["predicate"] = {"==": [{"var": "facts.res.value.id"}, "x"]}
+    assert "G0-22" in rules(check(d))

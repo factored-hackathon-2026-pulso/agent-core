@@ -39,6 +39,6 @@
 - **Pendiente de decisión al construir** (secciones Abiertos de cada spec): topes del constructor autónomo (registry §17.4), `default_target_queue` opcional para agentes que nunca escalan, política de campos del copiloto (`purpose`), quién llena `open_questions` si el copiloto lo usa.
 
 ## Enmienda 2026-09-30 (spec write-draft)
-- **§1, excepción acotada a G0-22:** el `args` de una escritura `draft` puede leer la salida de un nodo `agent` cuyo `output_schema` es el del borrador (`DRAFT_OUTPUT_SCHEMA`). El registry la valida con esquema estricto y límites, y la aprobación humana de la propuesta es el gate. Cualquier otro destino sigue vetado.
+- **§1, excepción acotada a G0-22:** el `args` de una escritura `draft` puede leer solo `value.changes` de la salida de un nodo `agent` cuyo `output_schema` es el del borrador (`DRAFT_OUTPUT_SCHEMA`); el resultado de esa escritura sigue siendo salida de agente. El registry la valida con esquema estricto y límites, y la aprobación humana de la propuesta es el gate. Cualquier otro destino sigue vetado.
 - **§2, flows duplicados:** AG-01 y `subflow` (rechazado por G0-01) impiden compartir flows entre los dos agentes del constructor; comparten tools, prompts y plantillas, y cada uno tiene su flow de entrada hasta que `subflow` exista.
 - **Forma del nodo:** una escritura `draft` es un nodo `tool_write` con `draft: true`, `tool` y `args` propios; su acción lleva `write_node_id` en vez de `confirm_node_id` y no tiene token.

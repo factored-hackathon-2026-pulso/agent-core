@@ -37,6 +37,8 @@ def _schema(required: list[str], properties: dict[str, JsonValue]) -> dict[str, 
 
 
 _PROPOSAL = _schema(["proposal_id"], {"proposal_id": _STR})
+# El constructor no elige `manual` ni `import`: con ellos esquivaría los topes de `auto_detect`.
+_ORIGINS = frozenset({Origin.builder_chat, Origin.auto_detect})
 
 
 def _tool(name: str, risk: str, description: str, schema: dict[str, JsonValue]) -> ToolDef:
@@ -50,7 +52,7 @@ BUILDER_TOOL_DEFS: Mapping[str, ToolDef] = MappingProxyType({d.id: d for d in (
     _tool("create_proposal", "write_draft", "Crea una propuesta de cambio en el registry (borrador).",
           _schema(["agent_id", "origin", "title"], {
               "agent_id": _STR, "title": _STR,
-              "origin": {"type": "string", "enum": ["manual", "builder_chat", "auto_detect", "import"]}})),
+              "origin": {"type": "string", "enum": ["builder_chat", "auto_detect"]}})),
     _tool("put_draft", "write_draft", "Reemplaza los cambios del borrador de una propuesta.",
           _schema(["proposal_id", "expected_rev", "changes"], {
               "proposal_id": _STR, "expected_rev": {"type": "integer"}, "changes": _CHANGES})),
@@ -146,8 +148,11 @@ class BuilderToolExecutor:
         return AuditContext(run_id=ctx.run_id, on_behalf_of=f"{who.type.value}:{who.id}")
 
     def _create_proposal(self, args: Args, key: str | None, audit: AuditContext | None) -> JsonValue:
-        p = self._service.create_proposal(self._actor, _text(args, "agent_id"), Origin(_text(args, "origin")),
-                                          _text(args, "title"), idempotency_key=key, audit=audit)
+        origin = Origin(_text(args, "origin"))
+        if origin not in _ORIGINS:
+            raise ValueError("origin")
+        p = self._service.create_proposal(self._actor, _text(args, "agent_id"), origin, _text(args, "title"),
+                                          idempotency_key=key, audit=audit)
         return _proposal(p)
 
     def _put_draft(self, args: Args, key: str | None, audit: AuditContext | None) -> JsonValue:

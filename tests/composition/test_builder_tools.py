@@ -131,3 +131,16 @@ def test_an_unknown_tool_or_version_is_a_key_error() -> None:
         ex.definition(EntityRef(id="registry/publish", version="1.0.0"))
     with pytest.raises(KeyError):
         ex.definition(EntityRef(id="registry/freeze", version="2.0.0"))
+
+
+def test_the_builder_cannot_choose_an_origin_that_escapes_the_autonomous_quotas() -> None:
+    w = World()
+    ex = _executor(w)
+    for origin in ("manual", "import"):
+        result = _create(ex, f"k-{origin}", origin)
+        assert (result.status, result.error) == (ToolStatus.denied, "invalid_args"), origin
+    enum = BUILDER_TOOL_DEFS["registry/create_proposal"].args_schema
+    assert isinstance(enum, dict)
+    properties = enum["properties"]
+    assert isinstance(properties, dict) and properties["origin"] == {
+        "type": "string", "enum": ["builder_chat", "auto_detect"]}
