@@ -4,6 +4,7 @@ from datetime import timedelta
 from typing import Any
 
 from agent_core.actions import ActionManager
+from agent_core.composition.directory import DIRECTORY_TOOL, DirectoryToolExecutor
 from agent_core.domain import (
     ENTITY_KIND,
     Agent,
@@ -28,13 +29,14 @@ from agent_core.domain import (
 )
 from agent_core.handoff import HandoffService
 from agent_core.interpreter import CircuitBreaker, StepContext
-from agent_core.ports import IdKind, UnitOfWorkFactory
+from agent_core.ports import AuthzDecision, IdKind, UnitOfWorkFactory
 from agent_core.turn import TurnConfig, TurnEngine
 from agent_core.views import TokenVault, ViewService
 from testing.builders import principal as make_principal
 from testing.builders import run_state
 from testing.fakes.clock import FakeClock
 from testing.fakes.decision import ScriptedDecision, make_decision
+from testing.fakes.directory import InMemoryDirectory
 from testing.fakes.ids import FakeIds
 from testing.fakes.keys import FakeKeyProvider
 from testing.fakes.registry import InMemoryRegistry
@@ -285,6 +287,13 @@ TAREA_BUG = flow(
 )
 
 
+class _DirectoryAuthz:
+    """`directory/list` only calls `authorize_agent`; everything is allowed in the harness."""
+
+    def authorize_agent(self, principal: Principal, agent: Agent, subject: Any) -> AuthzDecision:
+        return AuthzDecision(allowed=True)
+
+
 class FakeRuntimeFactory:
     """Arma un `TurnRuntime` sobre M2/M7 reales (C1). Cuenta cuántas veces se abre."""
 
@@ -339,6 +348,7 @@ class World:
         config: TurnConfig | None = None,
         chain: Any = None,
         chain_factory: Any = None,
+        directory: bool = False,
     ) -> None:
         from agent_core.views import FieldClassifier
 
@@ -349,6 +359,10 @@ class World:
         self.registry = InMemoryRegistry()
         self.tools = FakeToolExecutor(self.ids)
         self.step_tools: Any = SlowTools(self.tools, self.clock, tool_advance) if tool_advance else self.tools
+        if directory:
+            # `directory/list` is served by composition over the in-memory registry (ADR 0021, spec §4).
+            self.step_tools = DirectoryToolExecutor(
+                self.step_tools, InMemoryDirectory(self.registry), _DirectoryAuthz(), self.ids)
         self.decisions = ScriptedDecision()
         self.responder = ScriptedResponder()
         self.manager = ActionManager(self.ids, self.clock)
@@ -393,6 +407,8 @@ class World:
             ),
             *extra,
         )
+        if directory:
+            self.add(DIRECTORY_TOOL)
         write = tool_def("radicar_pqr", "write_reversible", source="pqr")
         readback = tool_def("obtener_pqr", "read", source="pqr")
         self.add_tool(write, handler=lambda a: {"status": "Open", "pqr_id": "pqr-demo-1", **a})
@@ -605,16 +621,21 @@ class World:
         snapshot_accepts: dict[str, Any] | None = None,
         publish_specialist: bool = True,
         flow: str = "recepcion",
+        seed: bool = True,
+        entry: str = "recepcion",
     ) -> RunState | None:
         """Registers `recepcion` and `recepcion-directa`, the specialist `disputas` and a published `saldos`
         left out of the snapshot, each under `prod` with its own release. Then (unless `open_run=False`, for
         `start_run` tests) opens the reception run waiting on `entender`, with the directory fact and the
         routing decision already in its state. `snapshot_accepts` sets the contract the directory entry
-        shows (by default, the specialist's); `publish_specialist=False` leaves `disputas` without `prod`."""
+        shows (by default, the specialist's); `publish_specialist=False` leaves `disputas` without `prod`.
+        `entry` is the reception agent's entry flow (for runs created with `start_run`).
+        `seed=False` leaves the run without the directory fact and the routing decision (the flow reads
+        them itself: `World(directory=True)`)."""
         contract = accepts if accepts is not None else DEFAULT_ACCEPTS
         disputas = self._specialist("disputas", contract, specialist_over)
         saldos = self._specialist("saldos", DEFAULT_ACCEPTS)
-        recepcion = Agent.model_validate(agent_data("recepcion", entry_flow="recepcion@1.0.0"))
+        recepcion = Agent.model_validate(agent_data("recepcion", entry_flow=f"{entry}@1.0.0"))
         directa = Agent.model_validate(agent_data("recepcion-directa", entry_flow="recepcion-directa@1.0.0"))
         self.add(recepcion, directa, disputas, saldos, RECEPCION, RECEPCION_DIRECTA, RECEPCION_AVISO,
                  UNDERSTAND_MODEL)
@@ -652,8 +673,8 @@ class World:
             active_flow={"flow": f"{flow}@1.0.0", "node_id": "entender"},
             awaiting="slot",
             awaiting_node_id="entender",
-            facts={"directorio": make_fact(directorio)},
-            decisions={"ruta": decision},
+            facts={"directorio": make_fact(directorio)} if seed else {},
+            decisions={"ruta": decision} if seed else {},
             **over,
         )
 
