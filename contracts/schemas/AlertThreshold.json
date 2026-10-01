@@ -1,0 +1,33 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "additionalProperties": false,
+  "description": "Umbral de alerta de producción. No es el umbral del gate.",
+  "properties": {
+    "breach_when": {
+      "enum": [
+        "above",
+        "below"
+      ],
+      "title": "Breach When",
+      "type": "string"
+    },
+    "value": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        }
+      ],
+      "title": "Value"
+    }
+  },
+  "required": [
+    "breach_when",
+    "value"
+  ],
+  "title": "AlertThreshold",
+  "type": "object"
+}

@@ -252,6 +252,8 @@ Validadores: `default_locale ∈ supported_locales`; `ToolDef` de escritura exig
 
 `LanguageDetection` e `InjectionRuleset` son solo datos; la lógica es de M6. El formato de `thresholds_from` (artefacto de calibración) lo define M5.
 
+**`Agent.metrics` (ADR 0020, `SCHEMA_VERSION` 0.5.0).** Lista opcional de `MetricDef` (máximo 32): las métricas que el agente declara para el gate de evaluación y el monitoreo. El motor las ignora en runtime. Los tipos del DSL están en `domain/metrics.py` y el catálogo cerrado de eventos medibles en `domain/metric_catalog.py`. Spec: `docs/specs/2026-09-30-evaluacion-y-metricas-design.md`.
+
 ### 2.5 Esquemas de nodos (`domain/nodes.py`)
 
 Un modelo por tipo, con `id`, `type`, `config` y `next: dict[str, str]` (resultado → id de nodo). Los esquemas salen de la tabla de §5 de la spec general.

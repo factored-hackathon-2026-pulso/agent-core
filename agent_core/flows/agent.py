@@ -1,18 +1,8 @@
 """Chequeos por agente: G0-12 (locales), AG-01 (modo) y referencias del agente (M1 §3.8)."""
 
-from agent_core.domain import (
-    Agent,
-    EntityKind,
-    Flow,
-    PrincipalType,
-    Prompt,
-    RiskClass,
-    StartFlowAction,
-    Template,
-    ToolDef,
-    TransferNode,
-)
+from agent_core.domain import Agent, EntityKind, Flow, Prompt, StartFlowAction, Template
 from agent_core.flows.graph import flow_mode
+from agent_core.flows.metrics import validate_agent_metrics
 from agent_core.flows.refs import TEMPLATE_KINDS, agent_ref_sites, flow_ref_sites, pointer_str
 from agent_core.flows.registry import AuthoringRegistry, ReleaseDecl
 from agent_core.flows.view import RegistryView
@@ -34,17 +24,6 @@ def _locales_message(ref: object, missing: list[str], agent: Agent) -> str:
     return clip(f"{ref} no tiene los locales {shown} del agente {_agent_label(agent)}", 240)
 
 
-def _uses_write_draft(flow: Flow, reg: RegistryView) -> bool:
-    """True si algún nodo del flow referencia una tool `write_draft` (escritura draft o confirm)."""
-    for site in flow_ref_sites(flow):
-        if site.kind is not EntityKind.tool:
-            continue
-        tool = reg.resolve(site.kind, site.ref)
-        if isinstance(tool, ToolDef) and tool.risk_class is RiskClass.write_draft:
-            return True
-    return False
-
-
 def validate_flow_for_agent(flow: Flow, agent: Agent, reg: RegistryView) -> list[Violation]:
     """AG-01 y G0-12 de un flow frente a un agente. Total: una referencia sin resolver se omite (G0-02)."""
     label = clip(f"{flow.id}@{flow.version}", 160)
@@ -53,19 +32,6 @@ def validate_flow_for_agent(flow: Flow, agent: Agent, reg: RegistryView) -> list
     if mode is not None and mode != agent.mode:
         text = f"el flow es de modo {mode} y el agente {_agent_label(agent)} es {agent.mode}"
         found.append(Violation(rule="AG-01", flow=label, message=text))
-    if agent.mode != "conversational" and any(isinstance(n, TransferNode) for n in flow.nodes):
-        found.append(Violation(rule="AG-03", flow=label,
-                               message=f"el agente {_agent_label(agent)} es {agent.mode}: transfer solo en "
-                               "agentes conversacionales"))
-    if _uses_write_draft(flow, reg):
-        outside = sorted({p.value for p in agent.invocable_by} - {PrincipalType.builder.value})
-        if outside:
-            who = ", ".join(outside)
-            text = f"el flow usa una tool write_draft y {_agent_label(agent)} es invocable por {who}"
-            found.append(Violation(rule="AG-02", flow=label, message=clip(text, 240)))
-        if agent.subject_kinds:
-            text = f"el flow usa una tool write_draft y {_agent_label(agent)} declara subject_kinds"
-            found.append(Violation(rule="AG-02", flow=label, message=clip(text, 240)))
     for site in flow_ref_sites(flow):
         if site.kind not in TEMPLATE_KINDS:
             continue
@@ -78,7 +44,8 @@ def validate_flow_for_agent(flow: Flow, agent: Agent, reg: RegistryView) -> list
 
 
 def validate_agent(agent: Agent, reg: RegistryView) -> list[Violation]:
-    """G0-02 sobre las referencias del agente y G0-12 sobre sus plantillas del motor."""
+    """G0-02 sobre las referencias del agente, G0-12 sobre sus plantillas del motor y MT-01 a MT-06
+    sobre sus métricas."""
     found: list[Violation] = []
     source = None
     if isinstance(reg, AuthoringRegistry):
@@ -93,13 +60,7 @@ def validate_agent(agent: Agent, reg: RegistryView) -> list[Violation]:
         elif site.kind == EntityKind.template and (missing := _missing_locales(entity, agent)):
             text = _locales_message(site.ref, missing, agent)
             found.append(Violation(rule="G0-12", path=path, message=text))
-    if agent.accepts is not None:
-        missing = [name for name, value in (("routing", agent.routing), ("understand", agent.understand))
-                   if value is None]
-        if missing or agent.mode != "conversational":
-            what = ", ".join(missing) if missing else "modo conversacional"
-            found.append(Violation(rule="AG-03", path=where,
-                                   message=clip(f"un agente con accepts necesita {what}", 240)))
+    found += validate_agent_metrics(agent, where, reg)
     return sort_violations(found)
 
 

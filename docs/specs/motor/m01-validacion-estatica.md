@@ -314,7 +314,21 @@ El destino de cada uno debe ser una salida segura:
 - **`validate_agent`:**
   - G0-02 sobre `entry_flow`, `understand`, `tools_allowed` y cada campo de `agent.templates`;
   - G0-12 sobre `agent.templates` (las plantillas del motor fuera de los flows).
+  - MT-01 a MT-06 sobre `agent.metrics` (abajo).
 - **Qué flows usa un agente** (lo aplica la CLI): en cada `ReleaseDecl` que lo incluye, `entry_flow ∪ release.flows ∪` los flows de las interrupciones `start_flow`.
+
+**Métricas del agente (ADR 0020).** `validate_agent` valida `Agent.metrics` contra el catálogo cerrado de eventos de M0:
+
+| Regla | Qué rechaza |
+|---|---|
+| MT-01 | `event` fuera del catálogo |
+| MT-02 | campo de `where`, `group_by` o `field` inexistente en el evento; `field` no numérico; valor de tipo distinto al del campo; operador de orden sobre un campo no numérico |
+| MT-03 | id de métrica duplicado dentro del agente |
+| MT-04 | `target_event` de un juez fuera del catálogo |
+| MT-05 | id con el prefijo reservado `platform_` |
+| MT-06 | `judge_profile` que no resuelve a un `model_profile` del registro |
+
+Las formas inconsistentes (`field` en un `count`, `rate` sin denominador, ventana ausente o claves libres) las rechaza el esquema de M0, antes de llegar aquí.
 
 ### 3.9 G0-08: literales en `rule.expr`
 
