@@ -111,6 +111,9 @@ class _Tx:
     def aliases_to(self, release_id: str) -> list[tuple[str, str]]:
         return sorted(k for k, v in self._s.aliases.items() if v == release_id)
 
+    def aliases_named(self, alias: str) -> list[tuple[str, str]]:
+        return sorted((a, rid) for (a, name), rid in self._s.aliases.items() if name == alias)
+
     def insert_eval_run(self, run: EvalRun) -> None:
         self._s.eval_runs.append(run)
 

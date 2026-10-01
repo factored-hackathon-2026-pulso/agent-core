@@ -203,6 +203,11 @@ class _PgTx:
                                (release_id,)).fetchall()
         return [(r[0], r[1]) for r in rows]
 
+    def aliases_named(self, alias: str) -> list[tuple[str, str]]:
+        rows = self._c.execute("SELECT agent_id, release_id FROM reg_aliases WHERE alias = %s ORDER BY 1",
+                               (alias,)).fetchall()
+        return [(r[0], r[1]) for r in rows]
+
     # evaluación y aprobaciones
     def insert_eval_run(self, run: EvalRun) -> None:
         self._c.execute("INSERT INTO reg_eval_runs (eval_run_id, proposal_id, candidate_hash, "
