@@ -11,16 +11,26 @@ from agent_core.domain import (
     Command,
     CommandEmitted,
     CommandEmittedPayload,
+    DirectorySnapshot,
     EntityRef,
     ExpiryEvaluated,
     ExpiryEvaluatedPayload,
+    Fingerprint,
     GuardsOutput,
     Outcome,
     RunClosed,
     RunClosedPayload,
+    RunOrigin,
     RunStarted,
     RunStartedPayload,
     RunState,
+    RunTransferred,
+    RunTransferredPayload,
+    TransferReceived,
+    TransferReceivedPayload,
+    TransferRejected,
+    TransferRejectedPayload,
+    TransferRejectReason,
     TurnCompleted,
     TurnCompletedPayload,
     TurnStages,
@@ -59,7 +69,13 @@ class TurnEvents:
             "ts": self._clock.now(),
         }
 
-    def run_started(self, state: RunState, agent: EntityRef, reportable_attrs: dict[str, str]) -> RunStarted:
+    def run_started(
+        self,
+        state: RunState,
+        agent: EntityRef,
+        reportable_attrs: dict[str, str],
+        origin: RunOrigin | None = None,
+    ) -> RunStarted:
         payload = RunStartedPayload(
             agent=agent,
             mode=state.mode,
@@ -67,6 +83,7 @@ class TurnEvents:
             principal_type=state.principal.type,
             locale=state.locale,
             reportable_attrs=dict(reportable_attrs),
+            origin=origin,
         )
         return RunStarted(**self._base(state, None), payload=payload)
 
@@ -127,3 +144,57 @@ class TurnEvents:
     ) -> RunClosed:
         payload = RunClosedPayload(outcome=outcome, closed_by=closed_by)
         return RunClosed(**self._base(state, turn_id), payload=payload)
+
+    # --- transfer (ADR 0021, spec §3.4): the packet appears only as `packet_fp`, never as values -----------
+
+    def run_transferred(
+        self,
+        state: RunState,
+        turn_id: str,
+        *,
+        transfer_id: str,
+        target_ref: EntityRef,
+        release_id: str,
+        to_run_id: str,
+        reason: str,
+        packet_fp: Fingerprint,
+        snapshot: DirectorySnapshot,
+    ) -> RunTransferred:
+        payload = RunTransferredPayload(
+            transfer_id=transfer_id,
+            to_agent=target_ref,
+            to_release_id=release_id,
+            to_run_id=to_run_id,
+            reason=reason,
+            packet_fp=packet_fp,
+            directory=snapshot.directory,
+            directory_hash=snapshot.hash,
+            candidates=snapshot.choices,
+        )
+        return RunTransferred(**self._base(state, turn_id), payload=payload)
+
+    def transfer_received(
+        self, state: RunState, turn_id: str, transfer_id: str, accepted: list[str], packet_fp: Fingerprint
+    ) -> TransferReceived:
+        payload = TransferReceivedPayload(
+            transfer_id=transfer_id, accepted_slots=sorted(accepted), packet_fp=packet_fp
+        )
+        return TransferReceived(**self._base(state, turn_id), payload=payload)
+
+    def transfer_rejected(
+        self,
+        state: RunState,
+        turn_id: str,
+        transfer_id: str,
+        target: str | None,
+        reason: TransferRejectReason,
+        snapshot: DirectorySnapshot | None,
+    ) -> TransferRejected:
+        payload = TransferRejectedPayload(
+            transfer_id=transfer_id,
+            to_agent=target,
+            reason_code=reason,
+            directory=snapshot.directory if snapshot is not None else None,
+            directory_hash=snapshot.hash if snapshot is not None else None,
+        )
+        return TransferRejected(**self._base(state, turn_id), payload=payload)

@@ -9,6 +9,8 @@ from agent_core.domain import (
     Agent,
     AgentSelector,
     ConfirmAnswer,
+    DecisionModelDef,
+    DirectorySnapshot,
     EntityKind,
     EntityRef,
     Flow,
@@ -22,6 +24,7 @@ from agent_core.domain import (
     ToolDef,
     TurnInput,
     TurnResult,
+    directory_hash,
 )
 from agent_core.handoff import HandoffService
 from agent_core.interpreter import CircuitBreaker, StepContext
@@ -31,7 +34,7 @@ from agent_core.views import TokenVault, ViewService
 from testing.builders import principal as make_principal
 from testing.builders import run_state
 from testing.fakes.clock import FakeClock
-from testing.fakes.decision import ScriptedDecision
+from testing.fakes.decision import ScriptedDecision, make_decision
 from testing.fakes.ids import FakeIds
 from testing.fakes.keys import FakeKeyProvider
 from testing.fakes.registry import InMemoryRegistry
@@ -39,6 +42,7 @@ from testing.fakes.responder import ScriptedResponder
 from testing.fakes.storage import InMemoryAuditSink, InMemoryOutbox, InMemoryStore
 from testing.fakes.tools import FakeToolExecutor, RecordedCall
 from tests.m02.harness import CATALOG, AllowAllAuthz, SlowTools, tool_def
+from tests.m02.harness import fact as make_fact
 from tests.m04.helpers import (
     CommitCounter,
     FakeRuntime,
@@ -216,6 +220,46 @@ PROMPT = Prompt.model_validate(
         "model_profile": "perfil@1.0.0",
     }
 )
+# Reception (ADR 0021): asks for the problem and transfers. The tests seed the directory fact and the
+# routing decision, so the flow needs neither `directory/list` nor `decide` (Task 9 covers them end to end).
+RECEPCION = flow(
+    "recepcion",
+    10,
+    node("entender", "collect", {"slot": "problema", "prompt_ref": "t-pedir@1.0.0"}, ok="transferir",
+         max_attempts="esc"),
+    node(
+        "transferir",
+        "transfer",
+        {"target_from": "decisions.ruta.choice", "directory_from": "directorio",
+         "packet": {"reason": "routed", "slots": ["problema"]}},
+        rejected="esc",
+    ),
+    node("esc", "escalate", {"reason_code": "policy:transfer_rejected"}),
+)
+# A reception whose entry node is the transfer: reached during `start_run` (P6, `no_turn`).
+RECEPCION_DIRECTA = flow(
+    "recepcion-directa",
+    10,
+    node(
+        "transferir",
+        "transfer",
+        {"target_from": "decisions.ruta.choice", "directory_from": "directorio",
+         "packet": {"reason": "routed", "slots": []}},
+        rejected="esc",
+    ),
+    node("esc", "escalate", {"reason_code": "policy:transfer_rejected"}),
+)
+UNDERSTAND_MODEL = DecisionModelDef.model_validate({
+    "id": "understand", "version": "1.0.0",
+    "output_schema": {"type": "object", "additionalProperties": True},
+    "calibrated_fields": [], "input_view": [], "providers": [{"provider": "llm_structured"}],
+    "calibration": {"method": "none"}, "thresholds_from": None,
+})
+RECEPTION_RELEASE_ID = "rel-recepcion-1"
+SPECIALIST_RELEASE_ID = "rel-disputas-1"
+OTHER_RELEASE_ID = "rel-saldos-1"
+DIRECTORY = "customer-care"
+DEFAULT_ACCEPTS: dict[str, Any] = {"slots": {"problema": {"type": "string", "required": True}}}
 TAREA_BUG = flow(
     "tarea-bug",
     10,
@@ -268,6 +312,7 @@ class World:
         recorder_advance: timedelta = timedelta(0),
         tool_advance: timedelta = timedelta(0),
         config: TurnConfig | None = None,
+        chain: Any = None,
     ) -> None:
         from agent_core.views import FieldClassifier
 
@@ -347,7 +392,7 @@ class World:
             ids=self.ids,
         )
         self.audit = InMemoryAuditSink(self.store)
-        self.chain = PlainChain()
+        self.chain = chain if chain is not None else PlainChain()
         self._config = config or TurnConfig()
         self.engine = TurnEngine(**self.engine_kwargs())
         self._n = 0
@@ -499,6 +544,77 @@ class World:
             uow.commit()
         self.uow_factory.commits = 0  # type: ignore[attr-defined]
         return out.confirmation
+
+    # --- transfer (ADR 0021) -------------------------------------------------------------------------
+
+    specialist_release_id = SPECIALIST_RELEASE_ID
+
+    def _specialist(
+        self, agent_id: str, accepts: dict[str, Any], over: dict[str, Any] | None = None
+    ) -> Agent:
+        data = agent_data(
+            agent_id,
+            entry_flow="disputa@1.0.0",
+            understand="understand@1.0.0",
+            routing={"directory": DIRECTORY, "summary": f"{agent_id} (sintético)", "examples": []},
+            accepts=accepts,
+        )
+        return Agent.model_validate(data | (over or {}))
+
+    def reception(
+        self,
+        *,
+        choice: str = "disputas",
+        specialist_over: dict[str, Any] | None = None,
+        accepts: dict[str, Any] | None = None,
+        origin_depth: int | None = None,
+        open_run: bool = True,
+    ) -> RunState | None:
+        """Registers `recepcion` and `recepcion-directa`, the specialist `disputas` and a published `saldos`
+        left out of the snapshot, each under `prod` with its own release. Then (unless `open_run=False`, for
+        `start_run` tests) opens the reception run waiting on `entender`, with the directory fact and the
+        routing decision already in its state."""
+        contract = accepts if accepts is not None else DEFAULT_ACCEPTS
+        disputas = self._specialist("disputas", contract, specialist_over)
+        saldos = self._specialist("saldos", DEFAULT_ACCEPTS)
+        recepcion = Agent.model_validate(agent_data("recepcion", entry_flow="recepcion@1.0.0"))
+        directa = Agent.model_validate(agent_data("recepcion-directa", entry_flow="recepcion-directa@1.0.0"))
+        self.add(recepcion, directa, disputas, saldos, RECEPCION, RECEPCION_DIRECTA, UNDERSTAND_MODEL)
+        full = self.release()
+        for agent_id in ("recepcion", "recepcion-directa"):
+            self.registry.add_release(full.model_copy(update={"id": RECEPTION_RELEASE_ID}), agent_id)
+        self.registry.add_release(full.model_copy(update={"id": SPECIALIST_RELEASE_ID}), "disputas")
+        self.registry.add_release(full.model_copy(update={"id": OTHER_RELEASE_ID}), "saldos")
+        entry = {
+            "agent_id": "disputas", "release_id": SPECIALIST_RELEASE_ID, "summary": "disputas (sintético)",
+            "examples": [], "accepts": contract, "supported_locales": ["es", "pt"],
+        }
+        snapshot = DirectorySnapshot.model_validate({
+            "directory": DIRECTORY,
+            "hash": directory_hash([("disputas", SPECIALIST_RELEASE_ID), ("saldos", OTHER_RELEASE_ID)]),
+            "entries": [entry],
+        })
+        directorio = {**snapshot.model_dump(mode="json"), "choices": snapshot.choices}
+        if not open_run:
+            return None
+        decision = make_decision({"choice": choice}, {"choice": True}).decision
+        over: dict[str, Any] = {}
+        if origin_depth is not None:
+            over["origin"] = {
+                "kind": "transfer", "transfer_id": "transfer-0000", "from_run_id": "run-0000",
+                "from_agent": "recepcion@1.0.0", "from_release_id": RELEASE_ID, "from_event_hash": "c" * 64,
+                "depth": origin_depth,
+            }
+        return self.open_run(
+            agent="recepcion@1.0.0",
+            release=RECEPTION_RELEASE_ID,
+            active_flow={"flow": "recepcion@1.0.0", "node_id": "entender"},
+            awaiting="slot",
+            awaiting_node_id="entender",
+            facts={"directorio": make_fact(directorio)},
+            decisions={"ruta": decision},
+            **over,
+        )
 
     def agent_selector(self, agent_id: str = "atencion") -> AgentSelector:
         return AgentSelector(id=agent_id, alias="prod")

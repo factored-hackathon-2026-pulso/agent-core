@@ -77,6 +77,7 @@ from agent_core.turn.refs import pinned_ref
 from agent_core.turn.results import awaiting_for, build_turn_result
 from agent_core.turn.sweep import Sweeper, SweepReport
 from agent_core.turn.templates import render_engine
+from agent_core.turn.transfer import Transferer, event_target
 
 
 class TurnEngine:
@@ -117,6 +118,7 @@ class TurnEngine:
         self._events = TurnEvents(ids, clock)
         self._closer = Closer(actions=actions, handoff=handoff, audit=audit, clock=clock, registry=registry)
         self._env = Env(closer=self._closer, registry=registry)
+        self._transferer = Transferer(registry, ids, authz, self._config.max_transfers_per_session)
         self._sweeper = Sweeper(
             uow_factory=uow_factory,
             registry=registry,
@@ -182,10 +184,49 @@ class TurnEngine:
         return self._registry.get(pinned_ref(release, EntityKind.flow, ref), Flow)
 
     def _advance(self, frame: TurnFrame) -> None:
-        """Paso 11: `advance` y su traducción (paso 12)."""
+        """Paso 11: `advance` y su traducción (paso 12). Una transferencia se resuelve aquí (ADR 0021)."""
         with frame.meter.stage("flow"):
             outcome = advance(frame.state, self._step_ctx(frame), frame.resume)
             self._closer.apply_outcome(frame, outcome)
+            self._resolve_transfer(frame)
+
+    def _resolve_transfer(self, frame: TurnFrame) -> None:
+        """Spec §5.2: validate the request of a `transfer` node. A rejection emits `transfer_rejected` and the
+        flow goes on along `rejected` in this same turn; a valid transfer emits `run_transferred` and
+        closes the origin (`transferred`, `closed_by=transfer`). The target run opens from `transfer_plan`."""
+        request = frame.pending_transfer
+        if request is None:
+            return
+        frame.pending_transfer = None
+        transfer_id = self._transferer.new_transfer_id()
+        plan = self._transferer.validate(frame, request, transfer_id)
+        if isinstance(plan, str):
+            frame.buffer.add(self._events.transfer_rejected(
+                frame.state, frame.turn_id, transfer_id, event_target(request), plan, request.snapshot))
+            frame.state = self._follow(frame.state, request.node_id, "rejected")
+            frame.resume = NO_RESUME
+            # Bounded: `rejected` cannot reach this `transfer` again without a node that waits (M1 G0-04).
+            outcome = advance(frame.state, self._step_ctx(frame), frame.resume)
+            self._closer.apply_outcome(frame, outcome)
+            self._resolve_transfer(frame)
+            return
+        frame.buffer.add(self._events.run_transferred(
+            frame.state, frame.turn_id, transfer_id=plan.transfer_id, target_ref=plan.target_ref,
+            release_id=plan.release.id, to_run_id=plan.to_run_id, reason=plan.packet.reason,
+            packet_fp=plan.packet_fp, snapshot=plan.snapshot))
+        self._closer.close_run(frame, Outcome.transferred, "transfer")
+        frame.transfer_plan = plan
+
+    def _follow(self, state: RunState, node_id: str, key: str) -> RunState:
+        """Moves the pointer from the node M2 stopped on along `next[key]`."""
+        assert state.active_flow is not None
+        flow = self._registry.get(state.active_flow.flow, Flow)
+        node = next(n for n in flow.nodes if n.id == node_id)
+        target = node.next.get(key)
+        if target is None:
+            raise IllegalTransition(f"el nodo {node_id} no tiene transición para {key!r}")
+        active = state.active_flow.model_copy(update={"node_id": target})
+        return state.model_copy(update={"active_flow": active})
 
     def _record(self, frame: TurnFrame) -> None:
         """Paso 13: transcript en vista `model` y `transcript_fp` en los `response_emitted` del turno."""
