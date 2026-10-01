@@ -1,6 +1,33 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "$defs": {
+    "AcceptedSlot": {
+      "additionalProperties": false,
+      "description": "One slot of the input contract: its type and whether the packet must carry it.",
+      "properties": {
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "type": {
+          "enum": [
+            "string",
+            "integer",
+            "decimal",
+            "date",
+            "boolean"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "AcceptedSlot",
+      "type": "object"
+    },
     "AuthLevel": {
       "description": "Nivel de autenticación; se compara por rango (`anonymous < session < step_up`).",
       "enum": [
@@ -136,11 +163,68 @@
       ],
       "title": "RefSpec",
       "type": "object"
+    },
+    "RoutingCard": {
+      "additionalProperties": false,
+      "description": "What a specialist solves, as shown to the reception agent (spec §3.1).",
+      "properties": {
+        "directory": {
+          "pattern": "^[a-z0-9][a-z0-9_/-]*$",
+          "title": "Directory",
+          "type": "string"
+        },
+        "examples": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Examples",
+          "type": "array"
+        },
+        "summary": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "directory",
+        "summary"
+      ],
+      "title": "RoutingCard",
+      "type": "object"
+    },
+    "TransferContract": {
+      "additionalProperties": false,
+      "description": "The slots a specialist accepts in a transfer packet (spec §3.1, D6).",
+      "properties": {
+        "slots": {
+          "additionalProperties": {
+            "$ref": "#/$defs/AcceptedSlot"
+          },
+          "title": "Slots",
+          "type": "object"
+        }
+      },
+      "title": "TransferContract",
+      "type": "object"
     }
   },
   "additionalProperties": false,
   "description": "Agente descrito como datos versionados: flow de entrada, límites y plantillas (M0 §2.4).",
   "properties": {
+    "accepts": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TransferContract"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "budgets": {
       "$ref": "#/$defs/Budgets"
     },
@@ -205,6 +289,17 @@
       ],
       "title": "On Clarify Exhausted",
       "type": "string"
+    },
+    "routing": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RoutingCard"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "slots_model": {
       "anyOf": [

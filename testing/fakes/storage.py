@@ -51,7 +51,7 @@ class InMemoryStore:
     """Estado compartido entre UoWs. `lock` serializa lease, commit y lecturas de auditoría/outbox."""
 
     runs: dict[str, RunState] = field(default_factory=dict)
-    sessions: dict[str, str] = field(default_factory=dict)
+    sessions: dict[str, list[str]] = field(default_factory=dict)
     leases: dict[str, _Lease] = field(default_factory=dict)
     turn_results: dict[tuple[str, str], TurnResult] = field(default_factory=dict)
     idempotency: dict[tuple[PrincipalKey, str], tuple[str, RunResult]] = field(default_factory=dict)
@@ -140,13 +140,18 @@ class InMemoryUoW:
             state = self._runs.get(run_id) or self._store.runs.get(run_id)
             return state.model_copy(deep=True) if state is not None else None
 
-    def find_run_by_session(self, session_id: str) -> RunState | None:
-        for state in self._runs.values():
-            if state.session_id == session_id:
-                return state.model_copy(deep=True)
+    def list_runs_by_session(self, session_id: str) -> list[RunState]:
         with self._store.lock:
-            run_id = self._store.sessions.get(session_id)
-        return self.load_run(run_id) if run_id is not None else None
+            ids = list(self._store.sessions.get(session_id, []))
+        ids += [rid for rid, s in self._runs.items() if s.session_id == session_id and rid not in ids]
+        return [state for rid in ids if (state := self.load_run(rid)) is not None]
+
+    def find_run_by_session(self, session_id: str) -> RunState | None:
+        runs = self.list_runs_by_session(session_id)
+        open_runs = [r for r in runs if r.status == "open"]
+        if open_runs:
+            return open_runs[-1]
+        return runs[-1] if runs else None
 
     def save_run(self, state: RunState, expected_version: int) -> RunState:
         self._check_open()
@@ -252,7 +257,9 @@ class InMemoryUoW:
             store.reindex_inactive(store.runs.get(run_id), state)
             store.runs[run_id] = state
             if state.session_id is not None:
-                store.sessions[state.session_id] = run_id
+                ids = store.sessions.setdefault(state.session_id, [])
+                if run_id not in ids:
+                    ids.append(run_id)
         store.turn_results.update(self._turn_results)
         for scoped, record in self._idempotency.items():
             store.idempotency.setdefault(scoped, record)  # el primer registro gana: un replay no lo pisa

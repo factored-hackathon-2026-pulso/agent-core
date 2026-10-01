@@ -9,6 +9,7 @@ from agent_core.flows.refs import flow_ref_sites, pointer_str
 from agent_core.flows.violations import Violation, clip, pointer_segment
 
 MAX_LISTED_MEMBERS = 10
+CHOICE_RESULTS = frozenset({"chosen", "none", "low_confidence"})  # decide with runtime choices (ADR 0021)
 
 
 def g0_02(ctx: Ctx) -> Iterator[Violation]:
@@ -42,7 +43,12 @@ def g0_03(ctx: Ctx) -> Iterator[Violation]:
         expected: frozenset[str] | None = RESULTS.get(node_kind(node) or "", frozenset())
         if isinstance(node, KnowledgeNode) and node.config.mode == "read":
             expected = frozenset({"ok", "not_found", "denied"})  # `low_confidence` es solo de navigate
-        if isinstance(node, DecideNode):
+        if isinstance(node, DecideNode) and node.config.choices_from is not None:
+            if node.config.branch_on != "choice":
+                yield ctx.v("G0-03", ident, "un decide con choices_from ramifica por 'choice'",
+                            "/config/branch_on")
+            expected = CHOICE_RESULTS
+        elif isinstance(node, DecideNode):
             model = ctx.model(node.config.model)
             if model is None:
                 expected = None  # la referencia rota ya es G0-02

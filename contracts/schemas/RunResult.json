@@ -53,6 +53,28 @@
       "title": "ConfirmationPrompt",
       "type": "object"
     },
+    "EntityRef": {
+      "additionalProperties": false,
+      "description": "Referencia exacta de runtime: `id@X.Y.Z`.",
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_/-]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "version": {
+          "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "version"
+      ],
+      "title": "EntityRef",
+      "type": "object"
+    },
     "JsonValue": {
       "anyOf": [
         {
@@ -128,7 +150,8 @@
         "completed",
         "failed",
         "abandoned",
-        "escalated"
+        "escalated",
+        "transferred"
       ],
       "title": "Outcome",
       "type": "string"
@@ -156,6 +179,17 @@
       "additionalProperties": false,
       "description": "Resultado de un turno: mensajes, estado esperado y outcome (M0 §2.8).",
       "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EntityRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "awaiting": {
           "$ref": "#/$defs/Awaiting"
         },

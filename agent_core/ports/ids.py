@@ -16,6 +16,7 @@ class IdKind(StrEnum):
     message = "message"
     proposal = "proposal"
     eval_run = "eval_run"
+    transfer = "transfer"
 
 
 class IdSource(Protocol):

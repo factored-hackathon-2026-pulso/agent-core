@@ -8,6 +8,7 @@ from decimal import Decimal
 from agent_core.decision.calibration.artifact import CalibrationArtifact, CalibrationSource
 from agent_core.decision.schema import check_schema_supported, validate_output
 from agent_core.decision.types import (
+    WILDCARD_LABEL,
     DecisionConfigError,
     DecisionOutput,
     DecisionProvider,
@@ -170,10 +171,12 @@ class DecisionService:
         if p_cal is None or artifact is None or name not in value:
             return False
         item = value[name]
-        key = (name, value_label(item), provider, locale)
-        if key not in artifact.thresholds:
+        threshold = artifact.thresholds.get((name, value_label(item), provider, locale))
+        if threshold is None:  # a specific label wins; otherwise the "*" wildcard (runtime choices)
+            threshold = artifact.thresholds.get((name, WILDCARD_LABEL, provider, locale))
+        if threshold is None:
             return False
-        return p_cal >= artifact.thresholds[key]
+        return p_cal >= threshold
 
     @staticmethod
     def _check_inputs(definition: DecisionModelDef, inputs: dict[str, JsonValue]) -> None:

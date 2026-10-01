@@ -189,6 +189,30 @@ def check_find_run_by_session(b: Backend) -> None:
         assert uow.find_run_by_session("session-nope") is None
 
 
+def check_session_prefers_the_open_run_and_lists_all(b: Backend) -> None:
+    closed = {"status": "closed", "outcome": "transferred", "closed_at": NOW, "inactive_after": None}
+    with b.factory() as uow:
+        uow.save_run(run_state(run_id="run-a", **closed), 0)
+        uow.save_run(run_state(run_id="run-b"), 0)  # same session, open
+        found = uow.find_run_by_session("session-0001")
+        assert found is not None and found.run_id == "run-b"  # reads its own writes
+        uow.commit()
+    with b.factory() as uow:
+        found = uow.find_run_by_session("session-0001")
+        assert found is not None and found.run_id == "run-b"
+        assert [r.run_id for r in uow.list_runs_by_session("session-0001")] == ["run-a", "run-b"]
+        assert uow.list_runs_by_session("session-nope") == []
+
+
+def check_session_without_open_runs_returns_the_newest(b: Backend) -> None:
+    closed = {"status": "closed", "outcome": "resolved", "closed_at": NOW, "inactive_after": None}
+    _seed(b.factory, run_id="run-a", **closed)
+    _seed(b.factory, run_id="run-b", **closed)
+    with b.factory() as uow:
+        found = uow.find_run_by_session("session-0001")
+        assert found is not None and found.run_id == "run-b"
+
+
 def check_save_run_revalidates_state(b: Backend) -> None:
     broken = run_state()
     broken.__dict__["outcome"] = Outcome.resolved  # salta la validación de asignación: la UoW revalida

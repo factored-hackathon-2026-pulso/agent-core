@@ -25,6 +25,7 @@ from agent_core.domain.knowledge import (
 from agent_core.domain.nodes import Node, PositiveTimedelta
 from agent_core.domain.outcomes import Mode
 from agent_core.domain.refs import EntityKind, EntityRef, RefSpec, require_exact_refs
+from agent_core.domain.transfer import RoutingCard, TransferContract
 
 # Dinero y tarifas: `Decimal` finito (nunca `float`; NaN e Infinity se rechazan).
 PositiveMoney = Annotated[Decimal, Field(gt=0, allow_inf_nan=False)]
@@ -76,6 +77,8 @@ class Agent(Model):
     on_clarify_exhausted: Literal["end", "escalate"]
     default_target_queue: str = Field(min_length=1)
     max_repair_turns_per_run: PositiveInt = 8
+    routing: RoutingCard | None = None  # without a card the agent is in no directory (ADR 0021)
+    accepts: TransferContract | None = None  # without a contract the agent receives no transfers
 
     @model_validator(mode="after")
     def _default_locale_supported(self) -> "Agent":

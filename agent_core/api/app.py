@@ -26,6 +26,7 @@ from agent_core.api.schemas import (
     publish_run,
     publish_turn,
     run_summary,
+    session_lineage,
 )
 from agent_core.api.tracing import install_tracing, request_trace_id
 from agent_core.domain import EngineError, Principal, ProblemCode, RunInput, RunState, TurnInput
@@ -189,6 +190,25 @@ def create_app(deps: ApiDeps) -> FastAPI:
     ) -> JsonResponse:
         _, run = readable_run(request, run_id, authorization, on_behalf_of)
         return JsonResponse(run_summary(run, request_trace_id(request)))
+
+    @router.get(
+        "/sessions/{session_id}/lineage", summary="Linaje de la sesión", operation_id="get_session_lineage"
+    )
+    def get_session_lineage(
+        request: Request,
+        session_id: str,
+        authorization: Authorization = None,
+        on_behalf_of: OnBehalfOfHeader = None,
+    ) -> JsonResponse:
+        admitted = admit(request, authorization, on_behalf_of, session_id)
+        if admitted.run is None:
+            raise EngineError(ProblemCode.not_found, "sesión")
+        with deps.uow_factory() as uow:
+            runs = uow.list_runs_by_session(session_id)
+        trace_id = request_trace_id(request)
+        for run in runs:
+            authorizer.authorize_read(admitted, run, trace_id=trace_id)
+        return JsonResponse(session_lineage(session_id, runs, trace_id))
 
     @router.get("/runs/{run_id}/transcript", summary="Transcript renderizado", operation_id="get_transcript")
     def get_transcript(

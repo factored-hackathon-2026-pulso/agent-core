@@ -11,7 +11,8 @@
         "completed",
         "failed",
         "abandoned",
-        "escalated"
+        "escalated",
+        "transferred"
       ],
       "title": "Outcome",
       "type": "string"

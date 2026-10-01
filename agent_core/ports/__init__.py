@@ -4,6 +4,7 @@ from agent_core.ports.audit import AuditSink, Outbox
 from agent_core.ports.authz import AuthzDecision, AuthzPort
 from agent_core.ports.clock import Clock
 from agent_core.ports.costs import CostCounters
+from agent_core.ports.directory import AgentDirectory, DirectoryMember
 from agent_core.ports.identity import IdentityVerifier
 from agent_core.ports.ids import IdKind, IdSource
 from agent_core.ports.keys import KeyProvider, KeyPurpose
@@ -15,8 +16,8 @@ from agent_core.ports.transcript import TranscriptStore
 from agent_core.ports.uow import UnitOfWork, UnitOfWorkFactory
 
 __all__ = [
-    "AuditSink", "AuthzDecision", "AuthzPort", "Clock", "CostCounters", "GenerationResult", "IdKind",
-    "IdSource", "IdentityVerifier", "KeyProvider", "KeyPurpose", "KnowledgeSource", "LLMGateway", "Outbox",
-    "RegistryPort", "ToolCallContext", "ToolExecutor", "ToolResult", "ToolStatus", "TranscriptStore",
-    "UnitOfWork", "UnitOfWorkFactory",
+    "AgentDirectory", "AuditSink", "AuthzDecision", "AuthzPort", "Clock", "CostCounters", "DirectoryMember",
+    "GenerationResult", "IdKind", "IdSource", "IdentityVerifier", "KeyProvider", "KeyPurpose",
+    "KnowledgeSource", "LLMGateway", "Outbox", "RegistryPort", "ToolCallContext", "ToolExecutor",
+    "ToolResult", "ToolStatus", "TranscriptStore", "UnitOfWork", "UnitOfWorkFactory",
 ]

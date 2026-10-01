@@ -101,6 +101,11 @@ class Closer:
         frame.step_up = outcome.step_up
         frame.stop = outcome.stop
         frame.output = outcome.output
+        if outcome.transfer is not None:
+            # ADR 0021: the pointer stays on the `transfer` node; the engine validates the request and then
+            # transfers or follows `rejected` (`TurnEngine._resolve_transfer`).
+            frame.pending_transfer = outcome.transfer
+            return
         if outcome.escalation is not None:
             self.escalate(frame, outcome.escalation)
         elif outcome.stop is Stop.terminal and outcome.end_outcome is not None:

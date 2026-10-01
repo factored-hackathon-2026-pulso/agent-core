@@ -1,6 +1,6 @@
 # M2 — Intérprete de nodos
 
-- Estado: implementado (rev. 4: nodo `knowledge`, M12) · Fase 1
+- Estado: implementado (rev. 5: `decide` con opciones y nodo `transfer`, ADR 0021) · Fase 1
 - Paquete: `agent_core.interpreter`
 - Origen: spec general §4.7, §5, §8 (slots, hechos, decisiones), §10 (fallas de tools y presupuesto)
 - ADRs: 0004 (flows deterministas), 0010 (step-up), 0011 (`compute`), 0009 (`rule` con `policy`)
@@ -43,6 +43,12 @@ class StepOutcome:
     confirmation: ConfirmationPrompt | None; step_up: StepUpPrompt | None
     output: dict | None               # `end.output_map` en modo task (D3)
     rejected_drafts: list[RejectedDraft]   # borradores que M8 rechazó en `respond(generate)` (D3)
+    transfer: TransferRequest | None = None   # nodo `transfer` (ADR 0021): lo resuelve M4
+
+@dataclass(frozen=True)
+class TransferRequest:                # lo que pide un nodo `transfer`; los valores son `full` y no salen a eventos
+    node_id: NodeId; target: str | None; snapshot: DirectorySnapshot | None
+    reason: str; slots: dict[str, JsonValue]
 
 def begin_turn(state: RunState, clock: Clock) -> RunState             # reinicia contadores por turno (D4)
 def advance(state: RunState, ctx: StepContext, resume: Resume) -> StepOutcome
@@ -84,6 +90,7 @@ Rutas permitidas en `args`, plantillas y `rule`: `slots.<x>`, `facts.<x>.value[.
 | Nodo | Comportamiento |
 |---|---|
 | `decide` | `ctx.decisions.decide(model, input_view ⊆ vista model, locale)`. Guarda en `decisions[save_as]`. Resultado = `branch_on` si supera su umbral, si no `low_confidence` (la decisión de umbral la toma M5) |
+| `decide` con `choices_from` | Opciones en runtime (ADR 0021, P3). Lee la lista de `choices_from` en vista `model` (por eso `choices` debe estar clasificado `public` en el catálogo del despliegue; si no, se tokeniza) y la deduplica conservando el orden. Lista ausente, no-lista o vacía → `none` sin llamar al modelo. Si una opción real se llama `none` → `low_confidence` sin llamar al modelo (el esquema ya añade `none`). Si no, `ctx.decisions.decide_choice(model, input_view, choices, locale)`; guarda en `decisions[save_as]`. Ramas: `none` si el modelo elige `none`; `chosen` si elige una opción de la lista y supera el umbral (`"*"`, M5 §3.1); `low_confidence` en cualquier otro caso (opción fuera de lista, bajo el umbral, ruta de `input_view` ausente) |
 | `rule` | Evalúa `policy@v.expr` o `expr` con el evaluador JSON Logic sobre `facts.*.value` (vista `full`) y `slots` con `status: validated`. Un slot `claimed` se trata como ausente (`null`). Emite `rule_evaluated {policy@v?, inputs (audit), result}` |
 | `collect` | Sin `resume`: emite la plantilla `prompt_ref` y para en `awaiting_slot`. Con `slot_answer`: aplica `validator` (tipo, regex, enum o `decide`); si pasa, `slots[slot] = {value, validated}` → `ok`; si no, `node_attempts += 1` y repregunta; al llegar a `max_attempts` → `max_attempts`. Cada reintento suma a `repair_turns_used` (M4 lo lee) (D15). Validadores (D14): `type` (`string` no vacío, `integer`, `decimal`), `regex` (`re.fullmatch`), `enum` (sin distinguir mayúsculas); `decide` no está soportado y levanta `NotImplementedError` (Abierto) |
 | `tool` lectura/`compute` | `ctx.tools.execute(...)` con `bound_params`. `ok` → `facts[save_as] = {value: result_full, source: {tool|compute, ref, inputs}}`. `inputs` = `fact_id`/`decision_id` leídos en `args`. Retries: ≤2 solo si `tool_def.idempotent` y el estado fue `timeout`/`error`. Circuit breaker simple por `tool@v` en el proceso: se abre con 5 fallas en 60 s, se cierra al envejecer y un `ok` las borra; el corte emite `tool_called` con `error="circuit_open"` y `latency_ms=0` (D10). Emite `tool_called` por intento, con `latency_ms` medido con `Clock.monotonic_ns()` alrededor de `execute` (un corte por circuit breaker da `0`) |
@@ -92,6 +99,7 @@ Rutas permitidas en `args`, plantillas y `rule`: `slots.<x>`, `facts.<x>.value[.
 | `verify` | `ctx.actions.verify(...)` → `verified`/`failed`; guarda el readback en `facts[save_as]` |
 | `respond` | `template_ref`: M2 renderiza la plantilla del `locale` con los hechos (vista `model`); emite `response_emitted` con `kind=template` (`validator.ok`, `llm=None`, `claims` de M1; D6 resuelto 2026-09-30); M4 rellena `transcript_fp`. `generate`: `ctx.responder.generate(...)`; en modo degradado usa `fallback_template_ref` sin llamar al modelo. Si `await: true`, avanza el puntero a `next` y para en `awaiting_user` (D16); si no, sigue por `next` |
 | `knowledge` | Delega en `ctx.knowledge.read(node, state, KnowledgeContext(release, clock, ids, views, vault, turn_id))` (M12): M12 escribe `RunState.pages` y construye `knowledge_read`; el handler solo entrega el estado nuevo, el evento y la rama (`ok`, `not_found` o `denied`). No usa el modelo, así que el modo degradado no lo impide. Sin `ctx.knowledge` lanza `IllegalTransition` (cableado, como el `AgentPort`) |
+| `transfer` | Construye `TransferRequest{node_id, target, snapshot, reason, slots}`: `target` = `decisions.<x>.choice` salvo `none` o ausente (`None`); `snapshot` = el `DirectorySnapshot` del hecho `directory_from` (`None` si no valida); `slots` = los de `packet.slots` con `status: validated` (los ausentes o `claimed` se omiten). Devuelve `stop = terminal` **sin** `result_key`: el puntero se queda en el nodo `transfer` y M4 decide (transfiere o sigue por `rejected`). No exige que `transfer` esté en `TERMINAL` (M1): el bucle solo mira `stop` |
 | `escalate` | Devuelve `EscalationRequest{reason_code, target_queue = agent.default_target_queue, priority: priority_expr evaluada o "normal"}` (D13); `stop = terminal` |
 | `end` | `end_outcome = config.outcome`; aplica `output_map` en modo task; `stop = terminal` |
 
@@ -150,6 +158,7 @@ ReAct acotado de **solo lectura y cálculo**. Lo usan el copiloto del asesor y e
 - Un `rule` nunca lee `decisions.*` ni slots `claimed`.
 - Una escritura solo ocurre por `ctx.actions`; M2 nunca llama a una tool `write_*` directamente.
 - Los hechos guardan la vista `full`; todo lo que sale a modelos pasa por `ctx.views`.
+- `transfer` nunca mueve el puntero: lo decide M4.
 
 ## 5. Fallas
 
@@ -191,6 +200,8 @@ Tabla por tipo de nodo con `FakeToolExecutor`, `ScriptedProvider` y `FakeClock`.
 | T-M2-17 | `disputa-cargo` con monto alto escala por `policy:escalamiento-disputa-monto` sin escribir nada (`test_disputa_cargo`) | — |
 | T-M2-18 | Interfaz pública exacta e importar `agent_core.interpreter` no arrastra guards/handoff/audit/turn/api/registry/adapters (`test_public_api`) | — |
 | T-M2-19 | Nodo `knowledge` (M12): sigue por `ok`, `not_found` y `denied`; emite `knowledge_read` después de `node_entered`; fuente caída sale por `not_found`; `navigate` cerrado; sin servicio es error de cableado (`tests/m02/test_knowledge.py`) | — |
+| T-M2-20 | `decide` con `choices_from`: `chosen`/`none`/`low_confidence`, lista vacía sin llamar al modelo, opción fuera de lista, duplicados deduplicados y opción real `none` sin llamar al modelo (`tests/m02/test_decide_choices.py`) | — |
+| T-M2-21 | Nodo `transfer`: `Stop.terminal` con `TransferRequest`, puntero en `transfer`, sin decisión → `target=None`, slots `claimed` no viajan (`tests/m02/test_transfer.py`) | — |
 
 Mapeo de archivos: 01 y 11 → `test_disputa_cargo`; 02/03/12 → `test_rule`; 04/09 → `test_tool` y `test_write`; 05 → `test_collect`; 06/07 → `test_tool` y `test_write`; 08 → `test_loop`, `test_budgets`, `test_decide`, `test_respond_generate`; 10 → `test_respond_generate`.
 

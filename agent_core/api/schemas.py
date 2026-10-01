@@ -1,5 +1,6 @@
 """Cuerpos de request y forma publicada de las respuestas (contrato en `contracts/openapi.json`)."""
 
+from collections.abc import Sequence
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, WithJsonSchema, model_validator
@@ -111,5 +112,39 @@ def run_summary(run: RunState, trace_id: str) -> dict[str, Any]:
         "locale": run.locale,
         "awaiting": to_jsonable(run.awaiting),
         "handoff_ref": run.handoff_ref,
+        "trace_id": trace_id,
+    }
+
+
+def session_lineage(session_id: str, runs: Sequence[RunState], trace_id: str) -> dict[str, Any]:
+    """`GET /v1/sessions/{id}/lineage`: runs in order with their release and how each one started (ADR 0021).
+
+    `from_event_hash` is an integrity datum of the transfer link and is never published. The directory hash
+    is not part of `RunState`, so it is not published either (see the pending item in m09).
+    """
+
+    def origin(run: RunState) -> dict[str, Any] | None:
+        if run.origin is None:
+            return None
+        return {
+            "transfer_id": run.origin.transfer_id,
+            "from_run_id": run.origin.from_run_id,
+            "from_agent": str(run.origin.from_agent),
+            "from_release_id": run.origin.from_release_id,
+        }
+
+    return {
+        "session_id": session_id,
+        "runs": [
+            {
+                "run_id": r.run_id,
+                "agent": str(r.agent),
+                "release": r.release,
+                "status": r.status,
+                "outcome": to_jsonable(r.outcome),
+                "origin": origin(r),
+            }
+            for r in runs
+        ],
         "trace_id": trace_id,
     }

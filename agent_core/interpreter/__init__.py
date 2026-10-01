@@ -2,7 +2,7 @@
 
 from agent_core.interpreter.breaker import CircuitBreaker
 from agent_core.interpreter.budgets import begin_turn
-from agent_core.interpreter.context import NO_RESUME, Resume, StepContext, StepOutcome, Stop
+from agent_core.interpreter.context import NO_RESUME, Resume, StepContext, StepOutcome, Stop, TransferRequest
 from agent_core.interpreter.jsonlogic import evaluate, truthy
 from agent_core.interpreter.loop import advance, start_flow
 from agent_core.interpreter.ports import (
@@ -23,6 +23,6 @@ from agent_core.interpreter.projection import Projector
 __all__ = [
     "NO_RESUME", "AgentFinal", "AgentObservation", "AgentPort", "AgentRequest", "AgentStepResult",
     "AgentToolCall", "CircuitBreaker", "DecisionPort", "DecisionResult", "GenerateRequest", "GenerateResult",
-    "Projector", "ResponderPort", "Resume", "StepContext", "StepOutcome", "Stop", "advance", "begin_turn",
-    "evaluate", "start_flow", "truthy",
+    "Projector", "ResponderPort", "Resume", "StepContext", "StepOutcome", "Stop",
+    "TransferRequest", "advance", "begin_turn", "evaluate", "start_flow", "truthy",
 ]

@@ -38,6 +38,18 @@
       "title": "Branch On",
       "type": "string"
     },
+    "choices_from": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Choices From"
+    },
     "input_view": {
       "anyOf": [
         {
