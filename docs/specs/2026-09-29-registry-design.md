@@ -382,7 +382,7 @@ Todos **aditivos**; ninguno bloquea lo que está en curso.
 - `import-linter`, `mypy` y `ruff` en verde.
 - Los eventos de `registry_events` validan contra su esquema.
 - Cambios de §15 aplicados en M0 y M1.
-- `agent_core.registry.evaluation` con `EvalSuite`, `suite_problems`, `classify_yardstick_change` y `evaluate_gate` (T-EVAL-01 a 03, 05 a 08, 10 a 13 y 15).
+- `agent_core.registry.evaluation` con `EvalSuite`, `suite_problems`, `classify_yardstick_change` y `evaluate_gate` (en verde: T-EVAL-05 a 08, 11, 12, 13 y 15; T-EVAL-10 solo en su parte estructural `MT-05`; pendientes del servicio: T-EVAL-09, 16 y 17).
 - Sin TODO sin issue.
 
 ## 17. Abiertos

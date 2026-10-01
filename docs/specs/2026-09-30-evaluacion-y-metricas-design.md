@@ -287,8 +287,10 @@ Este trabajo especifica 1 y 2 y deja interfaces para 3 y 4.
 ## 15. Definición de terminado
 
 - `Agent.metrics` y los tipos asociados en M0, con `SCHEMA_VERSION` subida y `contracts/` regenerado (`uv run agentcore contracts --check` en verde).
-- Reglas del DSL en M1 con `T-EVAL-01` a `T-EVAL-03` en verde (`T-EVAL-04`, compilador SQL, es de la analítica).
-- Entidad `eval_suite`, gate de §6 y marca `yardstick_loosened` en el registry, con `T-EVAL-05` a `T-EVAL-13` y `T-EVAL-15` en verde (implementado como funciones puras en `agent_core.registry.evaluation`; `T-EVAL-16` y `T-EVAL-17` quedan para el servicio del registry, junto con la persistencia de `eval_suite` y de `releases.eval_suite_refs`).
+- Reglas del DSL en M1 con `T-EVAL-01` a `T-EVAL-03` en verde (`T-EVAL-01` en `tests/m01`; `T-EVAL-02` y `T-EVAL-03` en `tests/m00`, porque los impone el esquema de M0) (`T-EVAL-04`, compilador SQL, es de la analítica).
+- Entidad `eval_suite`, gate de §6 y marca `yardstick_loosened` en el registry, con `T-EVAL-05` a `T-EVAL-08`, `T-EVAL-11`, `T-EVAL-12`, `T-EVAL-13` y `T-EVAL-15` en verde (implementado como funciones puras en `agent_core.registry.evaluation`).
+- **Parcial:** `T-EVAL-10`. Solo existe la parte estructural (`MT-05` rechaza el prefijo `platform_` en M1, `tests/m01/test_agent_metrics.py`); el rechazo `forbidden_role` por rol en el servidor pertenece al plan de `RegistryService`.
+- **Pendientes (plan del servicio del registry y analítica):** `T-EVAL-09` (la vara vieja de §6.2 queda cubierta estructuralmente por `T-EVAL-07`, pero no hay prueba propia de «publicado afecta solo a propuestas posteriores»), `T-EVAL-04`, `T-EVAL-14`, `T-EVAL-16` y `T-EVAL-17`; también la persistencia de `eval_suite` y de `releases.eval_suite_refs`.
 - El evaluador en memoria y el compilador SQL pasan `T-EVAL-14` (cuando existan las piezas 3 y 4).
 - `import-linter`, `mypy` y `ruff` en verde.
 - Sin TODO sin issue.
