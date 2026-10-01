@@ -9,8 +9,8 @@ def test_public_surface() -> None:
         "NO_RESUME", "AgentFinal", "AgentObservation", "AgentPort", "AgentRequest", "AgentStepResult",
         "AgentToolCall", "CircuitBreaker", "DecisionPort", "DecisionResult", "GenerateRequest",
         "GenerateResult",
-        "Projector", "ResponderPort", "Resume", "StepContext", "StepOutcome", "Stop", "advance", "begin_turn",
-        "evaluate", "start_flow", "truthy",
+        "Projector", "ResponderPort", "Resume", "StepContext", "StepOutcome", "Stop",
+        "TransferRequest", "advance", "begin_turn", "evaluate", "start_flow", "truthy",
     }
     for name in interpreter.__all__:
         assert getattr(interpreter, name) is not None

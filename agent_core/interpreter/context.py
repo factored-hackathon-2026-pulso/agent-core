@@ -9,11 +9,13 @@ from agent_core.actions import ActionManager, EventRecorder, append_events
 from agent_core.domain import (
     Agent,
     ConfirmationPrompt,
+    DirectorySnapshot,
     EngineEvent,
     EscalationRequest,
     JsonValue,
     Locale,
     Message,
+    NodeId,
     Outcome,
     RejectedDraft,
     Release,
@@ -78,6 +80,17 @@ class StepContext:
 
 
 @dataclass(frozen=True)
+class TransferRequest:
+    """What a `transfer` node asks M4 to do (ADR 0021). Values are `full`: they never go to an event."""
+
+    node_id: NodeId
+    target: str | None
+    snapshot: DirectorySnapshot | None
+    reason: str
+    slots: dict[str, JsonValue] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class StepOutcome:
     """Resultado de `advance`. Los eventos de `execute_write` ya están persistidos y no vuelven aquí."""
 
@@ -91,3 +104,4 @@ class StepOutcome:
     step_up: StepUpPrompt | None = None
     output: dict[str, JsonValue] | None = None  # `end.output_map` en modo task
     rejected_drafts: list[RejectedDraft] = field(default_factory=list)
+    transfer: TransferRequest | None = None  # `transfer` node: M4 validates it (ADR 0021)
