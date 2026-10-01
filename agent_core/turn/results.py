@@ -47,5 +47,6 @@ def build_turn_result(frame: TurnFrame, state: RunState, trace_id: str) -> TurnR
         status=state.status,
         outcome=state.outcome,
         handoff_ref=state.handoff_ref,
+        agent=state.agent,
         trace_id=trace_id,
     )

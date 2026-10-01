@@ -28,7 +28,7 @@ from agent_core.domain import (
 )
 from agent_core.handoff import HandoffService
 from agent_core.interpreter import CircuitBreaker, StepContext
-from agent_core.ports import UnitOfWorkFactory
+from agent_core.ports import IdKind, UnitOfWorkFactory
 from agent_core.turn import TurnConfig, TurnEngine
 from agent_core.views import TokenVault, ViewService
 from testing.builders import principal as make_principal
@@ -68,6 +68,7 @@ TEXTS: dict[str, tuple[str, str]] = {
     "t-oferta": ("¿Quieres que ahora veamos tu otra solicitud?", "Quer ver seu outro pedido agora?"),
     "t-idioma": ("Solo atiendo en español y portugués.", "Atendo apenas em espanhol e portugues."),
     "t-largo": ("Tu mensaje es demasiado largo.", "Sua mensagem e longa demais."),
+    "t-comunico": ("Te comunico con un especialista.", "Vou te transferir para um especialista."),
     "t-pedir": ("Cuéntame qué pasó con el cargo.", "Conte o que houve com a cobranca."),
     "t-pedir-tarjeta": ("¿Cuál tarjeta quieres bloquear?", "Qual cartao quer bloquear?"),
     "t-resumen": ("Voy a radicar tu disputa. ¿Confirmas?", "Vou registrar sua disputa. Confirma?"),
@@ -236,6 +237,22 @@ RECEPCION = flow(
     ),
     node("esc", "escalate", {"reason_code": "policy:transfer_rejected"}),
 )
+# The same reception announcing the transfer first (spec §5.1: `respond` without `await`).
+RECEPCION_AVISO = flow(
+    "recepcion-aviso",
+    10,
+    node("entender", "collect", {"slot": "problema", "prompt_ref": "t-pedir@1.0.0"}, ok="avisar",
+         max_attempts="esc"),
+    node("avisar", "respond", {"template_ref": "t-comunico@1.0.0"}, next="transferir"),
+    node(
+        "transferir",
+        "transfer",
+        {"target_from": "decisions.ruta.choice", "directory_from": "directorio",
+         "packet": {"reason": "routed", "slots": ["problema"]}},
+        rejected="esc",
+    ),
+    node("esc", "escalate", {"reason_code": "policy:transfer_rejected"}),
+)
 # A reception whose entry node is the transfer: reached during `start_run` (P6, `no_turn`).
 RECEPCION_DIRECTA = flow(
     "recepcion-directa",
@@ -274,14 +291,22 @@ class FakeRuntimeFactory:
     def __init__(self, world: "World") -> None:
         self.world = world
         self.opened = 0
+        self.vaults: list[TokenVault] = []  # one per opened runtime, in order
 
     def open(self, state: RunState, principal: Principal, on_behalf_of: OnBehalfOf | None) -> FakeRuntime:
         self.opened += 1
         w = self.world
         keys = FakeKeyProvider.default()
         agent = w.registry.get(state.agent, Agent)
+        vault = TokenVault(state.run_id, keys, w.ids)
+        self.vaults.append(vault)
+        # The run's own release (a transfer target runs on the specialist's); the default one is rebuilt
+        # from the current entities so tests that add entities later still see them.
+        release = (
+            w.release() if state.release == RELEASE_ID else w.registry.resolve_release_by_id(state.release)
+        )
         step = StepContext(
-            release=w.release(),
+            release=release,
             agent=agent,
             locale=state.locale,
             clock=w.clock,
@@ -292,7 +317,7 @@ class FakeRuntimeFactory:
             actions=w.manager,
             responder=w.responder,
             views=ViewService(keys, AllowAllAuthz(), w.clock, w.classifier),  # type: ignore[arg-type]
-            vault=TokenVault(state.run_id, keys, w.ids),
+            vault=vault,
             ids=w.ids,
             uow_factory=w.uow_factory,
             breaker=w.breaker,
@@ -313,6 +338,7 @@ class World:
         tool_advance: timedelta = timedelta(0),
         config: TurnConfig | None = None,
         chain: Any = None,
+        chain_factory: Any = None,
     ) -> None:
         from agent_core.views import FieldClassifier
 
@@ -392,7 +418,9 @@ class World:
             ids=self.ids,
         )
         self.audit = InMemoryAuditSink(self.store)
-        self.chain = chain if chain is not None else PlainChain()
+        if chain is None:
+            chain = chain_factory(self.audit) if chain_factory is not None else PlainChain()
+        self.chain = chain
         self._config = config or TurnConfig()
         self.engine = TurnEngine(**self.engine_kwargs())
         self._n = 0
@@ -478,6 +506,11 @@ class World:
 
     def events(self) -> list[Any]:
         return self.audit.read(RUN_ID)
+
+    def session_runs(self) -> list[RunState]:
+        """Every run of the session, oldest first, as committed."""
+        with self.store.uow() as uow:
+            return uow.list_runs_by_session(SESSION_ID)
 
     def event_types(self) -> list[str]:
         return [e.type for e in self.events()]
@@ -571,6 +604,7 @@ class World:
         open_run: bool = True,
         snapshot_accepts: dict[str, Any] | None = None,
         publish_specialist: bool = True,
+        flow: str = "recepcion",
     ) -> RunState | None:
         """Registers `recepcion` and `recepcion-directa`, the specialist `disputas` and a published `saldos`
         left out of the snapshot, each under `prod` with its own release. Then (unless `open_run=False`, for
@@ -582,7 +616,8 @@ class World:
         saldos = self._specialist("saldos", DEFAULT_ACCEPTS)
         recepcion = Agent.model_validate(agent_data("recepcion", entry_flow="recepcion@1.0.0"))
         directa = Agent.model_validate(agent_data("recepcion-directa", entry_flow="recepcion-directa@1.0.0"))
-        self.add(recepcion, directa, disputas, saldos, RECEPCION, RECEPCION_DIRECTA, UNDERSTAND_MODEL)
+        self.add(recepcion, directa, disputas, saldos, RECEPCION, RECEPCION_DIRECTA, RECEPCION_AVISO,
+                 UNDERSTAND_MODEL)
         full = self.release()
         for agent_id in ("recepcion", "recepcion-directa"):
             self.registry.add_release(full.model_copy(update={"id": RECEPTION_RELEASE_ID}), agent_id)
@@ -602,6 +637,7 @@ class World:
         directorio = {**snapshot.model_dump(mode="json"), "choices": snapshot.choices}
         if not open_run:
             return None
+        self.ids.new_id(IdKind.run)  # the run below takes the fixed RUN_ID: a target run gets the next one
         decision = make_decision({"choice": choice}, {"choice": True}).decision
         over: dict[str, Any] = {}
         if origin_depth is not None:
@@ -613,7 +649,7 @@ class World:
         return self.open_run(
             agent="recepcion@1.0.0",
             release=RECEPTION_RELEASE_ID,
-            active_flow={"flow": "recepcion@1.0.0", "node_id": "entender"},
+            active_flow={"flow": f"{flow}@1.0.0", "node_id": "entender"},
             awaiting="slot",
             awaiting_node_id="entender",
             facts={"directorio": make_fact(directorio)},

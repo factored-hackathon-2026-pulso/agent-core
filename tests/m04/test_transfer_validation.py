@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from agent_core.audit import AuditLog
 from agent_core.domain import (
     AgentSelector,
     DirectorySnapshot,
@@ -184,9 +185,10 @@ def test_rejected_events_carry_no_slot_values() -> None:
 
 
 def test_valid_transfer_emits_run_transferred_with_a_keyed_packet_fingerprint() -> None:
-    w = World()
+    w = World(chain_factory=AuditLog)  # the target's origin links to the hash of the origin chain
     w.reception()
-    _turn(w)
+    w.understand.push(cmd("continue"), cmd("start_flow", flow="disputa"))
+    w.turn(TEXT)
     events = w.events()
     assert "transfer_rejected" not in [e.type for e in events]
     transferred = [e for e in events if e.type == "run_transferred"]
@@ -286,7 +288,9 @@ def _capture_runtimes(w: World) -> list[Any]:
 
 
 def _event_dumps(w: World) -> str:
-    return "\n".join(e.model_dump_json() for e in w.events())
+    """Every event of the session: the origin run and, after a transfer, the target run."""
+    runs = [r.run_id for r in w.session_runs()] or [RUN_ID]
+    return "\n".join(e.model_dump_json() for run_id in runs for e in w.audit.read(run_id))
 
 
 def _assert_no_pii(dumped: str) -> None:
@@ -296,17 +300,18 @@ def _assert_no_pii(dumped: str) -> None:
 
 def test_valid_transfer_events_carry_no_pii_of_the_packet_nor_of_the_vault() -> None:
     """T-TR-15, non-vacuous: the PII is both the trigger and the slot that travels in the packet."""
-    w = World()
+    w = World(chain_factory=AuditLog)
     opened = _capture_runtimes(w)
     w.reception()
-    w.understand.push(cmd("continue"))
+    w.understand.push(cmd("continue"), cmd("start_flow", flow="disputa"))
     w.turn(PII_TEXT)
+    assert len(w.session_runs()) == 2  # the target run's events are checked too
     transferred = next(e for e in w.events() if e.type == "run_transferred")
     packet = {"reason": "routed", "trigger": f"{MODEL_MARK}{PII_TEXT}", "slots": {"problema": PII_TEXT}}
     assert verify_fingerprint(to_jsonable(packet), transferred.payload.packet_fp, FakeKeyProvider.default())
     dumped = _event_dumps(w)
     _assert_no_pii(dumped)
-    vault = opened[-1].step.vault
+    vault = opened[-2].step.vault  # the origin's runtime (the last one opened is the target's)
     # Test-only peek at the origin vault. `reason` is a flow literal (it travels in `run_transferred` on
     # purpose); every other vault value comes from the client (trigger and slots) and must not appear.
     values = [entry.value for entry in vault._by_token.values() if entry.value != "routed"]
