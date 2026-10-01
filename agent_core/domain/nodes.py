@@ -188,10 +188,10 @@ class KnowledgeConfig(Model):
 
 
 class AgentNodeConfig(Model):
-    """Configuración del nodo `agent` (M0 §2.5, ADR 0019).
+    """Configuration of the `agent` node (M0 §2.5, ADR 0019).
 
-    `save_as` nombra el hecho donde entra la salida; `output_schema` es el JSON Schema de esa salida.
-    `input_view` son las rutas (`slots`, `facts`) que el modelo ve en vista `model`; vacío, no ve ninguna."""
+    `save_as` names the fact that receives the output; `output_schema` is the JSON Schema of that output.
+    `input_view` lists the paths (`slots`, `facts`) the model sees in the `model` view; empty means none."""
     tools_allowed: list[RefSpec]
     max_steps: PositiveInt
     prompt_ref: RefSpec

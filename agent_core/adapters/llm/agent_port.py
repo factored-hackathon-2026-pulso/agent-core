@@ -50,7 +50,7 @@ class LLMAgentPort:
         config = request.config
         inputs: dict[str, JsonValue] = {
             "goal": config.goal,
-            "inputs": request.inputs,  # `input_view` del nodo, ya en vista `model`
+            "inputs": request.inputs,  # the node's `input_view`, already in the `model` view
             "step": request.step,
             "tools": [self._catalog_entry(ref) for ref in config.tools_allowed],
             "observations": [_observation(o) for o in request.observations],

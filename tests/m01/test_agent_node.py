@@ -124,7 +124,7 @@ def test_g0_22_ignores_other_facts_and_flows_without_agent() -> None:
     assert "G0-22" not in rules(check(d))  # base() lee facts.datos y facts.verif, no facts.otro
 
 
-# --- input_view: lo que el nodo expone al modelo (T1) ----------------------------------------------------
+# --- input_view: what the node exposes to the model (T1) -------------------------------------------------
 
 
 def test_input_view_with_slots_and_facts_is_valid() -> None:
@@ -156,7 +156,7 @@ def test_g0_22_an_agent_may_read_another_agent_output() -> None:
 
 
 def test_agent_reading_a_verified_write_carries_its_claim() -> None:
-    """Un `agent` que lee el hecho verificado es productor: un respond que lo lea reclama la acción."""
+    """An `agent` reading the verified fact is a producer: a respond reading its output claims the action."""
     d = with_agent()
     node(d, "verificar")["next"]["verified"] = "resumir"
     resumir = agent_node("resumir", save_as="resumen", input_view=["facts.verif.value.status"])
