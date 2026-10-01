@@ -4,7 +4,7 @@
 
 CREATE TABLE IF NOT EXISTS runs (
     run_id         text        PRIMARY KEY,
-    run_seq        bigserial   NOT NULL,          -- orden de creación (una sesión = el run más nuevo)
+    run_seq        bigserial   NOT NULL,          -- creation order (the runs of a session, in order)
     session_id     text,
     state_version  integer     NOT NULL CHECK (state_version >= 1),
     status         text        NOT NULL,
@@ -12,6 +12,21 @@ CREATE TABLE IF NOT EXISTS runs (
     state_json     text        NOT NULL
 );
 CREATE INDEX IF NOT EXISTS runs_session_idx ON runs (session_id, run_seq DESC) WHERE session_id IS NOT NULL;
+-- At most one open run per session (ADR 0021 D1; transfer spec §5.3). A transfer closes the origin and opens the
+-- target in one commit. A partial unique index cannot be deferred and Postgres checks it on every row written, so
+-- `PostgresUoW._apply` applies the writes that leave a run not open first (the UPDATE that closes the origin runs
+-- before the INSERT of the target). A violation arrives as `UniqueViolation` with
+-- `constraint_name = 'runs_one_open_per_session'`, and the UoW maps it to `VersionConflict`.
+-- `task` runs (no `session_id`) are outside the index.
+-- Existing database: if it already holds two open runs of one session, this CREATE fails and `apply_schema`
+-- raises (the script is sent as one multi-statement query, so it runs as one implicit transaction). Before
+-- applying it, this query must return no rows:
+--   SELECT session_id, array_agg(run_id ORDER BY run_seq) FROM runs
+--    WHERE status = 'open' AND session_id IS NOT NULL GROUP BY session_id HAVING count(*) > 1;
+-- If it returns rows, decide by hand which run of each session stays open. There are no automatic migrations.
+-- Not run against a real Postgres in phase 7 (no docker): unverified.
+CREATE UNIQUE INDEX IF NOT EXISTS runs_one_open_per_session ON runs (session_id)
+    WHERE status = 'open' AND session_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS runs_inactive_idx ON runs (inactive_after, run_id)
     WHERE status = 'open' AND inactive_after IS NOT NULL;
 

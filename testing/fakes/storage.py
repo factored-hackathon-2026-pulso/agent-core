@@ -6,9 +6,14 @@ inmediato con vencimiento según el `now` que llega por parámetro (este módulo
 auditoría solo-append y outbox at-least-once con entrega idempotente. Toda lectura y escritura del estado
 compartido (incluidas las fallas inyectables) se hace bajo `store.lock`. M3 usa las fallas inyectables.
 
-Escalabilidad del doble: `load_run`/`find_run_by_session` son O(1); `list_inactive` usa un índice ordenado
-(`bisect`) en vez de recorrer todos los runs; `Outbox.pending` recorre solo `limit` mensajes. `read` de
-auditoría y `hits` de costos son lineales en lo que devuelven/recorren (suficiente para un doble)."""
+At most one open run per session: the commit checks it on the final state, like the partial unique index
+`runs_one_open_per_session` in Postgres (whose adapter applies closing writes first), and raises
+`VersionConflict` with the adapter's message.
+
+Escalabilidad del doble: `load_run` es O(1); `find_run_by_session` y `list_runs_by_session` son lineales
+en los runs de la sesión; `list_inactive` usa un índice ordenado (`bisect`) en vez de recorrer todos los
+runs; `Outbox.pending` recorre solo `limit` mensajes. `read` de auditoría y `hits` de costos son lineales en
+lo que devuelven/recorren (suficiente para un doble)."""
 
 import threading
 from bisect import bisect_left, insort
@@ -21,6 +26,7 @@ from itertools import islice
 from types import TracebackType
 from typing import TYPE_CHECKING, Literal, Self
 
+from agent_core.adapters.postgres_uow import ONE_OPEN_RUN_MESSAGE
 from agent_core.domain import (
     EngineEvent,
     JsonValue,
@@ -248,11 +254,25 @@ class InMemoryUoW:
         if store.take_fault("after_commit"):
             raise SimulatedCrash("caída después de aplicar el commit")
 
+    def _check_one_open_run_per_session(self, store: InMemoryStore) -> None:
+        """Mirror of the partial unique index `runs_one_open_per_session`, on the final state of the commit.
+
+        Equivalent to Postgres only because the adapter applies closing writes first: the order in which
+        this UoW saved its runs does not matter, only the state each run ends in."""
+        opened = {s.session_id for s in self._runs.values() if s.status == "open"}
+        for session_id in sorted(sid for sid in opened if sid is not None):
+            ids = set(store.sessions.get(session_id, []))
+            ids |= {rid for rid, s in self._runs.items() if s.session_id == session_id}
+            final = [self._runs[rid] if rid in self._runs else store.runs[rid] for rid in ids]
+            if sum(1 for s in final if s.session_id == session_id and s.status == "open") > 1:
+                raise VersionConflict(ONE_OPEN_RUN_MESSAGE)
+
     def _apply(self, store: InMemoryStore) -> None:
         # Todo se valida antes de tocar nada: un commit se aplica completo o no se aplica.
         for run_id, base in self._base_versions.items():
             if store.version_of(run_id) != base:
                 raise VersionConflict(f"{run_id}: otra transacción commiteó primero (base {base})")
+        self._check_one_open_run_per_session(store)
         for run_id, state in self._runs.items():
             store.reindex_inactive(store.runs.get(run_id), state)
             store.runs[run_id] = state
