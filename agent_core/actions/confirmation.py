@@ -6,6 +6,7 @@ Solo se guarda el hash del token. Por eso la reentrada con el token vigente cons
 
 import hmac
 from copy import deepcopy
+from datetime import datetime
 
 from agent_core.actions.context import ActionContext
 from agent_core.actions.events import ConfirmSource, EventFactory
@@ -37,8 +38,21 @@ def token_hash(token: str) -> str:
     return sha256_hex(token.encode("utf-8"))
 
 
+def _expiry(action: Action) -> datetime:
+    """El vencimiento de una acción con confirm; una escritura draft no se confirma (ADR 0019)."""
+    if action.token_exp is None:
+        raise IllegalTransition(f"la acción {action.action_id} no se confirma: es una escritura draft")
+    return action.token_exp
+
+
+def _digest(action: Action) -> str:
+    if action.confirmation_token_hash is None:
+        raise IllegalTransition(f"la acción {action.action_id} no se confirma: es una escritura draft")
+    return action.confirmation_token_hash
+
+
 def _prompt(action: Action, token: str, summary: Message) -> ConfirmationPrompt:
-    return ConfirmationPrompt(action_id=action.action_id, token=token, expires_at=action.token_exp,
+    return ConfirmationPrompt(action_id=action.action_id, token=token, expires_at=_expiry(action),
                               summary=summary)
 
 
@@ -65,13 +79,13 @@ class Confirmations:
         args = deepcopy(resolved_args)  # congelada: nadie comparte estado mutable con el llamador
         args_hash = sha256_hex(canonical_bytes(args))
         tool_ref = EntityRef(id=tool_def.id, version=tool_def.version)
-        if current is not None and now < current.token_exp and (current.args_hash != args_hash
+        if current is not None and now < _expiry(current) and (current.args_hash != args_hash
                                                                 or current.tool != tool_ref):
             # Lo que el usuario vio ya no es lo que el flow propone: no se reutiliza (M3 §11 (a), (f)).
             state, cancelled = self._cancel(state, current, InvalidationReason.args_changed, ctx.turn_id)
             events.append(cancelled)
             current = None
-        if current is not None and now < current.token_exp:
+        if current is not None and now < _expiry(current):
             token = self._ids.secret_token()
             rotated = current.model_copy(update={"confirmation_token_hash": token_hash(token)})
             state = replace_action(state, rotated)
@@ -104,10 +118,10 @@ class Confirmations:
         if current is None:
             raise IllegalTransition(f"confirm {node.id}: no hay acción proposed")
         if reply == "yes":
-            if self._clock.now() >= current.token_exp:  # un token vencido nunca confirma
+            if self._clock.now() >= _expiry(current):  # un token vencido nunca confirma
                 state, event = self._cancel(state, current, InvalidationReason.token_expired, ctx.turn_id)
                 return state, "unclear", [event]
-            matches = token is None or hmac.compare_digest(token_hash(token), current.confirmation_token_hash)
+            matches = token is None or hmac.compare_digest(token_hash(token), _digest(current))
             if not matches:
                 return state, "unclear", []  # token de otra propuesta (p. ej. rotado): no confirma ni suma
             state = replace_action(state, move(current, Trigger.confirm))
@@ -125,7 +139,7 @@ class Confirmations:
 
     def expire_tokens(self, state: RunState, turn_id: str | None) -> tuple[RunState, list[EngineEvent]]:
         now = self._clock.now()
-        expired = [a for a in state.actions if a.state is ActionState.proposed and now >= a.token_exp]
+        expired = [a for a in state.actions if a.state is ActionState.proposed and now >= _expiry(a)]
         return self._cancel_all(state, expired, InvalidationReason.token_expired, turn_id)
 
     def invalidate(self, state: RunState, reason: InvalidationReason,

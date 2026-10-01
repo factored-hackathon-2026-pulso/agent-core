@@ -1,6 +1,6 @@
 # M0 — Dominio y contratos
 
-- Estado: **rev. 10 · implementado** (fase 1; M12 y `SCHEMA_VERSION` 1.0.0, 2026-09-30) · Fase 1
+- Estado: **rev. 12 · implementado** (fase 1; `write_draft` y `SCHEMA_VERSION` 1.2.0, 2026-09-30) · Fase 1
 - Paquetes: `agent_core.domain`, `agent_core.ports`, `testing/fakes`
 - Origen: spec general §2, §5 (esquemas de nodos), §8 (estado), §10 (códigos), §14 (dependencias)
 - ADRs: 0001 (stack), 0002 (contratos), 0006 (principal y delegación), 0007 (acciones), 0008 (vistas y claves)
@@ -59,6 +59,11 @@
   - 0.5.0: `IdKind.proposal` e `IdKind.eval_run` (registry);
   - 0.6.0: `GenerationResult.usage_known: bool = True` (`false` si el proveedor no informó el uso; M8 marca `cost_known = false`);
   - 0.7.0: `AgentStepPayload.kind` admite `"failed"` y gana `error_kind: GatewayErrorKind | None = None` (el nodo `agent` deja un `agent_step` cuando el gateway falla, para que la auditoría explique el `gave_up`).
+- rev. 12 (2026-09-30), `write_draft` (ADR 0019, spec write-draft; `SCHEMA_VERSION` 1.1.0 → **1.2.0**, menor: solo aditivos y relajaciones):
+  - `RiskClass.write_draft`: escritura confinada a un borrador del registry, sin `confirm`; `ToolDef.is_write` la cuenta y exige `readback_by`;
+  - `WriteToolConfig` gana la forma `draft: true` con `tool` y `args` propios (`action_from` pasa a opcional; se declara uno u otro); `node_kind` trata ambas como `tool_write`;
+  - `Action.write_node_id` identifica el nodo `draft` que creó la acción; `confirm_node_id`, `confirmation_token_hash` y `token_exp` pasan a opcionales y solo se omiten (los tres) en una acción con `write_node_id`;
+  - `contracts/` regenerado (`Action`, `Flow`, `Node`, `RiskClass`, `RunState`, `ToolDef`, `WriteToolConfig`, `WriteToolNode`).
 - rev. 10 (2026-09-30), M12 `read` (`SCHEMA_VERSION` 0.7.0 → **1.0.0**, mayor: M0 §9, agregar un tipo de nodo y reemplazar un campo de `generate`). Cierra el Abierto "dependiente del tema #10":
   - nodo `knowledge` (`KnowledgeConfig`, `KnowledgeNode`, `RESULTS["knowledge"]`; `low_confidence` es solo de `navigate`);
   - `GenerateConfig`: `knowledge_refs` se elimina y entran `knowledge_from: list[SaveAs]` y `purpose: Purpose = "customer_answer"`;
@@ -203,7 +208,7 @@ class ModelPrice:     input_per_mtok: Decimal; output_per_mtok: Decimal; source:
 class ModelProfile:   id: str; version: str; endpoint_alias: str; model: str
                       temperature: Decimal; max_tokens: int; timeout_s: int = 8
                       structured: StructuredMode = native; price: ModelPrice
-class RiskClass(StrEnum): read, compute, write_reversible, write_irreversible, money_movement
+class RiskClass(StrEnum): read, compute, write_draft, write_reversible, write_irreversible, money_movement
 class ToolDef:        id: str; version: str; risk_class: RiskClass
                       min_auth_level: AuthLevel; max_auth_age: timedelta | None
                       idempotent: bool; readback_by: Literal["idempotency_key"] | None   # obligatorio en write_*
@@ -246,7 +251,8 @@ class DecideConfig:   model: RefSpec; input_view: list[str] | None; branch_on: s
 class RuleConfig:     policy: RefSpec | None; expr: JsonValue | None        # exactamente uno
 class CollectConfig:  slot: str; prompt_ref: RefSpec; validator: SlotValidator | None = None; max_attempts: int = 2   # None: texto no vacío
 class ToolConfig:     tool: RefSpec; args: dict[str, JsonValue]; save_as: str; step_up_max_attempts: int = 2
-class WriteToolConfig: action_from: str; save_as: str; step_up_max_attempts: int = 2
+class WriteToolConfig: action_from: str | None; draft: bool = False; tool: RefSpec | None; args: dict; save_as: str; step_up_max_attempts: int = 2
+                       # con `action_from` (confirm) sin `tool` ni `args`; con `draft: true` (ADR 0019) `tool` y `args` propios
 class ConfirmConfig:  action: {tool: RefSpec, args: dict[str, JsonValue]}; summary_template: RefSpec
                       reprompt_template: RefSpec | None; max_attempts: int = 2
 class VerifyConfig:   readback: RefSpec; by: str; predicate: JsonValue; save_as: str
@@ -266,7 +272,7 @@ class KnowledgeConfig: mode: Literal["read", "navigate"]; pages: list[str] = [] 
 # ADR 0019 (SCHEMA_VERSION 0.4.0): `agent` se habilitó. AgentNodeConfig gana `save_as` y
 # `output_schema: dict[str, JsonValue]`; FactSource.kind gana "agent"; nuevo evento `agent_step` (emisor M2).
 # rev. 11 (SCHEMA_VERSION 1.1.0): AgentNodeConfig gana `input_view: list[str] = []` (rutas slots/facts).
-# Sin implementar: RiskClass.write_draft (efecto confinado a un borrador del registry; m01 §3.13).
+# rev. 12 (SCHEMA_VERSION 1.2.0): RiskClass.write_draft y WriteToolConfig.draft (m01 §3.13).
 
 Node = Annotated[DecideNode | RuleNode | CollectNode | ToolNode | WriteToolNode | ConfirmNode
                  | VerifyNode | RespondNode | EscalateNode | EndNode | KnowledgeNode
@@ -276,7 +282,7 @@ TERMINAL: frozenset[str] = {"escalate", "end"}
 WAITING:  frozenset[str] = {"collect", "confirm"}   # más respond con await: true
 ```
 
-- **Discriminador:** `node_kind(raw)` devuelve `raw["type"]`, salvo que `type == "tool"` y `config` tenga `action_from`, en cuyo caso devuelve `"tool_write"`. En YAML sigue siendo `type: tool`.
+- **Discriminador:** `node_kind(raw)` devuelve `raw["type"]`, salvo que `type == "tool"` y `config` tenga `action_from` o `draft: true`, en cuyo caso devuelve `"tool_write"`. En YAML sigue siendo `type: tool`.
 - `SlotValidator`: `{kind: type|regex|enum|decide, value}`.
 - `ReasonCodeStr`: §2.7.
 - `target_queue` None en `escalate` significa `agent.default_target_queue`.
@@ -294,7 +300,8 @@ class Decision:       decision_id: str; value: dict[str, JsonValue]; p_cal: dict
 class ActionState(StrEnum): proposed, confirmed, executing, executed, uncertain, denied,
                             verified, failed, cancelled
 class InvalidationReason(StrEnum): cancel, abandoned, interrupt, escalated, token_expired, max_attempts, denied_by_user, args_changed
-class Action:         action_id: str; confirm_node_id: str; flow: EntityRef
+class Action:         action_id: str; confirm_node_id: str | None; write_node_id: str | None; flow: EntityRef
+                      # `confirm_node_id`, `confirmation_token_hash` y `token_exp`: los tres, o ninguno y `write_node_id` (ADR 0019)
                       tool: EntityRef; args: dict[str, JsonValue]; args_hash: str
                       state: ActionState; confirmation_token_hash: str; token_exp: AwareDatetime
                       idempotency_key: str; created_at: AwareDatetime
@@ -697,6 +704,6 @@ No tiene métricas propias. Los esquemas de eventos son la entrada de la unidad 
 ## 11. Abiertos
 
 - Ninguno bloqueante para la fase 1.
-- **Agentes internos (ADR 0019):** `AgentNodeConfig.save_as`/`output_schema`, `FactSource.kind = "agent"` y el evento `agent_step` están implementados (SCHEMA_VERSION 0.4.0, `contracts/` regenerado; hoy 0.7.0). `RiskClass.write_draft` sigue solo diseñado. Falta decidir si `Agent.default_target_queue` pasa a ser opcional para agentes que nunca escalan.
+- **Agentes internos (ADR 0019):** `AgentNodeConfig.save_as`/`output_schema`, `FactSource.kind = "agent"` y el evento `agent_step` están implementados (SCHEMA_VERSION 0.4.0, `contracts/` regenerado; hoy 0.7.0). `RiskClass.write_draft` se implementó en la rev. 12 (`SCHEMA_VERSION` 1.2.0). Falta decidir si `Agent.default_target_queue` pasa a ser opcional para agentes que nunca escalan.
 - ~~**Dependiente del tema #10:** el nodo `knowledge`, `RunState.pages`, `PageView` y la forma final de `KnowledgeSource`~~ **Resuelto 2026-09-30 (rev. 10, `SCHEMA_VERSION` 1.0.0):** entraron con M12 `read`.
 - ~~**Formato de la credencial** (`raw_credential`)~~ **Resuelto 2026-09-29 (M9 §3.8):** JWS compacto Ed25519 con `kid`; no cambia el puerto.

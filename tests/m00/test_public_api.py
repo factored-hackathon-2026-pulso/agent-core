@@ -15,7 +15,7 @@ def test_domain_exports() -> None:
                  "GatewayError", "GatewayErrorKind", "KnowledgePage", "KnowledgeSnapshot", "KnowledgeNode",
                  "KnowledgeView", "PageMeta", "PageView", "PageRecord", "Purpose", "KnowledgeRead"]:
         assert hasattr(domain, name), name
-    assert domain.SCHEMA_VERSION == "1.1.0"
+    assert domain.SCHEMA_VERSION == "1.2.0"
 
 
 def test_ports_exports() -> None:

@@ -9,20 +9,25 @@ from agent_core.actions.context import ActionContext
 from agent_core.actions.events import EventFactory
 from agent_core.actions.machine import VERIFIABLE, Trigger
 from agent_core.actions.results import VerifyResult, WriteResult
-from agent_core.actions.store import move, replace_action, single_action
+from agent_core.actions.store import add_action, move, replace_action, single_action
 from agent_core.domain import (
+    Action,
     ActionState,
     EngineEvent,
     EntityRef,
     Fact,
     FactSource,
+    IllegalTransition,
     JsonValue,
+    RiskClass,
     RunState,
     ToolCalled,
     ToolCalledPayload,
     ToolDef,
     VerifyNode,
     WriteToolNode,
+    canonical_bytes,
+    sha256_hex,
 )
 from agent_core.ports import Clock, IdKind, IdSource, ToolResult, ToolStatus
 
@@ -67,10 +72,38 @@ class Executions:
         self._clock = clock
         self._events = events
 
+    def freeze_draft_write(self, state: RunState, node: WriteToolNode, resolved_args: dict[str, JsonValue],
+                           tool_def: ToolDef) -> RunState:
+        """Congela la acción de una escritura `draft` directo en `confirmed`, sin token: no hay `confirm`.
+
+        Con una acción `confirmed` de ese nodo en el flow activo (reentrada tras un step-up) conserva la
+        congelada con sus args (M3 §3.7)."""
+        tool = node.config.tool
+        if not node.config.draft or tool is None:
+            raise ValueError(f"{node.id}: no es una escritura draft")
+        if tool_def.risk_class is not RiskClass.write_draft or tool_def.id != tool.id:
+            raise ValueError(f"{node.id}: tool_def no es la write_draft que declara el nodo")
+        if state.active_flow is None:
+            raise IllegalTransition(f"escritura {node.id}: no hay flow activo")
+        flow = state.active_flow.flow
+        if any(a.write_node_id == node.id and a.flow == flow and a.state is ActionState.confirmed
+               for a in state.actions):
+            return state
+        args = deepcopy(resolved_args)  # congelada: nadie comparte estado mutable con el llamador
+        action_id = self._ids.new_id(IdKind.action)
+        action = Action(action_id=action_id, write_node_id=node.id, flow=flow,
+                        tool=EntityRef(id=tool_def.id, version=tool_def.version), args=args,
+                        args_hash=sha256_hex(canonical_bytes(args)), state=ActionState.confirmed,
+                        idempotency_key=action_id, created_at=self._clock.now())
+        return add_action(state, action)
+
     def execute_write(self, state: RunState, node: WriteToolNode,
                       ctx: ActionContext) -> tuple[RunState, WriteResult, list[EngineEvent]]:
         """Los eventos devueltos ya quedaron persistidos en los commits 1 y 2: M4 no los vuelve a agregar."""
-        action = single_action(state, {ActionState.confirmed}, node.config.action_from)
+        if node.config.draft:
+            action = single_action(state, {ActionState.confirmed}, write_node_id=node.id)
+        else:
+            action = single_action(state, {ActionState.confirmed}, node.config.action_from)
         tool_def = ctx.tools.definition(action.tool)
         if not tool_def.is_write:
             raise ValueError(f"{node.id}: {action.tool} no es una tool de escritura")

@@ -73,8 +73,21 @@ def is_waiting(node: Node) -> bool:
 def writes_by_confirm(flow: Flow) -> dict[str, list[WriteToolNode]]:
     grouped: dict[str, list[WriteToolNode]] = {}
     for node in flow.nodes:
-        if isinstance(node, WriteToolNode):
+        if isinstance(node, WriteToolNode) and node.config.action_from is not None:
             grouped.setdefault(node.config.action_from, []).append(node)
+    return grouped
+
+
+def draft_writes(flow: Flow) -> list[WriteToolNode]:
+    """Las escrituras `draft` (sin confirm) del flow, en orden."""
+    return [n for n in flow.nodes if isinstance(n, WriteToolNode) and n.config.draft]
+
+
+def writes_by_action(flow: Flow) -> dict[str, list[WriteToolNode]]:
+    """Escrituras por acción: la clave es el `confirm` o, en una escritura draft, el propio nodo."""
+    grouped = writes_by_confirm(flow)
+    for node in draft_writes(flow):
+        grouped.setdefault(node.id, []).append(node)
     return grouped
 
 

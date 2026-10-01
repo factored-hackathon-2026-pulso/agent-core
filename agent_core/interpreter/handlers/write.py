@@ -41,14 +41,26 @@ def handle_confirm(node: ConfirmNode, state: RunState, ctx: StepContext, resume:
 
 def _action_tool(state: RunState, node: WriteToolNode) -> EntityRef:
     for action in reversed(state.actions):
-        if action.confirm_node_id == node.config.action_from:
+        if node.config.draft:
+            if action.write_node_id == node.id:
+                return action.tool
+        elif node.config.action_from is not None and action.confirm_node_id == node.config.action_from:
             return action.tool
-    raise IllegalTransition(f"no hay acción para el confirm {node.config.action_from}")
+    raise IllegalTransition(f"no hay acción para el nodo de escritura {node.id}")
 
 
 def handle_write(node: WriteToolNode, state: RunState, ctx: StepContext, resume: Resume) -> NodeResult:
+    action_ctx = build_action_context(state, ctx)
+    if node.config.draft:
+        assert node.config.tool is not None  # `WriteToolConfig` lo garantiza para `draft`
+        try:
+            args = resolve_args(state, node.config.args)
+        except MissingPath:
+            return escalate_now(state, ctx, "validation_failed")
+        definition = ctx.tools.definition(exact_ref(ctx, EntityKind.tool, node.config.tool))
+        state = ctx.actions.freeze_draft_write(state, node, args, definition, action_ctx)
     # Los eventos que devuelve `execute_write` ya los persistió el `EventRecorder` de M3: no se agregan (§6).
-    state, result, _persisted = ctx.actions.execute_write(state, node, build_action_context(state, ctx))
+    state, result, _persisted = ctx.actions.execute_write(state, node, action_ctx)
     tool = _action_tool(state, node)
     if result == "step_up_required":
         level = ctx.tools.definition(tool).min_auth_level

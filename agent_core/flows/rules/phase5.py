@@ -20,17 +20,21 @@ from agent_core.domain import (
     EntityKind,
     EscalateNode,
     JsonValue,
+    ModelProfile,
     RefSpec,
     RespondNode,
     RiskClass,
     RuleNode,
+    StructuredMode,
     ToolNode,
     VerifyNode,
+    WriteToolNode,
     is_declarable,
     unsupported_keyword,
 )
 from agent_core.flows.context import Ctx
-from agent_core.flows.graph import end_modes, flow_mode, is_waiting
+from agent_core.flows.draft_schema import DRAFT_OUTPUT_SCHEMA
+from agent_core.flows.graph import draft_writes, end_modes, flow_mode, is_waiting
 from agent_core.flows.jsonlogic import MAX_DEPTH, exceeds_max_depth, expr_literals, expr_paths
 from agent_core.flows.paths import Path, parse_path, value_paths
 from agent_core.flows.violations import Violation, clip
@@ -139,6 +143,8 @@ def _read_sites(ctx: Ctx, node: object) -> Iterator[_Site]:
             return  # G0-02
         allowed = SLOTS_FACTS | {"decisions"} if tool.risk_class == RiskClass.compute else SLOTS_FACTS
         yield _Site("/config/args", value_paths(dict(node.config.args), strict=False), allowed)
+    elif isinstance(node, WriteToolNode) and node.config.draft:
+        yield _Site("/config/args", value_paths(dict(node.config.args), strict=False), SLOTS_FACTS)
     elif isinstance(node, ConfirmNode):
         yield _Site(
             "/config/action/args", value_paths(dict(node.config.action.args), strict=False), SLOTS_FACTS
@@ -210,15 +216,16 @@ def g0_11(ctx: Ctx) -> Iterator[Violation]:
 
 
 def g0_13(ctx: Ctx) -> Iterator[Violation]:
-    confirms = {n.id for n in ctx.flow.nodes if isinstance(n, ConfirmNode)}
+    actions = {n.id for n in ctx.flow.nodes if isinstance(n, ConfirmNode)} | {
+        w.id for w in draft_writes(ctx.flow)}  # una escritura draft no tiene confirm: su acción es el nodo
     for node in ctx.flow.nodes:
         if isinstance(node, RespondNode):
             for i, claim in enumerate(node.config.claims):
-                if claim not in confirms:
+                if claim not in actions:
                     yield ctx.v(
                         "G0-13",
                         node.id,
-                        f"claims lista {clip(repr(claim))}, que no es un confirm del flow",
+                        f"claims lista {clip(repr(claim))}, que no es un confirm ni una escritura draft",
                         f"/config/claims/{i}",
                     )
 
@@ -256,6 +263,26 @@ def g0_15(ctx: Ctx) -> Iterator[Violation]:
                     f"{clip(prompt.model_profile.id)}, que no existe",
                     sub,
                 )
+
+
+def g0_25(ctx: Ctx) -> Iterator[Violation]:
+    """El prompt de un nodo `agent` va en modo `prompted`: el paso del agente tiene propiedades opcionales y
+    el modo `native` estricto de OpenAI lo rechaza (gateway §3.8)."""
+    for node in ctx.flow.nodes:
+        if not isinstance(node, AgentNode):
+            continue
+        prompt = ctx.prompt(node.config.prompt_ref)
+        if prompt is None:
+            continue
+        profile = ctx.reg.resolve(EntityKind.model_profile, prompt.model_profile)
+        if isinstance(profile, ModelProfile) and profile.structured is not StructuredMode.prompted:
+            yield ctx.v(
+                "G0-25",
+                node.id,
+                f"el model_profile {clip(prompt.model_profile.id)} del prompt del agente debe ser "
+                "structured: prompted",
+                "/config/prompt_ref",
+            )
 
 
 def g0_16(ctx: Ctx) -> Iterator[Violation]:
@@ -297,16 +324,32 @@ def g0_24(ctx: Ctx) -> Iterator[Violation]:
 
 
 def g0_22(ctx: Ctx) -> Iterator[Violation]:
-    """Lo que el modelo genera no alimenta decisiones ni escrituras (m01 §3.13)."""
-    produced = {n.config.save_as for n in ctx.flow.nodes if isinstance(n, AgentNode)}
+    """Lo que el modelo genera no alimenta decisiones ni escrituras (m01 §3.13).
+
+    Excepción acotada (ADR 0019 §1, enmienda del 2026-09-30): el `args` de una escritura `draft` puede leer la
+    salida de un nodo `agent` cuyo `output_schema` es `DRAFT_OUTPUT_SCHEMA`."""
+    produced: dict[str, bool] = {}  # hecho → ¿puede leerlo una escritura draft? (todos sus productores)
+    for n in ctx.flow.nodes:
+        if isinstance(n, AgentNode):
+            fits = n.config.output_schema == DRAFT_OUTPUT_SCHEMA
+            produced[n.config.save_as] = produced.get(n.config.save_as, True) and fits
     if not produced:
         return
+    for n in ctx.flow.nodes:  # el resultado de una escritura draft alimentada por un agente sigue siendo suyo
+        if isinstance(n, WriteToolNode) and n.config.draft:
+            reads = {p.name for p in value_paths(dict(n.config.args), strict=False) if p.ns == "facts"}
+            if reads & produced.keys():
+                produced[n.config.save_as] = False
     for node in ctx.flow.nodes:
+        draft_args = isinstance(node, WriteToolNode) and node.config.draft
         for site in _read_sites(ctx, node):
             if site.sub in _AGENT_OUTPUT_SITES:
                 continue
             for path in site.paths:
                 if path.ns == "facts" and path.name in produced:
+                    only_changes = path.rest == ("value", "changes")  # el resto del args lo fija el flow
+                    if draft_args and site.sub == "/config/args" and produced[path.name] and only_changes:
+                        continue
                     yield ctx.v(
                         "G0-22",
                         node.id,

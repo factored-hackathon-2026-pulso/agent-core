@@ -34,7 +34,7 @@ Tampoco eran temas abiertos: la cadena de hash y `reportable_attrs` (ADR 0003), 
 | 14 | Emisión y firma de los roles `constructor`/`aprobador` y de `attrs.actor` | Alta | **Resuelto (2026-09-30)** |
 | 15 | Validador `decide` de `collect`: qué campo de la decisión valida | Media | **Resuelto: no soportado hasta la fase 2 (2026-09-30)** |
 | 16 | Límites, retención y topes del agente autónomo (registry) | Media | **Resuelto salvo el monto del tope de costo, que se fija al activar el constructor `task` (2026-09-30)** |
-| 17 | Clase `write_draft` y dependencias del constructor sobre el registry | Media | **Abierto** |
+| 17 | Clase `write_draft` y dependencias del constructor sobre el registry | Media | **Parcial: fases 1 a 5 hechas (2026-09-30); siguen el replay de M11, los agentes y `await_approval`** |
 | 18 | Auditoría de las lecturas de datos de clientes del administrador | Media | **Decidido (2026-09-30); construcción pendiente** |
 
 ## Resueltos
@@ -115,10 +115,11 @@ Pendiente de construcción: las vistas SQL y la conexión a Phoenix; no bloquean
 **Decidido el 2026-09-30:**
 - **Límites:** se ratifican los valores que ya aplica `registry/validation.py`: 50 cambios por propuesta, 262 144 bytes por entidad y 200 nodos por flow.
 - **Retención:** se conserva todo en el MVP. Fase 2: purgar propuestas abandonadas de más de 90 días y conservar las últimas N evaluaciones por propuesta.
-- **Topes del constructor autónomo (decidido el 2026-09-30):** 10 propuestas por día y 20 evaluaciones por propuesta. Sigue sin fijar el **monto del tope de costo por propuesta** (USD); se fija al activar el constructor en modo `task`, que no se activa en la demo. Aún no hay código que aplique los topes.
+- **Topes del constructor autónomo (decidido el 2026-09-30):** 10 propuestas por día y 20 evaluaciones por propuesta. Sigue sin fijar el **monto del tope de costo por propuesta** (USD); se fija al activar el constructor en modo `task`, que no se activa en la demo. Los topes de 10 propuestas por día y 20 evaluaciones por propuesta ya se aplican en `RegistryService` (2026-09-30); el tope de costo sigue diferido.
 
 ## 17. `write_draft` y dependencias del constructor — abierto
 Registry §18: clase de riesgo `write_draft` (G0-23, AG-02, ruta de M3), regla G0-25 del gateway (el prompt del nodo `agent` debe ser `structured: prompted`), adaptador de `ToolExecutor` del constructor con su propia credencial, `readback_by` de borradores y catálogo de campos y plantillas de handoff como entidades versionadas. Nada de esto está construido; el constructor solo puede correr de solo lectura.
+**Avance (2026-09-30):** hechos registry (idempotencia, `get_write`, topes), M0 (`RiskClass.write_draft`, nodo `draft`, `Action.write_node_id`) y M1 (G0-05, G0-13, G0-22, G0-23, G0-25, AG-02). Siguen M3, M2/M4, el adaptador del constructor, el replay y los agentes.
 
 ## 18. Auditoría de las lecturas de datos de clientes del administrador — decidido; construcción pendiente
 El administrador puede leer runs, transcripts y campos de clientes (ADR 0006, enmienda 2026-09-30), pero una lectura autorizada no deja hoy ningún evento: solo se registran los rechazos (`access_denied`).

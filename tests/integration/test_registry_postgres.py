@@ -323,3 +323,69 @@ def test_cli_cycle_on_postgres_with_export_to_disk(registry_store: PgRegistrySto
     assert cli.ok("show", cli.ok("propose", AGENT, "t")["proposal_id"])["proposal"]["state"] == "draft"  # type: ignore[index]
     assert cli.ok("export", seed["release_id"], str(tmp_path)) is None
     assert any(tmp_path.rglob("*.yaml"))
+
+
+def test_draft_writes_round_trip_and_are_insert_only(registry_store: PgRegistryStore,
+                                                     admin_conn: "psycopg.Connection[Any]") -> None:
+    from agent_core.registry.models import AuditContext, DraftWrite
+    from testing.builders import NOW
+
+    write = DraftWrite(idempotency_key="k1", op="put_draft", proposal_id="prop-1", rev_after=1,
+                       request_hash="a" * 64, audit=AuditContext(run_id="run-1", on_behalf_of="builder:ana"),
+                       created_at=NOW)
+    with registry_store.transaction() as tx:
+        tx.put_draft_write(write)
+    with registry_store.transaction() as tx:
+        assert tx.get_draft_write("k1") == write
+        assert tx.get_draft_write("otra") is None
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        with registry_store.transaction() as tx:
+            tx.put_draft_write(write)
+    with registry_store.connect() as conn:  # rol de aplicación: sin UPDATE ni DELETE
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute("UPDATE reg_draft_writes SET rev_after = 9")
+        conn.rollback()
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute("DELETE FROM reg_draft_writes")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):  # administrador: lo frena el trigger
+        admin_conn.execute("UPDATE reg_draft_writes SET rev_after = 9")
+
+
+def test_counts_for_the_autonomous_builder_quotas(registry_store: PgRegistryStore) -> None:
+    from datetime import timedelta
+
+    from agent_core.registry.models import RegistryEvent
+    from testing.builders import NOW
+
+    def created(origin: str, at: object) -> RegistryEvent:
+        return RegistryEvent.model_validate({"type": "proposal_created", "actor": "bot",
+                                             "principal_type": "builder", "origin": origin,
+                                             "proposal_id": "p", "at": at})
+
+    with registry_store.transaction() as tx:
+        tx.append_event(created("auto_detect", NOW - timedelta(hours=24)))  # en el borde: no cuenta
+        tx.append_event(created("auto_detect", NOW - timedelta(hours=1)))
+        tx.append_event(created("manual", NOW - timedelta(hours=1)))
+    with registry_store.transaction() as tx:
+        assert tx.count_created_after("auto_detect", NOW - timedelta(hours=24)) == 1
+        assert tx.count_created_after("manual", NOW - timedelta(hours=24)) == 1
+        assert tx.count_eval_runs("p") == 0
+        assert tx.get_eval_run("nada") is None
+
+
+def test_a_draft_is_never_served_as_executable_content(registry_store: PgRegistryStore) -> None:  # regla 8
+    from agent_core.domain import Prompt
+
+    service = _service(registry_store)
+    service.import_seed(admin(), REGISTRY_DEMO)
+    runtime = PostgresRegistry(registry_store, FakeClock())
+    before = runtime.resolve_release(AgentSelector.parse(AGENT), principal())
+    p = service.create_proposal(ANA, AGENT, Origin.manual, "borrador")
+    service.put_draft(ANA, p.proposal_id,
+                      [prompt_draft(version="9.9.9"), prompt_draft(version="1.0.0", id="p/solo_borrador")],
+                      expected_rev=0)
+    for ref in ("p/resumen_radicado@9.9.9", "p/solo_borrador@1.0.0"):  # versión nueva y entidad nueva
+        with pytest.raises(KeyError):
+            runtime.get(EntityRef.parse(ref), Prompt)
+    after = runtime.resolve_release(AgentSelector.parse(AGENT), principal())
+    assert after.id == before.id  # un borrador no mueve el alias ni crea una release
