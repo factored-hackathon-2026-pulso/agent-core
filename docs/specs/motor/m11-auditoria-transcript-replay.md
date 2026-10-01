@@ -1,6 +1,6 @@
 # M11 — Auditoría, transcript y replay
 
-- Estado: rev. 3 (2026-09-29) · Fase 2 (cadena, spans, transcript) y fase 5 (replay)
+- Estado: rev. 4 (2026-10-01) · Fase 2 (cadena, spans, transcript) y fase 5 (replay)
 - Paquete: `agent_core.audit` (+ paquete común `agent-telemetry`)
 - Origen: spec general §8.4, §11, §13.2, §13.6 (huellas del transcript)
 - ADRs: 0003 (dos planos, transcript separado, replay en dos modos), 0008 (huellas con clave)
@@ -34,6 +34,7 @@ class TurnRecorder:
 class TranscriptReader:
     def __init__(self, store, uow_factory, views: ViewService, keys, ids)
     def read_rendered(self, run_id, reader, on_behalf_of) -> list[RenderedEntry]      # M7 render, purpose "transcript_read"
+def verify_transfer_link(target: RunState, sink: AuditSink) -> list[str]   # enlace entre cadenas (§3.1b); [] = válido
 # agent-telemetry
 def span(name, **attrs) -> ContextManager       # agrega run_id, turn_id, session_id, agentcore.release
 # Replay
@@ -53,6 +54,18 @@ class Replayer:
 - `seq` monotónico por run; el append ocurre dentro de la transacción del turno o de la de escritura (M3).
 - La cadena usa `sha256` sin clave porque encadena eventos ya en vista `audit` (§8.1.1).
 - Fórmula exacta: decisión 2.
+
+### 3.1b Enlace entre cadenas de una transferencia (ADR 0021 D9, P2)
+
+`verify_transfer_link(target, sink)` comprueba que la cadena de un run destino está atada a la del origen. Solo lee; devuelve la lista de problemas (vacía = enlace válido).
+
+- **No aplica:** si `target.origin` es `None` (el run no nació de una transferencia) devuelve `[]`.
+- **Qué ata:** `RunOrigin.from_event_hash` es el hash del `turn_completed` del origen del turno que transfirió (no el de `run_transferred`: ADR 0021 P2; el spec de transferencia §3.3 se reconcilia en consecuencia).
+- **Búsqueda, no posición:** el hash se busca en toda la cadena de origen; no tiene que ser el último evento. Un evento posterior (p. ej. `access_denied` por una lectura sobre el run ya cerrado) no rompe el enlace.
+- **Comprobaciones:** (1) la cadena de origen existe y pasa `check_chain`; (2) el hash está en ella y es el de un `turn_completed`; (3) hasta ese evento hay exactamente un `run_transferred` con el `transfer_id` del origen y su `to_run_id` es el run destino; (4) el primer evento del destino es un `run_started` cuyo `origin` es idéntico al del estado.
+- **Alcance:** solo el enlace. La integridad de la cadena del destino la da `AuditLog.verify_chain`.
+- **Sin datos:** los problemas son mensajes fijos, sin hashes, ids, slots ni texto. Con la cadena de origen ausente devuelve un único problema (no se puede comprobar más).
+- `agentcore replay` usa esta función al reproducir una sesión (spec de transferencia §8); el cableado en el CLI no forma parte de esta unidad.
 
 ### 3.2 Spans
 
@@ -127,6 +140,7 @@ Ninguno de dominio. Encadena y persiste los de todos los módulos.
 | T-M11-08 | Suprimir el transcript no rompe `verify_chain` | — |
 | T-M11-09 | Todo span y evento lleva `run_id` y `agentcore.release`; `trace_id` en respuestas | — |
 | T-M11-10 | Un run grabado cuyos campos de medición difieren de los recalculados da `match`; un cambio en cualquier otro campo del mismo evento da `diverged` | 2 |
+| T-M11-11 | Enlace de transferencia (§3.1b): válido; un evento posterior en el origen no lo rompe; origen alterado, hash falsificado o de otro evento, cadena de origen ausente, `run_transferred` ausente, con otro `transfer_id` o con otro `to_run_id`, y `run_started` del destino con otro origen dan problemas legibles sin datos; un run sin origen da `[]` (`tests/m11/test_transfer_links.py`) | — |
 
 ## 8. Evaluación
 
@@ -142,6 +156,7 @@ Es la **fuente de datos** de la unidad 6 y de la auto-mejora: exportación de ev
 
 - Fase 2: cadena, spans, transcript y T-M11-06…09.
 - T-M11-10 va con el replay (fase 5).
+- Transferencia entre agentes (rev. 4): `verify_transfer_link` y T-M11-11.
 - Fase 5: replay `fixture` en CI con los seis caminos y T-M11-01…05; `audit` si alcanza.
 - Comandos `agentcore record`, `agentcore replay --mode fixture|audit`: implementados con códigos de salida 0/1/2/3; sin motor o sin `--registry` salen con 3 ("motor no disponible").
 - **Task 14 (2026-09-29, hecho):** `record` real y replay `fixture` con el motor compuesto (`agent_core.composition.build_turn_engine`); T-M11-01 con los seis caminos en `match` (`tests/composition/test_replay_fixtures.py` y el paso de CI). El modo `audit` no está: ver riesgos. T-M11-02…10 tienen prueba en `tests/m11`.
