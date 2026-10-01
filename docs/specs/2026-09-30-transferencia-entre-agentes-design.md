@@ -133,7 +133,11 @@ class RunOrigin(Model):
   - el agente tiene `accepts`;
   - `AuthzPort.authorize_agent` autoriza al principal sobre el agente.
 - **Tool `directory/list@1.0.0`** (clase `read`, `args: {directory, locale}`): `locale` es un argumento (el run lo pasa) y se valida; uno mal formado da `error` (`bad_args`). La sirve `DirectoryToolExecutor` en `agent_core/composition/directory.py`, que envuelve al `ToolExecutor` real y delega las demás tools. **El dueño queda cerrado: vive en `composition`** (registry §18, fila 11). Devuelve la vista filtrada más `choices` (lista de `agent_id`). El nodo `tool` emite un `tool_called` normal (P1).
-- **Cableado:** `DirectoryToolExecutor` y `RegistryDirectory` no se exportan desde `composition/__init__.py` y `build_turn_engine`/`EngineDeps` no envuelven `deps.tools` con ellos; hoy solo las pruebas los usan (por eso `tests/m04/harness.py` importa el módulo interno `agent_core.composition.directory`). Cablearlos queda para la fase 7.
+- **Cableado (fase 7, cerrado):**
+  - `EngineDeps.directory` es opcional; con él, `build_engine` envuelve `deps.tools` con `DirectoryToolExecutor` (usa el `authz` y los `ids` de `deps`); sin él, nada cambia.
+  - `agentcore serve` construye `RegistryDirectory(store, PostgresRegistry, PostgresRegistry.release)` y lo pasa por `ServePorts.directory`.
+  - `DirectoryToolExecutor` y `DIRECTORY_TOOL` se exportan desde `agent_core.composition`; `tests/m04/harness.py` ya no importa el módulo interno.
+  - La evaluación del registry (`EngineScenarioHarness`) aún no tiene directorio (fase 8).
 - **Frescura:** `PostgresRegistry.release_status` tiene una caché con TTL; una release revocada puede seguir en el directorio hasta un TTL (registry §7.1).
 - **Caché:** el motor lee el directorio por run; no hay caché entre runs en la demo.
 
@@ -273,7 +277,7 @@ Abiertos nuevos de la implementación (no resueltos aquí):
 13. **Rutas de Postgres sin verificar** (no hubo docker): `aliases_named` del registry y los métodos de sesión de la unidad de trabajo (`find_run_by_session`, `list_runs_by_session`). Hay que correr `docker compose up -d postgres && uv run pytest tests/integration`.
 14. **Catálogos de campos de producción:** deben clasificar como `public` los campos del directorio (`choices`, `agent_id`, `release_id`); si no, `decide_choice` recibe las opciones tokenizadas (§3.2).
 15. **Pendientes de las fases 6 a 8:** REL-T1, evaluación (§7), agentes de la demo, spans OTel; ver `TEMAS-ABIERTOS-PENDIENTES.md` #19.
-16. **Cableado de `directory/list` en la raíz de composición** (fase 7): hoy solo lo usan las pruebas (§4).
+16. **Cableado de `directory/list` en la raíz de composición:** **Cerrado (fase 7)** (§4).
 17. **Autorización de la tool y de M4 no coinciden del todo:** `DirectoryToolExecutor` filtra con `authorize_agent` solamente, mientras M4 llama también `authorize_subject`; y `locale` es un argumento del flow (la prueba de punta a punta fija `"es"`). Un especialista listado puede entonces rechazarse con `not_eligible` (falla seguro).
 18. **Endurecer G0-22/G0-26:** `decide.choices_from` puede leer un hecho de un nodo `agent` (§6).
 19. **Linaje por run del registry sin `origin`** (§8).

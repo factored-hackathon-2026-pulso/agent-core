@@ -32,7 +32,7 @@ def build_api_deps(ports: ServePorts, *, registry_service: RegistryService | Non
         clock=ports.clock, ids=ports.ids, keys=ports.keys, uow_factory=ports.uow_factory, audit=ports.audit,
         registry=ports.registry, releases=ports.releases, tools=ports.tools, gateway=ports.gateway,
         providers=ports.providers, calibrations=ports.calibrations, transcript=ports.transcript,
-        authz=ports.authz, classifier=ports.classifier))
+        authz=ports.authz, classifier=ports.classifier, directory=ports.directory))
     return ApiDeps(
         verifier=ports.verifier, authz=ports.authz, registry=ports.registry, uow_factory=ports.uow_factory,
         counters=ports.counters, clock=ports.clock, ids=ports.ids, turns=built.turns,
