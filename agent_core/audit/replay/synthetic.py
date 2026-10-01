@@ -14,6 +14,7 @@ from agent_core.views import FieldClassifier
 _EMAIL = re.compile(r"[\w.+-]+@([\w-]+(?:\.[\w-]+)+)")
 _DIGITS = re.compile(r"\d{6,}")
 _STRICT = ("pii_direct", "pii_quasi")
+_SHA256_HEX = re.compile(r"[0-9a-f]{64}")
 
 
 class SyntheticCatalog(Model):
@@ -66,6 +67,8 @@ def check_fixture(
         strict = rule is not None and rule.field_class in _STRICT
         if strict and text not in catalog.values:
             bad.append(path)
+        elif _SHA256_HEX.fullmatch(text):
+            continue  # a content hash (e.g. the directory hash, ADR 0021), as in `events`: not personal data
         elif any(m.group(1) not in catalog.email_domains for m in _EMAIL.finditer(text)):
             bad.append(path)
         elif any(m.group(0) not in catalog.numbers for m in _DIGITS.finditer(text)):

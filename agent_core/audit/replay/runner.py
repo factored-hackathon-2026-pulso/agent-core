@@ -32,10 +32,21 @@ class ReplayCase:
 
 class EngineRunner(Protocol):
     """Corre M4 + M2 con los puertos grabados y devuelve la secuencia de eventos producida.
-    La implementa el cableado (`agent_core.cli`): `audit` no puede importar `turn` ni `interpreter`.
-    Debe lanzar `ReplayDesync` (lo hacen los puertos grabados) y no usar más puertos que `RecordedPorts`."""
+    La implementa el cableado (`testing.replay`): `audit` no puede importar `turn` ni `interpreter`.
+    Debe lanzar `ReplayDesync` (lo hacen los puertos grabados) y no usar más puertos que `RecordedPorts`.
+
+    Returns the events of every run of the session, run by run in creation order: the replayed run first,
+    then each run it transferred to (ADR 0021). `case.recorded` has the same shape (`events + linked`)."""
 
     def run(self, case: ReplayCase, ports: RecordedPorts) -> list[EngineEvent]: ...
+
+
+def _by_run(events: list[EngineEvent]) -> list[tuple[str, list[EngineEvent]]]:
+    """`[(run_id, events)]` in order of first appearance (the linked runs, in creation order)."""
+    runs: dict[str, list[EngineEvent]] = {}
+    for event in events:
+        runs.setdefault(event.run_id, []).append(event)
+    return list(runs.items())
 
 
 def _no_definitions(_: EntityRef) -> ToolDef:
@@ -51,29 +62,39 @@ class Replayer:
 
     def replay(self, source: Fixture | str, mode: ReplayMode) -> ReplayReport:
         start = self._clock.monotonic_ns()
-        events, inputs, full, drafts, run_id, release = self._resolve(source, mode)
+        events, linked, inputs, full, drafts, run_id, release = self._resolve(source, mode)
         chain = check_chain(run_id, events)
         if not chain.ok:
             return self._report(mode, run_id, release, start, "chain_broken", chain_broken_at=chain.broken_at)
-        ports = build_ports(events, mode, full=full, drafts=drafts, definitions=self._definitions)
-        case = ReplayCase(run_id, release, mode, inputs, events)
+        for linked_run, chain_events in _by_run(linked):
+            check = check_chain(linked_run, chain_events)
+            if not check.ok:
+                return self._report(mode, run_id, release, start, "chain_broken",
+                                    chain_broken_at=check.broken_at)
+        recorded = [*events, *linked]
+        ports = build_ports(recorded, mode, full=full, drafts=drafts, definitions=self._definitions)
+        case = ReplayCase(run_id, release, mode, inputs, recorded)
         try:
             produced = self._engine.run(case, ports)
         except ReplayDesync as desync:
             div = Divergence(event_seq=desync.event_seq, expected=desync.expected, actual=desync.actual)
             return self._report(mode, run_id, release, start, "diverged", first_divergence=div)
-        found = first_divergence(events, produced)
+        found = first_divergence(recorded, produced)
         return self._report(mode, run_id, release, start, "match" if found is None else "diverged",
                             first_divergence=found)
 
     def _resolve(
         self, source: Fixture | str, mode: ReplayMode,
-    ) -> tuple[list[EngineEvent], list[dict[str, JsonValue]], FullSource, list[JsonValue], str, str]:
+    ) -> tuple[list[EngineEvent], list[EngineEvent], list[dict[str, JsonValue]], FullSource, list[JsonValue],
+               str, str]:
+        """`(events, linked, inputs, full, drafts, run_id, release)`. A `run_id` replay does not follow the
+        session yet (`linked` is empty): M11 decision 24, pending."""
         if isinstance(source, Fixture):
             full: FullSource = FixtureFullSource(source.full) if mode == "fixture" else ForbiddenFullSource()
             fixture_drafts = source.drafts if mode == "fixture" else []
             recorded: list[EngineEvent] = list(source.events)
-            return recorded, source.inputs, full, fixture_drafts, source.run_id, source.release
+            linked: list[EngineEvent] = list(source.linked)
+            return recorded, linked, source.inputs, full, fixture_drafts, source.run_id, source.release
         if mode == "fixture":
             raise ValueError("el modo fixture necesita un Fixture, no un run_id")
         if self._audit is None:
@@ -96,7 +117,7 @@ class Replayer:
         drafts: list[JsonValue] = [
             e.text_model for e in entries
             if e.role == "rejected_draft" or (e.role == "assistant" and e.turn_id in llm_final)]
-        return events, inputs, ForbiddenFullSource(), drafts, source, release
+        return events, [], inputs, ForbiddenFullSource(), drafts, source, release
 
     def _report(self, mode: ReplayMode, run_id: str, release: str, start: int,
                 verdict: Literal["match", "diverged", "chain_broken"], *,
