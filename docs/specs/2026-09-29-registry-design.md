@@ -352,6 +352,7 @@ Todos **aditivos**; ninguno bloquea lo que está en curso.
 2. `Release.knowledge_snapshot: EntityRef | None = None` (opcional; `require_exact_refs` ya lo cubre).
 3. Regenerar `contracts/` y subir `SCHEMA_VERSION` (versión menor) si ya se generó.
 4. `testing/fakes/registry.py` y `InMemoryRegistry` aceptan el tipo nuevo.
+5. `Agent.metrics` y los tipos del DSL (`SCHEMA_VERSION` 0.5.0, ADR 0020).
 
 **No cambia:** `RegistryPort`, `EngineEvent`, `ProblemCode` ni las entidades existentes. `eval_suite`, la documentación por versión y los códigos de error del registry viven en el paquete `agent_core.registry`.
 
@@ -362,6 +363,7 @@ Todos **aditivos**; ninguno bloquea lo que está en curso.
 3. `load_registry`: lee `knowledge_snapshots/<id>@<versión>.yaml` (manifiestos; el texto de las páginas no viaja en el YAML).
 4. **Frontera:** exportar en `flows/__init__.py` las funciones puras que el registry reutiliza (validación de flow, chequeos por agente, `derive_claims`, `pin_release`, `Violation`), y verificar que `AuthoringRegistry` pueda construirse desde objetos en memoria sin pasar por disco.
 5. `.importlinter`: contrato nuevo para `agent_core.registry` (usa `domain`, `ports` y la interfaz pública de `flows`).
+6. Reglas `MT-01` a `MT-06` en `validate_agent`.
 
 **No cambia:** las reglas G0 ni el mensaje "conocimiento no habilitado (tema #10)": el nodo `knowledge` pertenece a M12.
 
@@ -380,6 +382,7 @@ Todos **aditivos**; ninguno bloquea lo que está en curso.
 - `import-linter`, `mypy` y `ruff` en verde.
 - Los eventos de `registry_events` validan contra su esquema.
 - Cambios de §15 aplicados en M0 y M1.
+- `agent_core.registry.evaluation` con `EvalSuite`, `suite_problems`, `classify_yardstick_change` y `evaluate_gate` (T-EVAL-01 a 03, 05 a 08, 10 a 13 y 15).
 - Sin TODO sin issue.
 
 ## 17. Abiertos

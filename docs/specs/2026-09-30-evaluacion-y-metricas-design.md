@@ -54,10 +54,12 @@ class MetricDef(Model):
 class MetricExpr(Model):              # determinista, sobre eventos
     event: str                        # del catálogo cerrado (§4)
     where: list[Predicate] = []       # campos del catálogo, valores literales
-    aggregation: Aggregation          # count | sum | avg | percentile(p) | rate(over=<MetricExpr>)
-    field: str | None                 # requerido por sum, avg y percentile
-    window: Literal["scenario", "run"] | timedelta   # cota obligatoria
-    group_by: list[str] = []          # campos del catálogo
+    aggregation: Aggregation          # count | sum | avg | percentile | rate
+    field: str | None                 # requerido por sum, avg y percentile, y solo por ellas
+    percentile: int | None            # 1..99; requerido por percentile, y solo por ella
+    denominator: MetricExpr | None    # requerido por rate, y solo por ella: un count
+    window: Literal["scenario", "run"] | timedelta   # cota obligatoria; timedelta positivo
+    group_by: list[str] = []          # campos del catálogo; máximo 3
 
 
 class JudgeExpr(Model):               # único tipo no determinista
@@ -66,7 +68,7 @@ class JudgeExpr(Model):               # único tipo no determinista
     target_event: str                 # evento cuyo contenido se califica
 ```
 
-- `rate(over=...)` define el denominador con otra `MetricExpr`; no hay división libre.
+- `rate` define el denominador en `denominator`, otra `MetricExpr` que debe ser un `count` con la misma ventana y agrupación que el numerador; no hay división libre.
 - `window` es obligatoria. Una métrica sin cota se rechaza.
 - Las expresiones no tienen funciones de hora, subconsultas ni uniones: no pueden depender del instante de ejecución ni leer datos fuera del catálogo.
 - Una métrica `judge` declara su margen de ruido en la suite igual que las demás (§5), y el perfil del juez es parte de su definición: cambiar el perfil o la rúbrica cuenta como cambiar la expresión (§6.2).
@@ -90,34 +92,43 @@ class EvalSuite(Model):
     version: ExactVersion
     agent_id: EntityId
     scenarios: list[Scenario] = Field(min_length=1)
-    thresholds: dict[str, MetricThreshold]   # por id de métrica `gate` o `guardrail`
+    thresholds: dict[str, MetricThreshold] = {}   # por id de métrica `gate` o `guardrail`
 
 
 class Scenario(Model):
-    id: str
-    source: ScriptedSource | DatasetSource
-    assertions: list[Assertion] = []         # sobre eventos: "debe escalar con X", "debe llamar a la tool Y"
+    id: EntityId
+    source: ScriptedSource | DatasetSource   # discriminada por `kind`
+    assertions: list[Assertion] = []         # máximo 20
     repetitions: PositiveInt = 1             # N; de ahí se estima el ruido
 
 
+class Assertion(Model):                      # sobre eventos: "debe escalar con X", "debe llamar a la tool Y"
+    event: str                               # del catálogo (§4)
+    where: list[Predicate] = []              # máximo 8
+    expect: Literal["at_least_one", "none"] = "at_least_one"
+
+
 class ScriptedSource(Model):                 # habilitada
+    kind: Literal["scripted"] = "scripted"
     user_turns: list[str] | None             # agente conversacional
-    signal: JsonValue | None                 # agente task
-    tool_fixtures: dict[str, JsonValue]      # tools simuladas
-    clock_start: datetime                    # Clock fijo
+    signal: JsonValue                        # agente task; exactamente uno de user_turns o signal
+    tool_fixtures: dict[str, JsonValue] = {} # tools simuladas
+    clock_start: UtcDatetime                 # Clock fijo
 
 
 class DatasetSource(Model):                  # DISEÑADA, DESACTIVADA (§9)
+    kind: Literal["dataset"] = "dataset"
     dataset_id: str
-    dataset_hash: str
+    dataset_hash: Sha256Hex
     reference_outcome: bool = False          # usa el resultado histórico como etiqueta
 
 
 class MetricThreshold(Model):
-    noise_margin: Decimal                    # tolerancia frente a la base
-    floor: Decimal | None                    # solo agentes sin release base
+    noise_margin: Decimal                    # tolerancia frente a la base; no negativo
+    floor: Decimal | None = None             # solo agentes sin release base
 ```
 
+- `suite_problems(agent, suite)` devuelve lo que impide publicar: `missing_suite`, `agent_mismatch`, `duplicate_scenario`, `dataset_source_disabled`, `unknown_assertion_event`, `missing_threshold` (métrica `gate`/`guardrail` sin umbral) y `unknown_threshold_metric`.
 - Todos los valores numéricos son `Decimal` (regla 4 de CLAUDE.md).
 - Los escenarios `scripted` usan solo datos sintéticos (regla 5 de CLAUDE.md, registry §7).
 - Un escenario cuenta como "pasado" solo si todas sus aserciones se cumplen; el resultado por escenario aparece en el reporte.
@@ -131,8 +142,9 @@ Se congela la candidata **C** y se identifica la base **B** (puede no existir).
 1. **Vara vieja** (solo si hay B). Se corren la suite y las definiciones de métricas de B, tal como estaban, sobre C y sobre B.
    - `guardrail`: C no puede ser peor que B. Tolerancia cero.
    - `gate`: C no puede ser peor que B por más del `noise_margin`.
+   - Un escenario que pasaba en B y no pasa en C falla el gate.
 2. **Vara nueva.** Se corre la suite de C. Toda métrica o escenario nuevo o modificado debe superar su `floor`. Si la métrica existía sin cambios en B, debe además superar a B.
-3. **Guardarraíles de plataforma** (§7) se evalúan siempre y deben valer 0 en la candidata; si hay base, además no pueden empeorar frente a ella en la suite vieja.
+3. **Guardarraíles de plataforma** (§7) se evalúan siempre y deben valer 0 en la candidata, medidos en la corrida de la suite nueva. Si hay base, además deben estar medidos en las dos corridas de la suite vieja (B y C) y no pueden empeorar frente a la base; **un guardarraíl de plataforma sin medir en cualquiera de las dos corridas viejas falla** (fail-closed). Sin medir en la suite nueva también falla.
 4. **Veredicto** = AND de todo lo anterior. Cada métrica se reporta por separado con valor, base y umbral. No hay puntaje compuesto. Si una métrica de B no puede calcularse sobre C, el gate falla.
 5. **Sin B:** solo se aplica la vara nueva contra los `floor`.
 6. `failed_infra`, sin excepción manual del gate y propuesta que vuelve a `draft` ante un fallo: sin cambios respecto al registry §5.2.
@@ -144,7 +156,7 @@ Ambas mediciones usan la misma suite congelada y el mismo `candidate_hash`.
 El registry compara la suite y las definiciones de C contra las de B. Solo las métricas `gate` y `guardrail` forman parte de la vara: borrar o cambiar una métrica `monitor` no se marca. Una métrica cuenta como cambiada si cambia su `role`, `higher_is_better` o `expr`; la descripción y la alerta no cuentan.
 
 - **Solo endurecimiento:** escenarios añadidos, `noise_margin` menor, `floor` mayor, rol promovido (`monitor → gate → guardrail`), métricas nuevas.
-- **`yardstick_loosened`:** cualquier otro cambio sobre algo ya existente. Incluye borrar un escenario, bajar un `floor`, ampliar un `noise_margin`, degradar un rol, cambiar `expr`, `higher_is_better`, el perfil del juez o su rúbrica, y bajar `repetitions`.
+- **`yardstick_loosened`:** cualquier otro cambio sobre algo ya existente. Incluye borrar una métrica `gate`/`guardrail`, quitarle su umbral a la suite, borrar un escenario, bajar un `floor`, ampliar un `noise_margin`, degradar un rol, cambiar `expr`, `higher_is_better`, el perfil del juez o su rúbrica, y bajar `repetitions`.
 
 La marca aparece como elemento de aprobación aparte (§8). **Mientras no se publique, la vara vieja sigue vigente**, y una vez publicada solo cambia la vara de propuestas posteriores: nunca la de la propia propuesta que aflojó.
 
@@ -275,8 +287,8 @@ Este trabajo especifica 1 y 2 y deja interfaces para 3 y 4.
 ## 15. Definición de terminado
 
 - `Agent.metrics` y los tipos asociados en M0, con `SCHEMA_VERSION` subida y `contracts/` regenerado (`uv run agentcore contracts --check` en verde).
-- Reglas del DSL en M1 con `T-EVAL-01` a `T-EVAL-04` en verde.
-- Entidad `eval_suite`, gate de §6 y marca `yardstick_loosened` en el registry, con `T-EVAL-05` a `T-EVAL-13`, `T-EVAL-15` a `T-EVAL-17` en verde.
+- Reglas del DSL en M1 con `T-EVAL-01` a `T-EVAL-03` en verde (`T-EVAL-04`, compilador SQL, es de la analítica).
+- Entidad `eval_suite`, gate de §6 y marca `yardstick_loosened` en el registry, con `T-EVAL-05` a `T-EVAL-13` y `T-EVAL-15` en verde (implementado como funciones puras en `agent_core.registry.evaluation`; `T-EVAL-16` y `T-EVAL-17` quedan para el servicio del registry, junto con la persistencia de `eval_suite` y de `releases.eval_suite_refs`).
 - El evaluador en memoria y el compilador SQL pasan `T-EVAL-14` (cuando existan las piezas 3 y 4).
 - `import-linter`, `mypy` y `ruff` en verde.
 - Sin TODO sin issue.

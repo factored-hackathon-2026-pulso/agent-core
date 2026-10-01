@@ -41,6 +41,8 @@ La spec general describe el motor completo en un solo documento. Aquí se parte 
 
 **Fuera de esta tabla:** el registry (unidad 2) tiene su propia spec, `../2026-09-29-registry-design.md`. Añade `EntityKind.knowledge_snapshot` y `Release.knowledge_snapshot` a M0, y M1 le aporta las funciones puras de validación y `pin_release` (ver §15 de esa spec).
 
+**Documentos relacionados:** evaluación y métricas por agente (`Agent.metrics`, `eval_suite`, gate con doble vara), en `../2026-09-30-evaluacion-y-metricas-design.md` y `../../adr/0020-evaluacion-y-metricas-por-agente.md`. Añade a M0 los tipos del DSL de métricas (`SCHEMA_VERSION` 0.5.0) y a M1 las reglas `MT-01` a `MT-06`.
+
 ## 3. Dependencias
 
 Un módulo solo importa `agent_core.domain`, `agent_core.ports` y la **interfaz pública** (`__init__.py`) de los módulos de su columna "usa". Se hace cumplir en CI con `import-linter`.
