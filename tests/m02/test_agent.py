@@ -10,7 +10,7 @@ from agent_core.interpreter import AgentFinal, AgentStepResult, AgentToolCall, R
 from agent_core.ports import ToolStatus
 from testing.fakes.agent import ScriptedAgent
 from testing.fakes.tools import Scripted
-from tests.m02.harness import World, flow, tool_def
+from tests.m02.harness import World, fact, flow, slot, tool_def
 
 SCHEMA = {"type": "object", "properties": {"resumen": {"type": "string"}}, "required": ["resumen"],
           "additionalProperties": False}
@@ -171,6 +171,56 @@ def test_the_loop_is_deterministic() -> None:
 
     assert run() == run()
     assert Resume().kind == "none"
+
+
+# --- input_view: lo que el nodo expone al modelo (T1) ------------------------------------------------
+
+
+def test_without_input_view_the_model_gets_no_inputs() -> None:
+    w, port, state = _world(_final())
+    w.step(state, agents=port)
+    assert port.calls[0].inputs == {}
+
+
+def test_input_view_reaches_the_model_in_model_view_with_wrapped_slots() -> None:
+    w = World()
+    w.add_tool(tool_def("buscar", source="customers"), handler=lambda a: {})
+    port = ScriptedAgent([_call(), _final()])
+    f = flow(_agent(input_view=["slots.pregunta", "facts.cliente.value.document_number"]), *TAIL)
+    state = w.state(f, slots={"pregunta": slot("¿por qué me cobraron?")},
+                    facts={"cliente": fact({"document_number": "12345678"}, ref="buscar@1.0.0")})
+    w.step(state, agents=port)
+    inputs = port.calls[0].inputs
+    assert list(inputs) == ["slots.pregunta", "facts.cliente.value.document_number"]
+    text = inputs["slots.pregunta"]
+    assert isinstance(text, str) and text.startswith("<datos_no_confiables") and "cobraron" in text
+    assert inputs["facts.cliente.value.document_number"] == "⟦doc:1⟧"  # vista `model`: el dato va tokenizado
+    assert "12345678" not in repr(port.calls)
+    assert port.calls[1].inputs == inputs  # cada paso recibe las mismas entradas
+
+
+def _with_inputs(*steps: AgentStepResult, input_view: list[str],
+                 **state: Any) -> tuple[World, ScriptedAgent, Any]:
+    w = World()
+    w.add_tool(tool_def("buscar"), handler=lambda a: {"n": 2})
+    port = ScriptedAgent(steps)
+    return w, port, w.state(flow(_agent(input_view=input_view), *TAIL), **state)
+
+
+def test_a_missing_input_gives_up_without_calling_the_model() -> None:
+    w, port, state = _with_inputs(_final(), input_view=["slots.pregunta"],
+                                  slots={"pregunta": slot("x", "claimed")})  # claimed = ausente (D7)
+    out = w.step(state, agents=port)
+    assert _node(out) == "esc" and port.calls == []
+    assert out.state.budgets_used.turn_model_calls == 0
+
+
+def test_provenance_includes_the_facts_read_by_input_view() -> None:
+    w, port, state = _with_inputs(_call(), _final(), input_view=["facts.previo.value.x"],
+                                  facts={"previo": fact({"x": 1}, fact_id="fact-0042")})
+    out = w.step(state, agents=port)
+    (tool_event,) = _types(out, "tool_called")
+    assert out.state.facts["hallazgo"].source.inputs == ["fact-0042", tool_event.payload.call_id]
 
 
 class FailingAgent:

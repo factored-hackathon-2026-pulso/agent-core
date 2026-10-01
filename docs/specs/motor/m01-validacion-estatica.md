@@ -131,7 +131,7 @@ $ agentcore validate <ruta-registry> [--json]
 
 ### 3.2 Rutas
 
-Una sola gramática para `args`, `rule.expr`, `verify.predicate`, `escalate.priority_expr`, `end.output_map`, plantillas, `allowed_facts` y `decide.input_view`:
+Una sola gramática para `args`, `rule.expr`, `verify.predicate`, `escalate.priority_expr`, `end.output_map`, plantillas, `allowed_facts` y el `input_view` de `decide` y de `agent`:
 
 ```
 ruta    := "slots."     nombre
@@ -160,6 +160,7 @@ campo   := [A-Za-z0-9_]+
 | `escalate.priority_expr` | `slots`, `facts` |
 | `end.output_map` (valores) | `slots`, `facts` |
 | `decide.input_view` | `slots`, `facts` |
+| `agent.input_view` | `slots`, `facts` |
 | plantillas (`{{ }}`) | `slots`, `facts` |
 | `generate.allowed_facts` | `facts` |
 
@@ -259,6 +260,7 @@ Las comprobaciones de alcanzabilidad son BFS con una arista quitada, O(N + E) ca
 | escritura | `facts[save_as]` | — |
 | `verify` | `facts[save_as]` | la ruta de `by: fact:<ruta>`, si la hay |
 | `decide` | `decisions[save_as]` | rutas de `input_view` (`None` ⇒ ninguna) |
+| `agent` | `facts[save_as]` | rutas de `input_view` (vacío ⇒ ninguna). Las tools que el modelo llama no cuentan: sus argumentos no son rutas |
 
 **Origen de X:** es el menor punto fijo que contiene:
 
@@ -410,7 +412,8 @@ Cualquier error de `load_yaml` es una sola `Violation` G0-01 con la ruta del arc
 - G0-01 ya no rechaza `agent` (`PRODUCTION_NODE_KINDS` = `subflow`, `await_approval`).
 - **Referencias:** `tools_allowed` y `prompt_ref` son sitios de referencia (G0-02) y `pin_release` los fija.
 - **G0-07** es alcanzable. **G0-15** cubre también el `prompt_ref` del `agent`. **G0-12** (locales) alcanza al prompt por ser un sitio de plantilla. **G0-06** trata `gave_up` como rama de fallo.
-- **G0-22:** ninguna ruta `facts.<save_as>` de un nodo `agent` se lee en `rule.expr`, `verify.predicate`, `tool.args`, `confirm.action.args`, `escalate.priority_expr` ni `end.output_map`. Solo `respond` (plantilla, `allowed_facts` y su plantilla de respaldo) y el `input_view` de un `decide` pueden leerla. Para que un valor del agente llegue a una escritura debe pasar por un `collect` (la persona lo da) o por un `decide` con esquema.
+- **G0-22:** ninguna ruta `facts.<save_as>` de un nodo `agent` se lee en `rule.expr`, `verify.predicate`, `tool.args`, `confirm.action.args`, `escalate.priority_expr` ni `end.output_map`. Solo `respond` (plantilla, `allowed_facts` y su plantilla de respaldo) y el `input_view` de un `decide` o de otro `agent` pueden leerla. Para que un valor del agente llegue a una escritura debe pasar por un `collect` (la persona lo da) o por un `decide` con esquema.
+- **`input_view` del `agent`** (2026-09-30, `SCHEMA_VERSION` 1.1.0): solo admite rutas (un literal o una ruta mal formada → G0-01), solo `slots` y `facts` con `.value` (G0-10). En `derive_claims` el `agent` es productor (§3.6): si su `input_view` lee el hecho de una escritura verificada, quien lea su salida reclama esa acción, como con `decide`. Pruebas en `tests/m01/test_agent_node.py`.
 - **G0-24** (2026-09-30, unidad 5; **implementada**): toda tool de `tools_allowed` de un nodo `agent` lleva `description` y un `args_schema` dentro del subconjunto cerrado. Es el catálogo que `LLMAgentPort` le muestra al modelo; sin él falla cerrado en runtime, así que la regla lo detecta al validar. No alcanza a las tools fuera de un nodo `agent`.
 - Pruebas: `tests/m01/test_agent_node.py`.
 

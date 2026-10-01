@@ -67,6 +67,7 @@
   - evento `knowledge_read` (`KnowledgeReadPayload`, `FilteredPage`; emisor M12);
   - puertos: `KnowledgeSource` definitivo (`capabilities`, `index`, `read`) y `AuthzPort.knowledge_view(principal, purpose) -> KnowledgeView`.
   Los estados guardados con la versión anterior siguen cargando (`pages` tiene valor por defecto); los flows con `knowledge_refs` dejan de validar.
+- rev. 11 (2026-09-30), entrada del nodo `agent` (`SCHEMA_VERSION` 1.0.0 → **1.1.0**, menor: un campo opcional nuevo). `AgentNodeConfig.input_view: list[str] = []`: rutas `slots.*` y `facts.*` que el modelo ve en vista `model` (M1 §3.2, m02 §3.7). Sin él, el modelo solo veía el `goal` fijo y no podía atender lo que pidió la persona. Los flows existentes no cambian (vacío = no ve nada).
 - implementación de M0 (2026-09-29), decisiones que el spec no cubría:
   - `loads` rechaza claves duplicadas; `to_jsonable` rechaza claves que colisionan tras `str()`; `RecursionError` se convierte en `ValueError`; se rechaza un `Decimal` con |exponente| > 1000;
   - `dumps` escribe `Decimal` con `format(d, "f")` (no `str(d)`, que puede emitir `1E+3`);
@@ -264,6 +265,7 @@ class KnowledgeConfig: mode: Literal["read", "navigate"]; pages: list[str] = [] 
 # Producción (G0-01 los rechaza en el MVP): AgentNodeConfig, SubflowConfig, AwaitApprovalConfig
 # ADR 0019 (SCHEMA_VERSION 0.4.0): `agent` se habilitó. AgentNodeConfig gana `save_as` y
 # `output_schema: dict[str, JsonValue]`; FactSource.kind gana "agent"; nuevo evento `agent_step` (emisor M2).
+# rev. 11 (SCHEMA_VERSION 1.1.0): AgentNodeConfig gana `input_view: list[str] = []` (rutas slots/facts).
 # Sin implementar: RiskClass.write_draft (efecto confinado a un borrador del registry; m01 §3.13).
 
 Node = Annotated[DecideNode | RuleNode | CollectNode | ToolNode | WriteToolNode | ConfirmNode

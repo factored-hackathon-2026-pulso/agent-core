@@ -300,7 +300,7 @@ Cada nodo tiene `id`, `type`, `config` y `next`, que mapea resultado → id de n
 | `escalate` | `reason_code`, `target_queue`, `priority_expr?` | terminal |
 | `end` | `outcome: resolved\|abstained\|cancelled\|clarify_exhausted` (modo task: `completed\|failed`), `output_map?`. `abandoned` y `escalated` no se declaran: los asigna el motor (§4.1, §4.10, §9) | terminal |
 | `knowledge` | `mode: read` (M12): `pages[]` (`ruta` o `ruta#ancla`, fijas en el snapshot de la release), `purpose`, `save_as`; deja `RunState.pages[save_as]`. `mode: navigate` (`scope`, `selector`) está en el esquema pero no se ejecuta | `ok`, `not_found`, `denied` (`navigate`: más `low_confidence`) |
-| `agent` *(producción)* | `tools_allowed[]` (clases `read` y `compute`), `max_steps`, `prompt_ref`, `goal`. Sus lecturas entran como hechos y su salida pasa por el validador | `answered`, `gave_up` |
+| `agent` *(producción)* | `tools_allowed[]` (clases `read` y `compute`), `max_steps`, `prompt_ref`, `goal`, `input_view` (lo que el modelo ve del estado, en vista `model`). Sus lecturas entran como hechos y su salida pasa por el validador | `answered`, `gave_up` |
 | `subflow` *(producción)* | `flow: flow@v`, `map_in`, `map_out` | resultados declarados por el subflow |
 | `await_approval` *(producción, ADR 0014)* | `approver: {principal_type, roles[]}`, `summary_template`, `timeout` | `approved`, `rejected`, `timeout` |
 

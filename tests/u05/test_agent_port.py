@@ -86,11 +86,18 @@ def test_the_gateway_gets_the_prompt_locale_step_schema_and_the_catalog() -> Non
     (call,) = gateway.calls
     assert str(call.prompt) == "p/agente@1.0.0" and call.locale == "pt" and call.schema == STEP_SCHEMA
     assert call.inputs == {
-        "goal": "Investiga", "step": 2, "output_schema": OUTPUT_SCHEMA,
+        "goal": "Investiga", "step": 2, "output_schema": OUTPUT_SCHEMA, "inputs": {},
         "feedback": "/: falta la propiedad 'resumen'",
         "tools": [{"tool": "leer@1.0.0", "description": "Busca un cargo", "args_schema": ARGS_SCHEMA}],
         "observations": [{"tool": "leer@1.0.0", "args": {"q": "x"}, "status": "ok", "result": {"n": 2},
                           "error": None}]}
+
+
+def test_the_node_inputs_reach_the_model_as_given() -> None:  # T1: lo que declara `input_view`
+    port, gateway = _port(_step({"kind": "final", "output": {}}))
+    inputs: dict[str, JsonValue] = {"slots.pregunta": "<datos_no_confiables>¿saldo?</datos_no_confiables>"}
+    port.step(_request(inputs=inputs), run_state())
+    assert gateway.calls[0].inputs["inputs"] == inputs
 
 
 def test_a_tool_without_documentation_is_a_programming_error() -> None:  # T-U5-14
