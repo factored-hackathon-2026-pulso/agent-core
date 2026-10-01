@@ -125,10 +125,11 @@ class DatasetSource(Model):                  # DISEÑADA, DESACTIVADA (§9)
 
 class MetricThreshold(Model):
     noise_margin: Decimal                    # tolerancia frente a la base; no negativo
-    floor: Decimal | None = None             # solo agentes sin release base
+    floor: Decimal | None = None             # exigido a toda métrica gate/guardrail nueva o cambiada, con o sin base
 ```
 
-- `suite_problems(agent, suite)` devuelve lo que impide publicar: `missing_suite`, `agent_mismatch`, `duplicate_scenario`, `dataset_source_disabled`, `unknown_assertion_event`, `missing_threshold` (métrica `gate`/`guardrail` sin umbral) y `unknown_threshold_metric`.
+- `suite_problems(agent, suite)` devuelve lo que impide publicar: `missing_suite`, `agent_mismatch`, `duplicate_scenario`, `dataset_source_disabled`, `unknown_assertion_event`, `invalid_assertion_filter` (el `where` de una aserción usa un campo que no existe en el evento, un valor de otro tipo o un operador de orden sobre un campo no numérico; misma comprobación que `MT-02`, función `predicate_problems` de M0; sin ella un filtro mal escrito con `expect: none` pasaría siempre), `missing_threshold` (métrica `gate`/`guardrail` sin umbral) y `unknown_threshold_metric`.
+- `floor` se exige a toda métrica `gate`/`guardrail` nueva o cambiada, haya o no release base; es un mínimo si mayor es mejor y un máximo si menor es mejor. Un `user_turns` vacío no es válido (un escenario que no ejecuta nada).
 - Todos los valores numéricos son `Decimal` (regla 4 de CLAUDE.md).
 - Los escenarios `scripted` usan solo datos sintéticos (regla 5 de CLAUDE.md, registry §7).
 - Un escenario cuenta como "pasado" solo si todas sus aserciones se cumplen; el resultado por escenario aparece en el reporte.
@@ -141,22 +142,24 @@ Se congela la candidata **C** y se identifica la base **B** (puede no existir).
 
 1. **Vara vieja** (solo si hay B). Se corren la suite y las definiciones de métricas de B, tal como estaban, sobre C y sobre B.
    - `guardrail`: C no puede ser peor que B. Tolerancia cero.
-   - `gate`: C no puede ser peor que B por más del `noise_margin`.
-   - Un escenario que pasaba en B y no pasa en C falla el gate.
-2. **Vara nueva.** Se corre la suite de C. Toda métrica o escenario nuevo o modificado debe superar su `floor`. Si la métrica existía sin cambios en B, debe además superar a B.
-3. **Guardarraíles de plataforma** (§7) se evalúan siempre y deben valer 0 en la candidata, medidos en la corrida de la suite nueva. Si hay base, además deben estar medidos en las dos corridas de la suite vieja (B y C) y no pueden empeorar frente a la base; **un guardarraíl de plataforma sin medir en cualquiera de las dos corridas viejas falla** (fail-closed). Sin medir en la suite nueva también falla.
+   - `gate`: C no puede ser peor que B por más del `noise_margin`, aplicado en la dirección de la métrica (`higher_is_better`).
+   - Un escenario que pasaba en B y no pasa en C falla el gate. Un escenario de la suite de B sin resultado en la corrida de B o de C falla (fail-closed); solo un fallo explícito en B lo exime.
+2. **Vara nueva.** Se corre la suite de C. Toda métrica o escenario nuevo o modificado debe superar su `floor` (un máximo si la métrica es de menor-es-mejor). Si la métrica existía sin cambios en B, debe además superar a B.
+3. **Guardarraíles de plataforma** (§7) se evalúan siempre y deben valer 0 en la candidata, medidos en la corrida de la suite nueva. Si hay base, además deben estar medidos en las dos corridas de la suite vieja (B y C) y valer 0 también en la corrida vieja de C (no basta con no empeorar frente a la base: una fuga medida en C no pasa); **un guardarraíl de plataforma sin medir en cualquiera de las dos corridas viejas falla** (fail-closed). Sin medir en la suite nueva también falla.
 4. **Veredicto** = AND de todo lo anterior. Cada métrica se reporta por separado con valor, base y umbral. No hay puntaje compuesto. Si una métrica de B no puede calcularse sobre C, el gate falla.
 5. **Sin B:** solo se aplica la vara nueva contra los `floor`.
 6. `failed_infra`, sin excepción manual del gate y propuesta que vuelve a `draft` ante un fallo: sin cambios respecto al registry §5.2.
 
 Ambas mediciones usan la misma suite congelada y el mismo `candidate_hash`.
 
+`evaluate_gate` no verifica sus precondiciones: que `suite_problems` sea vacío, que los ids de métrica sean únicos (`MT-03`) y que cada reporte se haya medido sobre la suite y la release correctas (`GateRuns` no lleva referencia a la suite ni al `candidate_hash`). Quien la llama las garantiza.
+
 ### 6.2 Clasificación de cambios en la vara
 
 El registry compara la suite y las definiciones de C contra las de B. Solo las métricas `gate` y `guardrail` forman parte de la vara: borrar o cambiar una métrica `monitor` no se marca. Una métrica cuenta como cambiada si cambia su `role`, `higher_is_better` o `expr`; la descripción y la alerta no cuentan.
 
-- **Solo endurecimiento:** escenarios añadidos, `noise_margin` menor, `floor` mayor, rol promovido (`monitor → gate → guardrail`), métricas nuevas.
-- **`yardstick_loosened`:** cualquier otro cambio sobre algo ya existente. Incluye borrar una métrica `gate`/`guardrail`, quitarle su umbral a la suite, borrar un escenario, bajar un `floor`, ampliar un `noise_margin`, degradar un rol, cambiar `expr`, `higher_is_better`, el perfil del juez o su rúbrica, y bajar `repetitions`.
+- **Solo endurecimiento:** escenarios añadidos, `noise_margin` menor, `floor` mayor, rol promovido (`monitor → gate → guardrail`) sin cambiar `expr` ni `higher_is_better`, métricas nuevas.
+- **`yardstick_loosened`:** cualquier otro cambio sobre algo ya existente. Incluye borrar una métrica `gate`/`guardrail`, quitarle su umbral a la suite, borrar un escenario, bajar un `floor`, ampliar un `noise_margin`, degradar un rol, cambiar `expr`, `higher_is_better` (también si la métrica se promueve en la misma propuesta), el perfil del juez o su rúbrica, y bajar `repetitions`.
 
 La marca aparece como elemento de aprobación aparte (§8). **Mientras no se publique, la vara vieja sigue vigente**, y una vez publicada solo cambia la vara de propuestas posteriores: nunca la de la propia propuesta que aflojó.
 
@@ -261,14 +264,16 @@ Este trabajo especifica 1 y 2 y deja interfaces para 3 y 4.
 7. **Semver de la suite:** quién propone el salto (mismo abierto que el registry §17.3).
 8. **Tamaño mínimo de muestra** para comparar contra la base cuando haya pocos escenarios.
 9. **Métricas que el evaluador no calcula** (denominador cero, evento sin datos): hoy cuentan como fallo; decidir con la unidad 6 si algún caso debe ser un pase.
+10. **Forma de `EvalReport`:** `metrics: dict[str, Decimal]` no tiene forma para métricas con `group_by` (un vector por grupo), valores por ventana de escenario ni varianza entre repeticiones, y `scenarios: dict[str, bool]` no dice cómo se agregan N repeticiones. Decidir con la unidad 6.
+11. **`GateItem.threshold` es ambiguo:** significa el margen de ruido en la fase `base_yardstick` y el `floor` en la `new_yardstick`. La interfaz de aprobación (T-EVAL-17) necesita distinguirlos; considerar dos campos en el plan del servicio.
 
 ## 14. Pruebas
 
 | Id | Comportamiento |
 |---|---|
 | T-EVAL-01 | M1 rechaza un `event` o campo fuera del catálogo |
-| T-EVAL-02 | M1 rechaza una métrica sin `window`, o con `field` ausente cuando la agregación lo requiere |
-| T-EVAL-03 | M1 rechaza una expresión con función de hora o referencia a un campo de PII |
+| T-EVAL-02 | El esquema de M0 rechaza una métrica sin `window`, o con `field` ausente cuando la agregación lo requiere |
+| T-EVAL-03 | El esquema de M0 rechaza una expresión con función de hora; la referencia a un campo de PII la rechaza `MT-02` (campo fuera del catálogo) y el test del catálogo garantiza que ningún campo de PII entra en él |
 | T-EVAL-04 | El compilador a SQL es determinista y no emite `now()` |
 | T-EVAL-05 | El gate falla si un `guardrail` empeora, aunque un `gate` mejore |
 | T-EVAL-06 | Cada métrica `gate` se evalúa por separado: basta una que falle para fallar el gate |
