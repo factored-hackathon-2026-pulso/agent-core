@@ -55,13 +55,13 @@
 
 ### 4.3 Readback
 
-`get_write(idempotency_key) -> WriteRecord | None` (`op`, `proposal_id`, `rev_after`, `request_hash`). Lectura abierta a cualquier `builder` autenticado, como las demás.
+`get_write(idempotency_key) -> WriteRecord | None` (`op`, `proposal_id`, `rev_after`, `request_hash`). Lectura abierta a cualquier `builder` autenticado, como las demás. La clave de idempotencia ya ata el contenido (una clave con otro contenido da `idempotency_conflict`), así que el `verify` del constructor solo comprueba que el registro exista con la operación esperada (`readback.op == "<op>"`; para `evaluate`, `readback.verdict == "pass"`). `get_write` devuelve además `verdict`, `run_id` y `on_behalf_of`.
 
 ### 4.4 Regla 8: invariante con pruebas (D1, D2)
 
 1. **Contrato** sobre `InMemoryRegistry` y `PostgresRegistry`: tras un `put_draft`, una entidad o versión que solo existe en el borrador nunca aparece en `resolve_release` ni en `get`.
-2. **Composición:** `serve` solo cablea `PostgresRegistry`; `SnapshotRegistry` solo aparece en `composition/evaluation.py`. (La candidata sirve a un run durante la evaluación, pero no es una release publicada y corre en el sandbox: no viola la regla.)
-3. **Estática:** el SQL de `registry/postgres/runtime.py` no menciona las tablas de propuestas ni de borradores.
+2. **Composición:** ningún módulo fuera de `agent_core/registry/` menciona `SnapshotRegistry`, y dentro del paquete solo lo hacen `service.py`, `snapshot.py` y `__init__.py`. (La candidata sirve a un run durante la evaluación, pero no es una release publicada y corre en el sandbox: no viola la regla.)
+3. **Estática:** `registry/postgres/runtime.py` solo llama a un conjunto cerrado de métodos del `tx` (`get_release`, `release_status`, `get_alias`, `latest_release_for_agent_version`, `get_version` y `blobs`); en particular nunca a `get_proposal`, `get_changes` ni a `get_draft_write`.
 
 ### 4.5 Topes (D12)
 
@@ -73,13 +73,15 @@ Se aplican en `RegistryService`, para propuestas con `origin = auto_detect`:
 
 - `RiskClass.write_draft`. `ToolDef.is_write` la cuenta como escritura, así que le exige `readback_by`.
 - `Action`: `confirm_node_id`, `confirmation_token_hash` y `token_exp` opcionales, con un validador "los tres o ninguno" (ninguno solo en una acción `write_draft`).
-- **No cambia el esquema de nodos** (se reutiliza `ToolConfig`) y **no hay evento nuevo**: `action_dispatched`, `tool_called` y `action_verified` son la auditoría de cada escritura.
+- **Nodo:** `WriteToolConfig` gana la forma `draft: true` con `tool` y `args` propios (`action_from` pasa a opcional; se declara uno u otro). El discriminador `node_kind` trata `tool` con `draft: true` como `tool_write`: así reutiliza las ramas `ok/uncertain/denied`, G0-06 y la recuperación. Un nodo `tool` normal (`ToolConfig`) con una tool de escritura sigue siendo violación de G0-05.1.
+- **`Action`** gana `write_node_id` (el nodo `draft` que la creó). `confirm_node_id`, `confirmation_token_hash` y `token_exp` pasan a opcionales con un validador: una acción con `write_node_id` no lleva ninguno de los tres; una sin él, los tres.
+- **No hay evento nuevo:** `action_dispatched`, `tool_called` y `action_verified` son la auditoría de cada escritura.
 - `SCHEMA_VERSION` 1.0.0 → 1.1.0 (menor), `uv run agentcore contracts` y `contracts --check`. **Aviso de cambio de interfaz al terminar la fase.**
 
 ## 6. Fase 3 — M1
 
-- **G0-05.1:** un nodo `tool` sin `action_from` admite `read`, `compute` y `write_draft`. Las demás clases de escritura siguen exigiendo `confirm`.
-- **G0-23:** un nodo `tool` con `write_draft` cumple `next.ok == next.uncertain == V`, con V un `verify` con `by: idempotency_key` y un `readback` de clase `read`; ningún otro nodo de escritura tiene a V como destino de `ok` o `uncertain`. El flow puede volver a W (iterar el borrador) **solo desde la rama `verified` de V**.
+- **G0-05.1:** un nodo `tool` (`ToolConfig`) admite `read` y `compute`; una escritura va en un nodo con `action_from` (con `confirm`) o con `draft: true` (solo `write_draft`, G0-23).
+- **G0-23:** un nodo con `draft: true` usa una tool `write_draft` con `readback_by: idempotency_key`; `next.ok == next.uncertain == V`, con V un `verify` con `by: idempotency_key` y un `readback` de clase `read`; ningún otro nodo de escritura tiene a V como destino de `ok` o `uncertain`. El flow puede volver a W (iterar el borrador) **solo desde la rama `verified` de V**.
 - **Reclamos:** `respond.claims` y `derive_claims` referencian el id del nodo de escritura cuando no hay `confirm`; el invariante de G0-05.8 no cambia.
 - **AG-02:** un agente cuyos flows usan un `write_draft` tiene `invocable_by ⊆ {builder}` y `subject_kinds == []` (D11).
 - **G0-25:** el prompt del `prompt_ref` de un nodo `agent` tiene un perfil `structured: prompted`.
@@ -97,9 +99,9 @@ En `agent_core/composition/`, implementa `ToolExecutor` sobre `RegistryService`.
 
 - **Credencial:** de servicio, con rol `constructor` y sin `attrs.actor = "human"`, verificada con el verificador del staff. El permiso lo decide el servicio con esa credencial; el principal del run solo viaja en `audit` (D13).
 - **Tools y su clase:**
-  - `write_draft`: `registry.create_proposal`, `registry.put_draft`, `registry.freeze`, `registry.reopen`, `registry.evaluate`.
-  - `compute`: `registry.validate`.
-  - `read`: `registry.get_proposal`, `registry.get_entity`, `registry.list_versions`, `registry.get_write`.
+  - `write_draft`: `registry/create_proposal`, `registry/put_draft`, `registry/freeze`, `registry/reopen`, `registry/evaluate`.
+  - `compute`: `registry/validate`.
+  - `read`: `registry/get_proposal`, `registry/get_entity`, `registry/list_versions`, `registry/get_write`.
 - Pasa el `idempotency_key` de M3 a cada operación de escritura y cada `ToolDef` lleva `description` y `args_schema` (G0-24).
 - **No existe ninguna tool de aprobar, publicar, promover ni revocar.**
 - **Hito 1 (fin de la fase 5):** una tool `write_draft` de prueba escribe un borrador de punta a punta.
@@ -163,6 +165,8 @@ m00, m01 (§3.13), m02 (§3.3 y §3.7), m03, m11, registry (§2 regla 8, §7.2, 
 - **Plazo (la demo se congela el 02/10; hoy es 30/09):** lo realista son las fases 1 a 5 y, con suerte, la 6. Las fases 7 y 8 probablemente no caben. Se informa con resultados reales al cierre de cada fase.
 
 ## 15. Abiertos y riesgos
+
+- **Resueltos al preparar el plan (2026-09-30):** `D-A` el esquema de nodos cambia (§5); `D-B` `Action.write_node_id` (§5); `D-C` `get_write` y `verify` por existencia (§4.3); `D-D` los ids de tools llevan `/` (§8, un `EntityId` no admite `.`); `D-E` M4 (`turn/recovery.py`) también cambia: `position_at_verify` encuentra el nodo de escritura de una acción `draft` por `write_node_id`.
 
 - **Detalles a cerrar en el plan de cada fase:** cómo expresa `tool.args` la lectura de `facts.<agente>` (D9); el reintento tras `step_up` en un `write_draft` (el bot no debería recibirlo); los nombres exactos de las tools; cómo se reproducen los resultados de tools del bucle en el replay; el campo y el lugar de los fixtures y de la semilla de los agentes.
 - **Fase 8:** los cuatro detalles de §11.
