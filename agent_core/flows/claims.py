@@ -19,7 +19,7 @@ from agent_core.domain import (
     VerifyNode,
     WriteToolNode,
 )
-from agent_core.flows.graph import FlowGraph, verify_of, writes_by_confirm
+from agent_core.flows.graph import FlowGraph, verify_of, writes_by_action
 from agent_core.flows.paths import Path, parse_path, value_paths
 from agent_core.flows.view import RegistryView
 
@@ -58,6 +58,8 @@ def _inputs(node: Node) -> set[Name]:
         return _names(_parsed([node.config.by.removeprefix("fact:")]))
     if isinstance(node, DecideNode):
         return _names(_parsed(node.config.input_view or []))
+    if isinstance(node, WriteToolNode) and node.config.draft:
+        return _names(value_paths(dict(node.config.args), strict=False))
     return set()
 
 
@@ -122,11 +124,12 @@ def _reads(node: Node, reg: RegistryView) -> set[Name] | None:
 def derive_claims(flow: Flow, reg: RegistryView) -> Mapping[str, frozenset[str]]:
     """Lector (respond, end con output_map) → ids de confirm cuyo éxito afirma. Conservador y total."""
     graph = FlowGraph.build(flow)
-    writes = writes_by_confirm(flow)
+    writes = writes_by_action(flow)
     propagation = _propagation(flow)
     origins: dict[str, frozenset[Name]] = {}
     for node in flow.nodes:
-        if isinstance(node, ConfirmNode) and node.id not in origins:
+        is_action = isinstance(node, ConfirmNode) or (isinstance(node, WriteToolNode) and node.config.draft)
+        if is_action and node.id not in origins:
             origins[node.id] = _origin(_seeds(graph, writes.get(node.id, [])), propagation)
     result: dict[str, frozenset[str]] = {}
     for node in flow.nodes:

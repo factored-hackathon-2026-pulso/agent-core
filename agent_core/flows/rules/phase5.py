@@ -26,11 +26,12 @@ from agent_core.domain import (
     RuleNode,
     ToolNode,
     VerifyNode,
+    WriteToolNode,
     is_declarable,
     unsupported_keyword,
 )
 from agent_core.flows.context import Ctx
-from agent_core.flows.graph import end_modes, flow_mode, is_waiting
+from agent_core.flows.graph import draft_writes, end_modes, flow_mode, is_waiting
 from agent_core.flows.jsonlogic import MAX_DEPTH, exceeds_max_depth, expr_literals, expr_paths
 from agent_core.flows.paths import Path, parse_path, value_paths
 from agent_core.flows.violations import Violation, clip
@@ -139,6 +140,8 @@ def _read_sites(ctx: Ctx, node: object) -> Iterator[_Site]:
             return  # G0-02
         allowed = SLOTS_FACTS | {"decisions"} if tool.risk_class == RiskClass.compute else SLOTS_FACTS
         yield _Site("/config/args", value_paths(dict(node.config.args), strict=False), allowed)
+    elif isinstance(node, WriteToolNode) and node.config.draft:
+        yield _Site("/config/args", value_paths(dict(node.config.args), strict=False), SLOTS_FACTS)
     elif isinstance(node, ConfirmNode):
         yield _Site(
             "/config/action/args", value_paths(dict(node.config.action.args), strict=False), SLOTS_FACTS
@@ -210,15 +213,16 @@ def g0_11(ctx: Ctx) -> Iterator[Violation]:
 
 
 def g0_13(ctx: Ctx) -> Iterator[Violation]:
-    confirms = {n.id for n in ctx.flow.nodes if isinstance(n, ConfirmNode)}
+    actions = {n.id for n in ctx.flow.nodes if isinstance(n, ConfirmNode)} | {
+        w.id for w in draft_writes(ctx.flow)}  # una escritura draft no tiene confirm: su acción es el nodo
     for node in ctx.flow.nodes:
         if isinstance(node, RespondNode):
             for i, claim in enumerate(node.config.claims):
-                if claim not in confirms:
+                if claim not in actions:
                     yield ctx.v(
                         "G0-13",
                         node.id,
-                        f"claims lista {clip(repr(claim))}, que no es un confirm del flow",
+                        f"claims lista {clip(repr(claim))}, que no es un confirm ni una escritura draft",
                         f"/config/claims/{i}",
                     )
 

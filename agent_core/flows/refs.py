@@ -19,6 +19,7 @@ from agent_core.domain import (
     RuleNode,
     ToolNode,
     VerifyNode,
+    WriteToolNode,
 )
 
 Pointer = tuple[str | int, ...]
@@ -68,6 +69,9 @@ def node_ref_sites(node: Node, index: int) -> list[RefSite]:
                 add(EntityKind.decision_model, _ref_or_none(validator.value), "validator", "value")
         case ToolNode():
             add(EntityKind.tool, node.config.tool, "tool")
+        case WriteToolNode():
+            if node.config.tool is not None:
+                add(EntityKind.tool, node.config.tool, "tool")
         case ConfirmNode():
             add(EntityKind.tool, node.config.action.tool, "action", "tool")
             add(EntityKind.template, node.config.summary_template, "summary_template")

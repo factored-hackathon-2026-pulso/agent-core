@@ -12,7 +12,7 @@ from collections.abc import Iterator
 from agent_core.domain import ConfirmNode, RiskClass, ToolNode, VerifyNode, WriteToolNode
 from agent_core.flows.claims import derive_claims
 from agent_core.flows.context import Ctx
-from agent_core.flows.graph import Edge, verify_of, writes_by_confirm
+from agent_core.flows.graph import Edge, draft_writes, verify_of, writes_by_action, writes_by_confirm
 from agent_core.flows.violations import Violation, clip, pointer_segment
 
 RULE = "G0-05"
@@ -26,7 +26,7 @@ def _node_conditions(ctx: Ctx) -> Iterator[Violation]:
             if tool is not None and tool.is_write:
                 yield ctx.v(RULE, node.id,
                             f"la tool de escritura {clip(str(node.config.tool))} solo se invoca "
-                            "con action_from",
+                            "con action_from o con draft: true",
                             "/config/tool")
         elif isinstance(node, VerifyNode):
             readback = ctx.tool(node.config.readback)
@@ -77,10 +77,10 @@ def _write_conditions(ctx: Ctx, writes: dict[str, list[WriteToolNode]]) -> Itera
         if len(writers) > 1:
             names = ", ".join(clip(w) for w in sorted(writers))
             yield ctx.v(RULE, verify_id, f"el verify lo comparten varias escrituras: {names}")
-    yield from _verify_entries(ctx, linked)
+    yield from verify_entries(ctx, linked)
 
 
-def _verify_entries(ctx: Ctx, linked: dict[str, list[str]]) -> Iterator[Violation]:
+def verify_entries(ctx: Ctx, linked: dict[str, list[str]]) -> Iterator[Violation]:
     """Endurecimiento de §3.5.7: V solo se alcanza desde (W, ok) y (W, uncertain), y no es la entrada."""
     graph = ctx.graph
     incoming: dict[str, list[tuple[str, str]]] = {}
@@ -102,11 +102,12 @@ def _verify_entries(ctx: Ctx, linked: dict[str, list[str]]) -> Iterator[Violatio
 def _claim_conditions(ctx: Ctx, writes: dict[str, list[WriteToolNode]]) -> Iterator[Violation]:
     """§3.5.8: todo camino a un lector que reclama X pasa por `verified` del verify de X."""
     graph = ctx.graph
-    confirm_ids = {n.id for n in ctx.flow.nodes if isinstance(n, ConfirmNode)}
+    action_ids = {n.id for n in ctx.flow.nodes if isinstance(n, ConfirmNode)} | {
+        w.id for w in draft_writes(ctx.flow)}
     claims = derive_claims(ctx.flow, ctx.reg)
     readers_by_action: dict[str, list[str]] = {}
     for reader_id, claimed in sorted(claims.items()):
-        for action in sorted(claimed & confirm_ids):
+        for action in sorted(claimed & action_ids):
             readers_by_action.setdefault(action, []).append(reader_id)
     for action, readers in sorted(readers_by_action.items()):
         verifies = {v.id: v for w in writes.get(action, []) if (v := verify_of(graph, w)) is not None}
@@ -129,4 +130,4 @@ def g0_05(ctx: Ctx) -> Iterator[Violation]:
     writes = writes_by_confirm(ctx.flow)
     yield from _node_conditions(ctx)
     yield from _write_conditions(ctx, writes)
-    yield from _claim_conditions(ctx, writes)
+    yield from _claim_conditions(ctx, writes_by_action(ctx.flow))

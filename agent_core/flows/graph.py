@@ -78,6 +78,19 @@ def writes_by_confirm(flow: Flow) -> dict[str, list[WriteToolNode]]:
     return grouped
 
 
+def draft_writes(flow: Flow) -> list[WriteToolNode]:
+    """Las escrituras `draft` (sin confirm) del flow, en orden."""
+    return [n for n in flow.nodes if isinstance(n, WriteToolNode) and n.config.draft]
+
+
+def writes_by_action(flow: Flow) -> dict[str, list[WriteToolNode]]:
+    """Escrituras por acción: la clave es el `confirm` o, en una escritura draft, el propio nodo."""
+    grouped = writes_by_confirm(flow)
+    for node in draft_writes(flow):
+        grouped.setdefault(node.id, []).append(node)
+    return grouped
+
+
 def verify_of(graph: FlowGraph, write: WriteToolNode) -> VerifyNode | None:
     """El verify enlazado por estructura: `ok` y `uncertain` van directo al mismo verify (G0-05.7)."""
     target_id = write.next.get("ok")
