@@ -219,6 +219,12 @@ class RegistryService:
             prior = self._replayed(tx, idempotency_key, "create_proposal", request)
             if prior is not None:
                 return self._proposal(tx, prior.proposal_id, for_update=False)
+            if origin is Origin.auto_detect:
+                since = self._clock.now() - self._quotas.window
+                if tx.count_created_after(origin.value, since) >= self._quotas.proposals_per_day:
+                    raise RegistryError(RegistryErrorCode.quota_exceeded,
+                                        f"el constructor autónomo ya creó {self._quotas.proposals_per_day} "
+                                        "propuestas en las últimas 24 horas")
             base = tx.get_alias(agent_id, "staging")
             try:
                 p = Proposal(proposal_id=self._ids.new_id(IdKind.proposal), agent_id=agent_id, origin=origin,
@@ -379,6 +385,10 @@ class RegistryService:
             if prior is not None:
                 return self._stored_eval(tx, prior)
             self._expect(p, ProposalState.candidate)
+            evals = tx.count_eval_runs(p.proposal_id) if p.origin is Origin.auto_detect else 0
+            if evals >= self._quotas.evals_per_proposal:
+                raise RegistryError(RegistryErrorCode.quota_exceeded,
+                                    f"la propuesta ya tiene {self._quotas.evals_per_proposal} evaluaciones")
             cand = self._rebuild(tx, p, "la candidata cambió desde freeze")
             if cand.candidate_hash != p.candidate_hash:
                 raise RegistryError(RegistryErrorCode.candidate_changed, "la candidata cambió desde freeze")
