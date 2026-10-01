@@ -85,4 +85,4 @@ Subcomando `serve` en `agent_core/cli.py` con `--host`, `--port` y las rutas ant
 - La clave de JEV se lee de `AGENTCORE_JEV_API_KEY` solo al llamar; construir el servidor no la exige.
 - Sin `--identity-keys`, en demo el verificador es `testing.registry_demo:demo_verifier` y `identity` figura entre los dobles.
 - `serve` **no** monta todavía la API HTTP del registry: `build_api_deps` acepta un `registry_service`, pero falta cablear el evaluador y el harness reales. El CLI `agentcore registry` no cambia.
-- El aviso de alias de LLM sin configurar (gateway §5) queda fuera de esta entrega.
+- **Aviso de alias de LLM (gateway §5), añadido el 2026-09-30:** `--agents a,b` (o `AGENTCORE_SERVE_AGENTS`). Al arrancar, `model_alias_warnings` resuelve la release `prod` de cada agente, lee sus entidades `model_profile` y avisa por cada `endpoint_alias` sin entrada en `LLM_ENDPOINTS` o con la variable de key vacía (nombra la variable, nunca el valor), y por cada agente sin release `prod`. Solo avisa: no bloquea el arranque. Sin `--agents` no revisa nada. Solo se revisa `prod`; `staging` queda fuera.

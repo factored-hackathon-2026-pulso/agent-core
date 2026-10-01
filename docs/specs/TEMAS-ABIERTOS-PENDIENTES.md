@@ -75,9 +75,20 @@ Pendiente de construcción: las vistas SQL y la conexión a Phoenix; no bloquean
 **Decidido el 2026-09-30:** la demo corre con un modelo real y el resto como dobles etiquetados. Spec: `docs/superpowers/specs/2026-09-30-servidor-arrancable-design.md`; plan: `docs/superpowers/plans/2026-09-30-servidor-arrancable.md`.
 - **Construido:** `agentcore serve` (`agent_core/composition/serve.py`, `serve_ports.py`, `build_engine` en `engine.py`). Reales: Postgres, gateway de LLM, JEV por HTTP (`AGENTCORE_JEV_API_KEY`), claves HMAC/cifrado (`EnvKeyProvider`) y claves públicas de identidad (`--identity-keys`, `agent_core/adapters/identity_keys.py`). `uvicorn` declarado en `pyproject.toml`.
 - **Dobles, solo con `AGENTCORE_ALLOW_DEMO=1`** (`testing/serve_demo.py`; `serve` los lista al arrancar): tools, `AuthzPort`, transcript en memoria, calibración, proveedor `classifier`, `FieldClassifier`, `grant_active` y, sin `--identity-keys`, el verificador de demo. Sin la variable, `serve` sale con código 2 y nombra cada pieza faltante.
-- **Sigue pendiente, con su punto de enchufe (`--tools`, `--authz`, `--transcript`, `--calibration`, `--classifier`, `--field-classifier`, `--grant-active`):** `ToolExecutor` y `AuthzPort` reales (unidad 3), `TranscriptStore` persistente (unidad 7), calibración real con artefactos etiquetados (P9, unidad 6), artefactos del `classifier` y el servicio de identidad real con `grant_active`.
+- **Sigue pendiente, con su punto de enchufe y su dueño:**
+
+| Pieza real | Opción de `serve` | Dueño |
+|---|---|---|
+| `ToolExecutor` | `--tools` | unidad 3 |
+| `AuthzPort` | `--authz` | unidad 3 |
+| `TranscriptStore` persistente | `--transcript` | unidad 7 |
+| Calibración con artefactos etiquetados | `--calibration` | unidad 6 (P9) |
+| Artefactos del proveedor `classifier` | `--classifier` | unidad 6 (P9) |
+| Catálogo de `FieldClassifier` (clasificación de campos publicada por el equipo de datos, m07) | `--field-classifier` | equipo de datos (sin unidad asignada) |
+| Servicio de identidad real con `grant_active` | `--grant-active` (y `--identity-keys`) | servicio de identidad (sin unidad asignada) |
+
 - **No montado todavía:** `serve` no expone la API HTTP del registry (`build_api_deps` ya acepta un `registry_service`; falta cablear el evaluador y el harness reales). El CLI `agentcore registry` no cambia.
-- **Abierto menor:** el aviso de alias de LLM sin configurar al arrancar (gateway §5) no está cableado.
+- **Aviso de alias de LLM sin configurar (gateway §5):** cableado con `--agents` (o `AGENTCORE_SERVE_AGENTS`); revisa la release `prod` de cada agente indicado y solo avisa.
 
 ## 14. Roles del registry y `attrs.actor` — resuelto
 **Decidido el 2026-09-30.** Implementado en `agent_core/registry/roles.py`, `testing/fakes/authz.py` y `testing/fakes/identity.py`; el detalle de permisos está en registry §8 y la enmienda de datos de clientes en ADR 0006.

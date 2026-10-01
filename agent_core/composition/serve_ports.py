@@ -3,7 +3,7 @@
 import argparse
 import importlib
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -37,6 +37,7 @@ from agent_core.views import FieldClassifier
 DEMO_ENV = "AGENTCORE_ALLOW_DEMO"
 JEV_KEY_ENV = "AGENTCORE_JEV_API_KEY"
 DSN_ENV = "AGENTCORE_REGISTRY_DSN"
+AGENTS_ENV = "AGENTCORE_SERVE_AGENTS"
 DEMO_VERIFIER = "testing.registry_demo:demo_verifier"
 _KEY_VARS = ("AGENTCORE_KEYS_FINGERPRINT", "AGENTCORE_KEYS_TOKEN_MAP")
 
@@ -86,6 +87,8 @@ class ServePorts:
     classifier: FieldClassifier | None
     verifier: IdentityVerifier
     doubles: tuple[str, ...]  # piezas que son dobles de demo (vacío = todo real)
+    agents: tuple[str, ...] = ()  # agentes cuya release `prod` se revisa al arrancar (aviso de alias)
+    endpoints: Mapping[str, EndpointConfig] = field(default_factory=dict)
 
 
 def _flag(attr: str) -> str:
@@ -101,6 +104,10 @@ def add_serve_parser(sub: Any) -> None:
                             "en la lista de procesos. No se imprime nunca")
     serve.add_argument("--identity-keys", type=Path, default=None,
                        help="archivo con las claves públicas de identidad (principal y delegación)")
+    serve.add_argument("--agents", default=None,
+                       help=f"agentes separados por coma (o {AGENTS_ENV}): al arrancar avisa de los perfiles "
+                            "de "
+                            "su release `prod` cuyo alias de LLM no esté configurado")
     for attr, name, default in _DOUBLES:
         serve.add_argument(_flag(attr), default=None, dest=attr,
                            help=f"{name} (modulo:atributo); en demo: {default}")
@@ -124,6 +131,11 @@ def _jev_key(env: Mapping[str, str]) -> str:
     if not key:
         raise DecisionConfigError(f"falta {JEV_KEY_ENV}: no se puede llamar a JEV sin clave")
     return key
+
+
+def _agents(args: argparse.Namespace, env: Mapping[str, str]) -> tuple[str, ...]:
+    raw = args.agents or env.get(AGENTS_ENV) or ""
+    return tuple(a for a in (part.strip() for part in raw.split(",")) if a)
 
 
 def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
@@ -204,4 +216,4 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         providers={"jev": jev, "classifier": built["classifier"]},
         tools=built["tools"], authz=built["authz"], transcript=built["transcript"],
         calibrations=built["calibration"], classifier=built["field-classifier"], verifier=verifier,
-        doubles=tuple(doubles))
+        doubles=tuple(doubles), agents=_agents(args, env), endpoints=endpoints)
