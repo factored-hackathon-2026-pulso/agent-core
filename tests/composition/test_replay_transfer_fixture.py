@@ -14,17 +14,21 @@ import pytest
 from agent_core.audit import (
     Fixture,
     Replayer,
+    build_fixture,
     chain_events,
     check_chain,
     dump_fixture,
     load_fixture_file,
     verify_transfer_link,
 )
+from agent_core.audit.replay.ports import RecordedClock
 from agent_core.cli import main
 from agent_core.domain import EngineEvent, RunStarted
 from testing.builders import run_state
+from testing.engine_world import transfer_world
 from testing.fakes.clock import FakeClock
 from testing.replay import build_engine_runner, record_scenario
+from testing.replay.scenarios import TEXTO
 
 RUN = Path("tests/fixtures/runs-transfer/transferencia.yaml")
 REGISTRY = "tests/fixtures/registry-transfer-demo"
@@ -135,3 +139,66 @@ def test_the_runner_rejects_a_release_the_registry_does_not_have() -> None:
     runner = build_engine_runner(Path(REGISTRY))
     with pytest.raises(ValueError, match="no-existe"):
         Replayer(runner, FakeClock(), definitions=runner.definitions).replay(fixture, "fixture")
+
+
+def _a_fixture_pinned_to_another_release() -> Fixture:
+    """`disputas-demo` exists in the registry but is not the `prod` release of the entry agent (recepcion)."""
+    return load_fixture_file(RUN).model_copy(update={"release": "disputas-demo"})
+
+
+def test_the_runner_rejects_a_release_that_is_not_the_prod_alias_of_the_entry_agent() -> None:
+    runner = build_engine_runner(Path(REGISTRY))
+    message = "el alias prod de recepcion es la release recepcion-demo, no disputas-demo"
+    with pytest.raises(ValueError, match=message):
+        Replayer(runner, FakeClock(), definitions=runner.definitions).replay(
+            _a_fixture_pinned_to_another_release(), "fixture")
+
+
+def test_the_cli_exits_3_on_a_release_that_is_not_the_prod_alias_of_the_entry_agent(
+        tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    path = tmp_path / "otra-release.yaml"
+    path.write_text(dump_fixture(_a_fixture_pinned_to_another_release()), encoding="utf-8")
+    code = main(["replay", str(path), "--mode", "fixture", "--registry", REGISTRY, "--catalog", CATALOG])
+    assert code == 3
+    assert capsys.readouterr().err.startswith("replay falló: ValueError")
+
+
+def _transfer_then_one_more_turn(world: Any) -> None:
+    """The transfer scenario plus a turn the target answers: its turn id comes after the shared one."""
+    world.start()
+    world.understands("continue")
+    world.routes("disputas")
+    world.understands("start_flow", flow="disputa-cargo")
+    world.turn(TEXTO)
+    world.understands("continue")
+    world.matches()
+    world.turn("gracias")
+
+
+def test_a_session_with_a_turn_after_the_transfer_replays_as_match(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The target of the transfer repeats the origin's turn id in its chain: the runner deduplicates the turn
+    ids before indexing them by op, or the later turn would take the instant of the transfer turn."""
+    world = transfer_world(registry_root=Path(REGISTRY), record=True)
+    _transfer_then_one_more_turn(world)
+    assert world.driver.run_id is not None and world.driver.session_id is not None
+    assert world.recording_tools and world.recording_llm
+    with world.store.uow() as uow:
+        runs = uow.list_runs_by_session(world.driver.session_id)
+    origin = world.driver.run_id
+    linked = [e for r in runs if r.run_id != origin for e in world.audit.read(r.run_id)]
+    turns = [e.turn_id for e in [*world.audit.read(origin), *linked] if e.type == "turn_started"]
+    assert len(turns) > len(set(turns)), "the target repeats a turn id of the origin"
+    fixture = build_fixture("transferencia-con-turno", origin, world.release.id, world.audit.read(origin),
+                            world.driver.ops, world.recording_tools, world.recording_llm, linked=linked)
+    entered: list[str | None] = []
+    real = RecordedClock.enter_turn
+
+    def spy(self: RecordedClock, turn_id: str | None) -> None:
+        entered.append(turn_id)
+        real(self, turn_id)
+
+    monkeypatch.setattr(RecordedClock, "enter_turn", spy)
+    report = _replay(fixture)
+    assert (report.verdict, report.first_divergence) == ("match", None)
+    # The recording clock is constant, so the instants cannot tell the turns apart: the ids entered can.
+    assert entered == [None, "turn-0002", "turn-0003"]
