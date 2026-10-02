@@ -95,6 +95,7 @@ class StoredRelease(RegModel):
     proposal_id: str | None
     published_by: str
     published_at: datetime
+    eval_suite_refs: list[VersionRef] = Field(default_factory=list)  # ADR 0020: suites used by the gate
 
 
 class Approval(RegModel):
@@ -155,6 +156,7 @@ class ReleaseDetail(RegModel):
     base_release_id: str | None
     published_by: str
     published_at: datetime
+    eval_suite_refs: list[VersionRef] = Field(default_factory=list)  # the next proposal's old yardstick
 
 
 class ChangedRef(RegModel):

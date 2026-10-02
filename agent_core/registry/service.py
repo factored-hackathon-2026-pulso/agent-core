@@ -147,6 +147,20 @@ class RegistryService:
         entities = [self._load(tx, ref) for ref in tx.release_refs(release_id)]
         return stored.release, [e for e in entities if not isinstance(e, EvalSuite)]
 
+    def _base_suite(self, tx: RegistryTx, release_id: str, agent_id: str) -> EvalSuite | None:
+        """The suite the base release passed the gate with (ADR 0020 s.5); None if it recorded none (D3)."""
+        stored = tx.get_release(release_id)
+        if stored is None:
+            raise RegistryError(RegistryErrorCode.not_found, "la release base no existe")
+        if not stored.eval_suite_refs:
+            return None
+        if len(stored.eval_suite_refs) > 1:
+            raise IntegrityError(f"release {release_id} records {len(stored.eval_suite_refs)} suites")
+        suite = self._load(tx, stored.eval_suite_refs[0])
+        if not isinstance(suite, EvalSuite) or suite.agent_id != agent_id:
+            raise IntegrityError(f"the suite recorded by {release_id} does not belong to agent {agent_id}")
+        return suite
+
     def _candidate(self, tx: RegistryTx, p: Proposal) -> Candidate:
         base, entities = self._base(tx, p.base_release_id)
         drafts = tx.get_changes(p.proposal_id)
@@ -288,13 +302,14 @@ class RegistryService:
                 raise RegistryError(RegistryErrorCode.candidate_changed, "la candidata cambió desde freeze")
             suite = self._suite(tx, cand, suite_id, suite_version)
             base_release, base_entities = self._base(tx, p.base_release_id)
+            old: Yardstick | None = None
+            if p.base_release_id is not None:
+                old = Yardstick(metrics=_agent_metrics(base_entities, p.agent_id),
+                                suite=self._base_suite(tx, p.base_release_id, p.agent_id))
         candidate_target = EvalTarget("candidate", cand.release,
                                       SnapshotRegistry(cand.release, cand.entities))
         base_target = (EvalTarget("base", base_release, SnapshotRegistry(base_release, base_entities))
                        if base_release is not None else None)
-        # The base's suite arrives in task 6; until then the old yardstick is just its metrics (D3).
-        old = (Yardstick(metrics=_agent_metrics(base_entities, cand.agent_id))
-               if base_release is not None else None)
         new = Yardstick(metrics=_agent_metrics(cand.entities, cand.agent_id), suite=suite)
         report = self._evaluator.run(EvalRequest(candidate=candidate_target, new=new, base=base_target,
                                                  old=old))  # outside the transaction
@@ -384,6 +399,9 @@ class RegistryService:
         approval = tx.latest_approval(p.proposal_id, cand.candidate_hash)
         if approval is None or approval.decision != "approved":
             raise RegistryError(RegistryErrorCode.gate_failed, "falta una aprobación vigente")
+        run = tx.latest_eval_run(p.proposal_id, cand.candidate_hash)
+        if run is None or run.verdict != "pass":
+            raise RegistryError(RegistryErrorCode.gate_failed, "no hay una evaluación aprobada vigente")
         release_id = release_id_for(cand.candidate_hash)
         if tx.get_release(release_id) is not None:
             raise RegistryError(RegistryErrorCode.illegal_transition, "esa release ya existe")
@@ -400,7 +418,8 @@ class RegistryService:
         refs = sorted((version_ref(e) for e in cand.entities), key=str)
         tx.insert_release(StoredRelease(release=release, release_hash=cand.release_hash, agent_id=p.agent_id,
                                         agent_version=cand.agent_version, base_release_id=p.base_release_id,
-                                        proposal_id=p.proposal_id, published_by=who, published_at=now), refs)
+                                        proposal_id=p.proposal_id, published_by=who, published_at=now,
+                                        eval_suite_refs=[run.suite]), refs)
         tx.set_alias(AliasChange(agent_id=p.agent_id, alias="staging", before=p.base_release_id,
                                  after=release_id, actor=who, reason=f"publica {p.proposal_id}", at=now))
         self._save(tx, p, state=ProposalState.published)
@@ -465,7 +484,8 @@ class RegistryService:
                              entities=entities, knowledge_snapshot=str(ks) if ks else None,
                              proposal_id=stored.proposal_id,
                              base_release_id=stored.base_release_id, published_by=stored.published_by,
-                             published_at=stored.published_at)
+                             published_at=stored.published_at,
+                             eval_suite_refs=list(stored.eval_suite_refs))
 
     def get_release(self, release_id: str) -> ReleaseDetail:
         with self._store.transaction() as tx:
@@ -549,8 +569,10 @@ class RegistryService:
             now, who = self._clock.now(), actor_id(actor)
             seed_docs = VersionDocs(description="Importado desde YAML", rationale="semilla", changelog="")
             # Las suites se guardan como versiones, pero no entran en la release (spec §3.1).
+            suite_refs: dict[str, list[VersionRef]] = {}
             for suite in suites:
-                self._insert_if_new(tx, suite, seed_docs, None, who, now)
+                ref = self._insert_if_new(tx, suite, seed_docs, None, who, now)
+                suite_refs.setdefault(suite.agent_id, []).append(ref)
             for pinned in pinned_list:
                 if len(pinned.aliases) != 1:
                     raise RegistryError(RegistryErrorCode.validation_failed,
@@ -559,6 +581,11 @@ class RegistryService:
                 if tx.get_alias(agent_id, "staging") is not None:
                     raise RegistryError(RegistryErrorCode.illegal_transition,
                                         f"el agente {agent_id} ya tiene releases; usa una propuesta")
+                agent_suites = suite_refs.get(agent_id, [])
+                if len(agent_suites) > 1:
+                    raise RegistryError(RegistryErrorCode.validation_failed,
+                                        f"la semilla trae {len(agent_suites)} suites para {agent_id}; "
+                                        "se admite una por agente")
                 refs = [self._insert_if_new(tx, e, seed_docs, None, who, now) for e in pinned.entities]
                 digest = release_hash(pinned.release)
                 release_id = release_id_for(digest)
@@ -566,7 +593,8 @@ class RegistryService:
                 tx.insert_release(StoredRelease(
                     release=release, release_hash=digest, agent_id=agent_id,
                     agent_version=release.entities[EntityKind.agent][agent_id], base_release_id=None,
-                    proposal_id=None, published_by=who, published_at=now), sorted(refs, key=str))
+                    proposal_id=None, published_by=who, published_at=now,
+                    eval_suite_refs=agent_suites), sorted(refs, key=str))
                 for alias in ("staging", "prod"):
                     tx.set_alias(AliasChange(agent_id=agent_id, alias=alias, before=None, after=release_id,
                                              actor=who, reason="importación inicial", at=now))

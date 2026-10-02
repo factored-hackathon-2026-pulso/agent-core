@@ -19,7 +19,7 @@ from testing.builders import NOW
 from testing.fakes.clock import FakeClock
 from testing.fakes.ids import FakeIds
 from tests.registry.helpers import AGENT, admin, bot, demo_pinned, docs, human, prompt_draft, suite_content
-from tests.registry.service_world import SUITE, FakeEvaluator, World, seed_demo
+from tests.registry.service_world import SUITE, FakeEvaluator, World, publish_cycle, seed_demo
 
 ANA = human()
 ROOT = admin()
@@ -356,7 +356,17 @@ def test_evaluate_builds_the_request_with_a_base() -> None:
     assert request.new.suite is not None
     assert (request.new.suite.id, request.new.suite.version) == ("disputas-suite", "1.0.0")
     assert request.old is not None and request.old.metrics == []  # the base agent declares none
-    assert request.old.suite is None  # the base's recorded suite arrives in task 6
+    assert request.old.suite is None  # the seeded base recorded no suite (D3): metrics-only old yardstick
+
+
+def test_evaluate_gives_the_old_yardstick_the_suite_recorded_by_the_base() -> None:
+    w = World()
+    first = publish_cycle(w, [prompt_draft(), SUITE])  # records `disputas-suite@1.0.0` in the release
+    request = _evaluate_request(w.service, w.evaluator,
+                                [prompt_draft(version="1.2.0", text="Otra variante."), SUITE])
+    assert request.base is not None and request.base.release.id == first
+    assert request.old is not None and request.old.suite is not None
+    assert (request.old.suite.id, request.old.suite.version) == ("disputas-suite", "1.0.0")
 
 
 def test_evaluate_without_a_base_has_no_old_yardstick() -> None:

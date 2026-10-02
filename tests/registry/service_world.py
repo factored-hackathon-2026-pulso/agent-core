@@ -8,12 +8,19 @@ from agent_core.registry.entities import content_hash, encode_entity, version_re
 from agent_core.registry.evaluation.ports import EvalRequest
 from agent_core.registry.evaluation.report import EvalReport
 from agent_core.registry.memory import InMemoryRegistryStore
-from agent_core.registry.models import AliasChange, StoredRelease, StoredVersion, VersionDocs
+from agent_core.registry.models import (
+    AliasChange,
+    EntityDraft,
+    Origin,
+    StoredRelease,
+    StoredVersion,
+    VersionDocs,
+)
 from agent_core.registry.service import RegistryService
 from testing.builders import NOW
 from testing.fakes.clock import FakeClock
 from testing.fakes.ids import FakeIds
-from tests.registry.helpers import AGENT, demo_pinned, suite_draft
+from tests.registry.helpers import AGENT, demo_pinned, human, suite_draft
 
 
 @dataclass
@@ -66,3 +73,18 @@ class World:
 
 
 SUITE = suite_draft()
+
+
+ANA = human()
+
+
+def publish_cycle(w: World, drafts: list[EntityDraft], *, key: str = "k") -> str:
+    """One person's full cycle: create, draft, freeze, evaluate with `disputas-suite`, approve and publish.
+    Returns the published release id."""
+    p = w.service.create_proposal(ANA, AGENT, Origin.manual, "change")
+    w.service.put_draft(ANA, p.proposal_id, drafts, expected_rev=0)
+    w.service.freeze(ANA, p.proposal_id)
+    w.service.evaluate(ANA, p.proposal_id, "disputas-suite")
+    h = w.service.get_proposal(p.proposal_id).proposal.candidate_hash or ""
+    w.service.approve(ANA, p.proposal_id, h)
+    return w.service.publish(ANA, p.proposal_id, key).release_id

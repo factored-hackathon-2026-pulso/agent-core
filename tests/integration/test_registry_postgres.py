@@ -323,3 +323,22 @@ def test_cli_cycle_on_postgres_with_export_to_disk(registry_store: PgRegistrySto
     assert cli.ok("show", cli.ok("propose", AGENT, "t")["proposal_id"])["proposal"]["state"] == "draft"  # type: ignore[index]
     assert cli.ok("export", seed["release_id"], str(tmp_path)) is None
     assert any(tmp_path.rglob("*.yaml"))
+
+
+def test_release_records_its_eval_suite(registry_store: PgRegistryStore) -> None:  # ADR 0020 section 5
+    evaluator = FakeEvaluator()
+    service = RegistryService(registry_store, evaluator, FakeClock(), FakeIds())
+    service.import_seed(admin(), REGISTRY_DEMO)
+    rel = _publish(service)
+    assert [str(r) for r in service.get_release(rel).eval_suite_refs] == ["eval_suite:disputas-suite@1.0.0"]
+    _publish(service, "k2", "1.2.0")
+    old = evaluator.requests[-1].old
+    assert old is not None and old.suite is not None and old.suite.version == "1.0.0"
+
+
+def test_release_eval_suites_are_insert_only(registry_store: PgRegistryStore) -> None:  # T-REG-01
+    service = _service(registry_store)
+    service.import_seed(admin(), REGISTRY_DEMO)
+    _publish(service)
+    with registry_store.connect() as conn, pytest.raises(psycopg.errors.InsufficientPrivilege):
+        conn.execute("DELETE FROM reg_release_eval_suites")

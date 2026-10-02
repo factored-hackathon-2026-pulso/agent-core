@@ -26,8 +26,8 @@ from agent_core.registry.models import (
 )
 from agent_core.registry.store import RegistryTx, Status
 
-_INSERT_ONLY = ("reg_blobs", "reg_entity_versions", "reg_releases", "reg_release_entities", "reg_approvals",
-                "reg_eval_runs", "reg_events", "reg_alias_log")
+_INSERT_ONLY = ("reg_blobs", "reg_entity_versions", "reg_releases", "reg_release_entities",
+                "reg_release_eval_suites", "reg_approvals", "reg_eval_runs", "reg_events", "reg_alias_log")
 # Mutables y controladas (spec §3.2): el rol de la aplicación nunca borra; cada tabla tiene lo mínimo que usa.
 _GRANTS_MUTABLE = {
     "reg_release_status": "SELECT, INSERT, UPDATE",   # alta al publicar, `revoke`
@@ -147,9 +147,12 @@ class _PgTx:
                         (release_id,))
         if row is None:
             return None
+        suites = self._c.execute("SELECT kind, id, version FROM reg_release_eval_suites "
+                                 "WHERE release_id = %s ORDER BY id", (release_id,)).fetchall()
         return StoredRelease(release=Release.model_validate(loads(row[0])), release_hash=row[1],
                              agent_id=row[2], agent_version=row[3], base_release_id=row[4],
-                             proposal_id=row[5], published_by=row[6], published_at=row[7])
+                             proposal_id=row[5], published_by=row[6], published_at=row[7],
+                             eval_suite_refs=[_ref(*r) for r in suites])
 
     def release_refs(self, release_id: str) -> list[VersionRef]:
         rows = self._c.execute("SELECT kind, id, version FROM reg_release_entities WHERE release_id = %s "
@@ -166,6 +169,11 @@ class _PgTx:
             cur.executemany("INSERT INTO reg_release_entities (release_id, kind, id, version) "
                             "VALUES (%s, %s, %s, %s)",
                             [(s.release.id, r.kind, r.id, r.version) for r in refs])
+        if s.eval_suite_refs:
+            with self._c.cursor() as cur:
+                cur.executemany("INSERT INTO reg_release_eval_suites (release_id, kind, id, version) "
+                                "VALUES (%s, %s, %s, %s)",
+                                [(s.release.id, r.kind, r.id, r.version) for r in s.eval_suite_refs])
         self._c.execute("INSERT INTO reg_release_status (release_id, status) VALUES (%s, 'active')",
                         (s.release.id,))
 

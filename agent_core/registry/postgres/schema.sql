@@ -15,6 +15,13 @@ CREATE TABLE IF NOT EXISTS reg_release_entities (
     kind text NOT NULL, id text NOT NULL, version text NOT NULL,
     PRIMARY KEY (release_id, kind, id),
     FOREIGN KEY (kind, id, version) REFERENCES reg_entity_versions(kind, id, version));
+-- ADR 0020: the suite the release passed the gate with (old yardstick of the next proposal). Insert-only.
+CREATE TABLE IF NOT EXISTS reg_release_eval_suites (
+    release_id text NOT NULL REFERENCES reg_releases(release_id),
+    kind text NOT NULL DEFAULT 'eval_suite' CHECK (kind = 'eval_suite'),
+    id text NOT NULL, version text NOT NULL,
+    PRIMARY KEY (release_id, id),
+    FOREIGN KEY (kind, id, version) REFERENCES reg_entity_versions(kind, id, version));
 CREATE TABLE IF NOT EXISTS reg_approvals (
     seq bigserial PRIMARY KEY, proposal_id text NOT NULL, candidate_hash text NOT NULL, actor text NOT NULL,
     decision text NOT NULL CHECK (decision IN ('approved', 'rejected')), reason text, at timestamptz NOT NULL);
@@ -44,7 +51,8 @@ DO $$
 DECLARE t text;
 BEGIN
     FOREACH t IN ARRAY ARRAY['reg_blobs', 'reg_entity_versions', 'reg_releases', 'reg_release_entities',
-                             'reg_approvals', 'reg_eval_runs', 'reg_events', 'reg_alias_log'] LOOP
+                             'reg_release_eval_suites', 'reg_approvals', 'reg_eval_runs', 'reg_events',
+                             'reg_alias_log'] LOOP
         EXECUTE format('DROP TRIGGER IF EXISTS %I_no_update ON %I', t, t);
         EXECUTE format('CREATE TRIGGER %I_no_update BEFORE UPDATE OR DELETE ON %I '
                        'FOR EACH ROW EXECUTE FUNCTION reg_immutable()', t, t);
