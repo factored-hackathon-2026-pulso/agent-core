@@ -23,16 +23,18 @@ from agent_telemetry.setup import tracer as _tracer
 
 __all__ = [
     "ALLOWED_ATTRIBUTES", "CHAT", "DECIDE", "EXECUTE_TOOL", "INVOKE_AGENT", "RULE", "SEMCONV_VERSION",
+    "TRANSFER",
     "MissingTelemetryContext", "configure", "current_trace_id", "mark_error", "record_span", "set_attributes",
     "set_content", "span",
 ]
 
-INVOKE_AGENT, DECIDE, RULE, EXECUTE_TOOL, CHAT = (
+INVOKE_AGENT, DECIDE, RULE, EXECUTE_TOOL, CHAT, TRANSFER = (
     "invoke_agent",
     "agentcore.decide",
     "agentcore.rule",
     "execute_tool",
     "chat",
+    "agentcore.transfer",
 )
 _SCOPE = "agent_telemetry"
 _REQUIRED = ("run_id", "agentcore.release")
@@ -54,6 +56,9 @@ ALLOWED_ATTRIBUTES: frozenset[str] = frozenset({
     "agentcore.decision.fallback_depth", "agentcore.decision.tokens",
     "agentcore.rule.policy", "agentcore.rule.result",
     "agentcore.tool", "agentcore.tool.status", "agentcore.tool.attempt",
+    # transfer (ADR 0021 D9): ids and enums only. `from_agent` / `to_agent` are agent ids without version.
+    "agentcore.transfer.id", "agentcore.transfer.from_agent", "agentcore.transfer.to_agent",
+    "agentcore.transfer.to_release_id", "agentcore.transfer.outcome", "agentcore.transfer.reason_code",
 })
 _capture_content = False
 _strict = False

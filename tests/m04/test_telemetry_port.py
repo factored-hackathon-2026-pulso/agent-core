@@ -8,9 +8,9 @@ import pytest
 
 from agent_core.audit import AuditLog
 from agent_core.domain import AgentSelector, EngineError, ProblemCode, RunInput
-from agent_core.turn import NoTurnTelemetry
+from agent_core.turn import NoTurnTelemetry, TransferOutcome
 from testing.fakes.telemetry import FailingTelemetry, RecordingTelemetry
-from tests.m04.harness import RUN_ID, SESSION_ID, World
+from tests.m04.harness import RUN_ID, SESSION_ID, SPECIALIST_RELEASE_ID, World
 from tests.m04.helpers import cmd
 
 
@@ -212,7 +212,7 @@ def test_m4_never_imports_opentelemetry() -> None:
 
     root = Path(agent_core.turn.__file__).parent
     imported: set[str] = set()
-    for path in root.glob("*.py"):
+    for path in root.rglob("*.py"):  # subpackages of agent_core/turn too
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if isinstance(node, ast.Import):
                 imported.update(alias.name for alias in node.names)
@@ -222,16 +222,121 @@ def test_m4_never_imports_opentelemetry() -> None:
 
 
 def test_a_failing_transfer_span_is_contained(caplog: pytest.LogCaptureFixture) -> None:
-    """`span.transfer(...)` (used by T5) follows the same rule: a no-op transfer span without a link."""
+    """`span.transfer(...)` follows the same rule: a no-op transfer span without a link."""
     from agent_core.domain import EntityRef
-    from agent_core.turn import TransferOutcome, TurnScope
+    from agent_core.turn import TurnScope
     from agent_core.turn.telemetry import observed_turn
 
     scope = TurnScope(run_id=RUN_ID, turn_id="turn-0001", session_id=SESSION_ID, release="rel-1",
                       agent=EntityRef(id="atencion", version="1.0.0"), entry="turn",
                       principal_type="customer", locale="es")
     with caplog.at_level(logging.WARNING, logger="agent_core.turn"):
-        with observed_turn(FailingTelemetry(), scope) as span, span.transfer("transfer-0001") as transfer:
+        with (
+            observed_turn(FailingTelemetry("transfer"), scope) as span,
+            span.transfer("transfer-0001") as transfer,
+        ):
             assert transfer.link is None
             transfer.finish(TransferOutcome("rejected", reason_code="no_route"))
     assert "TelemetryBroken" in caplog.text and "SECRETO" not in caplog.text
+
+
+TEXT = "no reconozco un cargo"
+
+
+def _reception(telemetry: object, **kwargs: object) -> World:
+    w = World(chain_factory=AuditLog, telemetry=telemetry)
+    w.reception(**kwargs)  # type: ignore[arg-type]
+    return w
+
+
+def test_a_valid_transfer_reports_its_outcome_and_links_the_target_turn() -> None:  # T-TR-16
+    telemetry = RecordingTelemetry()
+    w = _reception(telemetry)
+    w.understand.push(cmd("continue"), cmd("start_flow", flow="disputa"))
+    w.turn(TEXT)
+    origin, target = telemetry.turns[-2:]
+    (transfer,) = origin.transfers
+    moved = next(e for e in w.audit.read(origin.scope.run_id) if e.type == "run_transferred")
+    assert transfer.transfer_id == moved.payload.transfer_id
+    assert transfer.outcome == TransferOutcome(
+        outcome="transferred", to_agent="disputas", to_release_id=SPECIALIST_RELEASE_ID)
+    assert target.links == (transfer.link,) and target.transfers == []
+    assert target.scope.run_id == moved.payload.to_run_id and target.scope.turn_id == origin.scope.turn_id
+    assert origin.scope.agent.id == "recepcion" and target.scope.agent.id == "disputas"
+    assert origin.links == ()
+
+
+def test_a_rejection_echoes_to_agent_only_when_the_event_does() -> None:
+    telemetry = RecordingTelemetry()
+    w = _reception(telemetry, choice="saldos")  # absent from the directory read: no `to_agent` echo
+    w.understand.push(cmd("continue"))
+    w.turn(TEXT)
+    (turn,) = telemetry.turns
+    (transfer,) = turn.transfers
+    rejected = next(e for e in w.events() if e.type == "transfer_rejected")
+    assert rejected.payload.to_agent is None
+    assert transfer.outcome == TransferOutcome(outcome="rejected", reason_code="not_in_directory")
+
+
+def test_a_rejection_of_a_listed_target_echoes_it_without_release() -> None:
+    telemetry = RecordingTelemetry()
+    w = _reception(telemetry, origin_depth=1)  # `transfer_limit`: the target is in the directory
+    w.understand.push(cmd("continue"))
+    w.turn(TEXT)
+    rejected = next(e for e in w.events() if e.type == "transfer_rejected")
+    (transfer,) = telemetry.turns[-1].transfers
+    assert rejected.payload.to_agent == "disputas"
+    assert transfer.outcome == TransferOutcome(
+        outcome="rejected", to_agent="disputas", reason_code="transfer_limit")
+    assert len(telemetry.turns) == 1  # nothing to link: no target turn
+
+
+def _chains(w: World) -> list[list[dict[str, object]]]:
+    return [[e.model_dump() for e in w.audit.read(run.run_id)] for run in w.session_runs()]
+
+
+def test_transfer_telemetry_does_not_change_the_two_chains() -> None:
+    plain = World(chain_factory=AuditLog)
+    traced = World(chain_factory=AuditLog, telemetry=RecordingTelemetry())
+    for w in (plain, traced):
+        w.reception()
+        w.understand.push(cmd("continue"), cmd("start_flow", flow="disputa"))
+        w.turn(TEXT)
+    assert len(_chains(plain)) == 2 and _chains(plain) == _chains(traced)
+
+
+@pytest.mark.parametrize("where", [("transfer",), ("link",), ("finish",), ("transfer", "link", "finish"),
+                                   ("enter", "record", "exit", "transfer", "link", "finish")])
+def test_a_failing_transfer_telemetry_never_changes_a_valid_transfer(
+        where: tuple[str, ...], caplog: pytest.LogCaptureFixture) -> None:
+    """Enter, `link` and `finish` of the transfer span are contained: same result, byte-identical chains."""
+    plain = World(chain_factory=AuditLog)
+    broken = World(chain_factory=AuditLog, telemetry=FailingTelemetry(*where))
+    results = []
+    with caplog.at_level(logging.WARNING, logger="agent_core.turn"):
+        for w in (plain, broken):
+            w.reception()
+            w.understand.push(cmd("continue"), cmd("start_flow", flow="disputa"))
+            results.append(w.turn(TEXT))
+    assert results[0] == results[1] and len(_chains(plain)) == 2
+    assert _chains(plain) == _chains(broken)
+    warnings = [r for r in caplog.records if r.name == "agent_core.turn"]
+    assert warnings and all("TelemetryBroken" in r.getMessage() and r.exc_info is None for r in warnings)
+    assert "SECRETO" not in caplog.text
+
+
+@pytest.mark.parametrize("where", ["transfer", "finish"])
+def test_a_failing_transfer_telemetry_never_changes_a_rejection(
+        where: str, caplog: pytest.LogCaptureFixture) -> None:
+    plain = World(chain_factory=AuditLog)
+    broken = World(chain_factory=AuditLog, telemetry=FailingTelemetry(where))
+    results = []
+    with caplog.at_level(logging.WARNING, logger="agent_core.turn"):
+        for w in (plain, broken):
+            w.reception(origin_depth=1)
+            w.understand.push(cmd("continue"))
+            results.append(w.turn(TEXT))
+    assert results[0] == results[1]
+    assert [e.model_dump() for e in plain.events()] == [e.model_dump() for e in broken.events()]
+    assert "TelemetryBroken" in caplog.text and "SECRETO" not in caplog.text
+

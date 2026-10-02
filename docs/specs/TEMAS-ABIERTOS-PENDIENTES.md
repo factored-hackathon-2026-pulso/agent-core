@@ -36,7 +36,7 @@ Tampoco eran temas abiertos: la cadena de hash y `reportable_attrs` (ADR 0003), 
 | 16 | Límites, retención y topes del agente autónomo (registry) | Media | **Resuelto salvo el monto del tope de costo, que se fija al activar el constructor `task` (2026-09-30)** |
 | 17 | Clase `write_draft` y dependencias del constructor sobre el registry | Media | **Parcial: fases 1 a 5 hechas (2026-09-30); siguen el replay de M11, los agentes y `await_approval`** |
 | 18 | Auditoría de las lecturas de datos de clientes del administrador | Media | **Decidido (2026-09-30); construcción pendiente** |
-| 19 | Transferencia entre agentes: pendientes | Media | **Implementada en la rama `feat/transferencia-entre-agentes` (fases 1 a 6, sin spans OTel), pendiente de aprobación; abiertos y pendientes listados abajo** |
+| 19 | Transferencia entre agentes: pendientes | Media | **Implementada en la rama `feat/transferencia-entre-agentes` (fases 1 a 6); los spans OTel de la transferencia están en `feat/transferencia-otel`; pendiente de aprobación; abiertos y pendientes listados abajo** |
 | 20 | Conector de datasets reales para las evals de los agentes | Media | **Abierto** |
 
 ## Resueltos
@@ -134,12 +134,12 @@ El administrador puede leer runs, transcripts y campos de clientes (ADR 0006, en
 **Pendiente de construcción:** el esquema del evento y su versión, la forma exacta del log de auditoría propio (tabla, retención y quién lo consulta) y el parámetro por el que M9 recibe el motivo. Hay que cerrar esos tres puntos antes de implementar.
 
 ## 19. Transferencia entre agentes: pendientes — abierto
-ADR 0021 (propuesto; implementado en la rama `feat/transferencia-entre-agentes`, fases 1 a 6, sin spans OTel, pendiente de aprobación) y spec `2026-09-30-transferencia-entre-agentes-design.md` (reconciliada con lo construido el 2026-10-01; §12 tiene el detalle). Nada de lo que sigue está decidido aquí.
+ADR 0021 (propuesto; implementado en la rama `feat/transferencia-entre-agentes`, fases 1 a 6, y con los spans OTel de la transferencia en `feat/transferencia-otel`; pendiente de aprobación) y spec `2026-09-30-transferencia-entre-agentes-design.md` (reconciliada con lo construido el 2026-10-01; §12 tiene el detalle). Nada de lo que sigue está decidido aquí.
 
 **Trabajo fuera de las fases 1 a 6 (decisión P7 del plan):**
 - **REL-T1** (compatibilidad de `accepts` al publicar recepción) y la **evaluación** de la spec §7 (`transferred_to`, `transfer_packet`, `routing_scenarios`, gate del especialista, `yardstick_loosened`). Dependen de `feat/eval-metrics`.
 - **Agentes de la demo** (fase 7): recepción y dos especialistas con sus suites.
-- **Spans OTel** (`agentcore.transfer` y el *span link*).
+- ~~**Spans OTel** (`agentcore.transfer` y el *span link*).~~ **Construidos** en `feat/transferencia-otel` (spec de transferencia §8, T-TR-16; m04 §3.9). Quedan fuera de ese trabajo: persistir el enlace (no se persiste nada) y el replay de sesión.
 - **Replay de sesión:** conectar `verify_transfer_link` a `agentcore replay`; hoy solo existe la verificación del enlace.
 - **Vuelta a recepción** (`on_out_of_scope: transfer`) y **especialistas que exigen `step_up`** (hoy se excluyen del directorio).
 - **Tope y presupuesto por sesión:** `max_transfers_per_session = 1` es un valor de la demo.

@@ -79,8 +79,28 @@ class _FailingSpan:
 
     @contextmanager
     def transfer(self, transfer_id: str) -> Iterator[TransferSpan]:
-        raise TelemetryBroken("SECRETO-transfer")
-        yield  # pragma: no cover
+        if "transfer" in self._owner.fail_on:
+            raise TelemetryBroken("SECRETO-transfer")
+        yield _FailingTransfer(self._owner)
+
+
+class _FailingTransfer:
+    def __init__(self, owner: "FailingTelemetry") -> None:
+        self._owner = owner
+
+    @property
+    def link(self) -> object | None:
+        if "link" in self._owner.fail_on:
+            raise TelemetryBroken("SECRETO-link")
+        return None
+
+    @link.setter
+    def link(self, value: object | None) -> None:
+        raise AttributeError("read-only in this double")
+
+    def finish(self, outcome: TransferOutcome) -> None:
+        if "finish" in self._owner.fail_on:
+            raise TelemetryBroken("SECRETO-finish")
 
 
 class _FailingTurn:
@@ -101,7 +121,8 @@ class _FailingTurn:
 
 
 class FailingTelemetry:
-    """Fails where `fail_on` says (`turn`, `enter`, `record`, `exit`); `swallow=True` makes `__exit__` claim
+    """Fails where `fail_on` says (`turn`, `enter`, `record`, `exit`, and for a transfer `transfer`, `link`,
+    `finish`); `swallow=True` makes `__exit__` claim
     to handle the turn's own exception."""
 
     def __init__(self, *fail_on: str, swallow: bool = False) -> None:

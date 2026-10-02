@@ -1,6 +1,6 @@
 # ADR 0021 — Transferencia entre agentes: recepción, directorio y especialistas
 
-- Estado: propuesto; implementado en la rama feat/transferencia-entre-agentes (fases 1–6, sin spans OTel), pendiente de aprobación
+- Estado: propuesto; implementado en la rama feat/transferencia-entre-agentes (fases 1–6) y, con los spans OTel de la transferencia (`agentcore.transfer` y el *span link* del run destino), en feat/transferencia-otel; pendiente de aprobación
 - Unidad: 1 · Motor de decisión (con dependencias de la unidad 2, registry, y del diseño de evaluación del ADR 0020)
 - Spec: `docs/specs/2026-09-30-transferencia-entre-agentes-design.md`
 - Amplía: ADR 0004 (nodos), ADR 0006 (principal y sesión), ADR 0013 (escalamiento), ADR 0017 y 0018 (registry y gate), ADR 0020 (evaluación por agente)

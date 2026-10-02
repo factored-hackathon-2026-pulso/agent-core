@@ -71,6 +71,7 @@ from agent_core.turn.ports import (
     GuardsPort,
     RuntimeFactory,
     TraceIds,
+    TransferOutcome,
     TurnRecorderPort,
     TurnRuntime,
     TurnScope,
@@ -228,7 +229,16 @@ class TurnEngine:
             return
         frame.pending_transfer = None
         transfer_id = self._transferer.new_transfer_id()
-        plan = self._transferer.validate(frame, request, transfer_id)
+        with frame.span.transfer(transfer_id) as span:  # ADR 0021 D9: the span covers the validation
+            plan = self._transferer.validate(frame, request, transfer_id)
+            if isinstance(plan, str):
+                # `event_target` is what `transfer_rejected.to_agent` echoes, so span and event agree (U5).
+                span.finish(TransferOutcome(
+                    outcome="rejected", to_agent=event_target(request), reason_code=plan))
+            else:
+                span.finish(TransferOutcome(
+                    outcome="transferred", to_agent=plan.target_ref.id, to_release_id=plan.release.id))
+                frame.transfer_link = span.link
         if isinstance(plan, str):
             frame.buffer.add(self._events.transfer_rejected(
                 frame.state, frame.turn_id, transfer_id, event_target(request), plan, request.snapshot))
@@ -393,7 +403,8 @@ class TurnEngine:
         turn = frame.turn
         assert turn is not None  # P6: a transfer during `start_run` is rejected (`no_turn`)
         # The target's span covers its `_process`; the one commit of the turn comes later (m04 §3.9).
-        with observed_turn(self._telemetry, self._scope(target, frame.turn_id, "turn")) as span:
+        links = () if frame.transfer_link is None else (frame.transfer_link,)
+        with observed_turn(self._telemetry, self._scope(target, frame.turn_id, "turn"), links) as span:
             result = self._process(
                 frame.uow,
                 target,

@@ -11,11 +11,13 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from opentelemetry.trace import Span
+from opentelemetry import context as otel_context
+from opentelemetry.context import Context
+from opentelemetry.trace import Link, Span, SpanContext
 
 import agent_telemetry as tel
 from agent_core.domain import DecisionMade, EngineError, EngineEvent, RuleEvaluated, ToolCalled
-from agent_core.turn import NO_SPAN, TransferSpan, TurnScope, TurnSpan
+from agent_core.turn import TransferOutcome, TransferSpan, TurnScope, TurnSpan
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 _NS_PER_MS = 1_000_000
@@ -71,9 +73,37 @@ def derived_spans(events: Sequence[EngineEvent]) -> list[DerivedSpan]:
     return out
 
 
+@dataclass(frozen=True)
+class TransferLink:
+    """Opaque to M4: the transfer span's context and the context the origin's `invoke_agent` was opened
+    in, so the target's `invoke_agent` is its sibling (F10) and links back to the transfer. Nothing is
+    persisted."""
+
+    span_context: SpanContext
+    parent: Context
+
+
+class _OtelTransferSpan:
+    def __init__(self, active: Span, parent: Context) -> None:
+        self._active = active
+        self.link: object | None = TransferLink(active.get_span_context(), parent)
+
+    def finish(self, outcome: TransferOutcome) -> None:
+        """Ids and enums only. `to_agent` is whatever M4 echoes (a rejection echoes it only when
+        `transfer_rejected` does) and `to_release_id` exists only for a transfer."""
+        attrs: dict[str, str] = {"agentcore.transfer.outcome": outcome.outcome}
+        if outcome.to_agent is not None:
+            attrs["agentcore.transfer.to_agent"] = outcome.to_agent
+        if outcome.outcome == "transferred" and outcome.to_release_id is not None:
+            attrs["agentcore.transfer.to_release_id"] = outcome.to_release_id
+        if outcome.outcome == "rejected" and outcome.reason_code is not None:
+            attrs["agentcore.transfer.reason_code"] = outcome.reason_code
+        tel.set_attributes(self._active, attrs)
+
+
 class _OtelTurnSpan:
-    def __init__(self, active: Span, scope: TurnScope) -> None:
-        self._active, self._scope = active, scope
+    def __init__(self, active: Span, scope: TurnScope, parent: Context) -> None:
+        self._active, self._scope, self._parent = active, scope, parent
 
     def record(self, events: Sequence[EngineEvent]) -> None:
         """One finished child per derived span, under this turn's `invoke_agent` and its `bind` context.
@@ -85,23 +115,32 @@ class _OtelTurnSpan:
 
     @contextmanager
     def transfer(self, transfer_id: str) -> Iterator[TransferSpan]:
-        with NO_SPAN.transfer(transfer_id) as span:  # the `agentcore.transfer` span comes in T5
-            yield span
+        """`agentcore.transfer`, a child of this turn's `invoke_agent` that covers the validation."""
+        with tel.span(tel.TRANSFER, attributes={
+                "agentcore.transfer.id": transfer_id,
+                "agentcore.transfer.from_agent": self._scope.agent.id}) as active:
+            yield _OtelTransferSpan(active, self._parent)
 
 
 class OtelTurnTelemetry:
     @contextmanager
     def turn(self, scope: TurnScope, links: Sequence[object] = ()) -> Iterator[TurnSpan]:
+        # The target of a transfer is a sibling of the origin's `invoke_agent` (F10): it opens under the
+        # context the origin was opened in, with a span link to the transfer span.
+        transfer_links = [link for link in links if isinstance(link, TransferLink)]
+        parent = transfer_links[0].parent if transfer_links else otel_context.get_current()
+        otel_links = [Link(link.span_context) for link in transfer_links if link.span_context.is_valid]
         with (
             tel.bind(run_id=scope.run_id, turn_id=scope.turn_id, session_id=scope.session_id,
                      release=scope.release, agent=str(scope.agent)),
-            tel.span(tel.INVOKE_AGENT, attributes={
-                "gen_ai.operation.name": "invoke_agent", "gen_ai.agent.name": scope.agent.id,
-                "agentcore.entry": scope.entry, "agentcore.principal_type": scope.principal_type,
-                "agentcore.locale": scope.locale}) as active,
+            tel.span(tel.INVOKE_AGENT, context=parent if transfer_links else None, links=otel_links,
+                     attributes={
+                         "gen_ai.operation.name": "invoke_agent", "gen_ai.agent.name": scope.agent.id,
+                         "agentcore.entry": scope.entry, "agentcore.principal_type": scope.principal_type,
+                         "agentcore.locale": scope.locale}) as active,
         ):
             try:
-                yield _OtelTurnSpan(active, scope)
+                yield _OtelTurnSpan(active, scope, parent)
             except EngineError as exc:  # the code only: the detail may carry run data (rule 6)
                 tel.set_attributes(active, {"agentcore.problem_code": exc.code.value})
                 raise

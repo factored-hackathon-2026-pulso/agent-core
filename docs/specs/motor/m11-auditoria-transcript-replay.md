@@ -202,7 +202,7 @@ Es la **fuente de datos** de la unidad 6 y de la auto-mejora: exportación de ev
 ## 10. Definición de terminado
 
 - Fase 2: cadena, spans, transcript y T-M11-06…09.
-- **Spans de la fase 2 (refactor de observabilidad, hecho):** `invoke_agent` en vivo por turno (m04 §3.9) e hijos `agentcore.decide`, `agentcore.rule` y `execute_tool` derivados de los eventos (§3.2); T-M11-13 y T-M11-14. El span `agentcore.transfer` y el link del run destino van en la tarea 5.
+- **Spans de la fase 2 (refactor de observabilidad, hecho):** `invoke_agent` en vivo por turno (m04 §3.9) e hijos `agentcore.decide`, `agentcore.rule` y `execute_tool` derivados de los eventos (§3.2); T-M11-13 y T-M11-14. El span `agentcore.transfer` y el link del run destino (spec de transferencia §8, T-TR-16; sus seis claves `agentcore.transfer.*` están en la lista cerrada) también están hechos.
 - T-M11-10 va con el replay (fase 5).
 - Transferencia entre agentes (rev. 4): `verify_transfer_link` y T-M11-11.
 - Fase 5: replay `fixture` en CI con los seis caminos y T-M11-01…05; `audit` si alcanza.
