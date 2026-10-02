@@ -5,33 +5,30 @@ from dataclasses import dataclass, field
 from agent_core.domain import EntityKind
 from agent_core.registry.candidate import release_hash
 from agent_core.registry.entities import content_hash, encode_entity, version_ref
-from agent_core.registry.evaluation.ports import EvalTarget
-from agent_core.registry.evaluation.report import EvalReport, SuiteMetrics
-from agent_core.registry.evaluation.scoring import PLATFORM_GUARDRAILS
+from agent_core.registry.evaluation.ports import EvalRequest
+from agent_core.registry.evaluation.report import EvalReport
 from agent_core.registry.memory import InMemoryRegistryStore
 from agent_core.registry.models import AliasChange, StoredRelease, StoredVersion, VersionDocs
 from agent_core.registry.service import RegistryService
-from agent_core.registry.suite import EvalSuite
 from testing.builders import NOW
 from testing.fakes.clock import FakeClock
 from testing.fakes.ids import FakeIds
 from tests.registry.helpers import AGENT, demo_pinned, suite_draft
 
-ZERO = {name: 0 for name in PLATFORM_GUARDRAILS}
-
 
 @dataclass
 class FakeEvaluator:
-    """`EvalPort` guionado: devuelve los reportes en orden; por defecto, `pass`."""
+    """Scripted `EvalPort`: returns the reports in order (default: `pass`) and records each request."""
     reports: list[EvalReport] = field(default_factory=list)
     calls: list[tuple[str, str | None]] = field(default_factory=list)
+    requests: list[EvalRequest] = field(default_factory=list)
 
-    def run(self, suite: EvalSuite, candidate: EvalTarget, base: EvalTarget | None) -> EvalReport:
-        self.calls.append((candidate.release.id, base.release.id if base else None))
+    def run(self, request: EvalRequest) -> EvalReport:
+        self.requests.append(request)
+        self.calls.append((request.candidate.release.id, request.base.release.id if request.base else None))
         if self.reports:
             return self.reports.pop(0)
-        m = SuiteMetrics(primary=1, guardrails=ZERO, runs=1)  # type: ignore[arg-type]
-        return EvalReport(verdict="pass", candidate=m, base=m)
+        return EvalReport(verdict="pass")
 
 
 def seed_demo(store: InMemoryRegistryStore, *, aliases: tuple[str, ...] = ("staging", "prod")) -> str:

@@ -30,16 +30,18 @@ def test_docs_require_description() -> None:
 
 
 def test_suite_parses_with_decimal_thresholds() -> None:
-    suite = EvalSuite.model_validate(suite_content())
-    assert suite.noise_margin == Decimal("0.05") and suite.floor == Decimal("0.5")
-    assert suite.scenarios[0].steps[0].op == "start"
+    content = suite_content(thresholds={"m": {"noise_margin": "0.05", "floor": "0.5"}})
+    threshold = EvalSuite.model_validate(content).thresholds["m"]
+    assert (threshold.noise_margin, threshold.floor) == (Decimal("0.05"), Decimal("0.5"))
+    assert EvalSuite.model_validate(content).scenarios[0].steps[0].op == "start"
 
 
 @pytest.mark.parametrize("over", [
     {"scenarios": []},
     {"repetitions": 0},
-    {"noise_margin": "1.5"},
-    {"scenarios": [suite_content()["scenarios"][0], suite_content()["scenarios"][0]]},  # ids repetidos
+    {"noise_margin": "0.05"},  # the primary metric no longer exists (ADR 0020)
+    {"thresholds": {"m": {"noise_margin": "-1"}}},
+    {"scenarios": [suite_content()["scenarios"][0], suite_content()["scenarios"][0]]},  # repeated ids
 ])
 def test_suite_rejects_bad_shapes(over: dict[str, object]) -> None:
     with pytest.raises(ValidationError):

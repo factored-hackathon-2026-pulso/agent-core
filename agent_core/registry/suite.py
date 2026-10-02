@@ -25,7 +25,6 @@ from agent_core.domain import (
 )
 from agent_core.domain.base import Sha256Hex
 
-Fraction = Annotated[Decimal, Field(ge=0, le=1, allow_inf_nan=False)]  # T5: removed with the main metric
 NonNegativeDecimal = Annotated[Decimal, Field(ge=0, allow_inf_nan=False)]
 FiniteDecimal = Annotated[Decimal, Field(allow_inf_nan=False)]
 Repetitions = Annotated[int, Field(ge=1, le=10)]
@@ -144,8 +143,6 @@ class EvalSuite(_M):
     version: ExactVersion
     agent_id: EntityId
     repetitions: PositiveInt = Field(default=3, le=10)  # for each scenario that does not declare its own
-    noise_margin: Fraction = Decimal("0.05")  # T5: removed (main metric, ADR 0020 §6)
-    floor: Fraction = Decimal("0.7")  # T5: removed
     scenarios: list[AnyScenario] = Field(min_length=1, max_length=200)
     thresholds: dict[str, MetricThreshold] = Field(default_factory=dict)
 

@@ -56,7 +56,6 @@ DEMO_SCRIPTS: dict[str, Callable[[ScriptedProvider, ScriptedProvider], None]] = 
 def demo_suite() -> EvalSuite:
     return EvalSuite.model_validate({
         "id": "disputas-suite", "version": "1.0.0", "agent_id": "atencion", "repetitions": 1,
-        "noise_margin": "0", "floor": "1",
         "scenarios": [{
             "id": "resuelto", "principal": {"id": "cust-001", "attrs": {"country": "CO"}},
             "steps": [{"op": "start"},

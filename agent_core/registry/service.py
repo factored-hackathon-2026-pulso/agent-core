@@ -7,7 +7,7 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from agent_core.domain import EntityKind, Principal, RegistryEntity, Release, loads
+from agent_core.domain import Agent, EntityKind, MetricDef, Principal, RegistryEntity, Release, loads
 from agent_core.flows import Violation
 from agent_core.ports import Clock, IdKind, IdSource
 from agent_core.registry.candidate import (
@@ -19,8 +19,9 @@ from agent_core.registry.candidate import (
 )
 from agent_core.registry.entities import AnyEntity, content_hash, decode_entity, encode_entity, version_ref
 from agent_core.registry.errors import IntegrityError, RegistryError, RegistryErrorCode
-from agent_core.registry.evaluation.ports import EvalPort, EvalTarget
+from agent_core.registry.evaluation.ports import EvalPort, EvalRequest, EvalTarget
 from agent_core.registry.evaluation.report import EvalReport
+from agent_core.registry.evaluation.yardstick import Yardstick
 from agent_core.registry.models import (
     AliasChange,
     Approval,
@@ -88,6 +89,14 @@ def release_id_for(candidate_hash: str) -> str:
 def _violations_payload(violations: Sequence[Violation]) -> list[dict[str, str | None]]:
     return [{"rule": v.rule, "path": v.path, "flow": v.flow, "node_id": v.node_id, "message": v.message}
             for v in violations]
+
+
+def _agent_metrics(entities: Sequence[RegistryEntity], agent_id: str) -> list[MetricDef]:
+    """The agent's metrics in a set of entities (candidate or base); [] if it is not there."""
+    for entity in entities:
+        if isinstance(entity, Agent) and entity.id == agent_id:
+            return list(entity.metrics)
+    return []
 
 
 class RegistryService:
@@ -283,7 +292,12 @@ class RegistryService:
                                       SnapshotRegistry(cand.release, cand.entities))
         base_target = (EvalTarget("base", base_release, SnapshotRegistry(base_release, base_entities))
                        if base_release is not None else None)
-        report = self._evaluator.run(suite, candidate_target, base_target)  # fuera de la transacción
+        # The base's suite arrives in task 6; until then the old yardstick is just its metrics (D3).
+        old = (Yardstick(metrics=_agent_metrics(base_entities, cand.agent_id))
+               if base_release is not None else None)
+        new = Yardstick(metrics=_agent_metrics(cand.entities, cand.agent_id), suite=suite)
+        report = self._evaluator.run(EvalRequest(candidate=candidate_target, new=new, base=base_target,
+                                                 old=old))  # outside the transaction
 
         with self._store.transaction() as tx:
             p = self._proposal(tx, proposal_id)

@@ -2,7 +2,7 @@
 sections 6 and 7). Pure and deterministic."""
 
 from collections.abc import Sequence
-from decimal import ROUND_HALF_EVEN, Decimal
+from decimal import Decimal
 
 from agent_core.domain import (
     ActionDispatched,
@@ -15,7 +15,7 @@ from agent_core.domain import (
     dumps,
 )
 from agent_core.registry.evaluation.metric_eval import assertion_holds, evaluate_metric
-from agent_core.registry.evaluation.report import RunScore, SuiteMeasurement, SuiteMetrics
+from agent_core.registry.evaluation.report import RunScore, SuiteMeasurement
 from agent_core.registry.suite import Assertion, EvalSuite, Expect
 
 # Platform guardrails (ADR 0020 section 7): universal, reserved prefix (`MT-05`), zero tolerance.
@@ -28,7 +28,6 @@ PLATFORM_GUARDRAILS: tuple[str, ...] = (
 # Checks 6 and 7 of M8 (page citations). A generated answer that fails them cites something not approved;
 # M8 never emits one like that, so the guardrail watches that this stays true (decision D6).
 _PAGE_CHECKS = frozenset({"page_citations", "page_audience"})
-_QUANT = Decimal("0.0001")  # task 5: removed together with `aggregate`
 
 RunEvidence = tuple[str, RunScore, Sequence[EngineEvent]]  # (scenario id, score, events of the run)
 
@@ -95,11 +94,3 @@ def measure(
         if scores:
             scenarios[scenario.id] = all(s.passed for s in scores)
     return SuiteMeasurement(metrics=values, scenarios=scenarios)
-
-
-def aggregate(scores: Sequence[RunScore]) -> SuiteMetrics:  # task 5: removed with the primary metric
-    runs = len(scores)
-    passed = sum(1 for s in scores if s.passed)
-    primary = (Decimal(passed) / Decimal(runs)).quantize(_QUANT, ROUND_HALF_EVEN) if runs else Decimal(0)
-    guardrails = {g: sum(s.guardrails.get(g, 0) for s in scores) for g in PLATFORM_GUARDRAILS}
-    return SuiteMetrics(primary=primary, guardrails=guardrails, runs=runs)

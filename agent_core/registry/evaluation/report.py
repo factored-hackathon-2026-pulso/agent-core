@@ -1,4 +1,5 @@
-"""Resultado de una evaluación (spec §6.4). Cifras en `Decimal`."""
+"""Result of an evaluation (registry section 6.4; evaluation spec section 6). Figures are `Decimal`; there is
+no composite score."""
 
 from decimal import Decimal
 from typing import Literal
@@ -6,22 +7,16 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from agent_core.domain.metrics import MetricRole
+from agent_core.registry.evaluation.yardstick import YardstickChange
 
 Verdict = Literal["pass", "fail", "failed_infra"]
 Label = Literal["candidate", "base"]
+RunName = Literal["base_on_old", "cand_on_old", "cand_on_new"]
 Phase = Literal["base_yardstick", "new_yardstick", "platform"]
 
 
 class _M(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class MetricCheck(_M):
-    name: str
-    value: Decimal
-    base: Decimal | None = None
-    threshold: Decimal | None = None
-    passed: bool
 
 
 class GateItem(_M):
@@ -59,12 +54,6 @@ class GateRuns(_M):
     cand_on_new: SuiteMeasurement
 
 
-class SuiteMetrics(_M):
-    primary: Decimal
-    guardrails: dict[str, int]
-    runs: int
-
-
 class RunScore(_M):
     passed: bool
     failures: list[str] = Field(default_factory=list)
@@ -76,6 +65,7 @@ class RunScore(_M):
 class ScenarioResult(_M):
     scenario_id: str
     label: Label
+    run: RunName
     repetition: int
     score: RunScore
 
@@ -88,10 +78,13 @@ class JudgeNote(_M):
 
 
 class EvalReport(_M):
+    """What the approver sees: verdict, each gate item separately, the measurements, the result of each run,
+    the judge's notes (informative) and what the proposal loosens in the yardstick."""
+
     verdict: Verdict
-    checks: list[MetricCheck] = Field(default_factory=list)
-    candidate: SuiteMetrics | None = None
-    base: SuiteMetrics | None = None
+    items: list[GateItem] = Field(default_factory=list)
+    runs: GateRuns | None = None
     results: list[ScenarioResult] = Field(default_factory=list)
     judge_notes: list[JudgeNote] = Field(default_factory=list)
+    yardstick_changes: list[YardstickChange] = Field(default_factory=list)
     detail: str | None = None

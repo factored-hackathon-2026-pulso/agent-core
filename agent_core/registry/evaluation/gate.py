@@ -1,42 +1,12 @@
-"""Gate verdict (ADR 0020, evaluation spec section 6): double yardstick, no composite score.
-
-`decide` (`main`'s primary metric) is removed in task 5 of the integration plan.
-"""
+"""Gate verdict (ADR 0020, evaluation spec section 6): double yardstick, no composite score."""
 
 from decimal import Decimal
 
 from agent_core.domain import MetricDef
-from agent_core.registry.evaluation.report import (
-    GateItem,
-    GateRuns,
-    MetricCheck,
-    SuiteMeasurement,
-    SuiteMetrics,
-    Verdict,
-)
+from agent_core.registry.evaluation.report import GateItem, GateRuns, SuiteMeasurement, Verdict
 from agent_core.registry.evaluation.scoring import PLATFORM_GUARDRAILS
 from agent_core.registry.evaluation.yardstick import Yardstick, metric_identity
 from agent_core.registry.suite import EvalSuite
-
-
-def decide(
-    suite: EvalSuite, candidate: SuiteMetrics, base: SuiteMetrics | None
-) -> tuple[Verdict, list[MetricCheck]]:
-    checks: list[MetricCheck] = []
-    for name in PLATFORM_GUARDRAILS:
-        value = candidate.guardrails.get(name, 0)
-        limit = base.guardrails.get(name, 0) if base is not None else 0
-        checks.append(MetricCheck(name=name, value=Decimal(value),
-                                  base=Decimal(limit) if base is not None else None,
-                                  threshold=Decimal(limit), passed=value <= limit))
-    if base is not None:
-        threshold = base.primary - suite.noise_margin
-        checks.append(MetricCheck(name="primary", value=candidate.primary, base=base.primary,
-                                  threshold=threshold, passed=candidate.primary >= threshold))
-    else:
-        checks.append(MetricCheck(name="primary", value=candidate.primary, base=None, threshold=suite.floor,
-                                  passed=candidate.primary >= suite.floor))
-    return ("pass" if all(c.passed for c in checks) else "fail"), checks
 
 
 def not_worse(candidate: Decimal, base: Decimal, margin: Decimal, higher_is_better: bool) -> bool:

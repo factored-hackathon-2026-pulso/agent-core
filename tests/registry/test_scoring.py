@@ -15,7 +15,7 @@ from agent_core.domain import (
     RunClosed,
     RunClosedPayload,
 )
-from agent_core.registry.evaluation.scoring import PLATFORM_GUARDRAILS, aggregate, measure, score_run
+from agent_core.registry.evaluation.scoring import PLATFORM_GUARDRAILS, measure, score_run
 from agent_core.registry.suite import Assertion, Expect
 from testing.builders import NOW
 from tests.registry.eval_support import metric, scenario, suite
@@ -126,10 +126,3 @@ def test_unmeasurable_metrics_are_left_out() -> None:  # decision D5
     ok = score_run([_closed("resolved")], Expect(), [])
     m = measure(suite([scenario("s1")]), [funnel], [("s1", ok, [_closed("resolved")])])
     assert "embudo" not in m.metrics
-
-
-def test_aggregate_primary_is_decimal_fraction() -> None:  # removed in task 5
-    ok = score_run([_closed("resolved")], Expect(outcome=Outcome.resolved), [])
-    bad = score_run([_closed("failed")], Expect(outcome=Outcome.resolved), [])
-    m = aggregate([ok, ok, bad])
-    assert str(m.primary) == "0.6667" and m.runs == 3

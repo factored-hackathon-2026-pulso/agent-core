@@ -6,9 +6,12 @@ Otros módulos importan solo de aquí."""
 from agent_core.registry.blobs import BlobStore, InMemoryBlobStore
 from agent_core.registry.errors import HTTP_STATUS, IntegrityError, RegistryError, RegistryErrorCode
 from agent_core.registry.evaluation import (
+    PLATFORM_GUARDRAILS,
     EvalPort,
     EvalReport,
+    EvalRequest,
     EvalTarget,
+    GateItem,
     HarnessUnavailable,
     Judge,
     LocalSandbox,
@@ -16,6 +19,8 @@ from agent_core.registry.evaluation import (
     SandboxPort,
     ScenarioEvaluator,
     ScenarioHarness,
+    Yardstick,
+    YardstickChange,
 )
 from agent_core.registry.memory import InMemoryRegistryStore
 from agent_core.registry.models import EntityDraft, Origin, ProposalState, VersionDocs, VersionRef
@@ -39,14 +44,17 @@ from agent_core.registry.suite import (
 
 __all__ = [
     "HTTP_STATUS",
+    "PLATFORM_GUARDRAILS",
     "Assertion",
     "BlobStore",
     "DatasetScenario",
     "EntityDraft",
     "EvalPort",
     "EvalReport",
+    "EvalRequest",
     "EvalSuite",
     "EvalTarget",
+    "GateItem",
     "HarnessUnavailable",
     "InMemoryBlobStore",
     "InMemoryRegistryStore",
@@ -75,6 +83,8 @@ __all__ = [
     "SuiteProblemCode",
     "VersionDocs",
     "VersionRef",
+    "Yardstick",
+    "YardstickChange",
     "apply_registry_schema",
     "suite_problems",
 ]

@@ -1,15 +1,13 @@
-from decimal import Decimal
-
 import pytest
 
 from agent_core.registry.entities import content_hash, encode_entity, version_ref
 from agent_core.registry.errors import RegistryError, RegistryErrorCode
-from agent_core.registry.evaluation.report import EvalReport, SuiteMetrics
+from agent_core.registry.evaluation.report import EvalReport
 from agent_core.registry.models import AliasChange, Origin, ProposalState, StoredVersion, VersionRef
 from agent_core.registry.suite import EvalSuite
 from testing.builders import NOW
 from tests.registry.helpers import AGENT, admin, bot, docs, human, prompt_draft, suite_content
-from tests.registry.service_world import SUITE, ZERO, World
+from tests.registry.service_world import SUITE, World
 
 ANA = human()
 ROOT = admin()
@@ -36,8 +34,7 @@ def _evaluated(w: World) -> tuple[str, str]:
 
 
 def _report(verdict: str) -> EvalReport:
-    m = SuiteMetrics(primary=Decimal(1), guardrails=ZERO, runs=1)
-    return EvalReport(verdict=verdict, candidate=m, base=m)  # type: ignore[arg-type]
+    return EvalReport(verdict=verdict)  # type: ignore[arg-type]
 
 
 def _code(info: pytest.ExceptionInfo[RegistryError]) -> RegistryErrorCode:

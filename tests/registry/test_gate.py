@@ -3,47 +3,11 @@ from typing import Any
 
 import pytest
 
-from agent_core.registry.evaluation.gate import decide, evaluate_gate, meets_floor, not_worse
-from agent_core.registry.evaluation.report import GateItem, GateRuns, SuiteMeasurement, SuiteMetrics
+from agent_core.registry.evaluation.gate import evaluate_gate, meets_floor, not_worse
+from agent_core.registry.evaluation.report import GateItem, GateRuns, SuiteMeasurement
 from agent_core.registry.evaluation.scoring import PLATFORM_GUARDRAILS
 from agent_core.registry.evaluation.yardstick import Yardstick
-from agent_core.registry.suite import EvalSuite
 from tests.registry.eval_support import metric, scenario, thr, yardstick
-from tests.registry.helpers import suite_content
-
-# --- `main` primary-metric gate (removed in task 5) -------------------------------------------------------
-
-SUITE = EvalSuite.model_validate(suite_content())  # margin 0.05, floor 0.5
-ZERO = {name: 0 for name in PLATFORM_GUARDRAILS}
-
-
-def _m(primary: str, **g: int) -> SuiteMetrics:
-    return SuiteMetrics(primary=Decimal(primary), guardrails={**ZERO, **g}, runs=10)
-
-
-def test_guardrail_regression_fails_even_if_primary_improves() -> None:  # T-REG-08
-    verdict, checks = decide(SUITE, _m("0.9", platform_unverified_write=1), _m("0.5"))
-    assert verdict == "fail"
-    assert [c.name for c in checks if not c.passed] == ["platform_unverified_write"]
-
-
-def test_primary_within_margin_passes_outside_fails() -> None:  # T-REG-09
-    assert decide(SUITE, _m("0.76"), _m("0.80"))[0] == "pass"
-    assert decide(SUITE, _m("0.74"), _m("0.80"))[0] == "fail"
-
-
-def test_without_base_uses_floor_and_zero_guardrails() -> None:  # T-REG-10
-    assert decide(SUITE, _m("0.5"), None)[0] == "pass"
-    assert decide(SUITE, _m("0.49"), None)[0] == "fail"
-    assert decide(SUITE, _m("0.9", platform_pii_leak=1), None)[0] == "fail"
-
-
-def test_every_check_reports_value_base_and_threshold() -> None:
-    _, checks = decide(SUITE, _m("0.8"), _m("0.8"))
-    primary = next(c for c in checks if c.name == "primary")
-    expected = (Decimal("0.8"), Decimal("0.8"), Decimal("0.75"))
-    assert (primary.value, primary.base, primary.threshold) == expected
-
 
 # --- double yardstick (ADR 0020, evaluation spec section 6) -----------------------------------------------
 
