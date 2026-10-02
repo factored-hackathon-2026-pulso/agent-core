@@ -144,7 +144,7 @@ def run_registry_cli(args: argparse.Namespace, *, clock: Clock, ids: IdSource,
         verifier: IdentityVerifier = _load(verifier_path)()
         harness = _load(harness_path)()
     except (ImportError, AttributeError, ValueError) as exc:
-        print(f"no se pudo cargar el verificador o el harness ({type(exc).__name__}: {exc}); "
+        print(f"no se pudo cargar el verificador o el harness ({type(exc).__name__}); "
               "revisa las rutas modulo:atributo y que el módulo esté instalado", file=sys.stderr)
         return 2
     actor: Principal = verifier.verify(credential)

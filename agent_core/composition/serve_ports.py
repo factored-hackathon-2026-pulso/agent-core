@@ -234,7 +234,7 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         try:
             piece = _load(path)(ctx)
         except Exception as exc:  # código de usuario: cualquier fallo es un problema de configuración
-            problems.append(f"no se pudo cargar {name} ({path}): {type(exc).__name__}: {exc}; "
+            problems.append(f"no se pudo cargar {name} ({path}): {type(exc).__name__}; "
                             "revisa la ruta modulo:atributo y que la fábrica acepte un DemoContext")
             continue
         if piece is None:

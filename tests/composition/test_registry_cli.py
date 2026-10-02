@@ -168,3 +168,13 @@ def test_unloadable_verifier_or_harness_is_exit_2_with_clear_message(
         ("--verifier", "testing.registry_demo:demo_verifier")
     code, out, err = cli.run(flag, path, *other, "show", "p", env={})
     assert code == 2 and out == "" and "no se pudo cargar" in err and "Traceback" not in err
+
+
+def test_a_failing_harness_import_reports_only_the_exception_type(
+        capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    (tmp_path / "harness_que_falla.py").write_text('raise ImportError("SECRETO-del-import")\n')
+    monkeypatch.syspath_prepend(str(tmp_path))
+    cli = Cli(capsys)
+    code, out, err = cli.run("--verifier", "testing.registry_demo:demo_verifier",
+                             "--harness", "harness_que_falla:x", "show", "p", env={})
+    assert code == 2 and "ImportError" in err and "SECRETO" not in err and "SECRETO" not in out

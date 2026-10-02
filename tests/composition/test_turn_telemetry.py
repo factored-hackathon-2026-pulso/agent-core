@@ -33,12 +33,24 @@ CATALOG = Path("tests/fixtures/catalogo-datos-prueba.yaml")
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 CHILDREN = (tel.DECIDE, tel.RULE, tel.EXECUTE_TOOL)
 # Review Focus 2 / M11 §3.2: spans of raw tracers do not go through `ALLOWED_ATTRIBUTES`; each has its own
-# closed list in the code that opens it, checked here. `chat` (gateway) is excluded by name: its list is the
-# gateway's (gateway spec §3.5, T-U5-19 in tests/u05) and no engine double here opens it.
+# closed list in the code that opens it, checked here. `chat {model}` is the gateway's (gateway spec §3.5,
+# T-U5-19): its final list, the turn correlation included.
+CHAT_ATTRIBUTES = frozenset({
+    "gen_ai.operation.name", "gen_ai.provider.name", "gen_ai.request.model", "gen_ai.response.model",
+    "gen_ai.usage.input_tokens", "gen_ai.usage.output_tokens", "gen_ai.response.finish_reasons",
+    "agentcore.prompt", "agentcore.model_profile", "agentcore.endpoint_alias", "agentcore.gateway.error_kind",
+    "run_id", "turn_id", "session_id", "agentcore.release", "agentcore.agent",
+})
 RAW_TRACER_ATTRIBUTES: dict[str, frozenset[str]] = {
     REQUEST: frozenset({"http.request.method", "http.response.status_code", "error.type"}),
+    tel.CHAT: CHAT_ATTRIBUTES,
 }
-EXCLUDED_BY_NAME = frozenset({tel.CHAT})
+
+
+def _allowed_keys(span_name: str) -> frozenset[str]:
+    """The closed list of a span; the gateway names its span `chat {model}`."""
+    name = tel.CHAT if span_name.startswith(f"{tel.CHAT} ") else span_name
+    return RAW_TRACER_ATTRIBUTES.get(name, tel.ALLOWED_ATTRIBUTES)
 EVENT_ATTRIBUTES: dict[str, frozenset[str]] = {  # span events: only the security log's
     "agentcore.access_rejected": frozenset({"agentcore.reason", "agentcore.principal_type"}),
 }
@@ -384,16 +396,16 @@ def _payload_values(event: EngineEvent) -> list[JsonValue]:
     return [v for k, v in dumped.items() if k in _PAYLOAD_KEYS]
 
 
-def _string_leaves(value: JsonValue) -> Iterator[str]:
+def _string_leaves(value: JsonValue, min_len: int = 4) -> Iterator[str]:
     if isinstance(value, str):
-        if len(value) >= 4:
+        if len(value) >= min_len:
             yield value
     elif isinstance(value, dict):
         for item in value.values():
-            yield from _string_leaves(item)
+            yield from _string_leaves(item, min_len)
     elif isinstance(value, list):
         for item in value:
-            yield from _string_leaves(item)
+            yield from _string_leaves(item, min_len)
 
 
 def _ids(events: list[EngineEvent]) -> set[str]:
@@ -408,9 +420,7 @@ def _assert_closed_keys(spans: Any) -> None:
     """Review Focus 2: every key of every exported span is in its closed list (M11 §3.2)."""
     for s in spans:
         attrs = set(dict(s.attributes or {}))
-        if s.name in EXCLUDED_BY_NAME:
-            continue
-        assert attrs <= RAW_TRACER_ATTRIBUTES.get(s.name, tel.ALLOWED_ATTRIBUTES), (s.name, attrs)
+        assert attrs <= _allowed_keys(s.name), (s.name, attrs)
         for event in s.events:
             assert event.name in EVENT_ATTRIBUTES, (s.name, event.name)
             assert set(dict(event.attributes or {})) <= EVENT_ATTRIBUTES[event.name], (s.name, event.name)
@@ -428,9 +438,18 @@ def test_no_span_attribute_carries_a_payload_value(camino: str, otel: InMemorySp
     spans = otel.get_finished_spans()
     assert {s.name for s in spans} <= {tel.INVOKE_AGENT, *CHILDREN}  # no raw-tracer span escapes the check
     _assert_closed_keys(spans)
+    every = set(_string_leaves([v for e in events for v in _payload_values(e)], 1)) | texts
     for s in spans:
         for value in dict(s.attributes or {}).values():
-            assert str(value) not in leaves, (s.name, value)
+            seen = [str(value), *(str(item) for item in value if isinstance(item, str))] \
+                if isinstance(value, tuple) else [str(value)]
+            for text in seen:
+                if text in _ids(events):
+                    continue
+                assert text not in every, (s.name, value)  # a short value is a leak too
+                assert not any(leaf in text for leaf in leaves), (s.name, value)  # str(dict), embedded value
+                piece = len(text) >= 4 and any(text in leaf for leaf in leaves)  # a piece of a payload value
+                assert not piece, (s.name, value)
 
 
 def test_every_span_of_a_request_has_closed_keys(otel: InMemorySpanExporter) -> None:  # Review Focus 2
@@ -470,3 +489,17 @@ def test_the_replay_engine_has_no_telemetry(otel: InMemorySpanExporter, monkeypa
     assert code == 0 and capsys.readouterr().out.startswith("match")
     assert engines and all(isinstance(e._telemetry, NoTurnTelemetry) for e in engines)
     assert otel.get_finished_spans() == ()
+
+
+def test_a_chat_span_has_closed_keys(otel: InMemorySpanExporter, respx_mock: Any) -> None:
+    """The gateway's `chat {model}` span, with the turn's correlation, passes the same closed-key check."""
+    from tests.u05.helpers import CHAT, DRAFT, GOOD_JSON, INPUTS, PROMPT, completion, make_world
+
+    respx_mock.post(CHAT).respond(200, json=completion(GOOD_JSON))
+    with tel.bind(run_id="run-0001", turn_id="turn-0001", release="rel-1", agent="atencion@1.0.0"):
+        make_world().gateway.generate(PROMPT, INPUTS, "es", DRAFT)
+    (span,) = otel.get_finished_spans()
+    assert span.name.startswith("chat ")
+    keys = set(dict(span.attributes or {}))
+    assert {"run_id", "agentcore.release", "gen_ai.response.finish_reasons"} <= keys
+    _assert_closed_keys([span])

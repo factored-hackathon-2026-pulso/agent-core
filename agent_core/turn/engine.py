@@ -1,6 +1,7 @@
 """`TurnEngine`: orquesta un turno (m04 §3.1). Una sola UoW por turno; los dos commits por escritura los
 hace M3 con `uow_factory`."""
 
+import logging
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import datetime
@@ -88,6 +89,8 @@ from agent_core.turn.sweep import Sweeper, SweepReport
 from agent_core.turn.telemetry import NO_SPAN, NoTurnTelemetry, observed_turn
 from agent_core.turn.templates import render_engine
 from agent_core.turn.transfer import Transferer, TransferPlan, event_target
+
+_LOG = logging.getLogger("agent_core.turn")
 
 
 class TurnEngine:
@@ -490,8 +493,9 @@ class TurnEngine:
             with self._uow_factory() as uow:
                 uow.release_turn(run_id, turn_id)
                 uow.commit()
-        except Exception:
-            pass
+        except Exception as exc:  # the retry will wait for the lease TTL: leave a trace, type only (I3)
+            _LOG.warning("lease sin liberar run_id=%s turn_id=%s causa=%s",
+                         run_id, turn_id, type(exc).__name__)
 
     @staticmethod
     def _refresh_auth(state: RunState, presented: Principal) -> RunState:

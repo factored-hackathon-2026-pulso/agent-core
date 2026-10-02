@@ -4,6 +4,8 @@ Nunca se devuelve el texto de una excepción inesperada, el de `CredentialsInval
 inválido: el `detail` es del motor (`EngineError`), de los nombres de campo o vacío."""
 
 import logging
+import traceback
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -58,6 +60,17 @@ def _validation_detail(exc: RequestValidationError) -> str:
     return "; ".join(f"{'.'.join(str(part) for part in err['loc'])}: {err['type']}" for err in exc.errors())
 
 
+def _where(exc: BaseException) -> str:
+    """`file:line` of the frame that raised: a location, never the message."""
+    frames = traceback.extract_tb(exc.__traceback__)
+    return f"{Path(frames[-1].filename).name}:{frames[-1].lineno}" if frames else "?"
+
+
+def _route(request: Request) -> str:
+    """The route template (`/v1/sessions/{session_id}/turns`), never the path with its ids."""
+    return str(getattr(request.scope.get("route"), "path", "?"))
+
+
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(EngineError)
     async def _engine(request: Request, exc: EngineError) -> ProblemResponse:
@@ -84,6 +97,8 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def _unexpected(request: Request, exc: Exception) -> ProblemResponse:
-        # solo el tipo: el texto de la excepción puede traer secretos
-        log.error("error no controlado: %s", type(exc).__name__)
-        return problem(ProblemCode.internal_error, "", request_trace_id(request))
+        trace_id = request_trace_id(request)
+        # solo el tipo y dónde: el texto de la excepción puede traer secretos (I3, regla 6)
+        log.error("error no controlado: %s en %s ruta=%s trace_id=%s",
+                  type(exc).__name__, _where(exc), _route(request), trace_id)
+        return problem(ProblemCode.internal_error, "", trace_id)

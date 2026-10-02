@@ -10,6 +10,7 @@ from typing import Any
 
 import openai
 from openai import OpenAI
+from opentelemetry import trace
 from opentelemetry.trace import Span, Status, StatusCode, Tracer
 
 from agent_core.adapters.llm.config import EndpointConfig, default_client
@@ -28,6 +29,7 @@ from agent_core.domain import (
     canonical_bytes,
 )
 from agent_core.ports import GenerationResult, RegistryPort
+from agent_telemetry import correlation as telemetry_correlation
 from agent_telemetry import tracer as telemetry_tracer
 
 _LOG = logging.getLogger("agent_core.adapters.llm")
@@ -61,9 +63,11 @@ class OpenAICompatGateway:
         if text is None:
             raise SchemaError(f"el prompt {prompt} no tiene el locale {locale}")
         with self._active_tracer().start_as_current_span(
-                "chat", record_exception=False, set_status_on_exception=False) as span:
+                f"chat {profile.model}", record_exception=False, set_status_on_exception=False) as span:
+            span.set_attributes(dict(telemetry_correlation()))  # ADR 0003 #4: the bound turn's ids
             span.set_attribute("gen_ai.operation.name", "chat")
-            span.set_attribute("gen_ai.provider.name", profile.endpoint_alias)
+            span.set_attribute("gen_ai.provider.name", "openai")  # the wire protocol of the SDK (F14)
+            span.set_attribute("agentcore.endpoint_alias", profile.endpoint_alias)
             span.set_attribute("gen_ai.request.model", profile.model)
             span.set_attribute("agentcore.prompt", str(prompt))
             span.set_attribute("agentcore.model_profile", str(prompt_def.model_profile.require_exact()))
@@ -188,6 +192,8 @@ def _result(response: Any, profile: ModelProfile, schema: dict[str, JsonValue] |
     if not response.choices:
         raise fail(GatewayErrorKind.invalid_output, "sin choices")
     choice = response.choices[0]
+    if choice.finish_reason:  # `_result` runs in the caller's thread, inside the `chat` span
+        trace.get_current_span().set_attribute("gen_ai.response.finish_reasons", [str(choice.finish_reason)])
     if choice.finish_reason == "content_filter" or getattr(choice.message, "refusal", None):
         raise fail(GatewayErrorKind.refused, "rechazo del modelo")
     content = choice.message.content or ""

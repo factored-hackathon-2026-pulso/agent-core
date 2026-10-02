@@ -205,3 +205,14 @@ def test_resolve_ports_injects_the_given_tracer_in_the_gateway() -> None:
 def test_without_a_tracer_the_gateway_resolves_agent_telemetry_per_call() -> None:
     ports = _resolve(AGENTCORE_ALLOW_DEMO="1")
     assert ports.gateway._tracer is None  # type: ignore[attr-defined]
+
+
+def boom_factory(ctx: object) -> object:
+    raise RuntimeError("SECRETO-de-fabrica")
+
+
+def test_a_failing_piece_factory_reports_only_the_exception_type() -> None:
+    with pytest.raises(ServeConfigError) as info:
+        _resolve("--tools", "tests.composition.test_serve_ports:boom_factory", AGENTCORE_ALLOW_DEMO="1")
+    text = " ".join(info.value.problems)
+    assert "RuntimeError" in text and "SECRETO" not in text
