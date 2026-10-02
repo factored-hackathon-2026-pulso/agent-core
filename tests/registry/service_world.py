@@ -7,6 +7,7 @@ from agent_core.registry.candidate import release_hash
 from agent_core.registry.entities import content_hash, encode_entity, version_ref
 from agent_core.registry.evaluation.ports import EvalTarget
 from agent_core.registry.evaluation.report import EvalReport, SuiteMetrics
+from agent_core.registry.evaluation.scoring import PLATFORM_GUARDRAILS
 from agent_core.registry.memory import InMemoryRegistryStore
 from agent_core.registry.models import AliasChange, StoredRelease, StoredVersion, VersionDocs
 from agent_core.registry.service import RegistryService
@@ -16,7 +17,7 @@ from testing.fakes.clock import FakeClock
 from testing.fakes.ids import FakeIds
 from tests.registry.helpers import AGENT, demo_pinned, suite_draft
 
-ZERO = {"unverified_writes": 0, "unsupported_success": 0, "sensitive_leaks": 0}
+ZERO = {name: 0 for name in PLATFORM_GUARDRAILS}
 
 
 @dataclass

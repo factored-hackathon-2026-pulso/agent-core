@@ -14,7 +14,7 @@ from tests.registry.helpers import suite_content
 # --- `main` primary-metric gate (removed in task 5) -------------------------------------------------------
 
 SUITE = EvalSuite.model_validate(suite_content())  # margin 0.05, floor 0.5
-ZERO = {"unverified_writes": 0, "unsupported_success": 0, "sensitive_leaks": 0}
+ZERO = {name: 0 for name in PLATFORM_GUARDRAILS}
 
 
 def _m(primary: str, **g: int) -> SuiteMetrics:
@@ -22,9 +22,9 @@ def _m(primary: str, **g: int) -> SuiteMetrics:
 
 
 def test_guardrail_regression_fails_even_if_primary_improves() -> None:  # T-REG-08
-    verdict, checks = decide(SUITE, _m("0.9", unverified_writes=1), _m("0.5"))
+    verdict, checks = decide(SUITE, _m("0.9", platform_unverified_write=1), _m("0.5"))
     assert verdict == "fail"
-    assert [c.name for c in checks if not c.passed] == ["unverified_writes"]
+    assert [c.name for c in checks if not c.passed] == ["platform_unverified_write"]
 
 
 def test_primary_within_margin_passes_outside_fails() -> None:  # T-REG-09
@@ -35,7 +35,7 @@ def test_primary_within_margin_passes_outside_fails() -> None:  # T-REG-09
 def test_without_base_uses_floor_and_zero_guardrails() -> None:  # T-REG-10
     assert decide(SUITE, _m("0.5"), None)[0] == "pass"
     assert decide(SUITE, _m("0.49"), None)[0] == "fail"
-    assert decide(SUITE, _m("0.9", sensitive_leaks=1), None)[0] == "fail"
+    assert decide(SUITE, _m("0.9", platform_pii_leak=1), None)[0] == "fail"
 
 
 def test_every_check_reports_value_base_and_threshold() -> None:

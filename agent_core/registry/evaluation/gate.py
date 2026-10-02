@@ -14,7 +14,7 @@ from agent_core.registry.evaluation.report import (
     SuiteMetrics,
     Verdict,
 )
-from agent_core.registry.evaluation.scoring import GUARDRAILS, PLATFORM_GUARDRAILS
+from agent_core.registry.evaluation.scoring import PLATFORM_GUARDRAILS
 from agent_core.registry.evaluation.yardstick import Yardstick, metric_identity
 from agent_core.registry.suite import EvalSuite
 
@@ -23,7 +23,7 @@ def decide(
     suite: EvalSuite, candidate: SuiteMetrics, base: SuiteMetrics | None
 ) -> tuple[Verdict, list[MetricCheck]]:
     checks: list[MetricCheck] = []
-    for name in GUARDRAILS:
+    for name in PLATFORM_GUARDRAILS:
         value = candidate.guardrails.get(name, 0)
         limit = base.guardrails.get(name, 0) if base is not None else 0
         checks.append(MetricCheck(name=name, value=Decimal(value),
