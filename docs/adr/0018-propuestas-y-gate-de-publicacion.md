@@ -1,6 +1,6 @@
 # ADR 0018 — Propuestas de cambio y gate de publicación
 
-- Estado: aceptado (2026-09-29). **Enmendado por el ADR 0020** (2026-09-30): los puntos 4 (métrica principal única) y 9 (`eval_suite`) se reemplazan por métricas declaradas por agente, N métricas `gate` y doble vara
+- Estado: aceptado (2026-09-29). **Enmendado por el ADR 0020** (2026-09-30): los puntos 4 (gate con una sola métrica principal; historia) y 9 (`eval_suite`) se reemplazan por métricas declaradas por agente, N métricas `gate` y doble vara. La enmienda de entrega (2026-09-30), punto 2 (métrica principal = tasa de pase), queda reemplazada por el gate con doble vara del ADR 0020, integrado en el registry el 2026-10-01
 - Unidad: 2 · Entidades, registro y versionado (contrato con la unidad 6)
 - Spec: `docs/specs/2026-09-29-registry-design.md`
 - Relacionados: ADR 0007 (escrituras y `verify`), ADR 0009 (políticas protegidas), ADR 0015 (conocimiento), ADR 0017 (Postgres como fuente de verdad)
@@ -18,7 +18,7 @@
 3. **La unidad publicable es la entidad versionada, y una release agrupa las versiones exactas.** Cada entidad tiene semver y su propia evaluación. La traza guarda solo el `release_id`, y la plataforma lo expande a la lista de versiones, sus docs y el diff frente a la release anterior.
 4. **Gate de evaluación:**
    - ningún guardarraíl de seguridad o invariante empeora (tolerancia cero);
-   - la métrica principal es mayor o igual que la vigente, dentro del margen de ruido declarado por la suite;
+   - (original; reemplazado por el ADR 0020) la métrica principal es mayor o igual que la vigente, dentro del margen de ruido declarado por la suite. Hoy: cada métrica `gate` del agente, por separado y con su propio margen de ruido;
    - sin release base se compara contra un piso mínimo;
    - ambas mediciones sobre la misma suite congelada.
 5. **Sin excepción manual del gate.** Un gate fallido devuelve la propuesta a `draft`; ni un aprobador puede publicar sobre él.
@@ -41,8 +41,8 @@
 
 ## Consecuencias
 - La auto-mejora deja de abrir PRs y escribe propuestas por la API del registry, con `origen = auto_detect`.
-- Cada entidad relevante necesita una `eval_suite` con guardarraíles, métrica principal, margen de ruido y piso. Si falta, esa entidad no se puede publicar por el gate.
-- La unidad 6 debe implementar `EvalPort` (`run(suite, release) → reporte`).
+- Cada agente necesita una `eval_suite` con los umbrales (margen de ruido y piso) de sus métricas `gate` y `guardrail` (ADR 0020; la versión original pedía además una métrica principal única). Si falta, no se puede evaluar ni publicar por el gate.
+- La unidad 6 debe implementar `EvalPort` (`run(request: EvalRequest) → reporte`; la forma original era `run(suite, release)`).
 - Un aprobador sin rol de dueño no puede aprobar el cambio de una política protegida (ADR 0009); las páginas de conocimiento solo las aprueba un humano.
 - Queda abierto el salto semver, los topes del agente autónomo y la autoaprobación.
 
@@ -50,7 +50,7 @@
 Acordada al recortar el registry a la entrega del 05/10 (spec rev. 2, §0 y §16). Reemplaza lo que contradiga a las secciones anteriores:
 
 1. **Evaluación por agente, no por entidad.** Una mejora puede venir de un prompt, del modelo de decisión, de un flow o de varias entidades a la vez. La `eval_suite` se liga al agente y consiste en escenarios corridos con el motor real, el LLM real y acciones contra un **sandbox** aislado (`SandboxPort`, lo implementa la unidad 3; `LocalSandbox` como respaldo). Las suites por entidad pasan a fase 2.
-2. **Métrica principal determinista:** la proporción de corridas cuyo resultado cumple el `expect` del escenario, calificada desde los eventos del motor. Un juez LLM es opcional e informativo, y no entra al veredicto.
+2. **Métrica principal determinista:** la proporción de corridas cuyo resultado cumple el `expect` del escenario, calificada desde los eventos del motor. Un juez LLM es opcional e informativo, y no entra al veredicto. (**Reemplazado** por el ADR 0020: ya no hay métrica principal única, sino N métricas `gate` declaradas por el agente, evaluadas por separado con doble vara; la corrida sigue calificándose desde los eventos y el juez sigue siendo informativo. El ADR 0020 prevalece en lo que contradiga este punto.)
 3. **El registry implementa el evaluador determinista** (`ScenarioEvaluator`). Los escenarios de negocio de la demo y el juez los hace otra persona del equipo.
 4. **Una persona puede recorrer el ciclo completo** y aprobar su propia propuesta: los roles `constructor` y `aprobador` se acumulan. La barrera dura es el actor: un principal no humano (el constructor o el detector, que autentican como `builder` con credencial propia; un principal es humano solo con `attrs.actor = "human"` firmado) nunca aprueba, publica, promueve ni revoca, aunque tenga el rol. Esto cierra el tema abierto de la autoaprobación.
 5. **Ciclo simplificado:** `validated` se absorbe en `freeze`, `reject` devuelve a `draft`, y `stale` se detecta al publicar (la propuesta vuelve a `draft` con la base nueva). Los estados `stale` y `abandoned` como estados propios pasan a fase 2.

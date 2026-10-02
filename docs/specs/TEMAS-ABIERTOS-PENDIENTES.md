@@ -65,6 +65,8 @@ Sigue abierto, fuera de esta construcción: el modo `navigate` (esquema y G0-20 
 - **Comparación entre releases:** no hay una regla nueva. El gate del registry (guardarraíles y margen de ruido, registry §6) decide las promociones; la analítica solo informa.
 - **Retención:** sin purga en el MVP (las tablas son inmutables y pequeñas); se revisa en la fase 2 junto con la retención del registry (#16).
 Actualización (2026-09-30): el DSL de métricas por agente, el catálogo de eventos y la regla de que no hay acción automática en producción se decidieron en el ADR 0020; este tema conserva el cálculo, la visualización, las alertas y la retención.
+Actualización (2026-10-01): el evaluador en memoria del DSL existe (`agent_core/registry/evaluation/metric_eval.py`): NULL para campos ausentes, percentil discreto y redondeo a 4 decimales son la semántica que el compilador a SQL debe reproducir (T-EVAL-14, hoy parcial; T-EVAL-04 pendiente).
+Abierto del gate (spec de evaluación §13.14): un agente sin `eval_suite` aún puede llegar a `validated`; lo frena el gate al evaluar (T-EVAL-11 parcial). Falta una relación agente → suite al validar.
 Pendiente de construcción: las vistas SQL y la conexión a Phoenix; no bloquean la fase 1 porque los eventos ya capturan los datos.
 
 ## 12. Política del contexto conversacional — resuelto
@@ -172,4 +174,4 @@ Encontrado al diseñar la evaluación por agente (`2026-09-30-evaluacion-y-metri
 - **Protección:** paso por las vistas tokenizadas de M7 (ADR 0008), sin PII hacia modelos, logs ni eventos.
 - **Etiquetas:** cuándo el resultado histórico (por ejemplo, lo que hizo el asesor humano) sirve como referencia.
 
-Los datos reales no viven en el repo ni en el registry; el registry solo guarda `dataset_id` y `dataset_hash`. Por qué es media: no bloquea la fase 1, porque la suite `scripted` es la base obligatoria del gate.
+La fuente `dataset` es `DatasetScenario` (`source: dataset`, `agent_core/registry/suite.py`); el servicio la rechaza con `dataset_source_disabled` (T-EVAL-12). Los datos reales no viven en el repo ni en el registry; el registry solo guarda `dataset_id` y `dataset_hash`. Por qué es media: no bloquea la fase 1, porque la suite `scripted` es la base obligatoria del gate.
