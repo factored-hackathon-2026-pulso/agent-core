@@ -163,6 +163,25 @@ def test_a_metric_whose_identity_changed_is_judged_on_the_new_yardstick() -> Non
         assert failed(judge(candidate(None, **change), "0.8")[1]) == ["quality"]
 
 
+def test_an_unchanged_gate_metric_must_still_be_measurable_on_the_new_suite() -> None:  # final review I-1
+    base = base_yardstick()
+    old = measured(GOOD)
+    unmeasured = SuiteMeasurement(metrics={pid: Decimal(0) for pid in PLATFORM_GUARDRAILS}
+                                  | {"speed": Decimal("0.5"), "leaks": Decimal(0)}, scenarios={"s1": True})
+    verdict, items = evaluate_gate(base, base, both(old, old, unmeasured))
+    assert verdict == "fail" and failed(items) == ["quality"]
+    item = next(i for i in items if i.metric_id == "quality" and not i.passed)
+    assert item.phase == "new_yardstick" and item.value is None and "suite nueva" in item.reason
+
+
+def test_an_unchanged_gate_metric_measured_on_the_new_suite_adds_no_item() -> None:  # final review I-1
+    base = base_yardstick()
+    old = measured(GOOD)
+    verdict, items = evaluate_gate(base, base, both(old, old, measured({**GOOD, "quality": "0.1"})))
+    assert verdict == "pass"  # no floor is enforced on an unchanged metric (errata A11)
+    assert [i for i in items if i.metric_id == "quality" and i.phase == "new_yardstick"] == []
+
+
 def test_a_guardrail_with_a_declared_noise_margin_still_has_zero_tolerance() -> None:
     base = yardstick([metric("leaks", role="guardrail", higher=False)], [scenario("s1")],
                      {"leaks": thr("0.5", "0")})

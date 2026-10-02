@@ -77,6 +77,14 @@ class _PgBlobs:
         return verified(digest, bytes(row[0]))
 
 
+def parse_loosened(raw: str) -> list[YardstickChange]:
+    """The `yardstick_loosened` column as changes; anything but a JSON list is corrupt stored data."""
+    loosened = loads(raw)
+    if not isinstance(loosened, list):
+        raise IntegrityError("la columna yardstick_loosened no es una lista")
+    return [YardstickChange.model_validate(c) for c in loosened]
+
+
 def _ref(kind: str, ident: str, version: str) -> VersionRef:
     return VersionRef(kind=kind, id=ident, version=version)
 
@@ -251,11 +259,10 @@ class _PgTx:
                         (proposal_id, candidate_hash))
         if row is None:
             return None
-        loosened = loads(row[4])
-        assert isinstance(loosened, list)
+        loosened = parse_loosened(row[4])
         return Approval(proposal_id=proposal_id, candidate_hash=candidate_hash, actor=row[0],
                         decision=row[1], reason=row[2], at=row[3],
-                        yardstick_loosened=[YardstickChange.model_validate(c) for c in loosened])
+                        yardstick_loosened=loosened)
 
     def append_event(self, event: RegistryEvent) -> None:
         self._c.execute("INSERT INTO reg_events (event_json) VALUES (%s)", (dumps(event),))

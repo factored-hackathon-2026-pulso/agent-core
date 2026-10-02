@@ -63,7 +63,12 @@ def _new_items(old: Yardstick | None, metrics: list[MetricDef], suite: EvalSuite
         previous = base_metrics.get(metric.id)
         if previous is not None and metric_identity(previous) == metric_identity(metric):
             # Unchanged: the old yardstick already judged it. A raised floor or a lowered margin on an
-            # unchanged metric is classified as tightening but not enforced here (errata A11).
+            # unchanged metric is classified as tightening but not enforced here (errata A11). It must
+            # still be measurable on the new suite, or the next proposal could never use it as its base.
+            if run.metrics.get(metric.id) is None:
+                items.append(GateItem(metric_id=metric.id, phase="new_yardstick", role=metric.role,
+                                      value=None, passed=False,
+                                      reason="la métrica no se pudo calcular con la suite nueva"))
             continue
         threshold = suite.thresholds.get(metric.id)
         floor = threshold.floor if threshold else None

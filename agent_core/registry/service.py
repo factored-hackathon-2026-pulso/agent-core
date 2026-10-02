@@ -19,7 +19,7 @@ from agent_core.domain import (
     loads,
     sha256_hex,
 )
-from agent_core.flows import Violation
+from agent_core.flows import PinnedRelease, Violation
 from agent_core.ports import Clock, IdKind, IdSource
 from agent_core.registry.candidate import (
     Candidate,
@@ -140,6 +140,8 @@ def _agent_metrics(entities: Sequence[RegistryEntity], agent_id: str) -> list[Me
         if isinstance(entity, Agent) and entity.id == agent_id:
             return list(entity.metrics)
     return []
+
+
 def _request_hash(op: str, payload: JsonValue) -> str:
     """Huella del contenido de una escritura: una clave solo se reutiliza con el mismo contenido."""
     return sha256_hex(canonical_bytes({"op": op, "payload": payload}))
@@ -734,6 +736,7 @@ class RegistryService:
     def import_seed(self, actor: Principal, root: Path) -> list[ReleaseDetail]:
         require_admin(actor)
         pinned_list, suites = load_seed(root)
+        self._check_seed_suites(pinned_list, suites)  # before any write
         details: list[ReleaseDetail] = []
         with self._store.transaction() as tx:
             for agent_id in sorted({a for pinned in pinned_list for a in pinned.aliases}):
@@ -773,6 +776,23 @@ class RegistryService:
                 self._event(tx, "imported", actor, release_id=release_id)
                 details.append(self._detail(tx, release_id))
         return details
+
+    @staticmethod
+    def _check_seed_suites(pinned_list: Sequence[PinnedRelease], suites: Sequence[EvalSuite]) -> None:
+        """Refuse a seed whose suite could never be evaluated: it would become the base yardstick."""
+        agents = {e.id: e for pinned in pinned_list for e in pinned.entities if isinstance(e, Agent)}
+        for suite in suites:
+            agent = agents.get(suite.agent_id)
+            if agent is None:
+                raise RegistryError(RegistryErrorCode.validation_failed,
+                                    f"la suite {suite.id} es del agente {suite.agent_id}, "
+                                    "que no tiene release en la semilla")
+            problems = suite_problems(agent, suite)
+            if problems:
+                raise RegistryError(RegistryErrorCode.validation_failed,
+                                    f"la suite {suite.id} tiene {len(problems)} problemas",
+                                    payload=_violations_payload(  # type: ignore[arg-type]
+                                        suite_violations(suite, problems)))
 
     def _insert_if_new(self, tx: RegistryTx, entity: AnyEntity, docs: VersionDocs, proposal_id: str | None,
                        who: str, now: datetime) -> VersionRef:
