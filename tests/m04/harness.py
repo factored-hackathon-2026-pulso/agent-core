@@ -349,6 +349,7 @@ class World:
         chain: Any = None,
         chain_factory: Any = None,
         directory: bool = False,
+        telemetry: Any = None,
     ) -> None:
         from agent_core.views import FieldClassifier
 
@@ -438,6 +439,7 @@ class World:
             chain = chain_factory(self.audit) if chain_factory is not None else PlainChain()
         self.chain = chain
         self._config = config or TurnConfig()
+        self.telemetry = telemetry
         self.engine = TurnEngine(**self.engine_kwargs())
         self._n = 0
 
@@ -457,6 +459,7 @@ class World:
             "runtimes": self.runtimes,
             "trace": FixedTrace(),
             "config": self._config,
+            "telemetry": self.telemetry,
         }
 
     # --- registro -----------------------------------------------------------------------------------

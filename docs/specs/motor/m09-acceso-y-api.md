@@ -96,7 +96,7 @@ Un rechazo en 1–5 **no procesa el turno**: sin Understand, modelos, tools ni t
 ### 3.3 Versión e idempotencia
 
 - Solo `service` y `builder` pueden pedir `@version` o un alias distinto de `@prod`; si no, `403 version_pin_forbidden` (sin `access_denied`: no hay run).
-- `POST /v1/runs` con `Idempotency-Key` ya vista (mismo principal) devuelve el run creado, con el mismo cuerpo. Misma clave con otro body → `409 idempotency_conflict`. Recursos inexistentes → `404 not_found`; body inválido → `422 invalid_request`; error inesperado → `500 internal_error` sin detalle interno.
+- `POST /v1/runs` con `Idempotency-Key` ya vista (mismo principal) devuelve el run creado, con el mismo cuerpo. Misma clave con otro body → `409 idempotency_conflict`. Recursos inexistentes → `404 not_found`; body inválido → `422 invalid_request`; error inesperado → `500 internal_error` sin detalle interno; el log (`agentcore.api`, nivel ERROR) lleva solo el tipo de la excepción, `archivo:línea` del frame que la lanzó, la plantilla de la ruta (nunca la ruta con ids) y el `trace_id` del `problem+json`, para correlacionar el 500 con el span sin exponer el texto de la excepción (regla 6).
 - **Dónde vive.** En M4 (`start_run`, cambio pedido por M9 el 2026-09-29; ver m04): busca `(principal.key, key)` y compara el hash JCS del `RunInput` sin la clave; el registro (`put_run_idempotency`) va en la **misma transacción** que el run, así que no hay run sin clave ni clave sin run.
 - **Anónimos.** Comparten `PrincipalKey(customer, None)`: M9 antepone `"{anon_session}:"` a la clave para que la de un anónimo nunca devuelva el run de otro.
 - **Límite conocido.** Dos requests concurrentes con la misma clave pueden crear dos runs antes de que exista el registro (gana el primero en commitear; el otro run queda huérfano). Cerrarlo exige un candado por clave en el adaptador de Postgres.
@@ -135,6 +135,10 @@ Cuando M4 devuelve `awaiting: step_up`, M9 responde `200` con `step_up: {require
 
 Un span `agentcore.api.request` por request (OpenTelemetry, provider de `agent_telemetry`), con una lista cerrada de atributos (método y status). El `trace_id` de la respuesta es el de la traza si hay una activa; si no, uno del `IdSource`. `agent_telemetry.span()` exige `run_id` y `agentcore.release`, que no existen en un 401, por eso la puerta usa la API de OTel directamente. Nada de credenciales, `principal.id` ni body en atributos.
 
+- La telemetría nativa de FastAPI está apagada (`FASTAPI_TELEMETRY_OFF` en `agent_core/api/app.py`: trazas, métricas, logs, spans de operación y autoconfiguración desde `OTEL_*`), así que `agentcore.api.request` es el único span de servidor y no hay `url.path` ni `url.query`.
+- En un error, el span lleva `error.type` y `http.response.status_code`, y nunca el evento `exception` ni una descripción de estado.
+- **Trace id del turno (U3):** el middleware publica el `trace_id` del request con `agent_telemetry.bind_trace_id` alrededor de `call_next`. El motor lo lee con `RequestTraceIds` (composition), así que el `TurnResult` del mismo request (`trace_id` y `first_turn.trace_id` de `POST /v1/runs`, `trace_id` de un turno) es el de la respuesta y el de `problem+json`, con OTel o con el respaldo del `IdSource`. El span y el `ContextVar` llegan igual al threadpool de los endpoints síncronos (anyio copia el contexto), y el `invoke_agent` del turno es hijo de `agentcore.api.request` (`tests/composition/test_turn_telemetry.py`). Un reintento deduplicado devuelve el `trace_id` del intento original, que está en el resultado guardado (F16). Los logs JSON sin traza activa llevan ese mismo respaldo.
+
 ### 3.8 Formato de la credencial (`raw_credential`, decisión 2026-09-29)
 
 JWS compacto `header.payload.firma` (base64url sin relleno), firmado con Ed25519. Lo verifica `JwsIdentityVerifier` (`agent_core/adapters/jws_identity.py`), que implementa `IdentityVerifier`; lo emite el servicio de identidad y, en la demo, `TestIdentityIssuer`.
@@ -153,7 +157,7 @@ Las exige quien despliega el servicio (ADR 0003 de `infra`: puerto único, `/hea
 
 - `GET /healthz`: `200 {"status": "ok"}` siempre que el proceso responda. No toca ninguna dependencia.
 - `GET /readyz`: ejecuta las comprobaciones de `ApiDeps.readiness` (tupla de `(nombre, función)`; vacía = listo). Todas pasan → `200 {"status": "ready"}`; alguna falla → `503 {"status": "unavailable", "failed": ["<nombre>", ...]}`. Una comprobación que lanza cuenta como fallida y su mensaje **nunca** se devuelve ni se registra (puede traer hosts o credenciales).
-- Sin credencial, sin `Idempotency-Key`, sin cuota y sin `trace_id` obligatorio: no pasan por el `AccessGate`.
+- Sin credencial, sin `Idempotency-Key`, sin cuota y sin `trace_id` obligatorio: no pasan por el `AccessGate`. Tampoco abren el span `agentcore.api.request`: el orquestador las consulta cada pocos segundos y un `503` de `/readyz` no es un error del servicio.
 - `serve` inyecta la comprobación `postgres` (`PostgresStore.ping`: `SELECT 1` con `connect_timeout` de 3 s; falla cerrado y sin detalle).
 
 ## 4. Invariantes
@@ -192,7 +196,9 @@ Con `TestClient` de FastAPI, `StubVerifier` (tokens opacos sintéticos), `TableA
 | T-M9-12 | Exceso de tasa o costo → `429` | 12 | `test_api`, `test_limits`, `test_m9_postgres` |
 | T-M9-13 | Todas las respuestas llevan `trace_id` y los errores son `problem+json` | — | `test_problems`, `test_api` |
 | T-M9-14 | `awaiting: step_up` devuelve `step_up` en el cuerpo | 5 | `test_api` |
-| T-M9-15 | `/healthz` responde sin credencial aunque una dependencia caiga; `/readyz` da `200` o `503` con los nombres que fallan y sin filtrar el error; ninguna entra al OpenAPI | — | `test_health`, `tests/composition/test_serve_app` |
+| T-M9-15 | La telemetría nativa de FastAPI está apagada, incluso con `OTEL_EXPORTER_OTLP_ENDPOINT`: sin providers globales ni exportadores propios | — | `test_fastapi_telemetry` |
+| T-M9-16 | Una excepción no controlada no deja mensaje ni stack en el span: solo `error.type`, `http.response.status_code` y estado `ERROR` sin descripción | — | `test_fastapi_telemetry` |
+| T-M9-17 | `/healthz` responde sin credencial aunque una dependencia caiga; `/readyz` da `200` o `503` con los nombres que fallan y sin filtrar el error; ninguna entra al OpenAPI ni abre span | — | `test_health`, `tests/composition/test_serve_app` |
 | T-TR-10 | `GET /v1/sessions/{id}/lineage` devuelve la cadena con releases y `transfer_id`; otro cliente recibe `403`; no expone `from_event_hash` | — | `test_session_lineage` |
 
 Además: IDOR de lecturas (dueño, asesor con delegación, run sin subject, anónimos entre sí), decimales en el body, JSON ambiguo, `openapi.json` al día, fixture `TableAuthz`.

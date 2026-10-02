@@ -3,7 +3,6 @@
 
 import argparse
 import importlib
-import logging
 import os
 import sys
 from collections.abc import Sequence
@@ -237,8 +236,9 @@ def _agent_step_runner(port: LLMAgentPort, clock: Clock) -> AgentStepRunner:
 def _run_llm_smoke(args: argparse.Namespace) -> int:
     """Prueba de humo del gateway: nunca imprime la clave ni el contenido generado."""
     # El SDK `openai` registra los cuerpos de request en DEBUG (incluso con OPENAI_LOG=debug): se corta.
-    for name in ("openai", "httpx"):
-        logging.getLogger(name).setLevel(logging.WARNING)
+    from agent_core.composition.observability import quiet_sdk_loggers
+
+    quiet_sdk_loggers()
     if args.n < 1:
         print("--n debe ser al menos 1", file=sys.stderr)
         return USAGE_ERROR

@@ -144,9 +144,11 @@ Parámetros del modelo: `max_tokens` y `temperature` se envían tal cual. Un mod
 
 ### 3.5 Observabilidad
 
-- Un span `chat` por llamada, con:
-  - las semconv GenAI de la versión fijada: `gen_ai.operation.name = chat`, `gen_ai.provider.name` (el alias), `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.usage.input_tokens` y `gen_ai.usage.output_tokens`;
-  - los atributos propios `agentcore.prompt`, `agentcore.model_profile` y `agentcore.gateway.error_kind`.
+- Un span por llamada, llamado `chat {modelo}` (semconv GenAI: `{operation} {model}`), con:
+  - las semconv GenAI de la versión fijada: `gen_ai.operation.name = chat`, `gen_ai.provider.name = "openai"` (el protocolo del SDK, no el alias), `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens` y `gen_ai.response.finish_reasons` (una lista con el `finish_reason` de la respuesta, también cuando la salida se rechaza por truncada o inválida);
+  - los atributos propios `agentcore.prompt`, `agentcore.model_profile`, `agentcore.endpoint_alias` (el alias del endpoint) y `agentcore.gateway.error_kind`;
+  - la correlación del turno en curso (`run_id`, `turn_id`, `session_id`, `agentcore.release`, `agentcore.agent`, los de `agent_telemetry.bind`; ADR 0003 punto 4), si hay un `bind` activo.
+  - Es un tracer propio (no pasa por `ALLOWED_ATTRIBUTES`): su lista cerrada es la de arriba y la verifica `tests/composition/test_turn_telemetry.py`.
 - Captura de contenido desactivada (ADR 0003). Nunca van a spans ni logs la key, los headers ni el contenido de mensajes o respuestas.
 - El SDK `openai` registra el contenido de los requests en DEBUG: los loggers `openai` y `httpx` no se activan en DEBUG en ningún entorno con datos reales.
 - La latencia que llega al log de auditoría la mide M8 con el `Clock` (M0 §2.10). El span tiene la suya propia.
@@ -251,6 +253,7 @@ Sin red: el adaptador se prueba con un transporte HTTP falso (`respx` sobre `htt
 | T-U5-16 | Integración con M2: un nodo `agent` con `LLMAgentPort` sobre `OpenAICompatGateway` (transporte falso) llega a `answered`; `budgets_used.run_cost` acumula el costo del bucle |
 | T-U5-17 | M2: un `GatewayError` de `AgentPort.step` termina el nodo en `gave_up` y carga al presupuesto el uso que informe; otra excepción sube |
 | T-U5-18 | Composition: `EngineRuntimeFactory.open` inyecta `agents` y un flow con nodo `agent` corre con gateway guionado |
+| T-U5-19 | Atributos GenAI: nombre `chat {modelo}`, `gen_ai.provider.name = "openai"` con el alias en `agentcore.endpoint_alias`, `finish_reasons` (también con salida truncada) y la correlación del turno en el span (`tests/u05/test_observability.py`) |
 | T-M8-12 | M8: `invalid_output` regenera una vez y luego usa la plantilla; los otros `kind` van directo a la plantilla; `cost_known = false` si un error no informa costo (siguiente id libre en m08; ajustar si se ocupa antes) |
 | T-M1-46 | M1 G0-24: una tool en `tools_allowed` sin `description` o `args_schema`, o con `args_schema` fuera del subconjunto, falla la validación estática (siguiente id libre en m01) |
 

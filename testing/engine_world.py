@@ -50,7 +50,7 @@ from agent_core.ports import (
     ToolExecutor,
     UnitOfWorkFactory,
 )
-from agent_core.turn import TurnEngine
+from agent_core.turn import TurnEngine, TurnTelemetry
 from agent_core.views import DEFAULT_CATALOG, FieldClassifier, FieldRule
 from testing.builders import NOW
 from testing.builders import principal as make_principal
@@ -241,7 +241,8 @@ class EngineWorld:
                  clock: FakeClock | None = None, ids: FakeIds | None = None,
                  knowledge: KnowledgeSource | None = None, releases: tuple[str, ...] = (RELEASE_ID,),
                  agent: str = "atencion", directory: bool = False,
-                 calibrations: Mapping[str, CalibrationArtifact] | None = None) -> None:
+                 calibrations: Mapping[str, CalibrationArtifact] | None = None,
+                 telemetry: TurnTelemetry | None = None) -> None:
         self.clock = clock or FakeClock()
         self.ids = ids or FakeIds()
         self.registry = registry_from_releases(registry_root, releases)
@@ -275,7 +276,7 @@ class EngineWorld:
             calibrations=InMemoryCalibrationSource(calibrations or {"cal-demo": demo_calibration()}),
             transcript=self.transcript, authz=self.authz, classifier=FieldClassifier(CATALOG),
             config=config or EngineConfig(), knowledge=knowledge,
-            directory=None if record else self.directory)
+            directory=None if record else self.directory, telemetry=telemetry)
         self.engine: TurnEngine = build_turn_engine(self.deps)
         self.runtimes = self.engine._runtimes  # RuntimeFactory real
         self.driver = Driver(self.engine, agent=agent)

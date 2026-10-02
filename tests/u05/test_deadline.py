@@ -107,5 +107,5 @@ def test_the_worker_thread_keeps_the_otel_context() -> None:
 
     world = make_world(client_factory=lambda *_: Client(), tracer=tracer)
     world.gateway.generate(PROMPT, INPUTS, "es")
-    (chat,) = [s for s in exporter.get_finished_spans() if s.name == "chat"]
+    (chat,) = [s for s in exporter.get_finished_spans() if s.name == "chat vendor/modelo-x"]
     assert seen == [chat.context.span_id]

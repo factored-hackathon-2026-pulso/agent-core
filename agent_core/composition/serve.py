@@ -10,8 +10,10 @@ from agent_core.api.app import ApiDeps, create_app
 from agent_core.api.security_log import OtelSecurityLog
 from agent_core.audit import AuditLog
 from agent_core.composition.engine import EngineDeps, build_engine
+from agent_core.composition.observability import ObservabilityConfigError, setup_observability
 from agent_core.composition.serve_ports import ServeConfigError, ServePorts, resolve_ports
 from agent_core.composition.serve_registry import build_registry_service_for_serve
+from agent_core.composition.telemetry import OtelTurnTelemetry
 from agent_core.domain import (
     AgentSelector,
     AuthInfo,
@@ -25,14 +27,18 @@ from agent_core.domain import (
 from agent_core.ports import Clock, IdSource, RegistryPort
 from agent_core.registry import RegistryService
 from agent_core.registry.http import registry_extension
+from agent_core.turn import TurnTelemetry
+
+GATEWAY_TRACER = "agent_core.adapters.llm"
 
 
-def build_api_deps(ports: ServePorts, *, registry_service: RegistryService | None = None) -> ApiDeps:
+def build_api_deps(ports: ServePorts, *, registry_service: RegistryService | None = None,
+                   telemetry: TurnTelemetry | None = None) -> ApiDeps:
     built = build_engine(EngineDeps(
         clock=ports.clock, ids=ports.ids, keys=ports.keys, uow_factory=ports.uow_factory, audit=ports.audit,
         registry=ports.registry, releases=ports.releases, tools=ports.tools, gateway=ports.gateway,
         providers=ports.providers, calibrations=ports.calibrations, transcript=ports.transcript,
-        authz=ports.authz, classifier=ports.classifier, directory=ports.directory))
+        authz=ports.authz, classifier=ports.classifier, directory=ports.directory, telemetry=telemetry))
     return ApiDeps(
         verifier=ports.verifier, authz=ports.authz, registry=ports.registry, uow_factory=ports.uow_factory,
         counters=ports.counters, clock=ports.clock, ids=ports.ids, turns=built.turns,
@@ -75,24 +81,42 @@ def model_alias_warnings(registry: RegistryPort, agents: Iterable[str],
 
 def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Mapping[str, str],
               serve: Callable[..., None] | None = None) -> int:
-    """Resuelve los puertos, avisa de los dobles y arranca uvicorn. `serve` se inyecta en las pruebas."""
+    """Configura la observabilidad, resuelve los puertos, avisa de los dobles y arranca uvicorn. `serve` se
+    inyecta en las pruebas. La observabilidad se apaga siempre al salir (vacía el exportador, I6)."""
     try:
-        ports = resolve_ports(args, env, clock, ids)
-    except ServeConfigError as exc:
+        observability = setup_observability(env)
+    except ObservabilityConfigError as exc:
         print("agentcore serve no puede arrancar:", file=sys.stderr)
         for problem in exc.problems:
             print(f"  - {problem}", file=sys.stderr)
         return 2
-    if ports.doubles:
-        print("AVISO: piezas que son DOBLES de demo (no producción): " + ", ".join(ports.doubles),
-              file=sys.stderr)
-    for warning in model_alias_warnings(ports.registry, ports.agents, ports.endpoints, env, ports.clock):
-        print(f"AVISO: {warning}", file=sys.stderr)
-    registry_service = build_registry_service_for_serve(ports) if ports.registry_api is not None else None
-    app = create_app(build_api_deps(ports, registry_service=registry_service))
-    if serve is None:
-        import uvicorn
+    try:
+        try:
+            ports = resolve_ports(args, env, clock, ids, tracer=observability.tracer(GATEWAY_TRACER))
+        except ServeConfigError as exc:
+            print("agentcore serve no puede arrancar:", file=sys.stderr)
+            for problem in exc.problems:
+                print(f"  - {problem}", file=sys.stderr)
+            return 2
+        if ports.doubles:
+            print("AVISO: piezas que son DOBLES de demo (no producción): " + ", ".join(ports.doubles),
+                  file=sys.stderr)
+        for warning in model_alias_warnings(ports.registry, ports.agents, ports.endpoints, env, ports.clock):
+            print(f"AVISO: {warning}", file=sys.stderr)
+        registry_service = build_registry_service_for_serve(ports) if ports.registry_api is not None else None
+        # Always the real turn telemetry: without an exporter its spans are no-ops, but `bind` still
+        # correlates the turn's logs (m04 §3.9).
+        app = create_app(
+            build_api_deps(ports, registry_service=registry_service, telemetry=OtelTurnTelemetry()))
+        if serve is None:
+            import uvicorn
 
-        serve = uvicorn.run
-    serve(app, host=args.host, port=args.port)
-    return 0
+            serve = uvicorn.run
+        # F5: uvicorn's own logging config would print "Exception in ASGI application" with the exception's
+        # message and stack (Starlette re-raises after the 500 handler); with `log_config=None` it reaches the
+        # root JSON formatter, which keeps only `exc_type`. The access log would print client IPs and id
+        # paths.
+        serve(app, host=args.host, port=args.port, log_config=None, access_log=False)
+        return 0
+    finally:
+        observability.shutdown()  # I6: flush the batch exporter on exit

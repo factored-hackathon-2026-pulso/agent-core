@@ -1,5 +1,6 @@
 """Pasos 1-3 de `handle_turn`: deduplicación, lease, `410` y release revocada (T-M4-09, 10, 11)."""
 
+import logging
 from datetime import timedelta
 from typing import Any
 
@@ -116,6 +117,28 @@ def test_una_excepcion_libera_el_lease_para_el_reintento() -> None:
     assert w.store.leases == {} and w.saved().state_version == 1 and w.saved().status == "open"
     w.recorder.fail = None
     assert w.turn("hola", client_turn_id="c-1").status == "escalated"
+
+
+def test_a_failed_lease_release_leaves_a_warning_with_the_type(caplog: pytest.LogCaptureFixture) -> None:
+    w = revoked_world()
+    failed = {"turn": False}
+    real_factory = w.uow_factory
+
+    def factory() -> Any:
+        if failed["turn"]:  # the release UoW opened after the turn failed
+            raise RuntimeError("SECRETO-de-la-liberacion")
+        return real_factory()
+
+    def failing_record(*args: Any, **kwargs: Any) -> Any:
+        failed["turn"] = True
+        raise RuntimeError("SECRETO-del-turno")
+
+    w.recorder.record_turn = failing_record  # type: ignore[method-assign]
+    w.engine._uow_factory = factory  # type: ignore[attr-defined]
+    caplog.set_level(logging.WARNING, logger="agent_core.turn")
+    with pytest.raises(RuntimeError):
+        w.turn("hola", client_turn_id="c-1")
+    assert "lease" in caplog.text and "RuntimeError" in caplog.text and "SECRETO" not in caplog.text
 
 
 def test_una_caida_simulada_no_libera_el_lease() -> None:

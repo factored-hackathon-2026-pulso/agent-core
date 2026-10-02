@@ -1,6 +1,6 @@
 # Spec — Transferencia entre agentes: recepción, directorio y especialistas
 
-- Estado: **borrador para revisión; implementado en las ramas `feat/transferencia-entre-agentes` (fases 1 a 6) y `feat/transferencia-demo` (fase 7), sin spans OTel; pendiente de aprobación del usuario.** Reconciliado con la implementación el 2026-10-01 (decisiones P1 a P7 del plan y las del libro de la ejecución); lo que sigue sin decidir está en §12
+- Estado: **borrador para revisión; implementado en las ramas `feat/transferencia-entre-agentes` (fases 1 a 6), `feat/transferencia-demo` (fase 7) y `feat/transferencia-otel` (spans OTel de la transferencia, §8, 2026-10-02); pendiente de aprobación del usuario.** Reconciliado con la implementación el 2026-10-01 (decisiones P1 a P7 del plan y las del libro de la ejecución); lo que sigue sin decidir está en §12
 - Fecha: 2026-09-30 (rev. 2026-10-01)
 - Repo: `agent-core`
 - ADR: 0021 (este diseño); se apoya en 0004, 0006, 0013, 0017, 0018, 0019 y 0020
@@ -204,7 +204,13 @@ entender (collect / agent con input_view) → directorio (tool directory/list) �
 
 - **Correlación:** `session_id` en todo evento (ya existe en `EngineEvent`) y `transfer_id` en los tres eventos de transferencia.
 - **Enlace verificable:** `RunOrigin.from_event_hash` ata la cadena del destino al `turn_completed` exacto del origen. `verify_transfer_link(target, sink)` (M11, `agent_core/audit/links.py`) lo comprueba: la cadena de origen verifica, el hash es de un `turn_completed` del turno que transfirió, hay un único `run_transferred` que apunta al destino, y los agentes y releases de `origin`, de los `run_started` y de `run_transferred` coinciden. Comprueba solo el enlace, no la integridad de la cadena del destino. **Pendiente:** conectarlo a `agentcore replay` (§12.10).
-- **OTel (pendiente, P7; no construido):** span `agentcore.transfer` (atributos `transfer_id`, `from_agent`, `to_agent`, `to_release_id`, `outcome`) y un *span link* del primer span del run destino al span de la transferencia.
+- **OTel (hecho el 2026-10-02; ADR 0003 #4, m04 §3.9):**
+  - El span `agentcore.transfer` es hijo del `invoke_agent` del turno del origen y cubre la validación de la transferencia (§5.2).
+  - Atributos, todos ids o enums (lista cerrada de `agent_telemetry`): `agentcore.transfer.id`, `agentcore.transfer.from_agent`, `agentcore.transfer.to_agent`, `agentcore.transfer.to_release_id` y `agentcore.transfer.outcome` (`transferred` | `rejected`). `from_agent` y `to_agent` son ids de agente, sin versión (la versión del destino la da `to_release_id`). Además de los de correlación (`run_id`, `turn_id`, `session_id`, release y agente del origen).
+  - En un rechazo va `agentcore.transfer.reason_code` y no hay `to_release_id`; `to_agent` va solo si `transfer_rejected` lo repite, es decir, si el destino está en el directorio que el run leyó.
+  - El `invoke_agent` del run destino es **hermano** del del origen (mismo padre y misma traza) y lleva un *span link* al span `agentcore.transfer`. Es hermano solo en el árbol de la traza: en el tiempo el destino corre **dentro** del `invoke_agent` del origen, que sigue abierto mientras se procesa el destino (la duración de la recepción sí incluye el trabajo del especialista). Si el origen no tiene un span padre (hay provider pero no hay span de request), el destino cuelga del `invoke_agent` del origen para quedar en la misma traza. Una transferencia dentro del destino cuelga de su propio `invoke_agent`. Un rechazo no abre turno de destino y no enlaza nada.
+  - **No se persiste nada** (ni evento, ni campo de `RunOrigin`; sin cambio de M0 ni de `SCHEMA_VERSION`): el enlace de la traza vive solo en el exportador, y el enlace verificable es el de la cadena (arriba). La telemetría no cambia eventos ni hashes (las dos cadenas son idénticas con o sin ella) y en el replay es no-op. Si la telemetría falla, M4 lo contiene y el turno sigue sin ella.
+  - **Límites:** la telemetría es de mejor esfuerzo. Si el turno se revierte después (falla del `commit`), los spans ya emitidos se exportan igual. Sin endpoint OTLP (`OTEL_EXPORTER_OTLP_ENDPOINT` o `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`) no hay trazas.
 - **Linaje por sesión:** §5.3. **Pendiente:** el linaje por run del registry (`RunLineage`, `lineage_for_run`) no tiene `origin` y no lo lee; hoy `origin` solo se ve en el linaje por sesión (§5.3).
 - **Sin PII:** el paquete solo aparece como `packet_fp`; los slots viajan por las vistas de M7.
 
@@ -241,6 +247,7 @@ entender (collect / agent con input_view) → directorio (tool directory/list) �
 | T-TR-13 | Gate del especialista: una ficha que roba escenarios de otro especialista hace fallar el gate |
 | T-TR-14 | Un `accepts` que rompe a la recepción publicada se marca `yardstick_loosened` |
 | T-TR-15 | Ningún evento de transferencia lleva valores de slots ni datos de vista `full` |
+| T-TR-16 | Spans OTel de la transferencia (§8; `tests/m04/test_telemetry_port.py` y `tests/composition/test_transfer_spans.py`): el span `agentcore.transfer` lleva los atributos `agentcore.transfer.*` de una transferencia válida (con `to_release_id`) y de un rechazo (con `reason_code`, sin `to_release_id`, y `to_agent` solo si el evento lo repite); el `invoke_agent` del destino es hermano del del origen y tiene exactamente un link al span de la transferencia; un rechazo no enlaza nada; solo ids y enums; las cadenas de los dos runs son idénticas con y sin telemetría (también con una que falla al abrir el span, en `link` o en `finish`) |
 
 ## 11. Fases de construcción (demo: solo la ida)
 
@@ -251,7 +258,7 @@ entender (collect / agent con input_view) → directorio (tool directory/list) �
 | 3 | Registry: directorio, hash y tool `directory/list` (adaptador en `composition`) | hecha; cableada en la raíz de composición en la fase 7 (§4) |
 | 4 | M5 y M2: `decide` con `choices_from` y manejador de `transfer` | hecha |
 | 5 | M4 y M9: sesión con varios runs, transferencia atómica, `TurnResult.run_id`/`agent`, linaje por sesión | hecha |
-| 6 | M11: enlace por hash (`verify_transfer_link`) | hecha, **sin spans OTel**; el replay de sesión llegó en la fase 7 |
+| 6 | M11: enlace por hash (`verify_transfer_link`) | hecha; el replay de sesión llegó en la fase 7 y los spans OTel de §8 el 2026-10-02 |
 | 7 | Demo: recepción más dos especialistas (`disputas`, a partir de `atencion`, y `consultas`); las suites de evaluación pasan a la fase 8 | hecha (plan `docs/superpowers/plans/2026-10-01-transferencia-fase7-demo.md`): registro `tests/fixtures/registry-transfer-demo` (tres agentes, una release cada uno), umbral `"*"` hecho a mano (`calibrations/cal-transfer-demo.json`, no es una calibración), demo en proceso y por HTTP (`tests/composition/test_transfer_demo.py`), fixture grabado `tests/fixtures/runs-transfer/transferencia.yaml`; sin suites de evaluación (decisión del usuario) |
 | 8 | Evaluación (§7) y REL-T1, en coordinación con la rama `feat/eval-metrics` | pendiente, con su propio plan |
 
@@ -276,7 +283,7 @@ Abiertos nuevos de la implementación (no resueltos aquí):
 12. **`client_turn_id` único por sesión:** el reintento busca el resultado entre los runs de la sesión; hoy se documenta como requisito, no se comprueba.
 13. **Rutas de Postgres sin verificar** (no hubo docker): `aliases_named` del registry, los métodos de sesión de la unidad de trabajo (`find_run_by_session`, `list_runs_by_session`) y el índice `runs_one_open_per_session` con su traducción a `VersionConflict` (fase 7). Hay que correr `docker compose up -d postgres && uv run pytest tests/integration`.
 14. **Catálogos de campos de producción:** deben clasificar como `public` los campos del directorio (`choices`, `agent_id`, `release_id`); si no, `decide_choice` recibe las opciones tokenizadas (§3.2). El catálogo de la demo (`testing/engine_world.CATALOG`) clasifica `directory.choices`, `directory.entries.agent_id` y `directory.entries.release_id` como `public`, y `directory.entries.summary` y `directory.entries.examples` como `untrusted_text` (texto de autoría del registro: llega envuelto al modelo de enrutamiento, no tokenizado). Los catálogos de producción deben hacer lo mismo: sigue siendo trabajo de quien despliega, porque `DEFAULT_CATALOG` de M7 no cambia (decisión del usuario, fase 7). **Hueco conocido:** `accepts` y `supported_locales` de las fichas no tienen regla en ningún catálogo, así que un router real los vería tokenizados (`⟦pii:n⟧`). No se arregla con una línea de catálogo (los nombres de slot son dinámicos y la búsqueda es por último segmento). Opciones: proyectarlos fuera de la entrada del router en el flow, o trabajo de catálogo de producción. Con el proveedor guionado de la demo no se nota.
-15. **Pendientes de las fases 6 a 8:** REL-T1, evaluación (§7), spans OTel (los agentes de la demo están hechos, fase 7); ver `TEMAS-ABIERTOS-PENDIENTES.md` #19.
+15. **Pendientes de las fases 6 a 8:** REL-T1 y evaluación (§7) (los agentes de la demo están hechos, fase 7; los spans OTel de la transferencia también, §8); ver `TEMAS-ABIERTOS-PENDIENTES.md` #19.
 16. **Cableado de `directory/list` en la raíz de composición:** **Cerrado (fase 7)** (§4).
 17. **Autorización de la tool y de M4 no coinciden del todo:** `DirectoryToolExecutor` filtra con `authorize_agent` solamente, mientras M4 llama también `authorize_subject`; y `locale` es un argumento del flow (la prueba de punta a punta fija `"es"`). Un especialista listado puede entonces rechazarse con `not_eligible` (falla seguro).
 18. **Endurecer G0-22/G0-26:** `decide.choices_from` puede leer un hecho de un nodo `agent` (§6).

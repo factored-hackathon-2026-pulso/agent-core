@@ -4,9 +4,12 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from fastapi.testclient import TestClient
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from agent_core.api.app import ApiDeps, create_app
 from tests.m09.conftest import api_deps
+
+pytest_plugins = ["tests.support.otel"]
 
 
 def _client(*checks: tuple[str, Callable[[], bool]]) -> TestClient:
@@ -68,3 +71,12 @@ def test_api_deps_readiness_defaults_to_no_checks() -> None:
     deps, _ = api_deps()
 
     assert isinstance(deps, ApiDeps) and deps.readiness == ()
+
+
+def test_probes_open_no_request_span_even_when_not_ready(otel: InMemorySpanExporter) -> None:
+    client = _client(("postgres", lambda: False))
+
+    assert client.get("/healthz").status_code == 200
+    assert client.get("/readyz").status_code == 503
+
+    assert [s for s in otel.get_finished_spans() if s.name == "agentcore.api.request"] == []

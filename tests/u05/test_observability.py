@@ -28,9 +28,11 @@ def test_a_call_emits_one_chat_span_with_genai_attributes(respx_mock: MockRouter
     tracer, exporter = _tracer()
     make_world(tracer=tracer).gateway.generate(PROMPT, INPUTS, "es", DRAFT)
     (span,) = exporter.get_finished_spans()
-    assert span.name == "chat"
+    assert span.name == "chat vendor/modelo-x"
     attrs = dict(span.attributes or {})
-    assert attrs["gen_ai.operation.name"] == "chat" and attrs["gen_ai.provider.name"] == "openrouter"
+    assert attrs["gen_ai.operation.name"] == "chat" and attrs["gen_ai.provider.name"] == "openai"
+    assert attrs["agentcore.endpoint_alias"] == "openrouter"
+    assert attrs["gen_ai.response.finish_reasons"] == ("stop",)
     assert attrs["gen_ai.request.model"] == "vendor/modelo-x"
     assert attrs["gen_ai.response.model"] == "vendor/modelo-x-2026"
     assert attrs["gen_ai.usage.input_tokens"] == 120 and attrs["gen_ai.usage.output_tokens"] == 30
@@ -88,3 +90,24 @@ def test_neither_the_key_nor_the_content_reach_spans_logs_or_errors(
                  *(str(dict(event.attributes or {})) for event in span.events)]
     for secret in SECRETS:
         assert all(secret not in text for text in seen), secret
+
+
+def test_finish_reasons_are_recorded_on_a_truncated_output(respx_mock: MockRouter) -> None:
+    respx_mock.post(CHAT).respond(200, json=completion("{", usage=(5, 5), finish="length"))
+    tracer, exporter = _tracer()
+    with pytest.raises(GatewayError) as caught:
+        make_world(tracer=tracer).gateway.generate(PROMPT, INPUTS, "es", DRAFT)
+    assert caught.value.kind.value == "invalid_output"
+    (span,) = exporter.get_finished_spans()
+    assert dict(span.attributes or {})["gen_ai.response.finish_reasons"] == ("length",)
+
+
+def test_the_chat_span_carries_the_turn_correlation(respx_mock: MockRouter) -> None:
+    import agent_telemetry as tel
+
+    respx_mock.post(CHAT).respond(200, json=completion(GOOD_JSON, usage=(1, 1)))
+    tracer, exporter = _tracer()
+    with tel.bind(run_id="run-0001", turn_id="turn-0001", release="rel-1", agent="atencion@1.0.0"):
+        make_world(tracer=tracer).gateway.generate(PROMPT, INPUTS, "es", DRAFT)
+    attrs = dict(exporter.get_finished_spans()[0].attributes or {})
+    assert attrs["run_id"] == "run-0001" and attrs["agentcore.release"] == "rel-1"

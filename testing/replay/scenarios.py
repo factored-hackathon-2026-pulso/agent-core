@@ -10,6 +10,7 @@ from pathlib import Path
 from agent_core.audit import Fixture, build_fixture
 from agent_core.domain import EngineEvent
 from agent_core.ports import ToolStatus
+from agent_core.turn import TurnTelemetry
 from testing.engine_world import REGISTRY_DEMO, TRANSFER_DEMO, EngineWorld, transfer_world
 from testing.fakes.tools import Scripted
 
@@ -95,11 +96,13 @@ SCENARIO_REGISTRY: dict[str, Path] = {"transferencia": TRANSFER_DEMO}
 _WORLDS: dict[str, Callable[..., EngineWorld]] = {"transferencia": transfer_world}
 
 
-def record_scenario(name: str, registry_root: Path | None = None) -> Fixture:
+def record_scenario(name: str, registry_root: Path | None = None, *,
+                    telemetry: TurnTelemetry | None = None) -> Fixture:
     """Records `name` over `registry_root` (by default, the scenario's own registry). The fixture's `events`
-    are the entry run's chain; `linked`, the chains of the runs it transferred to, in creation order."""
+    are the entry run's chain; `linked`, the chains of the runs it transferred to, in creation order.
+    `telemetry` only observes: the fixture is byte-identical with it or without it (T-M11-15)."""
     root = registry_root or SCENARIO_REGISTRY.get(name, REGISTRY_DEMO)
-    world = _WORLDS.get(name, EngineWorld)(registry_root=root, record=True)
+    world = _WORLDS.get(name, EngineWorld)(registry_root=root, record=True, telemetry=telemetry)
     SCENARIOS[name](world)
     assert world.driver.run_id is not None and world.recording_tools and world.recording_llm
     origin = world.driver.run_id

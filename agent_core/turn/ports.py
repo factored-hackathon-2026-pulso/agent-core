@@ -4,15 +4,18 @@
 `AuditLog.append`; `tests/m04/test_real_m11.py`). `UnderstandPort` NO coincide con `UnderstandService.run`
 de M5: ver m04 §11 (discrepancias de la Fase B)."""
 
+from collections.abc import Sequence
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Protocol
+from typing import Literal, Protocol
 
 from agent_core.domain import (
     Agent,
     Command,
     EncryptedBlob,
     EngineEvent,
+    EntityRef,
     JsonValue,
     Locale,
     Message,
@@ -23,6 +26,7 @@ from agent_core.domain import (
     Release,
     RunState,
     TranscriptRef,
+    TransferRejectReason,
 )
 from agent_core.guards import GuardResult
 from agent_core.interpreter import StepContext
@@ -119,3 +123,50 @@ class RuntimeFactory(Protocol):
 
 class TraceIds(Protocol):
     def current(self, turn_id: str) -> str: ...
+
+
+# --- telemetry of the turn (m04 §3.9) -------------------------------------------------------------------
+# M4 never imports OpenTelemetry nor `agent_telemetry` (`.importlinter`): it reports each turn through this
+# port. The default is a no-op (`agent_core.turn.telemetry`); the real one lives in composition. Telemetry
+# only reads events M4 already built: it never changes an event, a hash or the order of the ids.
+
+
+@dataclass(frozen=True)
+class TurnScope:
+    """What a turn's live span is about: correlation ids and closed-list values, never a payload value."""
+
+    run_id: str
+    turn_id: str
+    session_id: str | None
+    release: str
+    agent: EntityRef
+    entry: Literal["start_run", "turn"]
+    principal_type: str
+    locale: str
+
+
+@dataclass(frozen=True)
+class TransferOutcome:
+    outcome: Literal["transferred", "rejected"]
+    to_agent: str | None = None
+    to_release_id: str | None = None  # only with `transferred`
+    reason_code: TransferRejectReason | None = None  # only with `rejected`
+
+
+class TransferSpan(Protocol):
+    link: object | None  # opaque handle for the target turn's `links`; None = nothing to link
+
+    def finish(self, outcome: TransferOutcome) -> None: ...
+
+
+class TurnSpan(Protocol):
+    def record(self, events: Sequence[EngineEvent]) -> None:
+        """Events this turn just chained, in chain order; called after every `EventChain.append` of the
+        turn."""
+        ...
+
+    def transfer(self, transfer_id: str) -> AbstractContextManager[TransferSpan]: ...
+
+
+class TurnTelemetry(Protocol):
+    def turn(self, scope: TurnScope, links: Sequence[object] = ()) -> AbstractContextManager[TurnSpan]: ...

@@ -2,10 +2,11 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Annotated
+from typing import Annotated, Final
 
 from fastapi import APIRouter, FastAPI, Header, Request
 from fastapi.responses import JSONResponse
+from fastapi.telemetry import TelemetryConfig
 
 from agent_core.api.authorization import RunAuthorizer
 from agent_core.api.gate import ANON_SESSION_ATTR, AccessGate, Admitted
@@ -114,8 +115,22 @@ def _idempotency_key(raw: str | None, principal: Principal) -> str:
     return raw
 
 
+# U1/C1: FastAPI >= 0.142 ships native OpenTelemetry on by default (tracing, metrics, logs, operation
+# spans and auto-configuration from OTEL_* env vars). Its logs plane exports exception messages and
+# stack traces, and its spans carry `url.path`/`url.query`. All of it is off: `agentcore.api.request`
+# is the only server span and the exporter is configured explicitly by
+# `agent_core.composition.setup_observability`.
+FASTAPI_TELEMETRY_OFF: Final[TelemetryConfig] = {
+    "tracing": False,
+    "metrics": False,
+    "logs": False,
+    "operation_spans": False,
+    "auto_configure": False,
+}
+
+
 def create_app(deps: ApiDeps) -> FastAPI:
-    app = FastAPI(title="agent-core", version="1.0.0")
+    app = FastAPI(title="agent-core", version="1.0.0", telemetry=FASTAPI_TELEMETRY_OFF)
     install_tracing(app, deps.ids)
     install_error_handlers(app)
 

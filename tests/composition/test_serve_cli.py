@@ -11,6 +11,8 @@ from testing.engine_world import EngineWorld
 from testing.fakes.identity import TestIdentityIssuer
 from tests.composition.test_serve_app import make_ports
 
+pytest_plugins = ["tests.support.otel"]
+
 
 def test_serve_help_lists_the_piece_options(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as info:
@@ -22,7 +24,8 @@ def test_serve_help_lists_the_piece_options(capsys: pytest.CaptureFixture[str]) 
 
 
 def test_serve_without_demo_and_without_pieces_exits_2_and_names_them(
-        capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+        capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, root_logging: None,
+        no_otel_env: None) -> None:
     monkeypatch.delenv("AGENTCORE_ALLOW_DEMO", raising=False)
     code = main(["serve", "--dsn", "postgresql://x/y"])
     err = capsys.readouterr().err
@@ -30,7 +33,7 @@ def test_serve_without_demo_and_without_pieces_exits_2_and_names_them(
 
 
 def test_run_serve_prints_the_doubles_and_starts_uvicorn(
-        capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+        capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, root_logging: None) -> None:
     world = EngineWorld()
     issuer = TestIdentityIssuer(world.clock)
     monkeypatch.setattr(serve_module, "resolve_ports",
@@ -50,7 +53,7 @@ def test_run_serve_prints_the_doubles_and_starts_uvicorn(
 
 
 def test_run_serve_with_real_pieces_prints_no_warning(
-        capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+        capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, root_logging: None) -> None:
     world = EngineWorld()
     monkeypatch.setattr(serve_module, "resolve_ports",
                         lambda *a, **k: make_ports(world, TestIdentityIssuer(world.clock)))

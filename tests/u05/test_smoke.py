@@ -33,6 +33,9 @@ from testing.fakes.gateway import ScriptedGateway, gen
 from testing.fakes.registry import InMemoryRegistry
 from tests.u05.helpers import PROFILE, install_llm_entities
 
+pytest_plugins = ["tests.support.otel"]
+pytestmark = pytest.mark.usefixtures("root_logging")  # `llm-smoke` quiets the SDK loggers process-wide
+
 ENDPOINTS = '{"o": {"base_url": "https://x.test/v1", "api_key_env": "K"}}'
 
 
