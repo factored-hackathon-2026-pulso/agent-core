@@ -66,7 +66,13 @@ from agent_core.registry.models import (
     WriteRecord,
 )
 from agent_core.registry.quotas import DEFAULT_QUOTAS, Quotas
-from agent_core.registry.roles import actor_id, require_admin, require_approver, require_constructor
+from agent_core.registry.roles import (
+    actor_id,
+    require_admin,
+    require_approver,
+    require_builder,
+    require_constructor,
+)
 from agent_core.registry.snapshot import SnapshotRegistry
 from agent_core.registry.store import RegistryStore, RegistryTx
 from agent_core.registry.suite import EvalSuite, suite_problems
@@ -113,6 +119,14 @@ class ApprovalReview(_V):
     suite_changes: list[EntityDraft]
     gate: list[GateItem]
     yardstick_loosened: list[YardstickChange]
+
+
+MAX_PAGE = 200
+
+
+class ProposalPage(_V):
+    items: list[Proposal]
+    total: int
 
 
 class ProposalDetail(_V):
@@ -389,6 +403,21 @@ class RegistryService:
                 suite_changes=[d for d in changes if d.kind == SUITE_KIND], gate=list(last.report.items),
                 yardstick_loosened=list(last.report.yardstick_changes))
             return ProposalDetail(proposal=p, changes=changes, last_eval=last, review=review)
+
+    def list_proposals(self, actor: Principal, *, agent_id: str | None = None, state: str | None = None,
+                       created_by: str | None = None, limit: int = 50, offset: int = 0) -> ProposalPage:
+        """Más recientes primero (`updated_at`, luego id). Lectura de un `builder`; `limit` se acota a 200."""
+        require_builder(actor)
+        if limit < 1 or offset < 0:
+            raise RegistryError(RegistryErrorCode.validation_failed, "limit debe ser >= 1 y offset >= 0")
+        with self._store.transaction() as tx:
+            found = [p for p in tx.list_proposals()
+                     if (agent_id is None or p.agent_id == agent_id)
+                     and (state is None or p.state.value == state)
+                     and (created_by is None or p.created_by == created_by)]
+        found.sort(key=lambda p: p.proposal_id, reverse=True)
+        found.sort(key=lambda p: p.updated_at, reverse=True)
+        return ProposalPage(items=found[offset:offset + min(limit, MAX_PAGE)], total=len(found))
 
     def get_write(self, idempotency_key: str) -> WriteRecord | None:
         """Readback de las escrituras del constructor (`readback_by: idempotency_key`, ADR 0007 §5)."""

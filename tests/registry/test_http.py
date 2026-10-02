@@ -148,3 +148,18 @@ def test_draft_freeze_reopen_and_evaluate_accept_the_key_and_replay() -> None:
 def test_an_overlong_key_on_a_write_is_rejected() -> None:
     c, _ = _client()
     assert _create(c, "x" * 256).status_code == 422
+
+
+def test_list_proposals_over_http_filters_and_pages() -> None:
+    c, _ = _client()
+    ids = [_create(c, None, title=t).json()["proposal_id"] for t in ("a", "b", "c")]
+    r = c.get("/v1/registry/proposals", headers=_h("ana"))
+    assert r.status_code == 200 and r.json()["total"] == 3
+    assert {p["proposal_id"] for p in r.json()["items"]} == set(ids)
+    page = c.get("/v1/registry/proposals?limit=2&offset=2", headers=_h("ana")).json()
+    assert len(page["items"]) == 1 and page["total"] == 3
+    assert c.get("/v1/registry/proposals?state=draft", headers=_h("ana")).json()["total"] == 3
+    assert c.get("/v1/registry/proposals?state=published", headers=_h("ana")).json()["total"] == 0
+    assert c.get("/v1/registry/proposals?state=frozen", headers=_h("ana")).status_code == 422
+    assert c.get("/v1/registry/proposals?limit=0", headers=_h("ana")).status_code == 422
+    assert c.get("/v1/registry/proposals").status_code == 401

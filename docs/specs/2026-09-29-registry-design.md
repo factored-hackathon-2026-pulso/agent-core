@@ -332,6 +332,8 @@ Se monta en la app FastAPI de M9 como `ApiExtension` (`ApiDeps.extensions`, por 
 
 **Contrato publicado (2026-10-02).** `contracts/registry-openapi.json` (generado por `agentcore contracts`, verificado con `--check`) describe estas rutas con esquemas de éxito, `problem+json` y `bearerAuth`. `Idempotency-Key` es opcional (máx. 255) en crear, editar borrador, congelar, reabrir y evaluar, y obligatoria en publicar; un reintento con la misma clave devuelve el mismo resultado y otro cuerpo da `409 idempotency_conflict`. Los topes de cuota y el tope de costo no cambian.
 
+**Listado (2026-10-02).** `GET /v1/registry/proposals?agent_id=&state=&created_by=&limit=&offset=` devuelve `{items, total}`, más recientes primero (`updated_at`, luego id); `limit` por defecto 50 y tope 200; lectura de cualquier `builder`. Filtra en el servicio sobre `RegistryTx.list_proposals()` (en Postgres, un `SELECT` de `reg_proposals`; sin índice, aceptable mientras haya cientos de propuestas). `GET /writes/{key}` no se publica: `DraftWrite` no guarda quién escribió, así que cualquier `builder` podría leer por clave el run y el principal de otro. Hace falta un dueño en `DraftWrite` antes.
+
 **Vigencia (2026-10-02).** Con el verificador del staff (`--staff-keys`) la API no pasa por la puerta de M9, y el verificador solo comprueba la firma. Por eso `registry_extension` exige un `Clock` junto al verificador y rechaza `exp <= now` con `401 principal_expired` en todas las rutas, igual que M9; sin reloj falla al construirse. Antes de este cambio una credencial vencida seguía operando el registry.
 
 | Método y ruta | Operación |

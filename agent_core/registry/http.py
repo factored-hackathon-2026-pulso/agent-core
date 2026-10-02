@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from typing import Annotated, Any
 
-from fastapi import APIRouter, FastAPI, Header, Request
+from fastapi import APIRouter, FastAPI, Header, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -19,12 +19,13 @@ from agent_core.registry.models import (
     EntityVersion,
     Origin,
     Proposal,
+    ProposalState,
     ReleaseDetail,
     ReleaseDiff,
     RunLineage,
 )
 from agent_core.registry.roles import require_builder
-from agent_core.registry.service import ProposalDetail, RegistryService, ValidationReport
+from agent_core.registry.service import ProposalDetail, ProposalPage, RegistryService, ValidationReport
 
 Authenticate = Callable[[Request, str | None], Principal]
 Auth = Annotated[str | None, Header(alias="authorization")]
@@ -173,6 +174,22 @@ def registry_extension(service: RegistryService, verifier: IdentityVerifier | No
             created = service.create_proposal(actor, body.agent_id, body.origin, body.title,
                                               idempotency_key=idempotency_key)
             return _json(created, 201)
+
+        @router.get("/proposals", **_doc(ProposalPage, 200, 422))
+        def listing(
+            request: Request,
+            agent_id: str | None = None,
+            state: ProposalState | None = None,
+            created_by: str | None = None,
+            limit: Annotated[int, Query(description="1 a 200; más grande se acota")] = 50,
+            offset: Annotated[int, Query(ge=0)] = 0,
+            authorization: Auth = None,
+        ) -> Response:
+            """Más recientes primero. Solo lectura, para cualquier `builder`."""
+            page = service.list_proposals(who(request, authorization), agent_id=agent_id,
+                                          state=None if state is None else state.value, created_by=created_by,
+                                          limit=limit, offset=offset)
+            return _json(page)
 
         @router.get("/proposals/{pid}", **_doc(ProposalDetail, 200, 404))
         def show(request: Request, pid: str, authorization: Auth = None) -> Response:
