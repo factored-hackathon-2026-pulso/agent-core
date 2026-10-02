@@ -141,6 +141,41 @@ class RegistryEvent(RegModel):
     at: datetime
 
 
+DraftOp = Literal["create_proposal", "put_draft", "freeze", "reopen", "evaluate"]
+
+
+class AuditContext(RegModel):
+    """Quién pidió la escritura (ADR 0019 §4): el run y su principal, solo para auditoría, nunca permisos."""
+
+    run_id: str = Field(min_length=1, max_length=200)
+    on_behalf_of: str = Field(min_length=1, max_length=200)  # `tipo:id` del principal del run
+
+
+class DraftWrite(RegModel):
+    """Una escritura del constructor con clave de idempotencia (ADR 0007 §5). Una sola vez por clave."""
+
+    idempotency_key: str = Field(min_length=1, max_length=255)
+    op: DraftOp
+    proposal_id: str
+    rev_after: int
+    request_hash: str
+    result_ref: str | None = None  # `evaluate`: el id de la corrida de evaluación
+    audit: AuditContext | None = None
+    created_at: datetime
+
+
+class WriteRecord(RegModel):
+    """Lo que devuelve `get_write` (el readback de las tools `write_draft` del constructor)."""
+
+    op: DraftOp
+    proposal_id: str
+    rev_after: int
+    request_hash: str
+    verdict: Verdict | None = None  # solo `evaluate`
+    run_id: str | None = None
+    on_behalf_of: str | None = None
+
+
 class EntityInRelease(RegModel):
     ref: VersionRef
     content_hash: str

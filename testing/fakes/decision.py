@@ -26,6 +26,7 @@ class ScriptedDecision:
     def __init__(self, script: Sequence[DecisionResult] = ()) -> None:
         self._script = deque(script)
         self.calls: list[tuple[EntityRef, dict[str, JsonValue], str]] = []
+        self.choice_calls: list[tuple[EntityRef, dict[str, JsonValue], list[str], str]] = []
 
     def push(self, *results: DecisionResult) -> None:
         self._script.extend(results)
@@ -33,6 +34,13 @@ class ScriptedDecision:
     def decide(self, model: EntityRef, inputs_model_view: dict[str, JsonValue],
                locale: Locale) -> DecisionResult:
         self.calls.append((model, deepcopy(inputs_model_view), locale))
+        if not self._script:
+            raise AssertionError("ScriptedDecision sin resultado guionado")
+        return self._script.popleft()
+
+    def decide_choice(self, model: EntityRef, inputs_model_view: dict[str, JsonValue], choices: list[str],
+                      locale: Locale) -> DecisionResult:
+        self.choice_calls.append((model, deepcopy(inputs_model_view), list(choices), locale))
         if not self._script:
             raise AssertionError("ScriptedDecision sin resultado guionado")
         return self._script.popleft()

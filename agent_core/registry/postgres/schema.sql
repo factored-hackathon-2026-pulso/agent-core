@@ -43,6 +43,10 @@ CREATE TABLE IF NOT EXISTS reg_proposals (proposal_id text PRIMARY KEY, proposal
 CREATE TABLE IF NOT EXISTS reg_proposal_changes (proposal_id text PRIMARY KEY, drafts_json text NOT NULL);
 CREATE TABLE IF NOT EXISTS reg_publish_keys (
     key text PRIMARY KEY, proposal_id text NOT NULL, release_id text NOT NULL);
+CREATE TABLE IF NOT EXISTS reg_draft_writes (
+    idempotency_key text PRIMARY KEY, op text NOT NULL, proposal_id text NOT NULL, rev_after integer NOT NULL,
+    request_hash char(64) NOT NULL, result_ref text, run_id text, on_behalf_of text,
+    created_at timestamptz NOT NULL);
 
 CREATE OR REPLACE FUNCTION reg_immutable() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
@@ -53,8 +57,13 @@ DO $$
 DECLARE t text;
 BEGIN
     FOREACH t IN ARRAY ARRAY['reg_blobs', 'reg_entity_versions', 'reg_releases', 'reg_release_entities',
+<<<<<<< HEAD
                              'reg_release_eval_suites', 'reg_approvals', 'reg_eval_runs', 'reg_events',
                              'reg_alias_log'] LOOP
+=======
+                             'reg_approvals', 'reg_eval_runs', 'reg_events', 'reg_alias_log',
+                             'reg_draft_writes'] LOOP
+>>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796
         EXECUTE format('DROP TRIGGER IF EXISTS %I_no_update ON %I', t, t);
         EXECUTE format('CREATE TRIGGER %I_no_update BEFORE UPDATE OR DELETE ON %I '
                        'FOR EACH ROW EXECUTE FUNCTION reg_immutable()', t, t);

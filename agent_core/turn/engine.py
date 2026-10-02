@@ -1,6 +1,7 @@
 """`TurnEngine`: orquesta un turno (m04 §3.1). Una sola UoW por turno; los dos commits por escritura los
 hace M3 con `uow_factory`."""
 
+from collections.abc import Sequence
 from dataclasses import replace
 from datetime import datetime
 from decimal import Decimal
@@ -19,16 +20,20 @@ from agent_core.domain import (
     Flow,
     IllegalTransition,
     InvalidationReason,
+    Locale,
     OnBehalfOf,
     Outcome,
     Principal,
     ProblemCode,
     RefSpec,
+    Release,
     ResponseEmitted,
     RunInput,
+    RunOrigin,
     RunResult,
     RunState,
     Slot,
+    SubjectRef,
     TranscriptRef,
     TurnInProgress,
     TurnInput,
@@ -77,6 +82,7 @@ from agent_core.turn.refs import pinned_ref
 from agent_core.turn.results import awaiting_for, build_turn_result
 from agent_core.turn.sweep import Sweeper, SweepReport
 from agent_core.turn.templates import render_engine
+from agent_core.turn.transfer import Transferer, TransferPlan, event_target
 
 
 class TurnEngine:
@@ -117,6 +123,7 @@ class TurnEngine:
         self._events = TurnEvents(ids, clock)
         self._closer = Closer(actions=actions, handoff=handoff, audit=audit, clock=clock, registry=registry)
         self._env = Env(closer=self._closer, registry=registry)
+        self._transferer = Transferer(registry, ids, authz, self._config.max_transfers_per_session)
         self._sweeper = Sweeper(
             uow_factory=uow_factory,
             registry=registry,
@@ -182,10 +189,49 @@ class TurnEngine:
         return self._registry.get(pinned_ref(release, EntityKind.flow, ref), Flow)
 
     def _advance(self, frame: TurnFrame) -> None:
-        """Paso 11: `advance` y su traducción (paso 12)."""
+        """Paso 11: `advance` y su traducción (paso 12). Una transferencia se resuelve aquí (ADR 0021)."""
         with frame.meter.stage("flow"):
             outcome = advance(frame.state, self._step_ctx(frame), frame.resume)
             self._closer.apply_outcome(frame, outcome)
+            self._resolve_transfer(frame)
+
+    def _resolve_transfer(self, frame: TurnFrame) -> None:
+        """Spec §5.2: validate the request of a `transfer` node. A rejection emits `transfer_rejected` and the
+        flow goes on along `rejected` in this same turn; a valid transfer emits `run_transferred` and
+        closes the origin (`transferred`, `closed_by=transfer`). The target run opens from `transfer_plan`."""
+        request = frame.pending_transfer
+        if request is None:
+            return
+        frame.pending_transfer = None
+        transfer_id = self._transferer.new_transfer_id()
+        plan = self._transferer.validate(frame, request, transfer_id)
+        if isinstance(plan, str):
+            frame.buffer.add(self._events.transfer_rejected(
+                frame.state, frame.turn_id, transfer_id, event_target(request), plan, request.snapshot))
+            frame.state = self._follow(frame.state, request.node_id, "rejected")
+            frame.resume = NO_RESUME
+            # Bounded: `rejected` cannot reach this `transfer` again without a node that waits (M1 G0-04).
+            outcome = advance(frame.state, self._step_ctx(frame), frame.resume)
+            self._closer.apply_outcome(frame, outcome)
+            self._resolve_transfer(frame)
+            return
+        frame.buffer.add(self._events.run_transferred(
+            frame.state, frame.turn_id, transfer_id=plan.transfer_id, target_ref=plan.target_ref,
+            release_id=plan.release.id, to_run_id=plan.to_run_id, reason=plan.packet.reason,
+            packet_fp=plan.packet_fp, snapshot=plan.snapshot))
+        self._closer.close_run(frame, Outcome.transferred, "transfer")
+        frame.transfer_plan = plan
+
+    def _follow(self, state: RunState, node_id: str, key: str) -> RunState:
+        """Moves the pointer from the node M2 stopped on along `next[key]`."""
+        assert state.active_flow is not None
+        flow = self._registry.get(state.active_flow.flow, Flow)
+        node = next(n for n in flow.nodes if n.id == node_id)
+        target = node.next.get(key)
+        if target is None:
+            raise IllegalTransition(f"el nodo {node_id} no tiene transición para {key!r}")
+        active = state.active_flow.model_copy(update={"node_id": target})
+        return state.model_copy(update={"active_flow": active})
 
     def _record(self, frame: TurnFrame) -> None:
         """Paso 13: transcript en vista `model` y `transcript_fp` en los `response_emitted` del turno."""
@@ -261,12 +307,79 @@ class TurnEngine:
         cost = max(saved.budgets_used.run_cost - frame.initial_run_cost, Decimal("0"))
         frame.uow.add_usage(saved.principal.key, cost, now)
         result = build_turn_result(frame, saved, self._trace.current(frame.turn_id))
-        if store_result and frame.client_turn_id is not None:
-            frame.uow.put_turn_result(saved.run_id, frame.client_turn_id, result)
         if frame.entry == "turn":
             frame.uow.release_turn(saved.run_id, frame.turn_id)
         frame.state = saved
+        plan = frame.transfer_plan
+        if plan is not None:  # ADR 0021: the origin is saved and chained; the same turn goes on in the target
+            result = self._continue_in_target(frame, result, plan)
+        if store_result and frame.client_turn_id is not None:
+            # After a transfer the combined result is stored under the target run, the one
+            # `find_run_by_session` returns to a retry (Review Focus 1).
+            frame.uow.put_turn_result(result.run_id, frame.client_turn_id, result)
         return result
+
+    def _continue_in_target(self, frame: TurnFrame, source: TurnResult, plan: TransferPlan) -> TurnResult:
+        """Spec §5.2 steps 4-7: same turn, same session, principal and subject; a new run pinned to the
+        specialist's release, linked to the origin chain by the hash of its `turn_completed` (P2). The
+        packet slots enter as `validated`; the trigger text is processed as the target's turn (P4). It all
+        goes in the turn's unit of work: the origin was saved first, the target is saved in its own
+        `_finish`, and one commit applies both or neither."""
+        origin_state = frame.state
+        head = frame.uow.last_event(origin_state.run_id)
+        if head is None or head.hash is None:
+            raise IllegalTransition("una transferencia necesita la cadena de hash de M11 en el run origen")
+        origin = RunOrigin(
+            kind="transfer",
+            transfer_id=plan.transfer_id,
+            from_run_id=origin_state.run_id,
+            from_agent=origin_state.agent,
+            from_release_id=origin_state.release,
+            from_event_hash=head.hash,
+            depth=plan.depth,
+        )
+        slots = {
+            name: Slot(value=value, status="validated", source_turn=1)
+            for name, value in plan.packet.slots.items()
+        }
+        target = self._new_state(
+            run_id=plan.to_run_id,
+            session_id=origin_state.session_id,
+            release=plan.release,
+            agent_ref=plan.target_ref,
+            agent=plan.target,
+            principal=origin_state.principal,
+            on_behalf_of=origin_state.on_behalf_of,
+            subject=origin_state.subject,
+            locale=origin_state.locale,
+            slots=slots,
+            origin=origin,
+            turn_count=0,  # `_process` counts this turn as the target's first
+        )
+        prelude = [
+            self._events.run_started(
+                target, plan.target_ref, self._reportable(origin_state.principal), origin=origin
+            ),
+            self._events.transfer_received(
+                target, frame.turn_id, plan.transfer_id, list(slots), plan.packet_fp
+            ),
+        ]
+        turn = frame.turn
+        assert turn is not None  # P6: a transfer during `start_run` is rejected (`no_turn`)
+        result = self._process(
+            frame.uow,
+            target,
+            origin_state.principal,
+            origin_state.on_behalf_of,
+            turn,
+            frame.turn_id,
+            StageMeter(self._clock),
+            prelude=prelude,
+            store_result=False,
+        )
+        if isinstance(result, EngineError):  # a fresh run cannot expire; never commit half a transfer
+            raise result
+        return result.model_copy(update={"messages": [*source.messages, *result.messages]})
 
     # --- handle_turn --------------------------------------------------------------------------------
 
@@ -281,7 +394,7 @@ class TurnEngine:
                 found = uow.find_run_by_session(turn.session_id)
                 if found is None:
                     raise EngineError(ProblemCode.not_found, "sesión")
-                cached = uow.get_turn_result(found.run_id, turn.client_turn_id)
+                cached = self._cached_result(uow, found, turn)
                 if cached is not None:  # paso 1: un duplicado devuelve lo guardado aunque el run ya cerró
                     return cached
                 if found.status != "open":  # 410 antes que 409: reintentar no serviría de nada
@@ -291,7 +404,7 @@ class TurnEngine:
                 except TurnInProgress as exc:
                     raise EngineError(ProblemCode.turn_in_progress, "turno en curso") from exc
                 leased = found.run_id
-                cached = uow.get_turn_result(found.run_id, turn.client_turn_id)
+                cached = self._cached_result(uow, found, turn)
                 if cached is not None:  # el otro turno commiteó entre mi lectura y mi lease
                     uow.release_turn(found.run_id, turn_id)
                     uow.commit()
@@ -310,6 +423,20 @@ class TurnEngine:
             if leased is not None:
                 self._release_quietly(leased, turn_id)
             raise
+
+    @staticmethod
+    def _cached_result(uow: UnitOfWork, found: RunState, turn: TurnInput) -> TurnResult | None:
+        """Paso 1. The result of this `client_turn_id` under the session's current run or, after a transfer,
+        under an earlier run of the session (a retry of a turn the origin answered)."""
+        cached = uow.get_turn_result(found.run_id, turn.client_turn_id)
+        if cached is not None or found.session_id is None:
+            return cached
+        for run in uow.list_runs_by_session(found.session_id):
+            if run.run_id != found.run_id:
+                cached = uow.get_turn_result(run.run_id, turn.client_turn_id)
+                if cached is not None:
+                    return cached
+        return None
 
     def _release_quietly(self, run_id: str, turn_id: str) -> None:
         """Una excepción (no una caída) libera el lease con una UoW propia para que el reintento no espere
@@ -341,9 +468,13 @@ class TurnEngine:
         turn: TurnInput,
         turn_id: str,
         meter: StageMeter,
+        *,
+        prelude: Sequence[EngineEvent] = (),
+        store_result: bool = True,
     ) -> TurnResult | EngineError:
         """Pasos 3 a 14. Devuelve un `EngineError` (ya commiteable) cuando el turno cierra el run sin
-        procesar el mensaje (abandono, P2)."""
+        procesar el mensaje (abandono, P2). `prelude` abre la cadena del run destino de una transferencia
+        (`run_started`, `transfer_received`) antes de `turn_started`."""
         state = begin_turn(state.model_copy(update={"turn_count": state.turn_count + 1}), self._clock)
         state = self._refresh_auth(state, principal)
         runtime = self._runtimes.open(state, principal, on_behalf_of)
@@ -353,6 +484,7 @@ class TurnEngine:
         )
         frame.turn = turn
         frame.text_model = runtime.model_text(turn.text)  # C1: el texto crudo no sale de aquí
+        frame.buffer.add_prelude(*prelude)
         frame.buffer.reserve_turn_started()
         if self._registry.release_status(state.release) == "revoked":  # paso 3
             request = EscalationRequest(
@@ -360,22 +492,22 @@ class TurnEngine:
             )
             with frame.meter.stage("flow"):
                 self._closer.escalate(frame, request, "revocation")
-            return self._finish(frame, record=True)
+            return self._finish(frame, record=True, store_result=store_result)
         if self._expired(frame):  # paso 4 (P2): se cierra y el mensaje no se procesa
             return EngineError(ProblemCode.run_closed, "run vencido por inactividad")
         if self._recover(frame):  # paso 5
-            return self._finish(frame, record=True)
+            return self._finish(frame, record=True, store_result=store_result)
         frame.state, events = self._actions.expire_tokens(frame.state, turn_id=turn_id)  # paso 6
         frame.buffer.add(*events)
         frame.tokens_expired = bool(events)
         if self._guard(frame):  # paso 7: unsupported / tamaño → plantilla, sin Understand ni flow
-            return self._finish(frame, record=True)
+            return self._finish(frame, record=True, store_result=store_result)
         understood = self._understand_step(frame)  # paso 8
         if frame.closed:  # Understand superó su tope de llamadas: el turno ya escaló
-            return self._finish(frame, record=True)
+            return self._finish(frame, record=True, store_result=store_result)
         with frame.meter.stage("flow"):  # pasos 9 a 12
             self._decide_and_advance(frame, understood)
-        return self._finish(frame, record=True)
+        return self._finish(frame, record=True, store_result=store_result)
 
     def _decide_and_advance(self, frame: TurnFrame, understood: UnderstandOutcome | None) -> None:
         """Pasos 9-12 tras Understand: manejadores globales, elección de flow o resolución del `confirm`,
@@ -607,27 +739,22 @@ class TurnEngine:
             raise EngineError(ProblemCode.not_found, "agente")
         agent_ref = EntityRef(id=run_input.agent.id, version=version)
         agent = self._registry.get(agent_ref, Agent)
-        now = self._clock.now()
         conversational = agent.mode == "conversational"
         locale = run_input.lang if run_input.lang in agent.supported_locales else agent.default_locale
         slots = {
             name: Slot(value=value, status="claimed", source_turn=1)
             for name, value in (run_input.input or {}).items()
         }
-        state = RunState(
+        state = self._new_state(
             run_id=self._ids.new_id(IdKind.run),
             session_id=self._ids.new_id(IdKind.session) if conversational else None,
-            release=release.id,
-            agent=agent_ref,
+            release=release,
+            agent_ref=agent_ref,
+            agent=agent,
             principal=principal,
             on_behalf_of=on_behalf_of,
             subject=run_input.subject,
-            mode=agent.mode,
             locale=locale,
-            created_at=now,
-            last_activity_at=now,
-            inactive_after=now + agent.inactivity_ttl if conversational else None,
-            turn_count=1,
             slots=slots,
         )
         turn_id = self._ids.new_id(IdKind.turn)
@@ -635,12 +762,8 @@ class TurnEngine:
         runtime = self._runtimes.open(state, principal, on_behalf_of)
         with self._uow_factory() as uow:
             frame = self._new_frame(uow, state, turn_id, "start_run", None, agent, runtime, meter, release)
-            reportable: frozenset[str] = (
-                self._authz.reportable_attrs() if self._authz is not None else frozenset()
-            )
-            attrs = {k: v for k, v in sorted(principal.attrs.items()) if k in reportable}
             frame.buffer.add(
-                self._events.run_started(state, agent_ref, attrs),
+                self._events.run_started(state, agent_ref, self._reportable(principal)),
                 self._events.turn_started(state, turn_id, None, guards=None),
             )
             frame.state = start_flow(state, self._flow(release, agent.entry_flow))
@@ -661,3 +784,47 @@ class TurnEngine:
             uow.put_run_idempotency(principal.key, run_input.idempotency_key, body_hash, run_result)
             uow.commit()
         return run_result
+
+    def _new_state(
+        self,
+        *,
+        run_id: str,
+        session_id: str | None,
+        release: Release,
+        agent_ref: EntityRef,
+        agent: Agent,
+        principal: Principal,
+        on_behalf_of: OnBehalfOf | None,
+        subject: SubjectRef | None,
+        locale: Locale,
+        slots: dict[str, Slot],
+        origin: RunOrigin | None = None,
+        turn_count: int = 1,
+    ) -> RunState:
+        """A new run pinned to `release` (`start_run` and the target of a transfer)."""
+        now = self._clock.now()
+        conversational = agent.mode == "conversational"
+        return RunState(
+            run_id=run_id,
+            session_id=session_id,
+            release=release.id,
+            agent=agent_ref,
+            principal=principal,
+            on_behalf_of=on_behalf_of,
+            subject=subject,
+            mode=agent.mode,
+            locale=locale,
+            created_at=now,
+            last_activity_at=now,
+            inactive_after=now + agent.inactivity_ttl if conversational else None,
+            turn_count=turn_count,
+            slots=slots,
+            origin=origin,
+        )
+
+    def _reportable(self, principal: Principal) -> dict[str, str]:
+        """The principal attributes `run_started` may carry (`AuthzPort.reportable_attrs`)."""
+        reportable: frozenset[str] = (
+            self._authz.reportable_attrs() if self._authz is not None else frozenset()
+        )
+        return {k: v for k, v in sorted(principal.attrs.items()) if k in reportable}

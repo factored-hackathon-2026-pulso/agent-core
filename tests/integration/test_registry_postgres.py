@@ -325,6 +325,7 @@ def test_cli_cycle_on_postgres_with_export_to_disk(registry_store: PgRegistrySto
     assert any(tmp_path.rglob("*.yaml"))
 
 
+<<<<<<< HEAD
 def test_release_records_its_eval_suite(registry_store: PgRegistryStore) -> None:  # ADR 0020 section 5
     evaluator = FakeEvaluator()
     service = RegistryService(registry_store, evaluator, FakeClock(), FakeIds())
@@ -358,3 +359,117 @@ def test_approval_keeps_the_accepted_loosening(registry_store: PgRegistryStore) 
     with registry_store.transaction() as tx:
         approval = tx.latest_approval(p.proposal_id, h)
     assert approval is not None and [c.kind for c in approval.yardstick_loosened] == ["repetitions_lowered"]
+=======
+def _seed_directory_agent(store: PgRegistryStore, agent_id: str, tag: str | None, *, release_id: str) -> None:
+    from agent_core.domain import Agent
+    from agent_core.registry.entities import content_hash, encode_entity, version_ref
+    from agent_core.registry.models import AliasChange, StoredRelease, StoredVersion, VersionDocs
+    from testing.builders import NOW
+    from tests.m04.harness import agent_data
+
+    card = None if tag is None else {"directory": tag, "summary": agent_id, "examples": []}
+    agent = Agent.model_validate(agent_data(agent_id, routing=card, accepts={"slots": {}},
+                                            understand="understand@1.0.0"))
+    release = Release.model_validate({
+        "id": release_id, "status": "active", "language_detection": "lang@1.0.0",
+        "entities": {"agent": {agent_id: "1.0.0"}}})
+    ref = version_ref(agent)
+    with store.transaction() as tx:
+        tx.blobs.put(encode_entity(agent))
+        tx.insert_version(StoredVersion(ref=ref, content_hash=content_hash(agent),
+                                        docs=VersionDocs(description="d", rationale="", changelog=""),
+                                        proposal_id=None, created_by="t", created_at=NOW))
+        tx.insert_release(StoredRelease(release=release, release_hash="h" * 64, agent_id=agent_id,
+                                        agent_version="1.0.0", base_release_id=None, proposal_id=None,
+                                        published_by="t", published_at=NOW), [ref])
+        tx.set_alias(AliasChange(agent_id=agent_id, alias="prod", before=None, after=release_id, actor="t",
+                                 reason="r", at=NOW))
+
+
+def test_registry_directory_members_are_prod_agents_with_the_tag(registry_store: PgRegistryStore) -> None:
+    from agent_core.registry import RegistryDirectory
+
+    for agent_id, tag in (("disputas", "customer-care"), ("saldos", "customer-care"), ("interno", "staff"),
+                          ("sin-ficha", None)):
+        _seed_directory_agent(registry_store, agent_id, tag, release_id=f"rel-{agent_id}")
+    runtime = PostgresRegistry(registry_store, FakeClock())
+    directory = RegistryDirectory(registry_store, runtime, runtime.release)
+    assert [(rid, a.id) for rid, a in directory.members("customer-care")] == [
+        ("rel-disputas", "disputas"), ("rel-saldos", "saldos")]
+
+
+def test_registry_directory_skips_revoked_releases(registry_store: PgRegistryStore) -> None:
+    from agent_core.registry import RegistryDirectory
+
+    _seed_directory_agent(registry_store, "disputas", "customer-care", release_id="rel-1")
+    with registry_store.transaction() as tx:
+        tx.set_release_status("rel-1", "revoked")
+    runtime = PostgresRegistry(registry_store, FakeClock())
+    assert RegistryDirectory(registry_store, runtime, runtime.release).members("customer-care") == []
+
+
+def test_draft_writes_round_trip_and_are_insert_only(registry_store: PgRegistryStore,
+                                                     admin_conn: "psycopg.Connection[Any]") -> None:
+    from agent_core.registry.models import AuditContext, DraftWrite
+    from testing.builders import NOW
+
+    write = DraftWrite(idempotency_key="k1", op="put_draft", proposal_id="prop-1", rev_after=1,
+                       request_hash="a" * 64, audit=AuditContext(run_id="run-1", on_behalf_of="builder:ana"),
+                       created_at=NOW)
+    with registry_store.transaction() as tx:
+        tx.put_draft_write(write)
+    with registry_store.transaction() as tx:
+        assert tx.get_draft_write("k1") == write
+        assert tx.get_draft_write("otra") is None
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        with registry_store.transaction() as tx:
+            tx.put_draft_write(write)
+    with registry_store.connect() as conn:  # rol de aplicación: sin UPDATE ni DELETE
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute("UPDATE reg_draft_writes SET rev_after = 9")
+        conn.rollback()
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            conn.execute("DELETE FROM reg_draft_writes")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):  # administrador: lo frena el trigger
+        admin_conn.execute("UPDATE reg_draft_writes SET rev_after = 9")
+
+
+def test_counts_for_the_autonomous_builder_quotas(registry_store: PgRegistryStore) -> None:
+    from datetime import timedelta
+
+    from agent_core.registry.models import RegistryEvent
+    from testing.builders import NOW
+
+    def created(origin: str, at: object) -> RegistryEvent:
+        return RegistryEvent.model_validate({"type": "proposal_created", "actor": "bot",
+                                             "principal_type": "builder", "origin": origin,
+                                             "proposal_id": "p", "at": at})
+
+    with registry_store.transaction() as tx:
+        tx.append_event(created("auto_detect", NOW - timedelta(hours=24)))  # en el borde: no cuenta
+        tx.append_event(created("auto_detect", NOW - timedelta(hours=1)))
+        tx.append_event(created("manual", NOW - timedelta(hours=1)))
+    with registry_store.transaction() as tx:
+        assert tx.count_created_after("auto_detect", NOW - timedelta(hours=24)) == 1
+        assert tx.count_created_after("manual", NOW - timedelta(hours=24)) == 1
+        assert tx.count_eval_runs("p") == 0
+        assert tx.get_eval_run("nada") is None
+
+
+def test_a_draft_is_never_served_as_executable_content(registry_store: PgRegistryStore) -> None:  # regla 8
+    from agent_core.domain import Prompt
+
+    service = _service(registry_store)
+    service.import_seed(admin(), REGISTRY_DEMO)
+    runtime = PostgresRegistry(registry_store, FakeClock())
+    before = runtime.resolve_release(AgentSelector.parse(AGENT), principal())
+    p = service.create_proposal(ANA, AGENT, Origin.manual, "borrador")
+    service.put_draft(ANA, p.proposal_id,
+                      [prompt_draft(version="9.9.9"), prompt_draft(version="1.0.0", id="p/solo_borrador")],
+                      expected_rev=0)
+    for ref in ("p/resumen_radicado@9.9.9", "p/solo_borrador@1.0.0"):  # versión nueva y entidad nueva
+        with pytest.raises(KeyError):
+            runtime.get(EntityRef.parse(ref), Prompt)
+    after = runtime.resolve_release(AgentSelector.parse(AGENT), principal())
+    assert after.id == before.id  # un borrador no mueve el alias ni crea una release
+>>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796

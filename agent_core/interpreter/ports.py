@@ -41,6 +41,11 @@ class DecisionPort(Protocol):
     def decide(self, model: EntityRef, inputs_model_view: dict[str, JsonValue],
                locale: Locale) -> DecisionResult: ...
 
+    def decide_choice(self, model: EntityRef, inputs_model_view: dict[str, JsonValue], choices: list[str],
+                      locale: Locale) -> DecisionResult:
+        """Picks one of `choices` or `"none"`; the decision value is `{"choice": ...}` (ADR 0021)."""
+        ...
+
 
 @dataclass(frozen=True)
 class GenerateRequest:
@@ -85,9 +90,9 @@ class AgentObservation:
 
 @dataclass(frozen=True)
 class AgentRequest:
-    """Un paso del nodo `agent` (m02 §3.7). `feedback` es el motivo (sin datos) por el que se rechazó la
-    salida anterior, si la hay. `inputs` son las rutas de `input_view` en vista `model` (slots envueltos),
-    iguales en todos los pasos del nodo."""
+    """One step of the `agent` node (m02 §3.7). `feedback` is the reason (without data) why the previous
+    output was rejected, if any. `inputs` are the `input_view` paths in the `model` view (slots wrapped),
+    the same on every step of the node."""
 
     node_id: NodeId
     config: AgentNodeConfig

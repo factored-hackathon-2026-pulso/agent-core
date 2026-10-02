@@ -1,6 +1,6 @@
 # M0 — Dominio y contratos
 
-- Estado: **rev. 10 · implementado** (fase 1; M12 y `SCHEMA_VERSION` 1.0.0, 2026-09-30) · Fase 1
+- Estado: **rev. 12 · implementado** (fase 1; `write_draft`, transferencia entre agentes y `SCHEMA_VERSION` 1.2.0, 2026-09-30) · Fase 1
 - Paquetes: `agent_core.domain`, `agent_core.ports`, `testing/fakes`
 - Origen: spec general §2, §5 (esquemas de nodos), §8 (estado), §10 (códigos), §14 (dependencias)
 - ADRs: 0001 (stack), 0002 (contratos), 0006 (principal y delegación), 0007 (acciones), 0008 (vistas y claves)
@@ -59,6 +59,11 @@
   - 0.5.0: `IdKind.proposal` e `IdKind.eval_run` (registry);
   - 0.6.0: `GenerationResult.usage_known: bool = True` (`false` si el proveedor no informó el uso; M8 marca `cost_known = false`);
   - 0.7.0: `AgentStepPayload.kind` admite `"failed"` y gana `error_kind: GatewayErrorKind | None = None` (el nodo `agent` deja un `agent_step` cuando el gateway falla, para que la auditoría explique el `gave_up`).
+- rev. 12 (2026-09-30), `write_draft` (ADR 0019, spec write-draft; `SCHEMA_VERSION` 1.1.0 → **1.2.0**, menor: solo aditivos y relajaciones):
+  - `RiskClass.write_draft`: escritura confinada a un borrador del registry, sin `confirm`; `ToolDef.is_write` la cuenta y exige `readback_by`;
+  - `WriteToolConfig` gana la forma `draft: true` con `tool` y `args` propios (`action_from` pasa a opcional; se declara uno u otro); `node_kind` trata ambas como `tool_write`;
+  - `Action.write_node_id` identifica el nodo `draft` que creó la acción; `confirm_node_id`, `confirmation_token_hash` y `token_exp` pasan a opcionales y solo se omiten (los tres) en una acción con `write_node_id`;
+  - `contracts/` regenerado (`Action`, `Flow`, `Node`, `RiskClass`, `RunState`, `ToolDef`, `WriteToolConfig`, `WriteToolNode`).
 - rev. 10 (2026-09-30), M12 `read` (`SCHEMA_VERSION` 0.7.0 → **1.0.0**, mayor: M0 §9, agregar un tipo de nodo y reemplazar un campo de `generate`). Cierra el Abierto "dependiente del tema #10":
   - nodo `knowledge` (`KnowledgeConfig`, `KnowledgeNode`, `RESULTS["knowledge"]`; `low_confidence` es solo de `navigate`);
   - `GenerateConfig`: `knowledge_refs` se elimina y entran `knowledge_from: list[SaveAs]` y `purpose: Purpose = "customer_answer"`;
@@ -68,7 +73,20 @@
   - puertos: `KnowledgeSource` definitivo (`capabilities`, `index`, `read`) y `AuthzPort.knowledge_view(principal, purpose) -> KnowledgeView`.
   Los estados guardados con la versión anterior siguen cargando (`pages` tiene valor por defecto); los flows con `knowledge_refs` dejan de validar.
 - rev. 11 (2026-09-30), entrada del nodo `agent` (`SCHEMA_VERSION` 1.0.0 → **1.1.0**, menor: un campo opcional nuevo). `AgentNodeConfig.input_view: list[str] = []`: rutas `slots.*` y `facts.*` que el modelo ve en vista `model` (M1 §3.2, m02 §3.7). Sin él, el modelo solo veía el `goal` fijo y no podía atender lo que pidió la persona. Los flows existentes no cambian (vacío = no ve nada).
+<<<<<<< HEAD
 - rev. 12 (2026-09-30), métricas por agente, ADR 0020 (`SCHEMA_VERSION` 1.1.0 → **1.2.0**, menor: un campo opcional nuevo). `Agent.metrics: list[MetricDef] = []` y los tipos del DSL de métricas (`domain/metrics.py`, `domain/metric_catalog.py`; §2.4). Los agentes existentes no cambian (lista vacía). Antes de unirse con la rama del registry esta entrada se numeraba 0.5.0; la numeración vigente es la de esta línea.
+=======
+- rev. 12 (2026-09-30), transferencia entre agentes (ADR 0021; `SCHEMA_VERSION` 1.1.0 → **1.2.0**, menor: campos opcionales, un nodo, un outcome y eventos nuevos). Cambio de interfaz para todos los módulos:
+  - `domain/transfer.py` (§2.13): `RoutingCard`, `AcceptedSlot`, `TransferContract`, `DirectoryEntry`, `DirectorySnapshot`, `TransferPacket`, `RunOrigin`, `directory_hash`, `packet_problem`; `domain/eligibility.py`: `transfer_ineligibility`;
+  - `Agent.routing: RoutingCard | None = None` y `Agent.accepts: TransferContract | None = None` (sin ficha el agente no está en ningún directorio; sin contrato no recibe transferencias);
+  - nodo `transfer` (`TransferConfig`, `TransferPacketSpec`, `TransferNode`, `RESULTS["transfer"] = {rejected}`); **no** entra en `TERMINAL` (decisión del usuario, R2: tiene rama `rejected`; el éxito cierra el run desde M4, no desde el grafo);
+  - `DecideConfig.choices_from: str | None = None` (opciones decididas en runtime, ruta a una lista de strings en un hecho);
+  - `Outcome.transferred`: solo lo asigna el motor, no es declarable en ningún modo;
+  - `RunState.origin: RunOrigin | None = None` y `RunStartedPayload.origin`;
+  - eventos `run_transferred`, `transfer_received` y `transfer_rejected` (emisor M4; solo huella del paquete y nombres de slots) y `RunClosedPayload.closed_by = "transfer"`;
+  - `TurnResult.agent: EntityRef | None = None` (el agente que respondió) e `IdKind.transfer`.
+  Los estados, eventos y agentes guardados con la versión anterior siguen cargando (todo campo nuevo es opcional).
+>>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796
 - implementación de M0 (2026-09-29), decisiones que el spec no cubría:
   - `loads` rechaza claves duplicadas; `to_jsonable` rechaza claves que colisionan tras `str()`; `RecursionError` se convierte en `ValueError`; se rechaza un `Decimal` con |exponente| > 1000;
   - `dumps` escribe `Decimal` con `format(d, "f")` (no `str(d)`, que puede emitir `1E+3`);
@@ -179,6 +197,7 @@ class Agent:          id: str; version: str; mode: Literal["conversational", "ta
                       understand: RefSpec | None; slots_model: RefSpec | None; templates: EngineTemplates
                       max_clarifications: int; on_clarify_exhausted: Literal["end", "escalate"]
                       default_target_queue: str; max_repair_turns_per_run: int = 8
+                      routing: RoutingCard | None = None; accepts: TransferContract | None = None   # rev. 12 (ADR 0021)
 class Flow:           id: str; version: str; priority: int; nodes: list[Node]     # el primer nodo es la entrada
 class EscalateAction: type: Literal["escalate"]; target_queue: str; priority: str
 class StartFlowAction: type: Literal["start_flow"]; flow: RefSpec
@@ -204,7 +223,7 @@ class ModelPrice:     input_per_mtok: Decimal; output_per_mtok: Decimal; source:
 class ModelProfile:   id: str; version: str; endpoint_alias: str; model: str
                       temperature: Decimal; max_tokens: int; timeout_s: int = 8
                       structured: StructuredMode = native; price: ModelPrice
-class RiskClass(StrEnum): read, compute, write_reversible, write_irreversible, money_movement
+class RiskClass(StrEnum): read, compute, write_draft, write_reversible, write_irreversible, money_movement
 class ToolDef:        id: str; version: str; risk_class: RiskClass
                       min_auth_level: AuthLevel; max_auth_age: timedelta | None
                       idempotent: bool; readback_by: Literal["idempotency_key"] | None   # obligatorio en write_*
@@ -249,7 +268,8 @@ class DecideConfig:   model: RefSpec; input_view: list[str] | None; branch_on: s
 class RuleConfig:     policy: RefSpec | None; expr: JsonValue | None        # exactamente uno
 class CollectConfig:  slot: str; prompt_ref: RefSpec; validator: SlotValidator | None = None; max_attempts: int = 2   # None: texto no vacío
 class ToolConfig:     tool: RefSpec; args: dict[str, JsonValue]; save_as: str; step_up_max_attempts: int = 2
-class WriteToolConfig: action_from: str; save_as: str; step_up_max_attempts: int = 2
+class WriteToolConfig: action_from: str | None; draft: bool = False; tool: RefSpec | None; args: dict; save_as: str; step_up_max_attempts: int = 2
+                       # con `action_from` (confirm) sin `tool` ni `args`; con `draft: true` (ADR 0019) `tool` y `args` propios
 class ConfirmConfig:  action: {tool: RefSpec, args: dict[str, JsonValue]}; summary_template: RefSpec
                       reprompt_template: RefSpec | None; max_attempts: int = 2
 class VerifyConfig:   readback: RefSpec; by: str; predicate: JsonValue; save_as: str
@@ -269,22 +289,26 @@ class KnowledgeConfig: mode: Literal["read", "navigate"]; pages: list[str] = [] 
 # ADR 0019 (SCHEMA_VERSION 0.4.0): `agent` se habilitó. AgentNodeConfig gana `save_as` y
 # `output_schema: dict[str, JsonValue]`; FactSource.kind gana "agent"; nuevo evento `agent_step` (emisor M2).
 # rev. 11 (SCHEMA_VERSION 1.1.0): AgentNodeConfig gana `input_view: list[str] = []` (rutas slots/facts).
-# Sin implementar: RiskClass.write_draft (efecto confinado a un borrador del registry; m01 §3.13).
+# rev. 12 (SCHEMA_VERSION 1.2.0, ADR 0021): DecideConfig gana `choices_from: str | None = None`; nodo `transfer`:
+class TransferPacketSpec: reason: str (^[a-z][a-z0-9_]*$); slots: list[SaveAs] = []
+class TransferConfig: target_from: str (^decisions\.<save_as>\.choice$); directory_from: SaveAs; packet: TransferPacketSpec
+# rev. 12 (SCHEMA_VERSION 1.2.0): RiskClass.write_draft y WriteToolConfig.draft (m01 §3.13).
 
 Node = Annotated[DecideNode | RuleNode | CollectNode | ToolNode | WriteToolNode | ConfirmNode
                  | VerifyNode | RespondNode | EscalateNode | EndNode | KnowledgeNode
-                 | AgentNode | SubflowNode | AwaitApprovalNode, Discriminator(node_kind)]
+                 | AgentNode | SubflowNode | AwaitApprovalNode | TransferNode, Discriminator(node_kind)]
 RESULTS: Mapping[str, frozenset[str]]     # por clave de nodo; "tool" y "tool_write" separados
-TERMINAL: frozenset[str] = {"escalate", "end"}
+TERMINAL: frozenset[str] = {"escalate", "end"}      # `transfer` no entra (R2): su éxito cierra el run desde M4
 WAITING:  frozenset[str] = {"collect", "confirm"}   # más respond con await: true
 ```
 
-- **Discriminador:** `node_kind(raw)` devuelve `raw["type"]`, salvo que `type == "tool"` y `config` tenga `action_from`, en cuyo caso devuelve `"tool_write"`. En YAML sigue siendo `type: tool`.
+- **Discriminador:** `node_kind(raw)` devuelve `raw["type"]`, salvo que `type == "tool"` y `config` tenga `action_from` o `draft: true`, en cuyo caso devuelve `"tool_write"`. En YAML sigue siendo `type: tool`.
 - `SlotValidator`: `{kind: type|regex|enum|decide, value}`.
 - `ReasonCodeStr`: §2.7.
 - `target_queue` None en `escalate` significa `agent.default_target_queue`.
 - **Los esquemas validan forma, no semántica del grafo.** Alcanzabilidad, dominancia, reclamos y demás son reglas G0 de M1.
 - **Nodo `knowledge` (ADR 0015, M12, rev. 10):** `RESULTS["knowledge"] = {ok, not_found, denied, low_confidence}`; un `read` cablea solo los tres primeros (M1 G0-03) y `low_confidence` es de `navigate`. No es terminal ni espera.
+- **Nodo `transfer` (ADR 0021, rev. 12):** `RESULTS["transfer"] = {rejected}`. No está en `PRODUCTION_NODE_KINDS` ni en `TERMINAL` ni en `WAITING`. M0 solo valida la forma; que el agente tenga `routing`/`accepts`, que `target_from` apunte a un `decide` con `choices_from` y que `rejected` esté cableado son reglas de M1.
 
 ### 2.6 Estado del run (`domain/state.py`)
 
@@ -297,7 +321,8 @@ class Decision:       decision_id: str; value: dict[str, JsonValue]; p_cal: dict
 class ActionState(StrEnum): proposed, confirmed, executing, executed, uncertain, denied,
                             verified, failed, cancelled
 class InvalidationReason(StrEnum): cancel, abandoned, interrupt, escalated, token_expired, max_attempts, denied_by_user, args_changed
-class Action:         action_id: str; confirm_node_id: str; flow: EntityRef
+class Action:         action_id: str; confirm_node_id: str | None; write_node_id: str | None; flow: EntityRef
+                      # `confirm_node_id`, `confirmation_token_hash` y `token_exp`: los tres, o ninguno y `write_node_id` (ADR 0019)
                       tool: EntityRef; args: dict[str, JsonValue]; args_hash: str
                       state: ActionState; confirmation_token_hash: str; token_exp: AwareDatetime
                       idempotency_key: str; created_at: AwareDatetime
@@ -323,7 +348,7 @@ class RunState:       run_id: str; session_id: str | None; state_version: int
                       actions: list[Action]; token_map: EncryptedBlob | None; open_questions: list[str]
                       budgets_used: BudgetsUsed; turn_count: int; clarifications_used: int
                       node_attempts: dict[str, int]; repair_turns_used: int; degraded_turns: list[int]
-                      handoff_ref: str | None
+                      handoff_ref: str | None; origin: RunOrigin | None = None   # origin: rev. 12, run creado por una transferencia
 ```
 
 **Estados de acción.** `uncertain` y `denied` son estados explícitos: es el resultado de la escritura (§8.2 paso 5), y M3 los usa en su máquina de estados. `executed` y `uncertain` van a `verify`; `denied` es terminal, sin `verify`.
@@ -343,10 +368,11 @@ Estos validadores detectan bugs; no reemplazan la lógica de los módulos dueño
 ### 2.7 Resultados y enums (`domain/outcomes.py`)
 
 ```python
-class Outcome(StrEnum):   resolved, abstained, cancelled, clarify_exhausted, completed, failed, abandoned, escalated
+class Outcome(StrEnum):   resolved, abstained, cancelled, clarify_exhausted, completed, failed, abandoned, escalated,
+                          transferred                  # rev. 12; solo lo asigna el motor (M4)
 DECLARABLE: Mapping[str, frozenset[Outcome]] = {
     "conversational": {resolved, abstained, cancelled, clarify_exhausted},
-    "task": {completed, failed}}                          # abandoned y escalated solo los asigna el motor
+    "task": {completed, failed}}                          # abandoned, escalated y transferred solo los asigna el motor
 def is_declarable(outcome: Outcome, mode: str) -> bool
 class ReasonCode(StrEnum): low_confidence, budget_exceeded, tool_failure, customer_request,
                            verification_failed, validation_failed, release_revoked, auth_insufficient
@@ -400,7 +426,7 @@ class Clock:
     def monotonic_ns(self) -> int      # solo para medir duraciones (campos de MEASURED_FIELDS); nunca decide nada
 
 class IdSource:
-    def new_id(self, kind: IdKind) -> str      # IdKind: run, session, turn, action, decision, fact, call, handoff, event, message
+    def new_id(self, kind: IdKind) -> str      # IdKind: run, session, turn, action, decision, fact, call, handoff, event, message, transfer (rev. 12)
     def secret_token(self) -> str              # 128 bits, url-safe; solo para tokens de confirmación
 
 class RegistryPort:
@@ -438,6 +464,7 @@ class UnitOfWork(Protocol):          # context manager; una instancia = una tran
     def release_turn(self, run_id: str, turn_id: str) -> None                                         # se aplica con commit()
     def load_run(self, run_id: str) -> RunState | None
     def find_run_by_session(self, session_id: str) -> RunState | None
+    def list_runs_by_session(self, session_id: str) -> list[RunState]   # en orden de creación; find_ prefiere el run abierto
     def save_run(self, state: RunState, expected_version: int) -> RunState   # versión distinta → VersionConflict; devuelve state_version + 1
     def get_turn_result(self, run_id: str, client_turn_id: str) -> TurnResult | None
     def put_turn_result(self, run_id: str, client_turn_id: str, result: TurnResult) -> None
@@ -515,7 +542,7 @@ Todo payload está en **vista `audit`**: sin `pii_direct` en claro, sin tokens r
 
 | Evento | Payload | Emisor |
 |---|---|---|
-| `run_started` | `agent, mode, subject_kind, principal_type, locale, reportable_attrs: dict[str,str]` | M4 |
+| `run_started` | `agent, mode, subject_kind, principal_type, locale, reportable_attrs: dict[str,str], origin?: RunOrigin` | M4 |
 | `turn_started` | `client_turn_id?, guards?: {lang: {detector, letters, top2, decision, locale_prior, locale}, injection: {flagged, signals, ruleset}, size_ok}` | M4 (con la salida de M6) |
 | `command_emitted` | `command, flow?, interrupt?, additional_flows, above_threshold, decision_id, source: understand\|button` | M4 |
 | `node_entered` | `flow: EntityRef, node_id, node_type, resume_kind` | M2 |
@@ -536,7 +563,10 @@ Todo payload está en **vista `audit`**: sin `pii_direct` en claro, sin tokens r
 | `access_denied` | `reason: principal_expired\|delegation_expired\|delegation_mismatch\|principal_mismatch\|subject_forbidden\|agent_forbidden\|tool_denied, tool?` | M9, M2 (`tool_denied`) |
 | `escalated` | `reason_code, target_queue, priority, handoff_ref` | M10 |
 | `handoff_resolved` | `handoff_ref, resolution_code, handoff_quality, reader_type` | M10 |
-| `run_closed` | `outcome, closed_by: flow\|abandonment\|escalation\|revocation` | **solo M4** |
+| `run_transferred` | `transfer_id, to_agent: EntityRef, to_release_id, to_run_id, reason, packet_fp: Fingerprint, directory, directory_hash, candidates: list[str]` (cadena origen; sin valores de slots) | M4 |
+| `transfer_received` | `transfer_id, accepted_slots: list[str], packet_fp: Fingerprint` (cadena destino) | M4 |
+| `transfer_rejected` | `transfer_id, to_agent?, reason_code: not_in_directory\|no_active_release\|not_eligible\|accepts_mismatch\|transfer_limit\|no_turn, directory?, directory_hash?` (cadena origen) | M4 |
+| `run_closed` | `outcome, closed_by: flow\|abandonment\|escalation\|revocation\|transfer` | **solo M4** |
 
 Evento saliente (outbox, no va a la cadena): `handoff_created {handoff_ref, run_id, target_queue, priority, reason_code, language, reportable_attrs}`, en un `OutboxMessage`.
 
@@ -608,6 +638,33 @@ def check_page_path(path) -> str                 # rechaza `..`, `//` y `/` fina
 - La ruta solo admite `[A-Za-z0-9_./-]` y no admite `@`; el primer `@` de una cita separa ruta y snapshot, y el snapshot (`id@versión`) puede llevar `@`.
 - `KnowledgePage` (manifiesto del snapshot, §2.4) reutiliza `PagePath`, `Audience` y `PageStatus`.
 
+### 2.13 Transferencia entre agentes (`domain/transfer.py`, `domain/eligibility.py`)
+
+Tipos del ADR 0021 (spec `2026-09-30-transferencia-entre-agentes-design.md` §3). Todos son datos: M0 no consulta puertos.
+
+```python
+SlotType = Literal["string", "integer", "decimal", "date", "boolean"]
+class RoutingCard:        directory: EntityId; summary: str (1..500); examples: list[str] = []   # qué resuelve; lo ve el agente de recepción
+class AcceptedSlot:       type: SlotType; required: bool = False
+class TransferContract:   slots: dict[str, AcceptedSlot] = {}                                    # contrato de entrada del especialista
+class DirectoryEntry:     agent_id: EntityId; release_id: str; summary: str; examples: list[str]
+                          accepts: TransferContract; supported_locales: list[Locale]
+class DirectorySnapshot:  directory: EntityId; hash: Sha256Hex; entries: list[DirectoryEntry]
+                          # entries: filtradas para el principal; hash: del directorio completo
+                          choices -> list[str]                                                   # los agent_id de las entradas
+class TransferPacket:     reason: str; trigger: str; slots: dict[str, JsonValue] = {}            # trigger: texto del usuario en vista `model`
+class RunOrigin:          kind: Literal["transfer"]; transfer_id: str; from_run_id: str; from_agent: EntityRef
+                          from_release_id: str; from_event_hash: Sha256Hex; depth: PositiveInt
+def directory_hash(pairs: Iterable[tuple[str, str]]) -> str          # sha256 de los pares (agent_id, release_id) ordenados
+def packet_problem(contract, slots) -> str | None                    # missing_required_slot | slot_not_accepted | slot_type_mismatch
+def transfer_ineligibility(agent: Agent, principal: Principal, subject: SubjectRef | None, locale: Locale) -> str | None
+```
+
+- `directory_hash` cambia al publicar, promover o revocar: es la huella de lo que el modelo pudo ver.
+- `RunOrigin.from_event_hash` es el hash del último evento de la cadena origen al cerrar el turno de la transferencia (`turn_completed`); cubre `run_transferred` y `run_closed` por encadenamiento (plan P2). `depth` cuenta las transferencias de la sesión (plan P5).
+- `packet_problem` devuelve un código sin valores; nunca incluye datos del paquete. `decimal` admite `Decimal` y `int`, `date` un string ISO `YYYY-MM-DD`, y `bool` no cuenta como `integer` ni `decimal`.
+- `transfer_ineligibility` es pura y devuelve el primer motivo que falla, en este orden: `mode` (solo conversacionales), `no_contract`, `principal_type`, `subject_kind`, `locale`, `auth_level`; `None` si es elegible. Nunca incluye datos del principal.
+
 ## 3. Comportamiento
 
 - `EntityRef.parse` y `RefSpec.require_exact` rechazan rangos y referencias sin versión con `InvalidRuntimeRef`.
@@ -657,6 +714,8 @@ Ninguno. Define el esquema de todos (§2.10).
 | T-M0-13 | `ReasonCodeStr` acepta los códigos y los prefijos `rule:`, `policy:` e `interrupt:`; rechaza otros | — |
 | T-M0-14 | Cada tipo de `AnyEvent` tiene entrada en `EVENT_EMITTERS` y coincide con la tabla §6 del índice | — |
 | T-M0-15 | Cada entrada de `MEASURED_FIELDS` nombra un tipo de `AnyEvent` y campos que existen en su payload | — |
+| T-M0-16 | (rev. 12) `directory_hash` no depende del orden y cambia con la release; `packet_problem` y `transfer_ineligibility` devuelven códigos sin datos (`tests/m00/test_transfer_types.py`) | — |
+| T-M0-17 | (rev. 12) El nodo `transfer` valida, `RESULTS["transfer"] == {rejected}` y no está en `TERMINAL`; `Outcome.transferred` no es declarable; `RunOrigin.depth >= 1`; los tres eventos nuevos y `closed_by="transfer"` validan y los emite M4 (`tests/m00/test_transfer_nodes_events.py`) | — |
 | T-M0-C-* | Suites de contrato de cada puerto, parametrizadas por implementación; en fase 1 corren contra los dobles de §10 | — |
 
 Suites de contrato de la fase 1 (lo mínimo que cada una verifica):
@@ -700,6 +759,6 @@ No tiene métricas propias. Los esquemas de eventos son la entrada de la unidad 
 ## 11. Abiertos
 
 - Ninguno bloqueante para la fase 1.
-- **Agentes internos (ADR 0019):** `AgentNodeConfig.save_as`/`output_schema`, `FactSource.kind = "agent"` y el evento `agent_step` están implementados (SCHEMA_VERSION 0.4.0, `contracts/` regenerado; hoy 0.7.0). `RiskClass.write_draft` sigue solo diseñado. Falta decidir si `Agent.default_target_queue` pasa a ser opcional para agentes que nunca escalan.
+- **Agentes internos (ADR 0019):** `AgentNodeConfig.save_as`/`output_schema`, `FactSource.kind = "agent"` y el evento `agent_step` están implementados (SCHEMA_VERSION 0.4.0, `contracts/` regenerado; hoy 0.7.0). `RiskClass.write_draft` se implementó en la rev. 12 (`SCHEMA_VERSION` 1.2.0). Falta decidir si `Agent.default_target_queue` pasa a ser opcional para agentes que nunca escalan.
 - ~~**Dependiente del tema #10:** el nodo `knowledge`, `RunState.pages`, `PageView` y la forma final de `KnowledgeSource`~~ **Resuelto 2026-09-30 (rev. 10, `SCHEMA_VERSION` 1.0.0):** entraron con M12 `read`.
 - ~~**Formato de la credencial** (`raw_credential`)~~ **Resuelto 2026-09-29 (M9 §3.8):** JWS compacto Ed25519 con `kid`; no cambia el puerto.

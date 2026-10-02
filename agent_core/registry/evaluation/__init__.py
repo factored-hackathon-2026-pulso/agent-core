@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 """Per-agent evaluation over scenarios, with a double yardstick (registry section 6; ADR 0020)."""
 
 from agent_core.registry.evaluation.evaluator import ScenarioEvaluator
@@ -15,6 +16,14 @@ from agent_core.registry.evaluation.ports import (
     ScenarioTranscript,
 )
 from agent_core.registry.evaluation.report import (
+=======
+"""Evaluación del registry (ADR 0020): suite, aflojamientos de la vara y veredicto del gate.
+
+Funciones puras y sin Postgres; el servicio del registry y la unidad 6 (`EvalPort`) las consumen.
+"""
+
+from agent_core.registry.evaluation.gate import (
+>>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796
     EvalReport,
     GateItem,
     GateRuns,
@@ -58,4 +67,11 @@ __all__ = [
     "YardstickChangeKind",
     "classify_yardstick_change",
     "evaluate_gate",
+<<<<<<< HEAD
+=======
+    "meets_floor",
+    "metric_identity",
+    "not_worse",
+    "suite_problems",
+>>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796
 ]

@@ -29,7 +29,7 @@ def test_unknown_mode_declares_nothing() -> None:
 def test_enum_members_match_spec() -> None:
     assert {o.value for o in Outcome} == {
         "resolved", "abstained", "cancelled", "clarify_exhausted",
-        "completed", "failed", "abandoned", "escalated",
+        "completed", "failed", "abandoned", "escalated", "transferred",
     }  # fmt: skip
     assert {r.value for r in ReasonCode} == {
         "low_confidence", "budget_exceeded", "tool_failure", "customer_request",

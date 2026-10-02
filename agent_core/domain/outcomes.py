@@ -21,6 +21,7 @@ class Outcome(StrEnum):
     failed = "failed"
     abandoned = "abandoned"
     escalated = "escalated"
+    transferred = "transferred"  # engine-only: the conversation moved to another agent (ADR 0021)
 
 
 DECLARABLE: Mapping[str, frozenset[Outcome]] = MappingProxyType(

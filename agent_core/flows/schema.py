@@ -22,6 +22,7 @@ from agent_core.domain import (
     SlotValidator,
     ToolNode,
     VerifyNode,
+    WriteToolNode,
     node_kind,
 )
 from agent_core.flows.jsonlogic import jsonlogic_problems
@@ -153,12 +154,16 @@ def _required_paths(node: Node) -> Iterator[tuple[str, str]]:
     if isinstance(node, DecideNode | AgentNode) and node.config.input_view:
         for i, text in enumerate(node.config.input_view):
             yield (f"/config/input_view/{i}", text)
+    if isinstance(node, DecideNode) and node.config.choices_from is not None:
+        yield ("/config/choices_from", node.config.choices_from)
     if isinstance(node, VerifyNode) and node.config.by.startswith("fact:"):
         yield ("/config/by", node.config.by.removeprefix("fact:"))
 
 
 def _args_fields(node: Node) -> Iterator[tuple[str, JsonValue]]:
     if isinstance(node, ToolNode):
+        yield ("/config/args", dict(node.config.args))
+    if isinstance(node, WriteToolNode) and node.config.draft:
         yield ("/config/args", dict(node.config.args))
     if isinstance(node, ConfirmNode):
         yield ("/config/action/args", dict(node.config.action.args))

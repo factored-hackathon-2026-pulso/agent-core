@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 """Gate verdict (ADR 0020, evaluation spec section 6): double yardstick, no composite score."""
 
 from decimal import Decimal
@@ -7,6 +8,57 @@ from agent_core.registry.evaluation.report import GateItem, GateRuns, SuiteMeasu
 from agent_core.registry.evaluation.scoring import PLATFORM_GUARDRAILS
 from agent_core.registry.evaluation.yardstick import Yardstick, metric_identity
 from agent_core.registry.suite import EvalSuite
+=======
+"""Veredicto del gate de evaluación con doble vara (ADR 0020, spec de evaluación §6).
+
+Función pura: recibe las definiciones y los reportes ya medidos (los produce `EvalPort`, unidad 6) y decide.
+Sin puntaje compuesto: cada métrica se juzga por separado y basta una que falle.
+"""
+
+from decimal import Decimal
+from typing import Literal
+
+from pydantic import Field
+
+from agent_core.domain import MetricDef, Model
+from agent_core.domain.metrics import MetricRole
+from agent_core.registry.evaluation.platform import PLATFORM_GUARDRAILS
+from agent_core.registry.evaluation.yardstick import Yardstick, metric_identity
+
+Phase = Literal["base_yardstick", "new_yardstick", "platform"]
+
+
+class EvalReport(Model):
+    """Lo que devuelve `EvalPort.run`: valor por métrica (incluidos los `platform_*`) y pase por escenario."""
+
+    status: Literal["ok", "failed_infra"] = "ok"
+    metrics: dict[str, Decimal] = Field(default_factory=dict)
+    scenarios: dict[str, bool] = Field(default_factory=dict)
+
+
+class GateRuns(Model):
+    """Las mediciones que necesita el gate. `base_on_old` y `cand_on_old` son obligatorias si hay base."""
+
+    base_on_old: EvalReport | None = None  # vara vieja medida sobre la base
+    cand_on_old: EvalReport | None = None  # vara vieja medida sobre la candidata
+    cand_on_new: EvalReport  # vara nueva medida sobre la candidata
+
+
+class GateItem(Model):
+    metric_id: str
+    phase: Phase
+    role: MetricRole | None = None
+    value: Decimal | None = None
+    base_value: Decimal | None = None
+    threshold: Decimal | None = None
+    passed: bool
+    reason: str = ""
+
+
+class Verdict(Model):
+    status: Literal["passed", "failed", "failed_infra"]
+    items: list[GateItem]
+>>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796
 
 
 def not_worse(candidate: Decimal, base: Decimal, margin: Decimal, higher_is_better: bool) -> bool:
@@ -129,4 +181,8 @@ def evaluate_gate(base: Yardstick | None, cand: Yardstick, runs: GateRuns) -> tu
         items += _base_items(old.metrics, old.suite, runs.base_on_old, runs.cand_on_old)
     items += _new_items(old, cand.metrics, cand.suite, runs.cand_on_new)
     items += _platform_items(runs)
+<<<<<<< HEAD
     return ("pass" if all(item.passed for item in items) else "fail"), items
+=======
+    return Verdict(status="passed" if all(item.passed for item in items) else "failed", items=items)
+>>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796

@@ -13,7 +13,8 @@
     "event",
     "message",
     "proposal",
-    "eval_run"
+    "eval_run",
+    "transfer"
   ],
   "title": "IdKind",
   "type": "string"

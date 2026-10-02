@@ -82,6 +82,8 @@ ENTITIES: list[RegistryEntity] = [
     _tool("calc", "compute"),
     _tool("escribir", "write_reversible", readback_by="idempotency_key",
           description="tool escribir", args_schema={"type": "object"}),  # documentada: aísla G0-07 de G0-24
+    _tool("guardar", "write_draft", readback_by="idempotency_key",
+          description="tool guardar", args_schema={"type": "object"}),
     _model("modelo", ["campo"]),
     _model("modelo_nc", []),
     _model("modelo_lc", ["campo"], ["a", "low_confidence"]),
@@ -91,7 +93,7 @@ ENTITIES: list[RegistryEntity] = [
     ),
     ModelProfile.model_validate(
         {"id": "perfil", "version": "1.0.0", "endpoint_alias": "demo", "model": "modelo-sintetico",
-         "temperature": "0", "max_tokens": 400,
+         "temperature": "0", "max_tokens": 400, "structured": "prompted",
          "price": {"input_per_mtok": "1", "output_per_mtok": "2", "source": "sintético",
                    "as_of": "2026-09-28"}}
     ),
@@ -155,6 +157,34 @@ def task_base() -> dict[str, Any]:
                 {"id": "fin_ok", "type": "end",
                  "config": {"outcome": "completed", "output_map": {"dato": "facts.datos.value.id"}}},
                 {"id": "fin_fallo", "type": "end", "config": {"outcome": "failed"}},
+            ],
+        }
+    )
+
+
+def draft_base() -> dict[str, Any]:
+    """Flow conversacional válido con una escritura `draft`: collect → draft → verify → respond."""
+    return deepcopy(
+        {
+            "id": "borrador",
+            "version": "1.0.0",
+            "priority": 10,
+            "nodes": [
+                {"id": "pedir", "type": "collect", "config": {"slot": "desc", "prompt_ref": "t/pedir"},
+                 "next": {"ok": "guardar", "max_attempts": "esc"}},
+                {"id": "guardar", "type": "tool",
+                 "config": {"draft": True, "tool": "guardar@1", "args": {"q": "slots.desc"},
+                            "save_as": "res"},
+                 "next": {"ok": "verificar", "uncertain": "verificar", "denied": "esc"}},
+                {"id": "verificar", "type": "verify",
+                 "config": {"readback": "leer_escritura@1", "by": "idempotency_key",
+                            "predicate": {"==": [{"var": "readback.status"}, "ok"]}, "save_as": "verif"},
+                 "next": {"verified": "ok_msg", "failed": "esc"}},
+                {"id": "ok_msg", "type": "respond",
+                 "config": {"template_ref": "t/hecho", "claims": ["guardar"]},
+                 "next": {"next": "fin"}},
+                {"id": "fin", "type": "end", "config": {"outcome": "resolved"}},
+                {"id": "esc", "type": "escalate", "config": {"reason_code": "tool_failure"}},
             ],
         }
     )

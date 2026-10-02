@@ -1,6 +1,10 @@
 # Temas abiertos — Motor de decisión (spec 2026-09-28)
 
+<<<<<<< HEAD
 - Estado: **9 de 9 temas originales resueltos; #10 (`read` construido), #11, #12, #14, #15 y #16 cerrados el 2026-09-30 (decisiones abajo); #13 resuelto salvo las piezas reales de las unidades 3, 6 y 7 (2026-09-30); #18 decidido el 2026-09-30 (construcción pendiente); sigue abierto #17 (medio) y se abre #19 (medio, conector de datasets reales para las evals, ADR 0020).** Reemplaza la versión anterior de este documento, cuyo contenido se descartó por basarse en hallazgos incorrectos.
+=======
+- Estado: **9 de 9 temas originales resueltos; 4 temas nuevos abiertos (#10, alta; #11, #12 y #13, media).** Reemplaza la versión anterior de este documento, cuyo contenido se descartó por basarse en hallazgos incorrectos.
+>>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796
 - Fecha: 2026-09-28
 - Spec: `2026-09-28-motor-de-decision-design.md` (rev. 15)
 - Regla de trabajo: antes de resolver cada tema se lee el ADR que lo gobierna.
@@ -27,6 +31,7 @@ Tampoco eran temas abiertos: la cadena de hash y `reportable_attrs` (ADR 0003), 
 | 7 | `end(abandoned)` declarable; outcome vs modo sin validar | Baja | **Resuelto (rev. 12)** |
 | 8 | Dos ADR con número 0009 | Baja | **Resuelto (rev. 12)** |
 | 9 | `untrusted_text` falta en ADR 0008 | Baja | **Resuelto (rev. 12)** |
+<<<<<<< HEAD
 | 10 | ADR de conocimiento (0015) aceptado pero no integrado en la spec | Alta | **Resuelto como diseño (2026-09-30); construcción en fase 2** |
 | 11 | Capa de analítica (cálculo y visualización de métricas) sin spec | Media | **Resuelto (2026-09-30)** |
 | 12 | Política del contexto conversacional (`recent_turns`) sin definir | Media | **Resuelto (2026-09-30)** |
@@ -37,6 +42,12 @@ Tampoco eran temas abiertos: la cadena de hash y `reportable_attrs` (ADR 0003), 
 | 17 | Clase `write_draft` y dependencias del constructor sobre el registry | Media | **Abierto** |
 | 18 | Auditoría de las lecturas de datos de clientes del administrador | Media | **Decidido (2026-09-30); construcción pendiente** |
 | 19 | Conector de datasets reales para las evals de los agentes | Media | **Abierto** |
+=======
+| 10 | ADR de conocimiento (0015) aceptado pero no integrado en la spec | **Alta** | **Abierto** |
+| 11 | Capa de analítica (cálculo y visualización de métricas) sin spec | Media | **Abierto** |
+| 12 | Política del contexto conversacional (`recent_turns`) sin definir | Media | **Abierto** |
+| 13 | Conector de datasets reales para las evals de los agentes | Media | **Abierto** |
+>>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796
 
 ## Resueltos
 - **#1 (rev. 6):** `respond.claims` declarado + derivado; invariante por camino hasta `verified`; `respond` seguro = sin reclamos. Spec §2, §5, §6.1, §8.2, §11, §13.3, §14, §15; ADR 0007.
@@ -49,14 +60,17 @@ Tampoco eran temas abiertos: la cadena de hash y `reportable_attrs` (ADR 0003), 
 - **#8 (rev. 12):** el ADR de conocimiento pasa a `0015-consumo-de-conocimiento-nodo-knowledge.md`; 0009 queda para políticas protegidas.
 - **#9 (rev. 12):** ADR 0008 enmendado con la clase `untrusted_text`, su catálogo por defecto y su envoltura en la vista `model`.
 
-## 10. Integración del ADR 0015 (conocimiento) — resuelto; `read` construido
-**Decidido el 2026-09-30:** se aprueba M12 (`motor/m12-conocimiento.md`) como la integración del ADR 0015 en el motor; la spec general pasa a apuntar a M12 y deja de contradecir al ADR. La **construcción** va a la fase 2: no entra en el MVP de la demo (el calendario no da para `read` antes del congelamiento del 02/10). `navigate` queda fuera del MVP.
-- **Numeración:** reglas de M1 G0-17…G0-21 y comprobaciones 6 y 7 del validador de respuesta, como propone M12.
-- **Hechos de conocimiento y reclamos de éxito:** una página solo se cita; nunca alimenta un reclamo (los reclamos salen de acciones verificadas, ADR 0011).
-- **Caída del `KnowledgeSource`:** el nodo sale por `not_found` y emite un evento con motivo `source_unavailable`; no cambia el esquema del nodo y la auditoría distingue la causa.
-**Construcción de `read` cerrada el 2026-09-30** (`SCHEMA_VERSION` 1.0.0, cambio mayor por el tipo de nodo nuevo y el reemplazo de `knowledge_refs`): `RunState.pages`, `PageView`, el nodo `knowledge`, `knowledge_from[]`/`purpose` en `respond.generate`, el evento `knowledge_read`, `AuthzPort.knowledge_view`, `FileKnowledgeSource` con su suite de contrato, G0-17…G0-21 y las comprobaciones 6 y 7 (T-M12-01…06 en verde; ver `motor/m12-conocimiento.md` §10).
-Sigue abierto, fuera de esta construcción: el modo `navigate` (esquema y G0-20 listos; el runtime sale por `not_found` con motivo `navigate_unavailable`), la búsqueda, y los puntos de `m12-conocimiento.md` §12 (G0-06 para `not_found`/`denied`, anclas sin verificar al publicar, servicio real de la unidad 7).
+## 10. Integración del ADR 0015 (conocimiento) — abierto
+Encontrado al renumerar (#8). ADR 0015 está aceptado y declara cambios que la spec no tiene:
+- **Catálogo (§5):** no existe el nodo `knowledge` (`read` / `navigate`), aunque el ADR lo agrega como cambio mayor del esquema.
+- **Corte MVP (§0):** el ADR dice que en el MVP se construyen `read`, los filtros y el validador; §0 no menciona conocimiento.
+- **`respond.generate`:** la spec sigue con `knowledge_refs[]`; el ADR lo reemplaza por `knowledge_from[]` + `purpose`.
+- **Validador (§8.3):** cita "páginas recuperadas en este run", pero ningún nodo de la spec las recupera; faltan las comprobaciones de `audience: public` + `status: approved` para respuestas al cliente.
+- **Validación estática (§6.1):** el ADR habla de "reglas 10–14" y "comprobaciones 5 y 6", numeración que ya choca con la spec actual; hay que definirlas y numerarlas de nuevo.
+- **Dependencias (§14):** faltan `knowledge_view(principal, purpose)` (unidad 3), `knowledge_snapshot` en la release (unidad 2) y el puerto `KnowledgeSource` (unidad 7).
+- **Reclamos de éxito (#1):** hay que decidir si un hecho de conocimiento puede alimentar un reclamo (probablemente no).
 
+<<<<<<< HEAD
 ## 11. Capa de analítica — resuelto
 **Decidido el 2026-09-30:**
 - **Cálculo:** vistas SQL sobre el log de eventos en Postgres; sin componentes nuevos.
@@ -65,14 +79,18 @@ Sigue abierto, fuera de esta construcción: el modo `navigate` (esquema y G0-20 
 - **Retención:** sin purga en el MVP (las tablas son inmutables y pequeñas); se revisa en la fase 2 junto con la retención del registry (#16).
 Actualización (2026-09-30): el DSL de métricas por agente, el catálogo de eventos y la regla de que no hay acción automática en producción se decidieron en el ADR 0020; este tema conserva el cálculo, la visualización, las alertas y la retención.
 Pendiente de construcción: las vistas SQL y la conexión a Phoenix; no bloquean la fase 1 porque los eventos ya capturan los datos.
+=======
+Por qué es alta: quien implemente desde la spec no construiría el nodo `knowledge`, y el validador de respuesta no tendría cómo comprobar citas de páginas.
+>>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796
 
-## 12. Política del contexto conversacional — resuelto
-**Decidido el 2026-09-30** (ratifica lo que ya implementa `EngineConfig.recent_turns`; ver m04 §15 y m05 §3.2):
-- **Tamaño:** `n` fijo de 6 turnos, por despliegue; se mide en turnos, no en tokens, y no es configurable por agente.
-- **Conversaciones largas:** se trunca a las últimas `n` entradas; no hay resumen en el MVP (un resumen es texto generado por un modelo y arrastra la duda de `untrusted_text` y del replay).
-- **Contenido:** mensaje del cliente y respuesta del agente, en vista `model`, sin borradores rechazados. Los hechos siguen saliendo solo de acciones verificadas, nunca del historial.
-- **Entre runs:** nada; un asunto retomado es un run nuevo con contexto limpio.
+## 11. Capa de analítica — abierto
+Encontrado al agregar las métricas de eficiencia (spec rev. 14). Los eventos ya llevan los datos (latencias, uso del LLM, `turn_completed`) y §12 y cada módulo listan las métricas, pero ningún documento define cómo se calculan ni dónde se ven. Se delega a la unidad 6, que no tiene spec en este repo. Falta decidir:
+- **Cálculo:** vistas SQL sobre el log en Postgres, o una exportación por release (`agentcore export`) que procese el harness de eval.
+- **Consumo:** dashboard para la demo (Phoenix, un notebook o una página) y el formato que lee la auto-mejora.
+- **Comparación entre releases:** qué diferencia de latencia o costo bloquea una promoción, con qué tamaño de muestra.
+- **Retención:** cuánto tiempo se guardan los eventos para calcular tendencias.
 
+<<<<<<< HEAD
 ## 13. Servidor arrancable — resuelto salvo las piezas reales
 **Decidido el 2026-09-30:** la demo corre con un modelo real y el resto como dobles etiquetados. Spec: `docs/superpowers/specs/2026-09-30-servidor-arrancable-design.md`; plan: `docs/superpowers/plans/2026-09-30-servidor-arrancable.md`.
 - **Construido:** `agentcore serve` (`agent_core/composition/serve.py`, `serve_ports.py`, `build_engine` en `engine.py`). Reales: Postgres, gateway de LLM, JEV por HTTP (`AGENTCORE_JEV_API_KEY`), claves HMAC/cifrado (`EnvKeyProvider`) y claves públicas de identidad (`--identity-keys`, `agent_core/adapters/identity_keys.py`). `uvicorn` declarado en `pyproject.toml`.
@@ -138,3 +156,27 @@ Encontrado al diseñar la evaluación por agente (`2026-09-30-evaluacion-y-metri
 - **Etiquetas:** cuándo el resultado histórico (por ejemplo, lo que hizo el asesor humano) sirve como referencia.
 
 Los datos reales no viven en el repo ni en el registry; el registry solo guarda `dataset_id` y `dataset_hash`. Por qué es media: no bloquea la fase 1, porque la suite `scripted` es la base obligatoria del gate.
+=======
+Actualización (2026-09-30): el DSL de métricas por agente, el catálogo de eventos y la regla de que no hay acción automática en producción se decidieron en el ADR 0020; este tema conserva el cálculo, la visualización, las alertas y la retención.
+
+Por qué es media: no bloquea la fase 1 porque los eventos ya capturan los datos, pero sin esto las métricas no se pueden mostrar en la demo del 03–05/10.
+
+## 13. Conector de datasets reales para las evals — abierto
+Encontrado al diseñar la evaluación por agente (`2026-09-30-evaluacion-y-metricas-design.md`, ADR 0020). Las evals podrán correr sobre casos de un dataset real, pero la fuente `dataset` está diseñada y desactivada. Falta decidir:
+- **Origen:** BD transaccional o warehouse, y quién es el dueño de los datos.
+- **Autorización:** el ADR firmado por el dueño que enmiende la regla 5 de CLAUDE.md y el registry §7.
+- **Protección:** paso por las vistas tokenizadas de M7 (ADR 0008), sin PII hacia modelos, logs ni eventos.
+- **Etiquetas:** cuándo el resultado histórico (por ejemplo, lo que hizo el asesor humano) sirve como referencia.
+
+Los datos reales no viven en el repo ni en el registry; el registry solo guarda `dataset_id` y `dataset_hash`. Por qué es media: no bloquea la fase 1, porque la suite `scripted` es la base obligatoria del gate.
+
+## 12. Política del contexto conversacional — abierto
+M5 (`m05-decision-model.md` §3.2) incluye `recent_turns` (unidad 7, vista `model`) en su única llamada por turno, y `TranscriptStore.recent_turns(run_id, n)` está en M0. Pero ningún documento define cómo se arma ese contexto. Falta decidir:
+- **Tamaño:** valor de `n`, y si se mide en turnos o en tokens; si es fijo por release o configurable por agente.
+- **Conversaciones largas:** truncar, resumir o ambos. Un resumen es texto generado por un modelo: hay que decidir si cuenta como `untrusted_text` (ADR 0008) y cómo lo trata el replay (§11).
+- **Contenido del turno:** qué entra por turno (mensaje del cliente, respuesta del agente, resultados de acciones) y en qué clase de vista; los hechos siguen viniendo de acciones verificadas, nunca del historial.
+- **Entre runs:** un asunto retomado es un run nuevo sobre el mismo subject (spec §1); si M5 recibe algo del run anterior queda para la unidad 7 y no tiene spec en este repo.
+- **Fase 1:** con `InMemoryTranscript` basta un `n` fijo; el resto no bloquea, pero debe cerrarse antes de implementar M5 con un proveedor real.
+
+Por qué es media: no bloquea la fase 1, pero afecta al costo por turno, a la calibración de umbrales de M5 y al determinismo del replay.
+>>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796

@@ -47,6 +47,13 @@ class ActionManager:
         _same_run(state, ctx)
         return self._confirmations.answer(state, confirm_node, answer, token, ctx)
 
+    def freeze_draft_write(self, state: RunState, write_node: WriteToolNode,
+                           resolved_args: dict[str, JsonValue], tool_def: ToolDef,
+                           ctx: ActionContext) -> RunState:
+        """Congela la acción de una escritura `draft` en `confirmed`, sin token (ADR 0019, M3 §3.7)."""
+        _same_run(state, ctx)
+        return self._executions.freeze_draft_write(state, write_node, resolved_args, tool_def)
+
     def execute_write(self, state: RunState, write_node: WriteToolNode,
                       ctx: ActionContext) -> tuple[RunState, WriteResult, list[EngineEvent]]:
         """Commit 1 (`executing` + `action_dispatched`) → tool con `idempotency_key = action_id` → commit 2.

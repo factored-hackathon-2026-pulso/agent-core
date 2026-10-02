@@ -60,7 +60,7 @@ def _detokenize(value: Any, vault: TokenVault) -> Any:
 
 
 def _read_fact_ids(node: AgentNode, state: RunState) -> list[str]:
-    """Los `fact_id` que lee `input_view`, en orden y sin repetir: parte de la procedencia de la salida."""
+    """The `fact_id`s read through `input_view`, in order and deduplicated: part of the provenance."""
     ids: list[str] = []
     for raw in node.config.input_view:
         path = parse_runtime_path(raw)
@@ -158,7 +158,7 @@ def handle_agent(node: AgentNode, state: RunState, ctx: StepContext, resume: Res
     try:
         inputs = model_inputs(node.config.input_view, state, ctx)
     except MissingPath:
-        return NodeResult(state, result_key="gave_up")  # sin lo que debe ver, el modelo no se llama
+        return NodeResult(state, result_key="gave_up")  # without its inputs, the model is not called
     loop = _Loop(node, state, ctx, inputs)
     feedback: str | None = None
     regenerated = False

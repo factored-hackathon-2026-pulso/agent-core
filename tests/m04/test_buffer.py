@@ -74,3 +74,18 @@ def test_peek_devuelve_copia() -> None:
     buf.add(a)
     buf.peek().clear()
     assert buf.peek() == [a]
+
+
+def test_prelude_goes_before_turn_started() -> None:
+    """ADR 0021: a transfer target's `run_started` and `transfer_received` open its chain."""
+    a, b, ts = events()
+    started = TurnEvents(FakeIds(), FakeClock()).run_started(run_state(), run_state().agent, {})
+    buf = EventBuffer("turn-1")
+    buf.add_prelude(started)
+    buf.reserve_turn_started()
+    buf.add(a)
+    buf.fill(ts)
+    buf.add(b)
+    assert buf.peek() == [started, ts, a, b]
+    assert buf.peek()[0].turn_id is None  # the prelude keeps its own turn_id
+    assert buf.drain() == [started, ts, a, b] and buf.peek() == []

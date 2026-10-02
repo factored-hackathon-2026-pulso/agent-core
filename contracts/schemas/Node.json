@@ -58,7 +58,7 @@
     },
     "AgentNodeConfig": {
       "additionalProperties": false,
-      "description": "Configuración del nodo `agent` (M0 §2.5, ADR 0019).\n\n`save_as` nombra el hecho donde entra la salida; `output_schema` es el JSON Schema de esa salida.\n`input_view` son las rutas (`slots`, `facts`) que el modelo ve en vista `model`; vacío, no ve ninguna.",
+      "description": "Configuration of the `agent` node (M0 §2.5, ADR 0019).\n\n`save_as` names the fact that receives the output; `output_schema` is the JSON Schema of that output.\n`input_view` lists the paths (`slots`, `facts`) the model sees in the `model` view; empty means none.",
       "properties": {
         "goal": {
           "title": "Goal",
@@ -335,6 +335,18 @@
         "branch_on": {
           "title": "Branch On",
           "type": "string"
+        },
+        "choices_from": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Choices From"
         },
         "input_view": {
           "anyOf": [
@@ -718,7 +730,8 @@
         "completed",
         "failed",
         "abandoned",
-        "escalated"
+        "escalated",
+        "transferred"
       ],
       "title": "Outcome",
       "type": "string"
@@ -1051,6 +1064,90 @@
       "title": "ToolNode",
       "type": "object"
     },
+    "TransferConfig": {
+      "additionalProperties": false,
+      "description": "`target_from` is a `decisions.<save_as>.choice` path; `directory_from` the fact of `directory/list`.",
+      "properties": {
+        "directory_from": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Directory From",
+          "type": "string"
+        },
+        "packet": {
+          "$ref": "#/$defs/TransferPacketSpec"
+        },
+        "target_from": {
+          "pattern": "^decisions\\.[a-z][a-z0-9_]*\\.choice$",
+          "title": "Target From",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_from",
+        "directory_from",
+        "packet"
+      ],
+      "title": "TransferConfig",
+      "type": "object"
+    },
+    "TransferNode": {
+      "additionalProperties": false,
+      "description": "`transfer` node (ADR 0021): hands the conversation to a specialist; only `rejected` is wired.",
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/TransferConfig"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "next": {
+          "additionalProperties": {
+            "pattern": "^[a-z0-9][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Next",
+          "type": "object"
+        },
+        "type": {
+          "const": "transfer",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "config"
+      ],
+      "title": "TransferNode",
+      "type": "object"
+    },
+    "TransferPacketSpec": {
+      "additionalProperties": false,
+      "description": "What the transfer node sends: a literal reason and the names of validated slots (ADR 0021 D7).",
+      "properties": {
+        "reason": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Reason",
+          "type": "string"
+        },
+        "slots": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Slots",
+          "type": "array"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "title": "TransferPacketSpec",
+      "type": "object"
+    },
     "VerifyConfig": {
       "additionalProperties": false,
       "description": "Configuración del nodo `verify` (M0 §2.5).",
@@ -1117,12 +1214,32 @@
     },
     "WriteToolConfig": {
       "additionalProperties": false,
-      "description": "Escritura: sin `args` propios; usa la acción congelada del `confirm` (ADR 0007).",
+      "description": "Escritura de un nodo `tool`.\n\nCon `action_from` usa la acción congelada de un `confirm` (ADR 0007) y no admite `tool` ni `args`.\nCon `draft: true` (ADR 0019) invoca una tool `write_draft` con sus propios `args`: no hay `confirm`; la\nacción se congela al entrar al nodo.",
       "properties": {
         "action_from": {
-          "pattern": "^[a-z0-9][a-z0-9_]*$",
-          "title": "Action From",
-          "type": "string"
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Action From"
+        },
+        "args": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Args",
+          "type": "object"
+        },
+        "draft": {
+          "default": false,
+          "title": "Draft",
+          "type": "boolean"
         },
         "save_as": {
           "pattern": "^[a-z][a-z0-9_]*$",
@@ -1134,10 +1251,20 @@
           "exclusiveMinimum": 0,
           "title": "Step Up Max Attempts",
           "type": "integer"
+        },
+        "tool": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RefSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
-        "action_from",
         "save_as"
       ],
       "title": "WriteToolConfig",
@@ -1220,6 +1347,9 @@
     },
     {
       "$ref": "#/$defs/AwaitApprovalNode"
+    },
+    {
+      "$ref": "#/$defs/TransferNode"
     }
   ]
 }

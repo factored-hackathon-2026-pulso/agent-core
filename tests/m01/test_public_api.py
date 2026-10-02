@@ -6,8 +6,7 @@ PUBLIC = [
     "derive_claims", "JSONLOGIC_OPS", "jsonlogic_problems", "Path", "parse_path", "value_paths",
     "template_vars",
     "ReleaseDecl", "AuthoringRegistry", "load_yaml", "load_registry", "PinnedRelease", "pin_release",
-    "validate_registry", "validate_agent", "validate_flow_for_agent", "validate_flow_for_release",
-    "RefSite", "entity_ref_sites", "kind_of",
+    "validate_registry", "validate_agent", "validate_flow_for_agent",
 ]
 
 

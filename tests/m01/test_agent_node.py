@@ -124,7 +124,7 @@ def test_g0_22_ignores_other_facts_and_flows_without_agent() -> None:
     assert "G0-22" not in rules(check(d))  # base() lee facts.datos y facts.verif, no facts.otro
 
 
-# --- input_view: lo que el nodo expone al modelo (T1) ----------------------------------------------------
+# --- input_view: what the node exposes to the model (T1) -------------------------------------------------
 
 
 def test_input_view_with_slots_and_facts_is_valid() -> None:
@@ -156,7 +156,7 @@ def test_g0_22_an_agent_may_read_another_agent_output() -> None:
 
 
 def test_agent_reading_a_verified_write_carries_its_claim() -> None:
-    """Un `agent` que lee el hecho verificado es productor: un respond que lo lea reclama la acción."""
+    """An `agent` reading the verified fact is a producer: a respond reading its output claims the action."""
     d = with_agent()
     node(d, "verificar")["next"]["verified"] = "resumir"
     resumir = agent_node("resumir", save_as="resumen", input_view=["facts.verif.value.status"])
@@ -198,3 +198,17 @@ def test_g0_24_agent_tool_with_args_schema_outside_the_subset() -> None:
 
 def test_g0_24_does_not_apply_to_tools_outside_agent_nodes() -> None:
     assert "G0-24" not in rules(check(base()))  # `leer@1` sin documentar sería válida fuera de un nodo agent
+
+
+def test_agent_prompt_with_a_native_profile_is_g0_25() -> None:
+    from agent_core.domain import ModelProfile, Prompt
+
+    native = ModelProfile.model_validate(
+        {"id": "perfil_nativo", "version": "1.0.0", "endpoint_alias": "demo", "model": "modelo-sintetico",
+         "temperature": "0", "max_tokens": 400, "structured": "native",
+         "price": {"input_per_mtok": "1", "output_per_mtok": "2", "source": "sintético",
+                   "as_of": "2026-09-28"}})
+    prompt = Prompt.model_validate({"id": "p/nativo", "version": "1.0.0",
+                                    "locales": {"es": "Responde.", "pt": "Responda."},
+                                    "model_profile": "perfil_nativo@1"})
+    assert rules(check(with_agent(prompt_ref="p/nativo"), registry(native, prompt))) == {"G0-25"}

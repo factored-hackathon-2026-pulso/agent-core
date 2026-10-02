@@ -8,7 +8,7 @@ EXPECTED = {
     "ReplayReport", "Divergence", "Replayer", "ReplayCase", "EngineRunner", "RecordedPorts", "ReplayDesync",
     "FullViewAccessError", "Fixture", "FullToolResult", "load_fixture", "dump_fixture", "load_fixture_file",
     "SyntheticCatalog", "load_catalog", "check_fixture", "FixtureRejected", "RecordingToolExecutor",
-    "RecordingGateway", "build_fixture", "check_chain", "chain_events",
+    "RecordingGateway", "build_fixture", "check_chain", "chain_events", "verify_transfer_link",
 }
 
 

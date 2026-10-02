@@ -5,9 +5,9 @@ from datetime import timedelta
 from decimal import Decimal
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import Field, NonNegativeInt, PositiveInt
+from pydantic import Field, NonNegativeInt, PositiveInt, SerializerFunctionWrapHandler, model_serializer
 
 from agent_core.domain.base import Locale, Model, NodeId, Probability, Sha256Hex, UtcDatetime
 from agent_core.domain.errors import GatewayErrorKind
@@ -18,6 +18,7 @@ from agent_core.domain.outcomes import Awaiting, Command, Mode, Outcome, ReasonC
 from agent_core.domain.refs import EntityRef
 from agent_core.domain.shared import Fingerprint, ToolStatus
 from agent_core.domain.state import InvalidationReason
+from agent_core.domain.transfer import RunOrigin
 
 Cost = Annotated[Decimal, Field(ge=0, allow_inf_nan=False)]
 
@@ -47,6 +48,15 @@ class RunStartedPayload(Model):
     principal_type: PrincipalType
     locale: Locale
     reportable_attrs: dict[str, str] = Field(default_factory=dict)
+    origin: RunOrigin | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_empty_origin(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Hashes come from the dump: an absent origin must not change chains sealed before 1.2.0."""
+        data: dict[str, Any] = handler(self)
+        if data.get("origin") is None:
+            data.pop("origin", None)
+        return data
 
 
 class LangScore(Model):
@@ -331,7 +341,40 @@ class HandoffResolvedPayload(Model):
 class RunClosedPayload(Model):
     """Payload del evento `run_closed` (vista audit, M0 §2.10)."""
     outcome: Outcome
-    closed_by: Literal["flow", "abandonment", "escalation", "revocation"]
+    closed_by: Literal["flow", "abandonment", "escalation", "revocation", "transfer"]
+
+
+TransferRejectReason = Literal[
+    "not_in_directory", "no_active_release", "not_eligible", "accepts_mismatch", "transfer_limit", "no_turn"]
+
+
+class RunTransferredPayload(Model):
+    """Payload of `run_transferred` (audit view, ADR 0021 P1): packet fingerprint only."""
+    transfer_id: str
+    to_agent: EntityRef
+    to_release_id: str
+    to_run_id: str
+    reason: str
+    packet_fp: Fingerprint
+    directory: str
+    directory_hash: Sha256Hex
+    candidates: list[str]
+
+
+class TransferReceivedPayload(Model):
+    """Payload of `transfer_received` (audit view)."""
+    transfer_id: str
+    accepted_slots: list[str]
+    packet_fp: Fingerprint
+
+
+class TransferRejectedPayload(Model):
+    """Payload of `transfer_rejected` (audit view)."""
+    transfer_id: str
+    to_agent: str | None = None
+    reason_code: TransferRejectReason
+    directory: str | None = None
+    directory_hash: Sha256Hex | None = None
 
 
 class HandoffCreatedPayload(Model):
@@ -487,6 +530,24 @@ class RunClosed(EngineEvent):
     payload: RunClosedPayload
 
 
+class RunTransferred(EngineEvent):
+    """Evento `run_transferred` de la cadena origen (ADR 0021)."""
+    type: Literal["run_transferred"] = "run_transferred"
+    payload: RunTransferredPayload
+
+
+class TransferReceived(EngineEvent):
+    """Evento `transfer_received` de la cadena destino (ADR 0021)."""
+    type: Literal["transfer_received"] = "transfer_received"
+    payload: TransferReceivedPayload
+
+
+class TransferRejected(EngineEvent):
+    """Evento `transfer_rejected` de la cadena origen (ADR 0021)."""
+    type: Literal["transfer_rejected"] = "transfer_rejected"
+    payload: TransferRejectedPayload
+
+
 AnyEvent = Annotated[
     RunStarted
     | TurnStarted
@@ -510,7 +571,10 @@ AnyEvent = Annotated[
     | AccessDenied
     | Escalated
     | HandoffResolved
-    | RunClosed,
+    | RunClosed
+    | RunTransferred
+    | TransferReceived
+    | TransferRejected,
     Field(discriminator="type"),
 ]
 
@@ -519,7 +583,7 @@ _EVENT_CLASSES: tuple[type[EngineEvent], ...] = (
     AgentStep, KnowledgeRead, StepUpRequested, ActionConfirmed, ActionCancelled, ActionDispatched,
     ActionVerified,
     ExpiryEvaluated, ResponseEmitted, ResponseFailed, TurnCompleted, InjectionFlagged, AccessDenied,
-    Escalated, HandoffResolved, RunClosed,
+    Escalated, HandoffResolved, RunClosed, RunTransferred, TransferReceived, TransferRejected,
 )
 
 EVENT_TYPES: Mapping[str, type[EngineEvent]] = MappingProxyType(
@@ -551,6 +615,9 @@ EVENT_EMITTERS: Mapping[str, frozenset[str]] = MappingProxyType(
         "access_denied": frozenset({"M9", "M2"}),
         "escalated": frozenset({"M10"}),
         "handoff_resolved": frozenset({"M10"}),
+        "run_transferred": frozenset({"M4"}),
+        "transfer_received": frozenset({"M4"}),
+        "transfer_rejected": frozenset({"M4"}),
     }
 )
 

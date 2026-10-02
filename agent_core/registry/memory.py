@@ -5,12 +5,14 @@ import threading
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 from agent_core.registry.blobs import BlobStore, InMemoryBlobStore
 from agent_core.registry.models import (
     AliasChange,
     Approval,
+    DraftWrite,
     EntityDraft,
     EvalRun,
     Proposal,
@@ -36,6 +38,7 @@ class _State:
     approvals: list[Approval] = field(default_factory=list)
     events: list[RegistryEvent] = field(default_factory=list)
     publish_keys: dict[str, tuple[str, str]] = field(default_factory=dict)
+    draft_writes: dict[str, DraftWrite] = field(default_factory=dict)
     blobs: InMemoryBlobStore = field(default_factory=InMemoryBlobStore)
 
 
@@ -111,6 +114,9 @@ class _Tx:
     def aliases_to(self, release_id: str) -> list[tuple[str, str]]:
         return sorted(k for k, v in self._s.aliases.items() if v == release_id)
 
+    def aliases_named(self, alias: str) -> list[tuple[str, str]]:
+        return sorted((a, rid) for (a, name), rid in self._s.aliases.items() if name == alias)
+
     def insert_eval_run(self, run: EvalRun) -> None:
         self._s.eval_runs.append(run)
 
@@ -138,6 +144,24 @@ class _Tx:
 
     def put_publish_key(self, key: str, proposal_id: str, release_id: str) -> None:
         self._s.publish_keys[key] = (proposal_id, release_id)
+
+    def get_draft_write(self, key: str) -> DraftWrite | None:
+        return self._s.draft_writes.get(key)
+
+    def put_draft_write(self, write: DraftWrite) -> None:
+        if write.idempotency_key in self._s.draft_writes:
+            raise ValueError(f"la clave {write.idempotency_key} ya existe")
+        self._s.draft_writes[write.idempotency_key] = write
+
+    def get_eval_run(self, eval_run_id: str) -> EvalRun | None:
+        return next((r for r in self._s.eval_runs if r.eval_run_id == eval_run_id), None)
+
+    def count_created_after(self, origin: str, after: datetime) -> int:
+        return sum(1 for e in self._s.events
+                   if e.type == "proposal_created" and e.origin == origin and e.at > after)
+
+    def count_eval_runs(self, proposal_id: str) -> int:
+        return sum(1 for r in self._s.eval_runs if r.proposal_id == proposal_id)
 
 
 class InMemoryRegistryStore:
