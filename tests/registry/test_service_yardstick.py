@@ -8,12 +8,20 @@ import pytest
 
 from agent_core.registry.errors import RegistryError, RegistryErrorCode
 from agent_core.registry.memory import InMemoryRegistryStore
-from agent_core.registry.models import Origin, ProposalState, VersionRef
+from agent_core.registry.models import EntityDraft, Origin, ProposalState, VersionRef
 from agent_core.registry.service import RegistryService
 from testing.fakes.clock import FakeClock
 from testing.fakes.ids import FakeIds
 from tests.registry.eval_support import metric
-from tests.registry.helpers import AGENT, REGISTRY_DEMO, admin, prompt_draft, suite_content, suite_draft
+from tests.registry.helpers import (
+    AGENT,
+    REGISTRY_DEMO,
+    admin,
+    docs,
+    prompt_draft,
+    suite_content,
+    suite_draft,
+)
 from tests.registry.service_world import (
     ANA,
     FakeEvaluator,
@@ -126,3 +134,17 @@ def test_review_shows_change_suite_and_loosening_apart() -> None:  # T-EVAL-17
     assert str(review.suite) == "eval_suite:disputas-suite@1.1.0"
     assert [c.kind for c in review.yardstick_loosened] == ["repetitions_lowered"]
     assert review.gate == []  # the fake evaluator does not measure; ScenarioEvaluator brings the items
+
+
+@pytest.mark.parametrize("draft", [
+    EntityDraft(kind="agent", docs=docs(),
+                content={"id": AGENT, "version": "1.1.0", "metrics": [{"id": "platform_pii_leak"}]}),
+    suite_draft("1.1.0", thresholds={"platform_pii_leak": {"noise_margin": "1"}}),
+])
+def test_a_proposal_cannot_edit_platform_guardrails(draft: EntityDraft) -> None:  # T-EVAL-10
+    w = World()
+    p = w.service.create_proposal(ANA, AGENT, Origin.manual, "tries to touch the platform")
+    with pytest.raises(RegistryError) as info:
+        w.service.put_draft(ANA, p.proposal_id, [draft], expected_rev=0)
+    assert info.value.code is RegistryErrorCode.forbidden_role
+    assert w.service.get_proposal(p.proposal_id).changes == []

@@ -58,6 +58,7 @@ from agent_core.registry.validation import (
     DEFAULT_LIMITS,
     Limits,
     check_draft_limits,
+    platform_edits,
     suite_violations,
     validate_candidate,
 )
@@ -243,6 +244,11 @@ class RegistryService:
         if problems:
             raise RegistryError(RegistryErrorCode.validation_failed, "el borrador excede los límites",
                                 payload=_violations_payload(problems))  # type: ignore[arg-type]
+        edits = platform_edits(changes)
+        if edits:
+            raise RegistryError(RegistryErrorCode.forbidden_role,
+                                "los guardarraíles de plataforma no se editan desde una propuesta",
+                                payload=edits)  # type: ignore[arg-type]
         with self._store.transaction() as tx:
             p = self._proposal(tx, proposal_id)
             self._expect(p, ProposalState.draft)

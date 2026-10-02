@@ -2,7 +2,7 @@ import pytest
 
 from agent_core.registry.candidate import CandidateError, build_candidate
 from agent_core.registry.models import EntityDraft
-from agent_core.registry.validation import Limits, check_draft_limits, validate_candidate
+from agent_core.registry.validation import Limits, check_draft_limits, platform_edits, validate_candidate
 from tests.registry.helpers import AGENT, demo_pinned, docs, prompt_draft, suite_draft
 
 
@@ -68,3 +68,12 @@ def test_drafted_suite_problems_are_reg_suite_violations() -> None:  # evaluatio
     pinned, cand = _cand(prompt_draft(), suite_draft(thresholds={"fantasma": {"noise_margin": "0"}}))
     out = validate_candidate(cand, base_versions=_base_versions(pinned), drafted=set())
     assert [(v.rule, v.message.split(":")[0]) for v in out] == [("REG-SUITE", "unknown_threshold_metric")]
+
+
+def test_platform_edits_are_found_in_agents_and_suites() -> None:  # evaluation spec section 7
+    agent = EntityDraft(kind="agent", content={"id": AGENT, "version": "1.1.0",
+                                               "metrics": [{"id": "ok"}, {"id": "platform_pii_leak"}]},
+                        docs=docs())
+    suite = suite_draft("1.1.0", thresholds={"platform_unverified_write": {"noise_margin": "1"}})
+    assert platform_edits([agent, suite, prompt_draft()]) == [
+        "agent:atencion/metrics/1/id", "eval_suite:disputas-suite/thresholds/platform_unverified_write"]

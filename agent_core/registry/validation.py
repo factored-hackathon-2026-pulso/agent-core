@@ -3,7 +3,7 @@
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 
-from agent_core.domain import Agent, Flow, canonical_bytes
+from agent_core.domain import PLATFORM_METRIC_PREFIX, Agent, Flow, canonical_bytes
 from agent_core.flows import AuthoringRegistry, Violation, validate_registry
 from agent_core.registry.candidate import Candidate, parse_semver
 from agent_core.registry.entities import encode_entity, version_ref
@@ -35,6 +35,25 @@ def check_draft_limits(drafts: Sequence[EntityDraft], limits: Limits) -> list[Vi
                                  message=f"{where} ocupa {size} bytes; "
                                          f"el máximo es {limits.max_entity_bytes}"))
     return out
+
+
+def platform_edits(drafts: Sequence[EntityDraft]) -> list[str]:
+    """Paths in the draft that declare or set thresholds for a platform guardrail (evaluation spec section 7).
+
+    Guardrails belong to the platform: no proposal edits them, neither through the agent's metrics (which
+    M1 also rejects with `MT-05`) nor through the suite's thresholds."""
+    found: list[str] = []
+    for d in drafts:
+        where = f"{d.kind[:40]}:{d.id[:80]}"
+        if d.kind == "agent" and isinstance(metrics := d.content.get("metrics"), list):
+            for i, item in enumerate(metrics):
+                mid = item.get("id") if isinstance(item, dict) else None
+                if isinstance(mid, str) and mid.startswith(PLATFORM_METRIC_PREFIX):
+                    found.append(f"{where}/metrics/{i}/id")
+        elif d.kind == "eval_suite" and isinstance(thresholds := d.content.get("thresholds"), dict):
+            found.extend(f"{where}/thresholds/{key[:80]}" for key in sorted(thresholds)
+                         if key.startswith(PLATFORM_METRIC_PREFIX))
+    return found
 
 
 def validate_candidate(c: Candidate, *, base_versions: Mapping[tuple[str, str], str],
