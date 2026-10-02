@@ -479,7 +479,7 @@ Las que necesitan Postgres van en `tests/integration/`; el resto usa dobles en m
 ## 14. Definición de terminado
 
 - [x] `RegistryService`, `BlobStore`, `EvalPort`, `SandboxPort`, `Judge`, `PostgresRegistry` y `SnapshotRegistry` exportados y tipados (`agent_core/registry/__init__.py`; `mypy` strict en verde).
-- [x] T-REG-01 a T-REG-27 en verde (suite completa con Postgres: 2956 pasaron, 1 omitida por `AGENT_CORE_PERF`, ajena al registry). Trazabilidad abajo.
+- [x] T-REG-01 a T-REG-27 en verde (suite completa con Postgres: 3909 pasaron, 1 omitida por `AGENT_CORE_PERF`, ajena al registry; al 2026-10-02). Trazabilidad abajo.
 - [x] `lint-imports`, `mypy` y `ruff` en verde.
 - [x] API montada en M9 (`registry_extension`, `ApiDeps.extensions`) y CLI (`agentcore registry …`).
 - [x] La composición del motor usa `PostgresRegistry` (`agentcore serve`, 2026-09-30, tema #13). `serve --registry-api` monta `registry_extension` con evaluador real y el verificador del staff (`registry_extension(service, verifier)`), spec `2026-09-30-serve-registry-api-design.md`.

@@ -152,12 +152,12 @@ Se congela la candidata **C** y se identifica la base **B** (puede no existir).
    - `gate`: C no puede ser peor que B por más del `noise_margin`, aplicado en la dirección de la métrica (`higher_is_better`).
    - Un escenario que pasaba en B y no pasa en C falla el gate. Un escenario de la suite de B sin resultado en la corrida de B o de C falla (fail-closed); solo un fallo explícito en B lo exime.
 2. **Vara nueva.** Se corre la suite de C. Toda métrica o escenario nuevo o modificado debe superar su `floor` (un máximo si la métrica es de menor-es-mejor). Si la métrica existía sin cambios en B, debe además superar a B.
-3. **Guardarraíles de plataforma** (§7) se evalúan siempre y deben valer 0 en la candidata, medidos en la corrida de la suite nueva. Si hay base, además deben estar medidos en las dos corridas de la suite vieja (B y C) y valer 0 también en la corrida vieja de C (no basta con no empeorar frente a la base: una fuga medida en C no pasa); **un guardarraíl de plataforma sin medir en cualquiera de las dos corridas viejas falla** (fail-closed). Sin medir en la suite nueva también falla.
+3. **Guardarraíles de plataforma** (§7) se evalúan siempre y deben valer 0 en la candidata, medidos en la corrida de la suite nueva. Si la base registró su suite, además deben estar medidos en las dos corridas de la suite vieja (B y C) y valer 0 también en la corrida vieja de C (no basta con no empeorar frente a la base: una fuga medida en C no pasa); **un guardarraíl de plataforma sin medir en cualquiera de las dos corridas viejas falla** (fail-closed). Sin medir en la suite nueva también falla.
 4. **Veredicto** = AND de todo lo anterior. Cada métrica se reporta por separado con valor, base y umbral. No hay puntaje compuesto. Si una métrica de B no puede calcularse sobre C, el gate falla.
 5. **Sin B:** solo se aplica la vara nueva contra los `floor`.
 6. `failed_infra`, sin excepción manual del gate y propuesta que vuelve a `draft` ante un fallo: sin cambios respecto al registry §5.2.
 
-**Corridas** (`agent_core/registry/evaluation/evaluator.py`): `cand_on_new` siempre; `base_on_old` y `cand_on_old` si la base registró su suite (`releases.eval_suite_refs`); si la suite vieja es igual a la nueva, la candidata se corre una vez y se mide con las definiciones de cada vara. **Base sin suite registrada** (D3): la vara vieja se reduce a las métricas de la base, sin suite que correr; solo se aplican la vara nueva contra los `floor` y la plataforma, y la clasificación de §6.2 sí compara las métricas.
+**Corridas** (`agent_core/registry/evaluation/evaluator.py`): `cand_on_new` siempre; `base_on_old` y `cand_on_old` si la base registró su suite (las suites registradas con la release, `reg_release_eval_suites`); si la suite vieja es igual a la nueva, la candidata se corre una vez y se mide con las definiciones de cada vara. **Base sin suite registrada** (D3): la vara vieja se reduce a las métricas de la base, sin suite que correr; solo se aplican la vara nueva contra los `floor` y la plataforma, y la clasificación de §6.2 sí compara las métricas.
 
 **Cálculo** (D4, `scoring.py` y `metric_eval.py`): cada métrica se calcula sobre todos los eventos de la corrida de la suite juntos; un escenario pasa si pasa en todas sus repeticiones; `GateItem` reporta `noise_margin` (vara vieja) y `floor` (vara nueva y plataforma) por separado (D8). Una métrica `judge`, con `group_by` o sobre eventos `registry.*` no se mide en el gate (D5): queda fuera de la medición y, si es `gate` o `guardrail`, el gate falla (§13.9). Una aserción sobre un evento que el evaluador no observa nunca se cumple.
 
@@ -277,7 +277,7 @@ Este trabajo especifica 1 y 2 y deja interfaces para 3 y 4. La pieza 2 está int
 
 **ADR 0018:** punto 4 (métrica principal única) y punto 9 (`eval_suite`) quedan enmendados por el ADR 0020.
 
-**`TEMAS-ABIERTOS-PENDIENTES.md`:** #11 apunta a este spec; nuevo #20 para el conector de datasets reales (#13 en la rama `feat/eval-metrics`).
+**`TEMAS-ABIERTOS-PENDIENTES.md`:** #11 apunta a este spec; nuevo #20 para el conector de datasets reales (#20 en `TEMAS-ABIERTOS-PENDIENTES.md`).
 
 ## 13. Abiertos
 
