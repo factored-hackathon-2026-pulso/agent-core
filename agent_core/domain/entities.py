@@ -14,10 +14,19 @@ from agent_core.domain.base import EntityId, ExactVersion, Locale, Model, Sha256
 from agent_core.domain.errors import InvalidRuntimeRef
 from agent_core.domain.identity import AuthLevel, PrincipalType
 from agent_core.domain.json import JsonValue
+from agent_core.domain.knowledge import (
+    MAX_PAGE_SOURCE_REFS,
+    Audience,
+    PagePath,
+    PageSourceRef,
+    PageStatus,
+    check_page_path,
+)
 from agent_core.domain.metrics import MetricDef
 from agent_core.domain.nodes import Node, PositiveTimedelta
 from agent_core.domain.outcomes import Mode
 from agent_core.domain.refs import EntityKind, EntityRef, RefSpec, require_exact_refs
+from agent_core.domain.transfer import RoutingCard, TransferContract
 
 # Dinero y tarifas: `Decimal` finito (nunca `float`; NaN e Infinity se rechazan).
 PositiveMoney = Annotated[Decimal, Field(gt=0, allow_inf_nan=False)]
@@ -70,6 +79,8 @@ class Agent(Model):
     default_target_queue: str = Field(min_length=1)
     max_repair_turns_per_run: PositiveInt = 8
     metrics: list[MetricDef] = Field(default_factory=list, max_length=32)  # ADR 0020; el motor no las ejecuta
+    routing: RoutingCard | None = None  # without a card the agent is in no directory (ADR 0021)
+    accepts: TransferContract | None = None  # without a contract the agent receives no transfers
 
     @model_validator(mode="after")
     def _default_locale_supported(self) -> "Agent":
@@ -143,19 +154,7 @@ class InjectionRuleset(Model):
     rules: list[InjectionRule]
 
 
-# Ruta relativa de una página (`ruta` de `ruta@snapshot#ancla`): ASCII, sin `..`, `//`, `/` inicial ni final.
-PagePath = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9_./-]{0,254}$")]
-
 _MAX_SNAPSHOT_PAGES = 10_000
-_MAX_PAGE_SOURCE_REFS = 50
-_MAX_PAGE_SOURCE_REF_CHARS = 500
-_SourceRef = Annotated[str, StringConstraints(min_length=1, max_length=_MAX_PAGE_SOURCE_REF_CHARS)]
-
-
-def _check_page_path(path: str) -> str:
-    if path.endswith("/") or "//" in path or ".." in path.split("/"):
-        raise ValueError("ruta de página no segura")
-    return path
 
 
 class KnowledgePage(Model):
@@ -164,20 +163,20 @@ class KnowledgePage(Model):
     El texto vive en el `BlobStore` del registry, direccionado por `hash`."""
     path: PagePath
     hash: Sha256Hex
-    audience: Literal["public", "internal", "agent_only"]
-    status: Literal["draft", "approved"]
+    audience: Audience
+    status: PageStatus
     approved_by: str | None = Field(default=None, min_length=1)
     lang: Locale
     translation_of: PagePath | None = None
     valid_from: date | None = None
     valid_to: date | None = None
-    source_refs: list[_SourceRef] = Field(default_factory=list, max_length=_MAX_PAGE_SOURCE_REFS)
+    source_refs: list[PageSourceRef] = Field(default_factory=list, max_length=MAX_PAGE_SOURCE_REFS)
 
     @model_validator(mode="after")
     def _coherent(self) -> "KnowledgePage":
-        _check_page_path(self.path)
+        check_page_path(self.path)
         if self.translation_of is not None:
-            _check_page_path(self.translation_of)
+            check_page_path(self.translation_of)
         if (self.status == "approved") != (self.approved_by is not None):
             raise ValueError("una página está aprobada si y solo si tiene approved_by")
         if self.valid_from is not None and self.valid_to is not None and self.valid_from > self.valid_to:
@@ -279,9 +278,12 @@ class ModelProfile(Model):
 
 
 class RiskClass(StrEnum):
-    """Clase de riesgo de una tool; determina si escribe y qué confirmación exige (M0 §2.4)."""
+    """Clase de riesgo de una tool; determina si escribe y qué confirmación exige (M0 §2.4).
+
+    `write_draft` es la escritura confinada a un borrador del registry: va sin `confirm` (ADR 0019)."""
     read = "read"
     compute = "compute"
+    write_draft = "write_draft"
     write_reversible = "write_reversible"
     write_irreversible = "write_irreversible"
     money_movement = "money_movement"
