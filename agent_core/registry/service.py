@@ -21,7 +21,7 @@ from agent_core.registry.entities import AnyEntity, content_hash, decode_entity,
 from agent_core.registry.errors import IntegrityError, RegistryError, RegistryErrorCode
 from agent_core.registry.evaluation.ports import EvalPort, EvalRequest, EvalTarget
 from agent_core.registry.evaluation.report import EvalReport
-from agent_core.registry.evaluation.yardstick import Yardstick
+from agent_core.registry.evaluation.yardstick import Yardstick, classify_yardstick_change
 from agent_core.registry.models import (
     AliasChange,
     Approval,
@@ -46,8 +46,14 @@ from agent_core.registry.models import (
 from agent_core.registry.roles import actor_id, require_admin, require_approver, require_constructor
 from agent_core.registry.snapshot import SnapshotRegistry
 from agent_core.registry.store import RegistryStore, RegistryTx
-from agent_core.registry.suite import EvalSuite
-from agent_core.registry.validation import DEFAULT_LIMITS, Limits, check_draft_limits, validate_candidate
+from agent_core.registry.suite import EvalSuite, suite_problems
+from agent_core.registry.validation import (
+    DEFAULT_LIMITS,
+    Limits,
+    check_draft_limits,
+    suite_violations,
+    validate_candidate,
+)
 from agent_core.registry.yaml_io import dump_entities, dump_release, load_seed
 
 
@@ -301,6 +307,13 @@ class RegistryService:
             if cand.candidate_hash != p.candidate_hash:
                 raise RegistryError(RegistryErrorCode.candidate_changed, "la candidata cambió desde freeze")
             suite = self._suite(tx, cand, suite_id, suite_version)
+            agent = next((e for e in cand.entities if isinstance(e, Agent) and e.id == cand.agent_id), None)
+            problems = suite_problems(agent, suite) if agent is not None else []
+            if problems:
+                raise RegistryError(RegistryErrorCode.validation_failed,
+                                    f"la suite {suite.id} tiene {len(problems)} problemas",
+                                    payload=_violations_payload(  # type: ignore[arg-type]
+                                        suite_violations(suite, problems)))
             base_release, base_entities = self._base(tx, p.base_release_id)
             old: Yardstick | None = None
             if p.base_release_id is not None:
@@ -313,6 +326,7 @@ class RegistryService:
         new = Yardstick(metrics=_agent_metrics(cand.entities, cand.agent_id), suite=suite)
         report = self._evaluator.run(EvalRequest(candidate=candidate_target, new=new, base=base_target,
                                                  old=old))  # outside the transaction
+        report = report.model_copy(update={"yardstick_changes": classify_yardstick_change(old, new)})
 
         with self._store.transaction() as tx:
             p = self._proposal(tx, proposal_id)

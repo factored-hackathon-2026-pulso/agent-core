@@ -4,13 +4,24 @@ import json
 import shutil
 from pathlib import Path
 
+import pytest
+
+from agent_core.registry.errors import RegistryError, RegistryErrorCode
 from agent_core.registry.memory import InMemoryRegistryStore
-from agent_core.registry.models import VersionRef
+from agent_core.registry.models import Origin, VersionRef
 from agent_core.registry.service import RegistryService
 from testing.fakes.clock import FakeClock
 from testing.fakes.ids import FakeIds
-from tests.registry.helpers import REGISTRY_DEMO, admin, prompt_draft, suite_content, suite_draft
-from tests.registry.service_world import FakeEvaluator, World, publish_cycle
+from tests.registry.eval_support import metric
+from tests.registry.helpers import AGENT, REGISTRY_DEMO, admin, prompt_draft, suite_content, suite_draft
+from tests.registry.service_world import (
+    ANA,
+    FakeEvaluator,
+    World,
+    agent_with_metrics,
+    loosening_evaluated,
+    publish_cycle,
+)
 
 SUITE_REF = VersionRef(kind="eval_suite", id="disputas-suite", version="1.0.0")
 
@@ -49,3 +60,45 @@ def test_import_records_the_seed_suite(tmp_path: Path) -> None:
     service = RegistryService(InMemoryRegistryStore(), FakeEvaluator(), FakeClock(), FakeIds())
     [detail] = service.import_seed(admin(), root)
     assert detail.eval_suite_refs == [SUITE_REF]
+
+
+def test_validate_reports_problems_of_a_drafted_suite() -> None:  # T-EVAL-11
+    w = World()
+    p = w.service.create_proposal(ANA, AGENT, Origin.manual, "métrica sin umbral")
+    w.service.put_draft(ANA, p.proposal_id, [agent_with_metrics(w, "1.1.0", metric("m_gate")), suite_draft()],
+                        expected_rev=0)
+    report = w.service.validate(ANA, p.proposal_id)
+    found = {(v.rule, v.message.split(":")[0]) for v in report.violations}
+    assert ("REG-SUITE", "missing_threshold") in found
+
+
+def test_evaluate_rejects_a_published_suite_with_problems() -> None:  # T-EVAL-11
+    w = World()
+    publish_cycle(w, [prompt_draft(), suite_draft()])
+    p = w.service.create_proposal(ANA, AGENT, Origin.manual, "métrica nueva sin umbral")
+    drafts = [agent_with_metrics(w, "1.1.0", metric("m_gate"))]
+    w.service.put_draft(ANA, p.proposal_id, drafts, expected_rev=0)
+    w.service.freeze(ANA, p.proposal_id)
+    calls = len(w.evaluator.requests)
+    with pytest.raises(RegistryError) as info:
+        w.service.evaluate(ANA, p.proposal_id, "disputas-suite")
+    assert info.value.code is RegistryErrorCode.validation_failed
+    assert info.value.payload[0]["message"].startswith("missing_threshold")  # type: ignore[index,call-overload]
+    assert len(w.evaluator.requests) == calls  # nothing was evaluated
+
+
+def test_the_report_carries_the_loosening() -> None:  # T-EVAL-08 in the service
+    w = World()
+    pid, _ = loosening_evaluated(w)
+    last = w.service.get_proposal(pid).last_eval
+    assert last is not None and [c.kind for c in last.report.yardstick_changes] == ["repetitions_lowered"]
+
+
+def test_tightening_carries_no_loosening() -> None:
+    w = World()
+    publish_cycle(w, [prompt_draft(), suite_draft()])
+    p = w.service.create_proposal(ANA, AGENT, Origin.manual, "tighten")
+    w.service.put_draft(ANA, p.proposal_id, [prompt_draft(version="1.2.0", text="Otra variante."),
+                                              suite_draft("1.1.0", repetitions=3)], expected_rev=0)
+    w.service.freeze(ANA, p.proposal_id)
+    assert w.service.evaluate(ANA, p.proposal_id, "disputas-suite").yardstick_changes == []

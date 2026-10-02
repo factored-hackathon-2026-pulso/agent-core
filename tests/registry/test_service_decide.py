@@ -18,7 +18,17 @@ from agent_core.registry.suite import EvalSuite
 from testing.builders import NOW
 from testing.fakes.clock import FakeClock
 from testing.fakes.ids import FakeIds
-from tests.registry.helpers import AGENT, admin, bot, demo_pinned, docs, human, prompt_draft, suite_content
+from tests.registry.helpers import (
+    AGENT,
+    admin,
+    bot,
+    demo_pinned,
+    docs,
+    human,
+    prompt_draft,
+    suite_content,
+    suite_draft,
+)
 from tests.registry.service_world import SUITE, FakeEvaluator, World, publish_cycle, seed_demo
 
 ANA = human()
@@ -332,6 +342,9 @@ _METRIC = {"id": "resolved_count", "description": "resolved runs", "role": "gate
            "expr": {"event": "engine.run_closed", "aggregation": "count", "window": "scenario"}}
 
 
+_THRESHOLDED = suite_draft(thresholds={"resolved_count": {"noise_margin": "0"}})  # the gate metric needs one
+
+
 def _agent_draft_with_metric() -> EntityDraft:
     agent = next(e for e in demo_pinned().entities if e.id == AGENT)
     content = agent.model_dump(mode="json") | {"version": "1.0.1", "metrics": [_METRIC]}
@@ -349,7 +362,7 @@ def _evaluate_request(service: RegistryService, evaluator: FakeEvaluator,
 
 def test_evaluate_builds_the_request_with_a_base() -> None:
     w = World()
-    request = _evaluate_request(w.service, w.evaluator, [_agent_draft_with_metric(), SUITE])
+    request = _evaluate_request(w.service, w.evaluator, [_agent_draft_with_metric(), _THRESHOLDED])
     assert request.candidate.label == "candidate" and request.candidate.release.id != "rel-demo"
     assert request.base is not None and request.base.label == "base" and request.base.release.id == "rel-demo"
     assert [m.id for m in request.new.metrics] == ["resolved_count"]  # the candidate agent's metrics
@@ -376,7 +389,7 @@ def test_evaluate_without_a_base_has_no_old_yardstick() -> None:
     service = RegistryService(store, evaluator, FakeClock(), FakeIds())
     others = [EntityDraft(kind=version_ref(e).kind, content=e.model_dump(mode="json"), docs=docs())
               for e in demo_pinned().entities if e.id not in (AGENT, "injection-rules")]
-    request = _evaluate_request(service, evaluator, [*others, _agent_draft_with_metric(), SUITE])
+    request = _evaluate_request(service, evaluator, [*others, _agent_draft_with_metric(), _THRESHOLDED])
     assert request.base is None and request.old is None
     assert [m.id for m in request.new.metrics] == ["resolved_count"]
     assert request.new.suite is not None and request.new.suite.id == "disputas-suite"

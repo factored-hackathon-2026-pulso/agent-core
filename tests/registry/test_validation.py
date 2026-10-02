@@ -62,3 +62,9 @@ def test_draft_content_over_size_limit_is_violation() -> None:  # revisión fina
     out = check_draft_limits([prompt_draft(text="x" * 5000)], Limits(max_entity_bytes=1000))
     assert [v.rule for v in out] == ["REG-LIMIT"] and out[0].path == "prompt:p/resumen_radicado"
     assert check_draft_limits([prompt_draft()], Limits(max_entity_bytes=1000)) == []
+
+
+def test_drafted_suite_problems_are_reg_suite_violations() -> None:  # evaluation spec section 5
+    pinned, cand = _cand(prompt_draft(), suite_draft(thresholds={"fantasma": {"noise_margin": "0"}}))
+    out = validate_candidate(cand, base_versions=_base_versions(pinned), drafted=set())
+    assert [(v.rule, v.message.split(":")[0]) for v in out] == [("REG-SUITE", "unknown_threshold_metric")]
