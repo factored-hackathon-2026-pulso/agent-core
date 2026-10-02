@@ -26,6 +26,7 @@ from agent_core.domain import (
     Release,
     RunState,
     TranscriptRef,
+    TransferRejectReason,
 )
 from agent_core.guards import GuardResult
 from agent_core.interpreter import StepContext
@@ -149,7 +150,7 @@ class TransferOutcome:
     outcome: Literal["transferred", "rejected"]
     to_agent: str | None = None
     to_release_id: str | None = None  # only with `transferred`
-    reason_code: str | None = None  # only with `rejected`
+    reason_code: TransferRejectReason | None = None  # only with `rejected`
 
 
 class TransferSpan(Protocol):

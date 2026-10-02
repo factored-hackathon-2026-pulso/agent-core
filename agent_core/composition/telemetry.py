@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from opentelemetry import context as otel_context
+from opentelemetry import trace
 from opentelemetry.context import Context
 from opentelemetry.trace import Link, Span, SpanContext
 
@@ -139,8 +140,14 @@ class OtelTurnTelemetry:
                          "agentcore.entry": scope.entry, "agentcore.principal_type": scope.principal_type,
                          "agentcore.locale": scope.locale}) as active,
         ):
+            # The context a transfer's target opens under. With a request span above the origin it is that
+            # context (siblings, F10). With none, the target would start a new trace: hang it from the
+            # origin's `invoke_agent` instead so both runs share the trace.
+            handle_parent = parent
+            if not trace.get_current_span(parent).get_span_context().is_valid:
+                handle_parent = trace.set_span_in_context(active)
             try:
-                yield _OtelTurnSpan(active, scope, parent)
+                yield _OtelTurnSpan(active, scope, handle_parent)
             except EngineError as exc:  # the code only: the detail may carry run data (rule 6)
                 tel.set_attributes(active, {"agentcore.problem_code": exc.code.value})
                 raise
