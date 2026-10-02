@@ -17,6 +17,7 @@ from tests.registry.helpers import (
     AGENT,
     REGISTRY_DEMO,
     admin,
+    bot,
     docs,
     prompt_draft,
     suite_content,
@@ -148,3 +149,43 @@ def test_a_proposal_cannot_edit_platform_guardrails(draft: EntityDraft) -> None:
         w.service.put_draft(ANA, p.proposal_id, [draft], expected_rev=0)
     assert info.value.code is RegistryErrorCode.forbidden_role
     assert w.service.get_proposal(p.proposal_id).changes == []
+
+
+def test_published_loosening_only_affects_later_proposals() -> None:  # T-EVAL-09
+    w = World()
+    pid, h = loosening_evaluated(w)
+    own = w.evaluator.requests[-1].old
+    assert own is not None and own.suite is not None and own.suite.version == "1.0.0"  # old yardstick
+    w.service.approve(ANA, pid, h, accept_yardstick_loosened=True)
+    loosened = w.service.publish(ANA, pid, "k-loosen").release_id
+    assert [str(r) for r in w.service.get_release(loosened).eval_suite_refs] == [
+        "eval_suite:disputas-suite@1.1.0"]
+    later = w.service.create_proposal(ANA, AGENT, Origin.manual, "later")
+    w.service.put_draft(ANA, later.proposal_id, [prompt_draft(version="1.3.0", text="Una más.")],
+                        expected_rev=0)
+    w.service.freeze(ANA, later.proposal_id)
+    report = w.service.evaluate(ANA, later.proposal_id, "disputas-suite")
+    old = w.evaluator.requests[-1].old
+    assert old is not None and old.suite is not None and old.suite.version == "1.1.0"
+    assert report.yardstick_changes == []
+
+
+def test_builder_cannot_decide_even_with_its_own_suite_and_metrics() -> None:  # T-EVAL-16
+    w = World()
+    builder = bot()
+    p = w.service.create_proposal(builder, AGENT, Origin.builder_chat, "builder proposal")
+    drafts = [agent_with_metrics(w, "1.1.0", metric("m_gate")),
+              suite_draft(thresholds={"m_gate": {"noise_margin": "0", "floor": "0"}})]
+    w.service.put_draft(builder, p.proposal_id, drafts, expected_rev=0)
+    view = w.service.freeze(builder, p.proposal_id)
+    assert w.service.evaluate(builder, p.proposal_id, "disputas-suite").verdict == "pass"
+    for call in (
+        lambda: w.service.approve(builder, p.proposal_id, view.candidate_hash,
+                                  accept_yardstick_loosened=True),
+        lambda: w.service.publish(builder, p.proposal_id, "k"),
+        lambda: w.service.promote(builder, AGENT, "prod", "rel-demo"),
+        lambda: w.service.revoke(builder, "rel-demo", "x"),
+    ):
+        with pytest.raises(RegistryError) as info:
+            call()
+        assert info.value.code is RegistryErrorCode.forbidden_role
