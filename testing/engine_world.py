@@ -183,9 +183,11 @@ class Driver:
     """Aplica operaciones (`start`, `turn`, `confirm`) a un motor: el mismo código al grabar y al reproducir.
     Lo que se graba en `ops` es exactamente lo que el replay vuelve a aplicar.
 
-    - `{"op": "start", "lang"?, "auth"?}` crea el run (primer turno incluido).
-    - `{"op": "turn", "text", "auth"?}` es un turno de texto.
-    - `{"op": "confirm", "answer": "yes"|"no", "auth"?}` responde la última confirmación pendiente."""
+    - `{"op": "start", "lang"?, "auth"?, "subject"?}` crea el run (primer turno incluido). `subject` es
+      `{"kind", "ref"}`; sin él el run no tiene sujeto.
+    - `{"op": "turn", "text", "auth"?, "client_turn_id"?}` es un turno de texto.
+    - `{"op": "confirm", "answer": "yes"|"no", "auth"?, "client_turn_id"?}` responde la última confirmación
+      pendiente. Sin `client_turn_id` el turno usa `c-<n>`."""
 
     engine: TurnEngine
     agent: str = "atencion"  # entry agent of `start`; not written into the recorded op
@@ -205,7 +207,8 @@ class Driver:
             lang = op.get("lang")
             run_input = RunInput.model_validate({
                 "agent": AgentSelector(id=self.agent, alias="prod"), "idempotency_key": "key-1",
-                **({"lang": lang} if lang is not None else {})})
+                **({"lang": lang} if lang is not None else {}),
+                **({"subject": op["subject"]} if "subject" in op else {})})
             result = self.engine.start_run(principal, None, run_input)
             self.session_id, self.run_id = result.session_id, result.run_id
             turn = result.first_turn
@@ -218,7 +221,8 @@ class Driver:
                 confirm = ConfirmAnswer(token=self.confirmation_token, answer=op["answer"])  # type: ignore[arg-type]
             turn = self.engine.handle_turn(principal, None, TurnInput(
                 session_id=self.session_id, text=str(op.get("text", "")) if confirm is None else "",
-                channel="web", client_turn_id=f"c-{self._turns}", confirm=confirm))
+                channel="web", confirm=confirm,
+                client_turn_id=str(op.get("client_turn_id", f"c-{self._turns}"))))
             result = turn
         if turn is not None:
             self.confirmation_token = turn.confirmation.token if turn.confirmation is not None else None
