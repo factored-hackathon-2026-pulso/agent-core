@@ -75,7 +75,7 @@ Lo mismo corre el CI en `.github/workflows/ci.yml`.
   - `agentcore.api.request`: uno por request HTTP (método, status y tipo de error);
   - `invoke_agent`: uno por turno, hijo del request, con `run_id`, `turn_id`, `session_id`, release y agente;
   - `agentcore.decide`, `agentcore.rule` y `execute_tool`: hijos del turno, derivados de los eventos de auditoría con los tiempos de su `ts` y `latency_ms`;
-  - `chat`: una llamada al LLM, desde el gateway;
+  - `chat {modelo}` (el modelo del perfil): una llamada al LLM, desde el gateway;
   - `agentcore.transfer`: la validación de una transferencia entre agentes. El `invoke_agent` del agente destino lleva un *span link* a este span.
 - Logs: una línea JSON por registro, a stderr, nivel `INFO`, con `timestamp`, `level`, `logger`, `message`, `exc_type` (solo el tipo de una excepción, nunca su texto ni su stack) y, cuando aplica, los campos de correlación `run_id`, `turn_id`, `session_id`, `agentcore.release`, `agentcore.agent` y `trace_id`. El `trace_id` es el mismo que el de la traza.
 - El `trace_id` de cada respuesta de la API (y de los errores `problem+json`) es el de la traza del request: con él se busca la traza en el backend. Sin endpoint OTLP sigue habiendo un `trace_id` (generado por el servidor) y los logs siguen correlacionados, pero no hay trazas.
@@ -87,7 +87,7 @@ Lo mismo corre el CI en `.github/workflows/ci.yml`.
 - Logs y métricas por OTLP: solo se exportan trazas.
 - El log de acceso de uvicorn (`access_log=False`) ni el mensaje o el stack de una excepción no controlada.
 
-**Variables admitidas** (el soporte es un subconjunto del estándar; un valor inválido hace salir al servidor con código 2 y nombra la variable, nunca el valor de las cabeceras):
+**Variables admitidas** (el soporte es un subconjunto del estándar; un valor inválido hace salir al servidor con código 2 y nombra la variable, nunca el valor de las cabeceras; la excepción es `OTEL_RESOURCE_ATTRIBUTES`, cuyas entradas mal formadas —sin `=` o con clave vacía— se ignoran en silencio, como hace el SDK):
 
 | Variable | Valores |
 |---|---|
@@ -100,7 +100,7 @@ Lo mismo corre el CI en `.github/workflows/ci.yml`.
 | `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES` | recurso; `service.name` es `agentcore` por defecto |
 | `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG` | los seis samplers estándar (por defecto `parentbased_always_on`); el argumento es la razón de `traceidratio`, entre 0 y 1 |
 
-El certificado, la compresión y el timeout del exportador los lee el SDK del entorno del proceso. El nivel de log (`INFO`) es fijo y `openai`, `httpx` y `httpcore` se silencian por debajo de `WARNING`.
+El certificado, la compresión y el timeout del exportador los lee el SDK del entorno del proceso. Al apagar el servidor se vacían los spans pendientes: con el colector inalcanzable el cierre puede tardar hasta unos 10 s, y un segundo Ctrl-C en ese lapso lo interrumpe con un traceback de Python en texto plano (no JSON; no incluye las cabeceras ni otros secretos). El nivel de log (`INFO`) es fijo y `openai`, `httpx` y `httpcore` se silencian por debajo de `WARNING`.
 
 **Con Phoenix (local)**
 
