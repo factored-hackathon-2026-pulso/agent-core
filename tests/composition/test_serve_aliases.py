@@ -52,9 +52,9 @@ def test_an_alias_without_endpoint_is_named_with_its_profile() -> None:
     assert "otro" in w and "p1@1.0.0" in w and "atencion" in w
 
 
-def test_an_empty_key_variable_is_a_warning_that_names_the_variable_not_its_value() -> None:
+def test_an_empty_key_variable_is_a_warning_that_names_the_alias_not_the_variable() -> None:
     (w,) = _warn(_registry(_profile("p1", "openrouter")), ("atencion",), {"OR_KEY": "  "})
-    assert "OR_KEY" in w and "openrouter" in w
+    assert "openrouter" in w and "OR_KEY" not in w  # the env variable name is not logged (4f7743d)
 
 
 def test_an_agent_without_prod_release_is_a_warning() -> None:
