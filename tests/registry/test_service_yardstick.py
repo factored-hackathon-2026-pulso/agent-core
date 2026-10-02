@@ -179,13 +179,32 @@ def test_builder_cannot_decide_even_with_its_own_suite_and_metrics() -> None:  #
     w.service.put_draft(builder, p.proposal_id, drafts, expected_rev=0)
     view = w.service.freeze(builder, p.proposal_id)
     assert w.service.evaluate(builder, p.proposal_id, "disputas-suite").verdict == "pass"
-    for call in (
+    calls = (
         lambda: w.service.approve(builder, p.proposal_id, view.candidate_hash,
                                   accept_yardstick_loosened=True),
         lambda: w.service.publish(builder, p.proposal_id, "k"),
         lambda: w.service.promote(builder, AGENT, "prod", "rel-demo"),
         lambda: w.service.revoke(builder, "rel-demo", "x"),
-    ):
+    )
+    before = _observable_state(w, p.proposal_id, view.candidate_hash)
+    assert before["state"] is ProposalState.evaluated
+    assert before["approval"] is None and before["events"]
+    for call in calls:
         with pytest.raises(RegistryError) as info:
             call()
         assert info.value.code is RegistryErrorCode.forbidden_role
+        assert _observable_state(w, p.proposal_id, view.candidate_hash) == before  # nothing was written
+
+
+def _observable_state(w: World, proposal_id: str, candidate_hash: str) -> dict[str, object]:
+    """Everything a refused decision must leave untouched: proposal, approval, aliases, release, events."""
+    with w.store.transaction() as tx:
+        return {
+            "state": w.service.get_proposal(proposal_id).proposal.state,
+            "approval": tx.latest_approval(proposal_id, candidate_hash),
+            "prod": tx.get_alias(AGENT, "prod"),
+            "staging": tx.get_alias(AGENT, "staging"),
+            "release_status": tx.release_status("rel-demo"),
+            "events": len(tx.events()),
+            "publish_key": tx.get_publish_key("k"),
+        }
