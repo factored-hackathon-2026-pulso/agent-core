@@ -25,7 +25,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "Métrica calificada por un juez LLM: el único tipo no determinista (ADR 0020).",
+  "description": "Metric graded by an LLM judge: the only non-deterministic kind (ADR 0020).",
   "properties": {
     "judge_profile": {
       "$ref": "#/$defs/EntityRef"

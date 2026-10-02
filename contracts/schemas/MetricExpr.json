@@ -3,7 +3,7 @@
   "$defs": {
     "MetricExpr": {
       "additionalProperties": false,
-      "description": "Métrica determinista sobre eventos: evento, filtro, agregación, ventana y agrupación.",
+      "description": "Deterministic metric over events: event, filter, aggregation, window and grouping.",
       "properties": {
         "aggregation": {
           "enum": [
@@ -106,7 +106,7 @@
     },
     "Predicate": {
       "additionalProperties": false,
-      "description": "Filtro sobre un campo del catálogo de eventos.",
+      "description": "Filter on a field of the event catalog.",
       "properties": {
         "field": {
           "maxLength": 80,

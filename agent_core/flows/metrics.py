@@ -1,7 +1,7 @@
-"""Validación del DSL de métricas de un agente contra el catálogo cerrado de eventos (ADR 0020).
+"""Validation of an agent's metrics DSL against the closed event catalog (ADR 0020).
 
-Reglas MT-01 a MT-06. Total y determinista: ninguna entrada hace que lance. Todo lo que se repite en un
-mensaje o en una ruta se acota con `clip`.
+Rules MT-01 to MT-06. Total and deterministic: no input makes it raise. Anything echoed in a
+message or a path is bounded with `clip`.
 """
 
 from agent_core.domain import (
@@ -78,7 +78,7 @@ def _metric_problems(metric: MetricDef, at: str, reg: RegistryView) -> list[_Pro
 
 
 def validate_agent_metrics(agent: Agent, where: str, reg: RegistryView) -> list[Violation]:
-    """MT-01 a MT-06 sobre `agent.metrics`. `where` es el origen del agente, como en `validate_agent`."""
+    """MT-01 to MT-06 over `agent.metrics`. `where` is the agent's origin, as in `validate_agent`."""
     found: list[_Problem] = []
     seen: set[str] = set()
     for index, metric in enumerate(agent.metrics):

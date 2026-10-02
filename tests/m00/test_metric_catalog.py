@@ -14,7 +14,7 @@ from agent_core.domain import (
     predicate_problems,
 )
 
-# Nombres de campo que nunca pueden ser medibles: son datos de cliente o texto libre (regla 6 de CLAUDE.md).
+# Field names that can never be measurable: they are customer data or free text (CLAUDE.md rule 6).
 FORBIDDEN_FIELDS = {"args", "text", "email", "name", "phone", "document_id", "account_number", "message"}
 
 
@@ -27,7 +27,7 @@ def _engine_event_classes() -> dict[str, type[EngineEvent]]:
 
 
 def _unwrap(annotation: object) -> type[BaseModel] | None:
-    """El modelo detrás de `X` o `X | None`."""
+    """The model behind `X` or `X | None`."""
     if isinstance(annotation, type) and issubclass(annotation, BaseModel):
         return annotation
     if typing.get_origin(annotation) in (typing.Union, types.UnionType):
@@ -102,7 +102,7 @@ def _pred(field: str, op: str, value: object) -> Predicate:
 
 def test_predicate_problems_valid_and_unknown_event() -> None:
     assert predicate_problems("engine.agent_step", [_pred("kind", "eq", "x"), _pred("step", "ge", 2)]) == []
-    # el evento fuera del catálogo lo reporta quien llama
+    # an event outside the catalog is reported by the caller
     assert predicate_problems("engine.nope", [_pred("kind", "eq", "x")]) == []
 
 

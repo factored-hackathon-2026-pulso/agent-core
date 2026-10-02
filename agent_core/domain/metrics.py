@@ -1,7 +1,7 @@
-"""Métricas declaradas por agente (ADR 0020): un DSL declarativo sobre un catálogo cerrado de eventos.
+"""Per-agent declared metrics (ADR 0020): a declarative DSL over a closed catalog of events.
 
-El motor no ejecuta nada de esto en runtime: M1 lo valida contra el catálogo y la evaluación y la analítica
-lo calculan sobre eventos.
+The engine executes none of this at runtime: M1 validates it against the catalog, and evaluation and
+analytics compute it over events.
 """
 
 from decimal import Decimal
@@ -19,15 +19,15 @@ Scalar = str | bool | int | FiniteDecimal
 PredicateOp = Literal["eq", "ne", "in", "lt", "le", "gt", "ge"]
 MetricRole = Literal["guardrail", "gate", "monitor"]
 Aggregation = Literal["count", "sum", "avg", "percentile", "rate"]
-# Una ventana sin cota no se acepta: o es el alcance de un escenario o de un run, o una duración positiva.
+# An unbounded window is not accepted: it is a scenario or run scope, or a positive duration.
 MetricWindow = Literal["scenario", "run"] | PositiveTimedelta
 
-# Los ids de esta familia son de la plataforma (guardarraíles universales): ningún agente puede declararlos.
+# Ids in this family belong to the platform (universal guardrails): no agent may declare them.
 PLATFORM_METRIC_PREFIX = "platform_"
 
 
 class Predicate(Model):
-    """Filtro sobre un campo del catálogo de eventos."""
+    """Filter on a field of the event catalog."""
     field: str = Field(min_length=1, max_length=80)
     op: PredicateOp
     value: Scalar | list[Scalar]
@@ -42,7 +42,7 @@ class Predicate(Model):
 
 
 class MetricExpr(Model):
-    """Métrica determinista sobre eventos: evento, filtro, agregación, ventana y agrupación."""
+    """Deterministic metric over events: event, filter, aggregation, window and grouping."""
     event: str = Field(min_length=1, max_length=80)
     aggregation: Aggregation
     where: list[Predicate] = Field(default_factory=list, max_length=8)
@@ -72,20 +72,20 @@ class MetricExpr(Model):
 
 
 class JudgeExpr(Model):
-    """Métrica calificada por un juez LLM: el único tipo no determinista (ADR 0020)."""
+    """Metric graded by an LLM judge: the only non-deterministic kind (ADR 0020)."""
     judge_profile: EntityRef
     rubric: str = Field(min_length=1, max_length=2000)
     target_event: str = Field(min_length=1, max_length=80)
 
 
 class AlertThreshold(Model):
-    """Umbral de alerta de producción. No es el umbral del gate."""
+    """Production alert threshold. It is not the gate threshold."""
     breach_when: Literal["above", "below"]
     value: FiniteDecimal
 
 
 class MetricDef(Model):
-    """Una métrica del agente, con el papel que juega en el gate y en producción."""
+    """One agent metric, with the role it plays in the gate and in production."""
     id: EntityId
     description: str = Field(min_length=1, max_length=300)
     role: MetricRole
