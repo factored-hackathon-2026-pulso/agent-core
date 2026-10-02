@@ -3,6 +3,7 @@
 from typing import Any
 
 from agent_core.domain import MetricDef
+from agent_core.registry.evaluation.yardstick import Yardstick
 from agent_core.registry.suite import EvalSuite
 
 
@@ -34,3 +35,8 @@ def suite(scenarios: list[dict[str, Any]], thresholds: dict[str, dict[str, Any]]
     data: dict[str, Any] = {"id": "suite", "version": "1.0.0", "agent_id": agent_id, "repetitions": 1,
                             "scenarios": scenarios, "thresholds": thresholds or {}}
     return EvalSuite.model_validate(data | over)
+
+
+def yardstick(metrics: list[MetricDef], scenarios: list[dict[str, Any]],
+              thresholds: dict[str, dict[str, Any]] | None = None) -> Yardstick:
+    return Yardstick(metrics=metrics, suite=suite(scenarios, thresholds))

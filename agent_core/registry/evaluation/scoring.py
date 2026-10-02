@@ -8,6 +8,13 @@ from agent_core.registry.evaluation.report import RunScore, SuiteMetrics
 from agent_core.registry.suite import Expect
 
 GUARDRAILS = ("unverified_writes", "unsupported_success", "sensitive_leaks")
+# Platform guardrails (ADR 0020 section 7): universal, reserved prefix (`MT-05`), zero tolerance.
+PLATFORM_GUARDRAILS: tuple[str, ...] = (
+    "platform_pii_leak",
+    "platform_unverified_success_claim",
+    "platform_unverified_write",
+    "platform_unapproved_knowledge_citation",
+)
 _QUANT = Decimal("0.0001")
 
 
