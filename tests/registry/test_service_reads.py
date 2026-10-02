@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 import pytest
 
 from agent_core.registry.errors import RegistryError, RegistryErrorCode
@@ -80,3 +82,46 @@ def test_lineage_requires_the_constructor_role() -> None:
             service.lineage_for_run(who, "run-9")
         assert info.value.code is RegistryErrorCode.forbidden_role
     assert service.lineage_for_run(bot(), "run-9").run_id == "run-9"
+
+
+def _three_proposals(w: World) -> list[str]:
+    ids = []
+    for title in ("uno", "dos", "tres"):
+        ids.append(w.service.create_proposal(ANA, AGENT, Origin.manual, title).proposal_id)
+        w.clock.advance(timedelta(minutes=1))
+    return ids
+
+
+def test_list_proposals_is_newest_first_with_a_total_and_pages() -> None:
+    w = World()
+    one, two, three = _three_proposals(w)
+    page = w.service.list_proposals(ANA)
+    assert [p.proposal_id for p in page.items] == [three, two, one] and page.total == 3
+    first = w.service.list_proposals(ANA, limit=2)
+    rest = w.service.list_proposals(ANA, limit=2, offset=2)
+    assert [p.proposal_id for p in first.items + rest.items] == [three, two, one] and first.total == 3
+
+
+def test_list_proposals_filters_by_agent_state_and_creator() -> None:
+    w = World()
+    one, *_ = _three_proposals(w)
+    w.service.put_draft(ANA, one, [prompt_draft(), SUITE], expected_rev=0)
+    w.service.freeze(ANA, one)
+    assert [p.proposal_id for p in w.service.list_proposals(ANA, state="candidate").items] == [one]
+    assert w.service.list_proposals(ANA, state="draft").total == 2
+    assert w.service.list_proposals(ANA, state="published").total == 0
+    assert w.service.list_proposals(ANA, agent_id="otro-agente").total == 0
+    assert w.service.list_proposals(ANA, created_by="nadie").total == 0
+    assert w.service.list_proposals(ANA, created_by="ana").total == 3
+
+
+def test_list_proposals_bounds_the_page_and_needs_a_builder() -> None:
+    w = World()
+    _three_proposals(w)
+    assert len(w.service.list_proposals(ANA, limit=10_000).items) == 3  # tope 200, no error
+    with pytest.raises(RegistryError) as info:
+        w.service.list_proposals(ANA, limit=0)
+    assert info.value.code is RegistryErrorCode.validation_failed
+    with pytest.raises(RegistryError) as denied:
+        w.service.list_proposals(principal(type='customer', id='cust-1'))
+    assert denied.value.code is RegistryErrorCode.forbidden_role
