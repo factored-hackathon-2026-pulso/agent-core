@@ -224,3 +224,19 @@ def test_serve_wires_the_registry_directory() -> None:
     ports = _resolve(AGENTCORE_ALLOW_DEMO="1")
     assert isinstance(ports.directory, RegistryDirectory)
     assert "directory" not in ports.doubles  # a real piece over the registry, not a demo double
+
+
+def test_serve_registers_a_postgres_readiness_check_that_fails_closed_when_unreachable() -> None:
+    ports = _resolve("--tools", "testing.serve_demo:tools", "--authz", "testing.serve_demo:authz",
+                     "--transcript", "testing.serve_demo:transcript",
+                     "--calibration", "testing.serve_demo:calibration",
+                     "--classifier", "testing.serve_demo:classifier_provider",
+                     "--field-classifier", "testing.serve_demo:field_classifier",
+                     "--grant-active", "testing.serve_demo:grant_active",
+                     AGENTCORE_ALLOW_DEMO="1",
+                     AGENTCORE_REGISTRY_DSN="postgresql://u:secret@127.0.0.1:1/none")
+
+    (name, check), = ports.readiness
+
+    assert name == "postgres"
+    assert check() is False  # nada escucha en el puerto 1: falla cerrado, sin lanzar

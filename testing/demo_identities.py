@@ -10,7 +10,12 @@ resto dura 1 hora."""
 import argparse
 import json
 from collections.abc import Sequence
+from pathlib import Path
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+from agent_core.adapters.jws_identity import b64url_encode
 from agent_core.adapters.system_clock import SystemClock
 from agent_core.ports import Clock
 from testing.fakes.identity import TestIdentityIssuer, TestStaffIssuer
@@ -18,16 +23,27 @@ from testing.fakes.identity import TestIdentityIssuer, TestStaffIssuer
 NOTE = "Credenciales de PRUEBA firmadas con claves TEST públicas del repo; no son de producción."
 
 
+def _public(key: Ed25519PrivateKey) -> str:
+    return b64url_encode(key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw))
+
+
 def main(argv: Sequence[str] | None = None, *, clock: Clock | None = None) -> int:
     parser = argparse.ArgumentParser(prog="demo_identities", description=__doc__)
     parser.add_argument("--customer", default="cust-001")
     parser.add_argument("--advisor", default="adv-7")
     parser.add_argument("--anon-session", default="anon-1")
+    parser.add_argument("--public-keys", type=Path, default=None,
+                        help="escribe las claves públicas del emisor para `agentcore serve --identity-keys`")
     args = parser.parse_args(argv)
     clock = clock or SystemClock()
     issuer = TestIdentityIssuer(clock)
     staff = TestStaffIssuer(clock)
     advisor, delegation = issuer.advisor(args.advisor, args.customer)
+    if args.public_keys is not None:
+        args.public_keys.write_text(json.dumps({
+            "principal_keys": {issuer.principal_kid: _public(issuer.principal_key)},
+            "delegation_keys": {issuer.delegation_kid: _public(issuer.delegation_key)},
+        }, indent=2), encoding="utf-8")
     tokens = {
         "_note": NOTE,
         "customer": issuer.customer(args.customer),

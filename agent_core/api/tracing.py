@@ -3,6 +3,8 @@
 El middleware lo publica con `agent_telemetry.bind_trace_id`: el `TurnResult` del mismo request lo devuelve
 (U3, `RequestTraceIds` en composition)."""
 
+from typing import Final
+
 from fastapi import FastAPI, Request, Response
 from opentelemetry.trace import Status, StatusCode
 from starlette.middleware.base import RequestResponseEndpoint
@@ -19,6 +21,10 @@ def request_trace_id(request: Request) -> str:
     return str(getattr(request.state, "trace_id", FALLBACK_TRACE_ID))
 
 
+# Rutas de operación (M9 §3.9): se consultan cada pocos segundos; un 503 de `/readyz` no es un error.
+PROBE_PATHS: Final = frozenset({"/healthz", "/readyz"})
+
+
 def install_tracing(app: FastAPI, ids: IdSource) -> None:
     """Un span `agentcore.api.request` por request. Sus atributos son una lista cerrada
     (`http.request.method`, `http.response.status_code`, `error.type`): nunca credenciales,
@@ -26,6 +32,8 @@ def install_tracing(app: FastAPI, ids: IdSource) -> None:
 
     @app.middleware("http")
     async def _trace(request: Request, call_next: RequestResponseEndpoint) -> Response:
+        if request.url.path in PROBE_PATHS:  # las sondas del orquestador no son tráfico del servicio
+            return await call_next(request)
         tracer = telemetry_tracer("agentcore.api")
         # C2: never an `exception` event (message, stack) nor a status description: only the type.
         with tracer.start_as_current_span(

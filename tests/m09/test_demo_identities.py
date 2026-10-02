@@ -1,9 +1,11 @@
 """Script que emite las credenciales de la demo (`python -m testing.demo_identities`)."""
 
 import json
+from pathlib import Path
 
 import pytest
 
+from agent_core.adapters.identity_keys import load_identity_verifier
 from agent_core.domain import CredentialsInvalid
 from testing.demo_identities import main
 from testing.fakes.clock import FakeClock
@@ -45,3 +47,15 @@ def test_a_foreign_key_does_not_verify(capsys: pytest.CaptureFixture[str]) -> No
     head, body, sig = out["customer"].split(".")
     with pytest.raises(CredentialsInvalid):
         TestIdentityIssuer(FakeClock()).verifier().verify(f"{head}.{body}.{sig[::-1]}")
+
+
+def test_public_keys_file_lets_serve_verify_the_demo_credentials(capsys: pytest.CaptureFixture[str],
+                                                                 tmp_path: Path) -> None:
+    keys = tmp_path / "identity-keys.yaml"
+
+    out = run(capsys, "--public-keys", str(keys))
+
+    verifier = load_identity_verifier(keys, lambda grant_ref, now: True)
+    assert verifier.verify(out["customer"]).id == "cust-001"
+    grantee = verifier.verify_delegation(out["advisor_delegation"]).grantee
+    assert grantee == verifier.verify(out["advisor"]).key

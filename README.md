@@ -87,6 +87,7 @@ Qué tener en cuenta:
 | `uv run agentcore replay <fixture> --mode fixture\|audit` | Reproduce un run grabado |
 | `uv run agentcore record <camino> --out <archivo> --registry <dir>` | Graba un camino (`transferencia` con `--registry tests/fixtures/registry-transfer-demo`) |
 | `uv run agentcore sweep --registry <dir> --once` | Cierra como `abandoned` los runs inactivos (necesita Postgres: `--dsn` o `AGENTCORE_DATABASE_URL`) |
+| `uv run agentcore migrate` | Aplica los esquemas de Postgres (idempotente): motor, auditoría y registry en `--dsn`/`AGENTCORE_REGISTRY_DSN`; evaluaciones en `--eval-dsn`/`AGENTCORE_EVAL_DSN`; `--app-role` da permisos mínimos |
 
 Lo mismo corre el CI en `.github/workflows/ci.yml`.
 

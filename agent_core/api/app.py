@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Annotated, Final
 
 from fastapi import APIRouter, FastAPI, Header, Request
+from fastapi.responses import JSONResponse
 from fastapi.telemetry import TelemetryConfig
 
 from agent_core.api.authorization import RunAuthorizer
@@ -86,6 +87,22 @@ class ApiDeps:
     limits: RateLimitConfig = field(default_factory=RateLimitConfig)
     step_up_simulated: bool = True  # el OTP de la demo es simulado (ADR 0010); apagar con un OTP real
     extensions: tuple[ApiExtension, ...] = ()  # rutas de otros paquetes; vacío = comportamiento previo
+    # Comprobaciones de `/readyz` (nombre, función). Vacío = siempre listo. Las inyecta el cableado.
+    readiness: tuple[tuple[str, Callable[[], bool]], ...] = ()
+
+
+def _failed_checks(checks: tuple[tuple[str, Callable[[], bool]], ...]) -> list[str]:
+    """Nombres de las comprobaciones que no pasan. Una que lanza cuenta como fallida y su mensaje se descarta:
+    puede traer hosts o credenciales."""
+    failed: list[str] = []
+    for name, check in checks:
+        try:
+            ok = check()
+        except Exception:
+            ok = False
+        if not ok:
+            failed.append(name)
+    return failed
 
 
 def _idempotency_key(raw: str | None, principal: Principal) -> str:
@@ -116,6 +133,20 @@ def create_app(deps: ApiDeps) -> FastAPI:
     app = FastAPI(title="agent-core", version="1.0.0", telemetry=FASTAPI_TELEMETRY_OFF)
     install_tracing(app, deps.ids)
     install_error_handlers(app)
+
+    @app.get("/healthz", include_in_schema=False)
+    def healthz() -> dict[str, str]:
+        """Liveness: el proceso responde. No toca dependencias."""
+        return {"status": "ok"}
+
+    @app.get("/readyz", include_in_schema=False, response_model=None)
+    def readyz() -> JSONResponse:
+        """Readiness: todas las comprobaciones inyectadas pasan. Sin credencial y sin detalle de errores."""
+        failed = _failed_checks(deps.readiness)
+        if failed:
+            return JSONResponse({"status": "unavailable", "failed": failed}, status_code=503)
+        return JSONResponse({"status": "ready"})
+
     gate = AccessGate(deps.verifier, deps.clock, deps.ids, deps.denials, deps.security)
     guard = LimitGuard(deps.counters, deps.clock, deps.limits)
     authorizer = RunAuthorizer(deps.authz, deps.registry, deps.clock, deps.ids, deps.denials, deps.security)

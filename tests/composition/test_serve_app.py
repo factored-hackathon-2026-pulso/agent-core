@@ -1,5 +1,7 @@
 """`build_api_deps`: el motor real sobre la API de M9 con un verificador JWS real (sin Postgres ni red)."""
 
+from dataclasses import replace
+
 from fastapi.testclient import TestClient
 
 from agent_core.api.app import create_app
@@ -81,3 +83,15 @@ def test_build_api_deps_passes_the_directory_to_the_engine() -> None:
     ports = replace(make_ports(world, issuer), directory=InMemoryDirectory(world.registry))
     deps = build_api_deps(ports)
     assert isinstance(deps.turns._runtimes._tools, DirectoryToolExecutor)  # type: ignore[attr-defined]
+
+
+def test_readyz_reports_the_readiness_checks_of_the_ports() -> None:
+    world = EngineWorld()
+    issuer = TestIdentityIssuer(world.clock)
+    ports = replace(make_ports(world, issuer), readiness=(("postgres", lambda: False),))
+    client = TestClient(create_app(build_api_deps(ports)), raise_server_exceptions=False)
+
+    response = client.get("/readyz")
+
+    assert response.status_code == 503 and response.json()["failed"] == ["postgres"]
+    assert client.get("/healthz").status_code == 200

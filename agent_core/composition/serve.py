@@ -44,6 +44,7 @@ def build_api_deps(ports: ServePorts, *, registry_service: RegistryService | Non
         counters=ports.counters, clock=ports.clock, ids=ports.ids, turns=built.turns,
         handoffs=built.handoffs, transcripts=built.transcripts,
         denials=AuditLog(ports.audit, ports.uow_factory), security=OtelSecurityLog(),
+        readiness=ports.readiness,
         extensions=() if registry_service is None else (registry_extension(
             registry_service, None if ports.registry_api is None else ports.registry_api.staff_verifier),))
 

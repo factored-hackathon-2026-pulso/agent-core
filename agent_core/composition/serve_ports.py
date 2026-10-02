@@ -105,6 +105,7 @@ class ServePorts:
     endpoints: Mapping[str, EndpointConfig] = field(default_factory=dict)
     registry_api: RegistryApiPorts | None = None  # solo con --registry-api
     directory: AgentDirectory | None = None  # ADR 0021: directorio de especialistas (sobre el registry)
+    readiness: tuple[tuple[str, Callable[[], bool]], ...] = ()  # comprobaciones de `/readyz`
 
 
 def _flag(attr: str) -> str:
@@ -272,4 +273,5 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         calibrations=built["calibration"], classifier=built["field-classifier"], verifier=verifier,
         doubles=tuple(doubles), agents=_agents(args, env), endpoints=endpoints,
         registry_api=registry_api,
-        directory=RegistryDirectory(registry_store, pg_registry, pg_registry.release))
+        directory=RegistryDirectory(registry_store, pg_registry, pg_registry.release),
+        readiness=(("postgres", store.ping),))

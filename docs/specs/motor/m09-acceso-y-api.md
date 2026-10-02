@@ -28,6 +28,8 @@ Rutas (contrato generado en `contracts/openapi.json` por `agentcore contracts`):
 | `GET /v1/handoffs/{handoff_ref}` | `get_handoff` | M10 `get` |
 | `POST /v1/handoffs/{handoff_ref}/resolution` | `post_resolution` | M10 `record_resolution` |
 
+Rutas de operación, fuera de `/v1` y fuera del contrato generado (`include_in_schema=False`): `GET /healthz` y `GET /readyz` (§3.9). No llevan credencial.
+
 Cabeceras: `Authorization` (principal firmado, con o sin el esquema `Bearer`), `X-On-Behalf-Of` (delegación firmada, solo asesores) e `Idempotency-Key` (obligatoria en `POST /v1/runs`, 1 a 255 caracteres imprimibles). Todas las respuestas llevan `trace_id`.
 
 ```python
@@ -149,6 +151,15 @@ JWS compacto `header.payload.firma` (base64url sin relleno), firmado con Ed25519
 - **Cabecera:** `Authorization: Bearer <jws>` (también se acepta sin `Bearer`); la delegación va sin esquema en `X-On-Behalf-Of`.
 - **Demo:** `TestIdentityIssuer` (`testing/fakes/identity.py`) firma con claves de PRUEBA derivadas de una semilla fija y pública (`kid` `test-*`), nunca para producción; con el mismo `Clock` emite los mismos tokens. `uv run python -m testing.demo_identities` imprime el cliente, el asesor con su delegación, el anónimo, el vencido y el elevado (OTP simulado, `auth.simulated`).
 
+### 3.9 Salud y disponibilidad (`/healthz`, `/readyz`)
+
+Las exige quien despliega el servicio (ADR 0003 de `infra`: puerto único, `/healthz` liveness y `/readyz` readiness) y no forman parte del contrato `/v1`.
+
+- `GET /healthz`: `200 {"status": "ok"}` siempre que el proceso responda. No toca ninguna dependencia.
+- `GET /readyz`: ejecuta las comprobaciones de `ApiDeps.readiness` (tupla de `(nombre, función)`; vacía = listo). Todas pasan → `200 {"status": "ready"}`; alguna falla → `503 {"status": "unavailable", "failed": ["<nombre>", ...]}`. Una comprobación que lanza cuenta como fallida y su mensaje **nunca** se devuelve ni se registra (puede traer hosts o credenciales).
+- Sin credencial, sin `Idempotency-Key`, sin cuota y sin `trace_id` obligatorio: no pasan por el `AccessGate`. Tampoco abren el span `agentcore.api.request`: el orquestador las consulta cada pocos segundos y un `503` de `/readyz` no es un error del servicio.
+- `serve` inyecta la comprobación `postgres` (`PostgresStore.ping`: `SELECT 1` con `connect_timeout` de 3 s; falla cerrado y sin detalle).
+
 ## 4. Invariantes
 
 - Ningún byte del mensaje de un turno rechazado en 3.1 llega a un modelo, una tool o el transcript.
@@ -187,6 +198,7 @@ Con `TestClient` de FastAPI, `StubVerifier` (tokens opacos sintéticos), `TableA
 | T-M9-14 | `awaiting: step_up` devuelve `step_up` en el cuerpo | 5 | `test_api` |
 | T-M9-15 | La telemetría nativa de FastAPI está apagada, incluso con `OTEL_EXPORTER_OTLP_ENDPOINT`: sin providers globales ni exportadores propios | — | `test_fastapi_telemetry` |
 | T-M9-16 | Una excepción no controlada no deja mensaje ni stack en el span: solo `error.type`, `http.response.status_code` y estado `ERROR` sin descripción | — | `test_fastapi_telemetry` |
+| T-M9-17 | `/healthz` responde sin credencial aunque una dependencia caiga; `/readyz` da `200` o `503` con los nombres que fallan y sin filtrar el error; ninguna entra al OpenAPI ni abre span | — | `test_health`, `tests/composition/test_serve_app` |
 | T-TR-10 | `GET /v1/sessions/{id}/lineage` devuelve la cadena con releases y `transfer_id`; otro cliente recibe `403`; no expone `from_event_hash` | — | `test_session_lineage` |
 
 Además: IDOR de lecturas (dueño, asesor con delegación, run sin subject, anónimos entre sí), decimales en el body, JSON ambiguo, `openapi.json` al día, fixture `TableAuthz`.
