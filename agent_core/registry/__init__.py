@@ -7,8 +7,12 @@ from agent_core.registry.blobs import BlobStore, InMemoryBlobStore
 from agent_core.registry.directory import RegistryDirectory
 from agent_core.registry.errors import HTTP_STATUS, IntegrityError, RegistryError, RegistryErrorCode
 from agent_core.registry.evaluation import (
+    PLATFORM_GUARDRAILS,
     EvalPort,
+    EvalReport,
+    EvalRequest,
     EvalTarget,
+    GateItem,
     HarnessUnavailable,
     Judge,
     LocalSandbox,
@@ -16,8 +20,9 @@ from agent_core.registry.evaluation import (
     SandboxPort,
     ScenarioEvaluator,
     ScenarioHarness,
+    Yardstick,
+    YardstickChange,
 )
-from agent_core.registry.evaluation.report import EvalReport  # el que devuelve `EvalPort`
 from agent_core.registry.memory import InMemoryRegistryStore
 from agent_core.registry.models import (
     AuditContext,
@@ -36,25 +41,42 @@ from agent_core.registry.quotas import DEFAULT_QUOTAS, Quotas
 from agent_core.registry.service import RegistryService, RunReleaseReader
 from agent_core.registry.snapshot import SnapshotRegistry
 from agent_core.registry.store import RegistryStore
-from agent_core.registry.suite import EvalSuite, SandboxSeed, Scenario, Step
+from agent_core.registry.suite import (
+    Assertion,
+    DatasetScenario,
+    EvalSuite,
+    MetricThreshold,
+    SandboxSeed,
+    Scenario,
+    Step,
+    SuiteProblem,
+    SuiteProblemCode,
+    suite_problems,
+)
 
 __all__ = [
     "DEFAULT_QUOTAS",
     "HTTP_STATUS",
+    "PLATFORM_GUARDRAILS",
+    "Assertion",
     "AuditContext",
     "BlobStore",
+    "DatasetScenario",
     "DraftWrite",
     "EntityDraft",
     "EvalPort",
     "EvalReport",
+    "EvalRequest",
     "EvalSuite",
     "EvalTarget",
+    "GateItem",
     "HarnessUnavailable",
     "InMemoryBlobStore",
     "InMemoryRegistryStore",
     "IntegrityError",
     "Judge",
     "LocalSandbox",
+    "MetricThreshold",
     "Origin",
     "PgRegistryStore",
     "PostgresRegistry",
@@ -75,8 +97,13 @@ __all__ = [
     "ScenarioHarness",
     "SnapshotRegistry",
     "Step",
+    "SuiteProblem",
+    "SuiteProblemCode",
     "VersionDocs",
     "VersionRef",
     "WriteRecord",
+    "Yardstick",
+    "YardstickChange",
     "apply_registry_schema",
+    "suite_problems",
 ]

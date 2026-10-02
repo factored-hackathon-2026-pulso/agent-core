@@ -1,15 +1,35 @@
-from decimal import Decimal
-
 import pytest
 
 from agent_core.registry.entities import content_hash, encode_entity, version_ref
 from agent_core.registry.errors import RegistryError, RegistryErrorCode
-from agent_core.registry.evaluation.report import EvalReport, SuiteMetrics
-from agent_core.registry.models import AliasChange, Origin, ProposalState, StoredVersion, VersionRef
+from agent_core.registry.evaluation.ports import EvalRequest
+from agent_core.registry.evaluation.report import EvalReport
+from agent_core.registry.memory import InMemoryRegistryStore
+from agent_core.registry.models import (
+    AliasChange,
+    EntityDraft,
+    Origin,
+    ProposalState,
+    StoredVersion,
+    VersionRef,
+)
+from agent_core.registry.service import RegistryService
 from agent_core.registry.suite import EvalSuite
 from testing.builders import NOW
-from tests.registry.helpers import AGENT, admin, bot, docs, human, prompt_draft, suite_content
-from tests.registry.service_world import SUITE, ZERO, World
+from testing.fakes.clock import FakeClock
+from testing.fakes.ids import FakeIds
+from tests.registry.helpers import (
+    AGENT,
+    admin,
+    bot,
+    demo_pinned,
+    docs,
+    human,
+    prompt_draft,
+    suite_content,
+    suite_draft,
+)
+from tests.registry.service_world import SUITE, FakeEvaluator, World, publish_cycle, seed_demo
 
 ANA = human()
 ROOT = admin()
@@ -36,8 +56,7 @@ def _evaluated(w: World) -> tuple[str, str]:
 
 
 def _report(verdict: str) -> EvalReport:
-    m = SuiteMetrics(primary=Decimal(1), guardrails=ZERO, runs=1)
-    return EvalReport(verdict=verdict, candidate=m, base=m)  # type: ignore[arg-type]
+    return EvalReport(verdict=verdict)  # type: ignore[arg-type]
 
 
 def _code(info: pytest.ExceptionInfo[RegistryError]) -> RegistryErrorCode:
@@ -316,3 +335,61 @@ def test_release_without_status_row_is_integrity_error_not_active() -> None:
     del w.store._state.status["rel-demo"]
     with pytest.raises(IntegrityError):
         w.service.get_release("rel-demo")
+
+# --- the request `evaluate` builds for the evaluator (double yardstick wiring) ----------------------------
+
+_METRIC = {"id": "resolved_count", "description": "resolved runs", "role": "gate", "higher_is_better": True,
+           "expr": {"event": "engine.run_closed", "aggregation": "count", "window": "scenario"}}
+
+
+_THRESHOLDED = suite_draft(thresholds={"resolved_count": {"noise_margin": "0"}})  # the gate metric needs one
+
+
+def _agent_draft_with_metric() -> EntityDraft:
+    agent = next(e for e in demo_pinned().entities if e.id == AGENT)
+    content = agent.model_dump(mode="json") | {"version": "1.0.1", "metrics": [_METRIC]}
+    return EntityDraft(kind="agent", content=content, docs=docs())
+
+
+def _evaluate_request(service: RegistryService, evaluator: FakeEvaluator,
+                      drafts: list[EntityDraft]) -> EvalRequest:
+    p = service.create_proposal(ANA, AGENT, Origin.manual, "metrics")
+    service.put_draft(ANA, p.proposal_id, drafts, expected_rev=0)
+    service.freeze(ANA, p.proposal_id)
+    service.evaluate(ANA, p.proposal_id, "disputas-suite")
+    return evaluator.requests[-1]
+
+
+def test_evaluate_builds_the_request_with_a_base() -> None:
+    w = World()
+    request = _evaluate_request(w.service, w.evaluator, [_agent_draft_with_metric(), _THRESHOLDED])
+    assert request.candidate.label == "candidate" and request.candidate.release.id != "rel-demo"
+    assert request.base is not None and request.base.label == "base" and request.base.release.id == "rel-demo"
+    assert [m.id for m in request.new.metrics] == ["resolved_count"]  # the candidate agent's metrics
+    assert request.new.suite is not None
+    assert (request.new.suite.id, request.new.suite.version) == ("disputas-suite", "1.0.0")
+    assert request.old is not None and request.old.metrics == []  # the base agent declares none
+    assert request.old.suite is None  # the seeded base recorded no suite (D3): metrics-only old yardstick
+
+
+def test_evaluate_gives_the_old_yardstick_the_suite_recorded_by_the_base() -> None:
+    w = World()
+    first = publish_cycle(w, [prompt_draft(), SUITE])  # records `disputas-suite@1.0.0` in the release
+    request = _evaluate_request(w.service, w.evaluator,
+                                [prompt_draft(version="1.2.0", text="Otra variante."), SUITE])
+    assert request.base is not None and request.base.release.id == first
+    assert request.old is not None and request.old.suite is not None
+    assert (request.old.suite.id, request.old.suite.version) == ("disputas-suite", "1.0.0")
+
+
+def test_evaluate_without_a_base_has_no_old_yardstick() -> None:
+    store = InMemoryRegistryStore()
+    seed_demo(store, aliases=())  # no `staging` alias: the proposal has no base release
+    evaluator = FakeEvaluator()
+    service = RegistryService(store, evaluator, FakeClock(), FakeIds())
+    others = [EntityDraft(kind=version_ref(e).kind, content=e.model_dump(mode="json"), docs=docs())
+              for e in demo_pinned().entities if e.id not in (AGENT, "injection-rules")]
+    request = _evaluate_request(service, evaluator, [*others, _agent_draft_with_metric(), _THRESHOLDED])
+    assert request.base is None and request.old is None
+    assert [m.id for m in request.new.metrics] == ["resolved_count"]
+    assert request.new.suite is not None and request.new.suite.id == "disputas-suite"

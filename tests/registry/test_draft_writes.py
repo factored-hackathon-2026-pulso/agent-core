@@ -1,10 +1,10 @@
 import pytest
 
 from agent_core.registry.errors import RegistryError, RegistryErrorCode
-from agent_core.registry.evaluation.report import EvalReport, SuiteMetrics
+from agent_core.registry.evaluation.report import EvalReport
 from agent_core.registry.models import AuditContext, Origin, ProposalState
 from tests.registry.helpers import AGENT, bot, prompt_draft
-from tests.registry.service_world import SUITE, ZERO, World
+from tests.registry.service_world import SUITE, World
 
 
 def _events(w: World, type_: str) -> int:
@@ -119,8 +119,7 @@ def test_evaluate_replay_does_not_run_the_evaluator_twice() -> None:
 
 def test_evaluate_replay_of_a_failed_gate_raises_gate_failed_without_a_second_run() -> None:
     w = World()
-    m = SuiteMetrics(primary=0, guardrails=ZERO, runs=1)  # type: ignore[arg-type]
-    w.evaluator.reports.append(EvalReport(verdict="fail", candidate=m, base=m))
+    w.evaluator.reports.append(EvalReport(verdict="fail"))
     pid = _candidate(w)
     for _ in range(2):
         with pytest.raises(RegistryError) as info:

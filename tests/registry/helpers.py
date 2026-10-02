@@ -50,7 +50,6 @@ def prompt_draft(version: str = "1.1.0", text: str = "Confirma en una frase que 
 
 def suite_content(version: str = "1.0.0", **over: Any) -> dict[str, Any]:
     return {"id": "disputas-suite", "version": version, "agent_id": AGENT, "repetitions": 2,
-            "noise_margin": "0.05", "floor": "0.5",
             "scenarios": [{"id": "resuelto", "principal": {"id": "cust-001"},
                            "steps": [{"op": "start"}, {"op": "turn", "text": "no reconozco un cargo"},
                                      {"op": "confirm", "answer": "yes"}],

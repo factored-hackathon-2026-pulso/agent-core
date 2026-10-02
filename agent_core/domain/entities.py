@@ -78,7 +78,7 @@ class Agent(Model):
     on_clarify_exhausted: Literal["end", "escalate"]
     default_target_queue: str = Field(min_length=1)
     max_repair_turns_per_run: PositiveInt = 8
-    metrics: list[MetricDef] = Field(default_factory=list, max_length=32)  # ADR 0020; el motor no las ejecuta
+    metrics: list[MetricDef] = Field(default_factory=list, max_length=32)  # ADR 0020; the engine ignores them
     routing: RoutingCard | None = None  # without a card the agent is in no directory (ADR 0021)
     accepts: TransferContract | None = None  # without a contract the agent receives no transfers
 

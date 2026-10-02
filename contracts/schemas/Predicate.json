@@ -1,7 +1,7 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "additionalProperties": false,
-  "description": "Filtro sobre un campo del catálogo de eventos.",
+  "description": "Filter on a field of the event catalog.",
   "properties": {
     "field": {
       "maxLength": 80,

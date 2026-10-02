@@ -30,7 +30,7 @@
     },
     "AlertThreshold": {
       "additionalProperties": false,
-      "description": "Umbral de alerta de producción. No es el umbral del gate.",
+      "description": "Production alert threshold. It is not the gate threshold.",
       "properties": {
         "breach_when": {
           "enum": [
@@ -180,7 +180,7 @@
     },
     "JudgeExpr": {
       "additionalProperties": false,
-      "description": "Métrica calificada por un juez LLM: el único tipo no determinista (ADR 0020).",
+      "description": "Metric graded by an LLM judge: the only non-deterministic kind (ADR 0020).",
       "properties": {
         "judge_profile": {
           "$ref": "#/$defs/EntityRef"
@@ -208,7 +208,7 @@
     },
     "MetricDef": {
       "additionalProperties": false,
-      "description": "Una métrica del agente, con el papel que juega en el gate y en producción.",
+      "description": "One agent metric, with the role it plays in the gate and in production.",
       "properties": {
         "alert": {
           "anyOf": [
@@ -269,7 +269,7 @@
     },
     "MetricExpr": {
       "additionalProperties": false,
-      "description": "Métrica determinista sobre eventos: evento, filtro, agregación, ventana y agrupación.",
+      "description": "Deterministic metric over events: event, filter, aggregation, window and grouping.",
       "properties": {
         "aggregation": {
           "enum": [
@@ -372,7 +372,7 @@
     },
     "Predicate": {
       "additionalProperties": false,
-      "description": "Filtro sobre un campo del catálogo de eventos.",
+      "description": "Filter on a field of the event catalog.",
       "properties": {
         "field": {
           "maxLength": 80,

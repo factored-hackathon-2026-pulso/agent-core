@@ -3,49 +3,44 @@ from typing import Any
 
 import pytest
 
-from agent_core.registry.evaluation import (
-    PLATFORM_GUARDRAILS,
-    EvalReport,
-    GateRuns,
-    evaluate_gate,
-    meets_floor,
-    not_worse,
-)
-from agent_core.registry.evaluation.gate import decide
-from agent_core.registry.evaluation.report import SuiteMetrics
-from agent_core.registry.suite import EvalSuite
-from tests.registry.helpers import suite_content
-from tests.registry.support import metric, scenario, thr, yardstick
+from agent_core.registry.evaluation.gate import evaluate_gate, meets_floor, not_worse
+from agent_core.registry.evaluation.report import GateItem, GateRuns, SuiteMeasurement
+from agent_core.registry.evaluation.scoring import PLATFORM_GUARDRAILS
+from agent_core.registry.evaluation.yardstick import Yardstick
+from tests.registry.eval_support import metric, scenario, thr, yardstick
+
+# --- double yardstick (ADR 0020, evaluation spec section 6) -----------------------------------------------
 
 ZEROS = {pid: "0" for pid in PLATFORM_GUARDRAILS}
+GOOD = {"quality": "0.8", "speed": "0.5", "leaks": "0"}
 
 
-def report(
-    metrics: dict[str, str],
-    scenarios: dict[str, bool] | None = None,
-    status: str = "ok",
-    platform: dict[str, str] | None = None,
-) -> EvalReport:
+def measured(metrics: dict[str, str], scenarios: dict[str, bool] | None = None, status: str = "ok",
+             platform: dict[str, str] | None = None) -> SuiteMeasurement:
     values = {**(ZEROS if platform is None else platform), **metrics}
-    return EvalReport.model_validate(
-        {
-            "status": status,
-            "metrics": values,
-            "scenarios": scenarios if scenarios is not None else {"s1": True},
-        }
-    )
+    return SuiteMeasurement.model_validate(
+        {"status": status, "metrics": values, "scenarios": {"s1": True} if scenarios is None else scenarios})
 
 
-def base_yardstick() -> Any:
+def base_yardstick() -> Yardstick:
     return yardstick(
         [metric("quality"), metric("speed"), metric("leaks", role="guardrail", higher=False)],
         [scenario("s1")],
-        {"quality": thr("0.05", "0.5"), "speed": thr("0.1", "0.4"), "leaks": thr("0", "0")},
-    )
+        {"quality": thr("0.05", "0.5"), "speed": thr("0.1", "0.4"), "leaks": thr("0", "0")})
 
 
-def failed(verdict: Any) -> list[str]:
-    return sorted(i.metric_id for i in verdict.items if not i.passed)
+def failed(items: list[GateItem]) -> list[str]:
+    return sorted(i.metric_id for i in items if not i.passed)
+
+
+def only_new(new: SuiteMeasurement) -> GateRuns:
+    return GateRuns(cand_on_new=new)
+
+
+def both(base_old: SuiteMeasurement, cand_old: SuiteMeasurement,
+         cand_new: SuiteMeasurement | None = None) -> GateRuns:
+    return GateRuns(base_on_old=base_old, cand_on_old=cand_old,
+                    cand_on_new=cand_old if cand_new is None else cand_new)
 
 
 def test_direction_helpers() -> None:
@@ -53,132 +48,77 @@ def test_direction_helpers() -> None:
     assert not not_worse(Decimal("0.9"), Decimal("1"), Decimal("0.05"), True)
     assert not_worse(Decimal("1.04"), Decimal("1"), Decimal("0.05"), False)
     assert not not_worse(Decimal("1.1"), Decimal("1"), Decimal("0.05"), False)
-    assert meets_floor(Decimal("0.5"), Decimal("0.5"), True) and not meets_floor(
-        Decimal("0.4"), Decimal("0.5"), True
-    )
-    assert meets_floor(Decimal("3"), Decimal("3"), False) and not meets_floor(
-        Decimal("4"), Decimal("3"), False
-    )
+    assert meets_floor(Decimal("0.5"), Decimal("0.5"), True)
+    assert not meets_floor(Decimal("0.4"), Decimal("0.5"), True)
+    assert meets_floor(Decimal("3"), Decimal("3"), False)
+    assert not meets_floor(Decimal("4"), Decimal("3"), False)
 
 
-# Sin base: solo vara nueva contra los pisos
 def test_no_base_passes_when_every_metric_meets_its_floor() -> None:
-    cand = base_yardstick()
-    runs = GateRuns(
-        base_on_old=None,
-        cand_on_old=None,
-        cand_on_new=report({"quality": "0.7", "speed": "0.5", "leaks": "0"}),
-    )
-    verdict = evaluate_gate(None, cand, runs)
-    assert verdict.status == "passed"
-    assert {i.metric_id for i in verdict.items} >= {"quality", "speed", "leaks", *PLATFORM_GUARDRAILS}
+    verdict, items = evaluate_gate(None, base_yardstick(),
+                                   only_new(measured({"quality": "0.7", "speed": "0.5", "leaks": "0"})))
+    assert verdict == "pass"
+    assert {i.metric_id for i in items} >= {"quality", "speed", "leaks", *PLATFORM_GUARDRAILS}
 
 
-# T-EVAL-13
-def test_no_base_fails_when_a_floor_is_missing_or_not_met() -> None:
+def test_no_base_fails_when_a_floor_is_missing_or_not_met() -> None:  # T-EVAL-13 (formerly T-REG-10)
     no_floor = yardstick([metric("quality")], [scenario("s1")], {"quality": thr("0.05")})
-    runs = GateRuns(base_on_old=None, cand_on_old=None, cand_on_new=report({"quality": "0.9"}))
-    verdict = evaluate_gate(None, no_floor, runs)
-    assert verdict.status == "failed" and failed(verdict) == ["quality"]
-    below = GateRuns(
-        base_on_old=None,
-        cand_on_old=None,
-        cand_on_new=report({"quality": "0.1", "speed": "0.5", "leaks": "0"}),
-    )
-    assert failed(evaluate_gate(None, base_yardstick(), below)) == ["quality"]
+    verdict, items = evaluate_gate(None, no_floor, only_new(measured({"quality": "0.9"})))
+    assert verdict == "fail" and failed(items) == ["quality"]
+    _, below = evaluate_gate(None, base_yardstick(),
+                             only_new(measured({"quality": "0.1", "speed": "0.5", "leaks": "0"})))
+    assert failed(below) == ["quality"]
 
 
 def test_lower_is_better_floor_is_a_ceiling() -> None:
-    cand = yardstick(
-        [metric("leaks", role="guardrail", higher=False)], [scenario("s1")], {"leaks": thr("0", "2")}
-    )
-    over = GateRuns(base_on_old=None, cand_on_old=None, cand_on_new=report({"leaks": "3"}))
-    under = GateRuns(base_on_old=None, cand_on_old=None, cand_on_new=report({"leaks": "2"}))
-    assert failed(evaluate_gate(None, cand, over)) == ["leaks"]
-    assert evaluate_gate(None, cand, under).status == "passed"
+    cand = yardstick([metric("leaks", role="guardrail", higher=False)], [scenario("s1")],
+                     {"leaks": thr("0", "2")})
+    assert failed(evaluate_gate(None, cand, only_new(measured({"leaks": "3"})))[1]) == ["leaks"]
+    assert evaluate_gate(None, cand, only_new(measured({"leaks": "2"})))[0] == "pass"
 
 
-# T-EVAL-05: un guardarraíl que empeora falla el gate aunque una métrica gate mejore
-def test_a_worse_guardrail_fails_even_if_a_gate_metric_improves() -> None:
+def test_a_worse_guardrail_fails_even_if_a_gate_metric_improves() -> None:  # T-EVAL-05 (formerly T-REG-08)
     base = base_yardstick()
-    runs = GateRuns(
-        base_on_old=report({"quality": "0.6", "speed": "0.5", "leaks": "0"}),
-        cand_on_old=report({"quality": "0.9", "speed": "0.5", "leaks": "1"}),
-        cand_on_new=report({"quality": "0.9", "speed": "0.5", "leaks": "1"}),
-    )
-    verdict = evaluate_gate(base, base, runs)
-    # La métrica `leaks` no cambió respecto de la base: solo la juzga la vara vieja, así que falla una vez.
-    assert verdict.status == "failed" and failed(verdict) == ["leaks"]
+    runs = both(measured({"quality": "0.6", "speed": "0.5", "leaks": "0"}),
+                measured({"quality": "0.9", "speed": "0.5", "leaks": "1"}))
+    verdict, items = evaluate_gate(base, base, runs)
+    assert verdict == "fail" and failed(items) == ["leaks"]  # unchanged: only the old yardstick judges it
 
 
-# T-EVAL-06: cada métrica gate por separado; el ruido se tolera
-def test_each_gate_metric_is_judged_on_its_own() -> None:
+def test_each_gate_metric_is_judged_on_its_own() -> None:  # T-EVAL-06 (formerly T-REG-09)
     base = base_yardstick()
-    old_base = report({"quality": "0.80", "speed": "0.50", "leaks": "0"})
-    within_noise = report({"quality": "0.76", "speed": "0.45", "leaks": "0"})
-    regressed = report({"quality": "0.95", "speed": "0.20", "leaks": "0"})
-    ok = evaluate_gate(
-        base, base, GateRuns(base_on_old=old_base, cand_on_old=within_noise, cand_on_new=within_noise)
-    )
-    bad = evaluate_gate(
-        base, base, GateRuns(base_on_old=old_base, cand_on_old=regressed, cand_on_new=regressed)
-    )
-    assert ok.status == "passed"
-    assert bad.status == "failed" and "speed" in failed(bad) and "quality" not in failed(bad)
+    old_base = measured({"quality": "0.80", "speed": "0.50", "leaks": "0"})
+    within_noise = measured({"quality": "0.76", "speed": "0.45", "leaks": "0"})
+    regressed = measured({"quality": "0.95", "speed": "0.20", "leaks": "0"})
+    assert evaluate_gate(base, base, both(old_base, within_noise))[0] == "pass"
+    verdict, items = evaluate_gate(base, base, both(old_base, regressed))
+    assert verdict == "fail" and "speed" in failed(items) and "quality" not in failed(items)
 
 
-# T-EVAL-07: la vara vieja sigue vigente aunque la propuesta cambie o borre métricas
-def test_the_base_yardstick_still_applies_when_the_candidate_drops_or_loosens_it() -> None:
+def test_the_base_yardstick_still_applies_when_the_candidate_drops_or_loosens_it() -> None:  # T-EVAL-07
     base = base_yardstick()
-    cand = yardstick(
-        [metric("quality", role="monitor")], [scenario("s1")], {}
-    )  # borra speed y leaks, degrada quality
-    old_base = report({"quality": "0.80", "speed": "0.50", "leaks": "0"})
-    cand_old = report({"quality": "0.30", "speed": "0.10", "leaks": "0"})
-    verdict = evaluate_gate(
-        base, cand, GateRuns(base_on_old=old_base, cand_on_old=cand_old, cand_on_new=cand_old)
-    )
-    assert verdict.status == "failed"
-    assert {"quality", "speed"} <= set(failed(verdict))
+    cand = yardstick([metric("quality", role="monitor")], [scenario("s1")], {})
+    runs = both(measured({"quality": "0.80", "speed": "0.50", "leaks": "0"}),
+                measured({"quality": "0.30", "speed": "0.10", "leaks": "0"}))
+    verdict, items = evaluate_gate(base, cand, runs)
+    assert verdict == "fail" and {"quality", "speed"} <= set(failed(items))
 
 
-# Review Focus 1: una métrica sin valor es un fallo, no un pase
-def test_a_metric_without_value_fails() -> None:
+def test_a_metric_without_value_fails() -> None:  # Review Focus 1
     base = base_yardstick()
-    old_base = report({"quality": "0.8", "speed": "0.5", "leaks": "0"})
-    cand_old = EvalReport(
-        metrics={pid: Decimal(0) for pid in PLATFORM_GUARDRAILS} | {"leaks": Decimal(0)},
-        scenarios={"s1": True},
-    )  # faltan quality y speed
-    verdict = evaluate_gate(
-        base, base, GateRuns(base_on_old=old_base, cand_on_old=cand_old, cand_on_new=cand_old)
-    )
-    assert verdict.status == "failed" and {"quality", "speed"} <= set(failed(verdict))
-    missing_base = EvalReport(metrics={"leaks": Decimal(0)}, scenarios={"s1": True})
-    v2 = evaluate_gate(
-        base, base, GateRuns(base_on_old=missing_base, cand_on_old=old_base, cand_on_new=old_base)
-    )
-    assert "quality" in failed(v2)
+    zeros = {pid: Decimal(0) for pid in PLATFORM_GUARDRAILS}
+    cand_old = SuiteMeasurement(metrics=zeros | {"leaks": Decimal(0)}, scenarios={"s1": True})
+    verdict, items = evaluate_gate(base, base, both(measured(GOOD), cand_old))
+    assert verdict == "fail" and {"quality", "speed"} <= set(failed(items))
+    missing_base = SuiteMeasurement(metrics={"leaks": Decimal(0)}, scenarios={"s1": True})
+    assert "quality" in failed(evaluate_gate(base, base, both(missing_base, measured(GOOD)))[1])
 
 
 def test_a_scenario_that_passed_in_the_base_and_fails_in_the_candidate_fails() -> None:
     base = base_yardstick()
-    good = report({"quality": "0.8", "speed": "0.5", "leaks": "0"}, {"s1": True})
-    broken = report({"quality": "0.8", "speed": "0.5", "leaks": "0"}, {"s1": False})
-    verdict = evaluate_gate(base, base, GateRuns(base_on_old=good, cand_on_old=broken, cand_on_new=broken))
-    assert "scenario/s1" in failed(verdict)
-    assert verdict.status == "failed"
-
-
-GOOD = {"quality": "0.8", "speed": "0.5", "leaks": "0"}
-
-
-def _scenario_verdict(base_scenarios: dict[str, bool], cand_scenarios: dict[str, bool]) -> Any:
-    base = base_yardstick()
-    old_base = report(GOOD, base_scenarios)
-    cand_old = report(GOOD, cand_scenarios)
-    new = report(GOOD, {"s1": True})
-    return evaluate_gate(base, base, GateRuns(base_on_old=old_base, cand_on_old=cand_old, cand_on_new=new))
+    runs = both(measured(GOOD, {"s1": True}), measured(GOOD, {"s1": False}))
+    verdict, items = evaluate_gate(base, base, runs)
+    assert verdict == "fail" and "scenario/s1" in failed(items)
 
 
 @pytest.mark.parametrize(
@@ -186,226 +126,163 @@ def _scenario_verdict(base_scenarios: dict[str, bool], cand_scenarios: dict[str,
     [
         ({"s1": True}, {"s1": True}, []),
         ({"s1": True}, {"s1": False}, ["scenario/s1"]),
-        ({"s1": True}, {}, ["scenario/s1"]),  # la candidata no midió el escenario
-        ({}, {"s1": False}, ["scenario/s1"]),  # la base no midió el escenario: falla cerrado
+        ({"s1": True}, {}, ["scenario/s1"]),  # the candidate did not measure the scenario
+        ({}, {"s1": False}, ["scenario/s1"]),  # the base did not measure it: fails closed
         ({}, {}, ["scenario/s1"]),
-        ({"s1": False}, {"s1": False}, []),  # fallaba ya en la base: no es regresión
-        ({"s1": False}, {}, []),  # un False explícito en la base exime
+        ({"s1": False}, {"s1": False}, []),  # already failing in the base: not a regression
+        ({"s1": False}, {}, []),  # an explicit False in the base exempts it
     ],
 )
 def test_scenario_regression_fails_closed_when_unmeasured(
     base_scenarios: dict[str, bool], cand_scenarios: dict[str, bool], expected: list[str]
 ) -> None:
-    assert failed(_scenario_verdict(base_scenarios, cand_scenarios)) == expected
+    base = base_yardstick()
+    runs = both(measured(GOOD, base_scenarios), measured(GOOD, cand_scenarios), measured(GOOD, {"s1": True}))
+    assert failed(evaluate_gate(base, base, runs)[1]) == expected
 
 
-# Una métrica cuya identidad cambia conserva el id pero se juzga en la vara nueva
 def test_a_metric_whose_identity_changed_is_judged_on_the_new_yardstick() -> None:
     base = base_yardstick()
-    old = report(GOOD)
+    old = measured(GOOD)
 
-    def candidate(floor: str | None, **over: Any) -> Any:
+    def candidate(floor: str | None, **over: Any) -> Yardstick:
         return yardstick(
             [metric("quality", **over), metric("speed"), metric("leaks", role="guardrail", higher=False)],
             [scenario("s1")],
-            {"quality": thr("0.05", floor), "speed": thr("0.1", "0.4"), "leaks": thr("0", "0")},
-        )
+            {"quality": thr("0.05", floor), "speed": thr("0.1", "0.4"), "leaks": thr("0", "0")})
 
-    def verdict(cand: Any, quality: str) -> Any:
-        new = report({**GOOD, "quality": quality})
-        return evaluate_gate(base, cand, GateRuns(base_on_old=old, cand_on_old=old, cand_on_new=new))
+    def judge(cand: Yardstick, quality: str) -> tuple[str, list[GateItem]]:
+        return evaluate_gate(base, cand, both(old, old, measured({**GOOD, "quality": quality})))
 
     for change in ({"event": "engine.run_closed"}, {"higher": False}):
         higher = change.get("higher", True)
-        ok = verdict(candidate("0.5", **change), "0.6" if higher else "0.3")
-        assert ok.status == "passed"
-        phases = {(i.metric_id, i.phase) for i in ok.items}
-        assert ("quality", "new_yardstick") in phases
-        below = verdict(candidate("0.5", **change), "0.4" if higher else "0.9")
-        assert failed(below) == ["quality"]
-        no_floor = verdict(candidate(None, **change), "0.8")
-        assert failed(no_floor) == ["quality"]
+        verdict, items = judge(candidate("0.5", **change), "0.6" if higher else "0.3")
+        assert verdict == "pass"
+        assert ("quality", "new_yardstick") in {(i.metric_id, i.phase) for i in items}
+        assert failed(judge(candidate("0.5", **change), "0.4" if higher else "0.9")[1]) == ["quality"]
+        assert failed(judge(candidate(None, **change), "0.8")[1]) == ["quality"]
+
+
+def test_an_unchanged_gate_metric_must_still_be_measurable_on_the_new_suite() -> None:  # final review I-1
+    base = base_yardstick()
+    old = measured(GOOD)
+    unmeasured = SuiteMeasurement(metrics={pid: Decimal(0) for pid in PLATFORM_GUARDRAILS}
+                                  | {"speed": Decimal("0.5"), "leaks": Decimal(0)}, scenarios={"s1": True})
+    verdict, items = evaluate_gate(base, base, both(old, old, unmeasured))
+    assert verdict == "fail" and failed(items) == ["quality"]
+    item = next(i for i in items if i.metric_id == "quality" and not i.passed)
+    assert item.phase == "new_yardstick" and item.value is None and "suite nueva" in item.reason
+
+
+def test_an_unchanged_gate_metric_measured_on_the_new_suite_adds_no_item() -> None:  # final review I-1
+    base = base_yardstick()
+    old = measured(GOOD)
+    verdict, items = evaluate_gate(base, base, both(old, old, measured({**GOOD, "quality": "0.1"})))
+    assert verdict == "pass"  # no floor is enforced on an unchanged metric (errata A11)
+    assert [i for i in items if i.metric_id == "quality" and i.phase == "new_yardstick"] == []
 
 
 def test_a_guardrail_with_a_declared_noise_margin_still_has_zero_tolerance() -> None:
-    base = yardstick(
-        [metric("leaks", role="guardrail", higher=False)], [scenario("s1")], {"leaks": thr("0.5", "0")}
-    )
-    old_base = report({"leaks": "0"})
-    slightly_worse = report({"leaks": "0.3"})
-    verdict = evaluate_gate(
-        base, base, GateRuns(base_on_old=old_base, cand_on_old=slightly_worse, cand_on_new=slightly_worse)
-    )
-    item = next(i for i in verdict.items if i.metric_id == "leaks" and i.phase == "base_yardstick")
-    assert not item.passed and item.threshold == Decimal(0)
-    assert failed(verdict) == ["leaks"]
+    base = yardstick([metric("leaks", role="guardrail", higher=False)], [scenario("s1")],
+                     {"leaks": thr("0.5", "0")})
+    _, items = evaluate_gate(base, base, both(measured({"leaks": "0"}), measured({"leaks": "0.3"})))
+    item = next(i for i in items if i.metric_id == "leaks" and i.phase == "base_yardstick")
+    assert not item.passed and item.noise_margin == Decimal(0)
+    assert failed(items) == ["leaks"]
 
 
-# Vara nueva: métricas y escenarios nuevos o modificados
+def _four_metrics() -> list[Any]:
+    return [metric("quality"), metric("speed"), metric("leaks", role="guardrail", higher=False),
+            metric("fresh")]
+
+
 def test_new_metrics_and_scenarios_must_meet_the_new_yardstick() -> None:
-    base = base_yardstick()
     cand = yardstick(
-        [
-            metric("quality"),
-            metric("speed"),
-            metric("leaks", role="guardrail", higher=False),
-            metric("fresh"),
-        ],
+        _four_metrics(),
         [scenario("s1"), scenario("s_new")],
-        {
-            "quality": thr("0.05", "0.5"),
-            "speed": thr("0.1", "0.4"),
-            "leaks": thr("0", "0"),
-            "fresh": thr("0", "0.5"),
-        },
-    )
-    old = report({"quality": "0.8", "speed": "0.5", "leaks": "0"})
-    ok_new = report(
-        {"quality": "0.8", "speed": "0.5", "leaks": "0", "fresh": "0.6"}, {"s1": True, "s_new": True}
-    )
-    bad_new = report(
-        {"quality": "0.8", "speed": "0.5", "leaks": "0", "fresh": "0.1"}, {"s1": True, "s_new": False}
-    )
-    assert (
-        evaluate_gate(base, cand, GateRuns(base_on_old=old, cand_on_old=old, cand_on_new=ok_new)).status
-        == "passed"
-    )
-    verdict = evaluate_gate(base, cand, GateRuns(base_on_old=old, cand_on_old=old, cand_on_new=bad_new))
-    assert verdict.status == "failed" and {"fresh", "scenario/s_new"} <= set(failed(verdict))
+        {"quality": thr("0.05", "0.5"), "speed": thr("0.1", "0.4"), "leaks": thr("0", "0"),
+         "fresh": thr("0", "0.5")})
+    old = measured(GOOD)
+    ok_new = measured({**GOOD, "fresh": "0.6"}, {"s1": True, "s_new": True})
+    bad_new = measured({**GOOD, "fresh": "0.1"}, {"s1": True, "s_new": False})
+    assert evaluate_gate(base_yardstick(), cand, both(old, old, ok_new))[0] == "pass"
+    verdict, items = evaluate_gate(base_yardstick(), cand, both(old, old, bad_new))
+    assert verdict == "fail" and {"fresh", "scenario/s_new"} <= set(failed(items))
 
 
 def test_a_new_metric_without_floor_fails() -> None:
-    base = base_yardstick()
     cand = yardstick(
-        [
-            metric("quality"),
-            metric("speed"),
-            metric("leaks", role="guardrail", higher=False),
-            metric("fresh"),
-        ],
+        _four_metrics(),
         [scenario("s1")],
-        {
-            "quality": thr("0.05", "0.5"),
-            "speed": thr("0.1", "0.4"),
-            "leaks": thr("0", "0"),
-            "fresh": thr("0"),
-        },
-    )
-    old = report({"quality": "0.8", "speed": "0.5", "leaks": "0", "fresh": "1"})
-    assert failed(evaluate_gate(base, cand, GateRuns(base_on_old=old, cand_on_old=old, cand_on_new=old))) == [
-        "fresh"
-    ]
+        {"quality": thr("0.05", "0.5"), "speed": thr("0.1", "0.4"), "leaks": thr("0", "0"),
+         "fresh": thr("0")})
+    old = measured({**GOOD, "fresh": "1"})
+    assert failed(evaluate_gate(base_yardstick(), cand, both(old, old))[1]) == ["fresh"]
 
 
-# Guardarraíles de plataforma
 def test_platform_guardrails_must_be_zero() -> None:
-    runs = GateRuns(
-        base_on_old=None,
-        cand_on_old=None,
-        cand_on_new=report(
-            {"quality": "0.9", "speed": "0.9", "leaks": "0"}, platform=ZEROS | {"platform_pii_leak": "1"}
-        ),
-    )
-    verdict = evaluate_gate(None, base_yardstick(), runs)
-    assert verdict.status == "failed" and failed(verdict) == ["platform_pii_leak"]
+    runs = only_new(measured({"quality": "0.9", "speed": "0.9", "leaks": "0"},
+                             platform=ZEROS | {"platform_pii_leak": "1"}))
+    verdict, items = evaluate_gate(None, base_yardstick(), runs)
+    assert verdict == "fail" and failed(items) == ["platform_pii_leak"]
 
 
 def test_a_measured_pii_leak_on_the_candidate_old_suite_fails_even_if_not_worse_than_base() -> None:
     base = base_yardstick()
-    leaky = report(GOOD, platform=ZEROS | {"platform_pii_leak": "2"})
-    clean_new = report(GOOD)  # la candidata quitó de su suite nueva el escenario que filtraba
-    verdict = evaluate_gate(base, base, GateRuns(base_on_old=leaky, cand_on_old=leaky, cand_on_new=clean_new))
-    assert verdict.status == "failed" and failed(verdict) == ["platform_pii_leak"]
-    item = next(i for i in verdict.items if i.metric_id == "platform_pii_leak")
-    assert item.base_value == Decimal(2)
+    leaky = measured(GOOD, platform=ZEROS | {"platform_pii_leak": "2"})
+    verdict, items = evaluate_gate(base, base, both(leaky, leaky, measured(GOOD)))
+    assert verdict == "fail" and failed(items) == ["platform_pii_leak"]
+    assert next(i for i in items if i.metric_id == "platform_pii_leak").base_value == Decimal(2)
 
 
 def test_a_platform_guardrail_that_was_not_measured_fails() -> None:
     partial = {pid: "0" for pid in PLATFORM_GUARDRAILS[:-1]}
-    runs = GateRuns(
-        base_on_old=None,
-        cand_on_old=None,
-        cand_on_new=report({"quality": "0.9", "speed": "0.9", "leaks": "0"}, platform=partial),
-    )
-    assert failed(evaluate_gate(None, base_yardstick(), runs)) == [PLATFORM_GUARDRAILS[-1]]
+    runs = only_new(measured({"quality": "0.9", "speed": "0.9", "leaks": "0"}, platform=partial))
+    assert failed(evaluate_gate(None, base_yardstick(), runs)[1]) == [PLATFORM_GUARDRAILS[-1]]
 
 
-# T-EVAL-15
 @pytest.mark.parametrize("which", ["base_on_old", "cand_on_old", "cand_on_new"])
-def test_failed_infra_is_not_a_verdict(which: str) -> None:
+def test_failed_infra_is_not_a_verdict(which: str) -> None:  # T-EVAL-15
     base = base_yardstick()
-    ok = report({"quality": "0.8", "speed": "0.5", "leaks": "0"})
-    broken = EvalReport(status="failed_infra", metrics={}, scenarios={})
-    runs = {"base_on_old": ok, "cand_on_old": ok, "cand_on_new": ok} | {which: broken}
-    verdict = evaluate_gate(base, base, GateRuns(**runs))
-    assert verdict.status == "failed_infra" and verdict.items == []
+    ok = measured(GOOD)
+    runs = {"base_on_old": ok, "cand_on_old": ok, "cand_on_new": ok} | {
+        which: SuiteMeasurement(status="failed_infra")}
+    assert evaluate_gate(base, base, GateRuns(**runs)) == ("failed_infra", [])
 
 
 def test_a_base_without_its_runs_is_a_programming_error() -> None:
     with pytest.raises(ValueError):
-        evaluate_gate(
-            base_yardstick(),
-            base_yardstick(),
-            GateRuns(base_on_old=None, cand_on_old=None, cand_on_new=report({})),
-        )
+        evaluate_gate(base_yardstick(), base_yardstick(), only_new(measured({})))
 
 
-def test_items_carry_value_base_and_threshold() -> None:
+def test_items_carry_value_base_and_margin_apart_from_floor() -> None:  # decision D8
     base = base_yardstick()
-    old_base = report({"quality": "0.80", "speed": "0.50", "leaks": "0"})
-    cand_old = report({"quality": "0.85", "speed": "0.50", "leaks": "0"})
-    verdict = evaluate_gate(
-        base, base, GateRuns(base_on_old=old_base, cand_on_old=cand_old, cand_on_new=cand_old)
-    )
-    item = next(i for i in verdict.items if i.metric_id == "quality" and i.phase == "base_yardstick")
-    assert (item.value, item.base_value, item.threshold, item.role) == (
-        Decimal("0.85"),
-        Decimal("0.80"),
-        Decimal("0.05"),
-        "gate",
-    )
+    _, items = evaluate_gate(base, base, both(measured({"quality": "0.80", "speed": "0.50", "leaks": "0"}),
+                                              measured({"quality": "0.85", "speed": "0.50", "leaks": "0"})))
+    item = next(i for i in items if i.metric_id == "quality" and i.phase == "base_yardstick")
+    assert (item.value, item.base_value, item.noise_margin, item.floor, item.role) == (
+        Decimal("0.85"), Decimal("0.80"), Decimal("0.05"), None, "gate")
 
 
 @pytest.mark.parametrize("which", ["base_on_old", "cand_on_old"])
 def test_a_platform_guardrail_unmeasured_on_the_old_suite_fails_with_a_base(which: str) -> None:
     base = base_yardstick()
-    full = report({"quality": "0.8", "speed": "0.5", "leaks": "0"})
+    full = measured(GOOD)
     gap = PLATFORM_GUARDRAILS[-1]
-    partial = EvalReport(metrics={k: v for k, v in full.metrics.items() if k != gap}, scenarios={"s1": True})
+    partial = SuiteMeasurement(metrics={k: v for k, v in full.metrics.items() if k != gap},
+                               scenarios={"s1": True})
     reports = {"base_on_old": full, "cand_on_old": full} | {which: partial}
-    verdict = evaluate_gate(base, base, GateRuns(**reports, cand_on_new=full))
-    assert verdict.status == "failed" and failed(verdict) == [gap]
+    verdict, items = evaluate_gate(base, base, GateRuns(**reports, cand_on_new=full))
+    assert verdict == "fail" and failed(items) == [gap]
 
 
-# Gate de §6.4 del registry (`decide`, ADR 0018), el que usa `ScenarioEvaluator`.
-
-SUITE = EvalSuite.model_validate(suite_content())  # margen 0.05, piso 0.5
-ZERO = {"unverified_writes": 0, "unsupported_success": 0, "sensitive_leaks": 0}
-
-
-def _m(primary: str, **g: int) -> SuiteMetrics:
-    return SuiteMetrics(primary=Decimal(primary), guardrails={**ZERO, **g}, runs=10)
-
-
-def test_guardrail_regression_fails_even_if_primary_improves() -> None:  # T-REG-08
-    verdict, checks = decide(SUITE, _m("0.9", unverified_writes=1), _m("0.5"))
-    assert verdict == "fail"
-    assert [c.name for c in checks if not c.passed] == ["unverified_writes"]
-
-
-def test_primary_within_margin_passes_outside_fails() -> None:  # T-REG-09
-    assert decide(SUITE, _m("0.76"), _m("0.80"))[0] == "pass"
-    assert decide(SUITE, _m("0.74"), _m("0.80"))[0] == "fail"
-
-
-def test_without_base_uses_floor_and_zero_guardrails() -> None:  # T-REG-10
-    assert decide(SUITE, _m("0.5"), None)[0] == "pass"
-    assert decide(SUITE, _m("0.49"), None)[0] == "fail"
-    assert decide(SUITE, _m("0.9", sensitive_leaks=1), None)[0] == "fail"
-
-
-def test_every_check_reports_value_base_and_threshold() -> None:
-    _, checks = decide(SUITE, _m("0.8"), _m("0.8"))
-    primary = next(c for c in checks if c.name == "primary")
-    expected = (Decimal("0.8"), Decimal("0.8"), Decimal("0.75"))
-    assert (primary.value, primary.base, primary.threshold) == expected
+def test_a_base_without_a_recorded_suite_is_judged_by_floors_only() -> None:  # decision D3
+    base = Yardstick(metrics=base_yardstick().metrics, suite=None)
+    verdict, items = evaluate_gate(base, base_yardstick(),
+                                   only_new(measured({"quality": "0.6", "speed": "0.5", "leaks": "0"})))
+    assert verdict == "pass" and {i.phase for i in items} == {"new_yardstick", "platform"}
+    quality = next(i for i in items if i.metric_id == "quality")
+    assert (quality.floor, quality.noise_margin) == (Decimal("0.5"), None)
+    _, low = evaluate_gate(base, base_yardstick(),
+                           only_new(measured({"quality": "0.4", "speed": "0.5", "leaks": "0"})))
+    assert failed(low) == ["quality"]

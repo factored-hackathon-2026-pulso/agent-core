@@ -168,3 +168,11 @@ def test_unloadable_verifier_or_harness_is_exit_2_with_clear_message(
         ("--verifier", "testing.registry_demo:demo_verifier")
     code, out, err = cli.run(flag, path, *other, "show", "p", env={})
     assert code == 2 and out == "" and "no se pudo cargar" in err and "Traceback" not in err
+
+
+def test_approve_accepts_the_loosening_flag() -> None:  # D7
+    parser = argparse.ArgumentParser()
+    add_registry_parser(parser.add_subparsers(dest="command", required=True))
+    args = parser.parse_args(["registry", "approve", "p-1", "h" * 64, "--accept-yardstick-loosened"])
+    assert args.accept_yardstick_loosened is True
+    assert parser.parse_args(["registry", "approve", "p-1", "h"]).accept_yardstick_loosened is False

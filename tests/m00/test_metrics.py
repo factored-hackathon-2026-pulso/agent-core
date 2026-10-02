@@ -23,8 +23,8 @@ def test_count_metric_is_valid() -> None:
     [
         {"aggregation": "sum"},  # sum exige field
         {"aggregation": "avg"},
-        {"aggregation": "percentile", "field": "duration_ms"},  # percentile exige el percentil
-        {"aggregation": "count", "field": "duration_ms"},  # count no lleva field
+        {"aggregation": "percentile", "field": "duration_ms"},  # percentile requires the percentile
+        {"aggregation": "count", "field": "duration_ms"},  # count takes no field
         {"aggregation": "count", "percentile": 50},
         {"aggregation": "rate"},  # rate exige denominador
         {"aggregation": "sum", "field": "duration_ms", "percentile": 50},
@@ -42,7 +42,7 @@ def test_percentile_bounds() -> None:
             expr(aggregation="percentile", field="duration_ms", percentile=bad)
 
 
-# T-EVAL-02: la ventana es obligatoria y acotada
+# T-EVAL-02: the window is required and bounded
 def test_window_is_required_and_positive() -> None:
     with pytest.raises(ValidationError):
         MetricExpr.model_validate({"event": "engine.escalated", "aggregation": "count"})
@@ -52,7 +52,7 @@ def test_window_is_required_and_positive() -> None:
             expr(window=bad)
 
 
-# T-EVAL-03: el DSL no tiene funciones de hora ni claves libres
+# T-EVAL-03: the DSL has no time functions or free-form keys
 @pytest.mark.parametrize("extra", [{"now": "2026-01-01"}, {"sql": "SELECT 1"}, {"since": "PT1H"}])
 def test_free_keys_are_rejected(extra: dict[str, Any]) -> None:
     with pytest.raises(ValidationError):
@@ -65,11 +65,11 @@ def test_rate_needs_an_aligned_count_denominator() -> None:
     assert ok.denominator is not None
     with pytest.raises(ValidationError):  # ventana distinta
         expr(aggregation="rate", denominator=denominator | {"window": "run"})
-    with pytest.raises(ValidationError):  # el denominador es un count
+    with pytest.raises(ValidationError):  # the denominator is a count
         expr(aggregation="rate", denominator=denominator | {"aggregation": "sum", "field": "duration_ms"})
-    with pytest.raises(ValidationError):  # agrupación distinta
+    with pytest.raises(ValidationError):  # different grouping
         expr(aggregation="rate", denominator=denominator | {"group_by": ["release"]})
-    with pytest.raises(ValidationError):  # un denominador sin rate
+    with pytest.raises(ValidationError):  # a denominator without rate
         expr(denominator=denominator)
 
 

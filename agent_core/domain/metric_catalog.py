@@ -1,7 +1,7 @@
-"""Catálogo cerrado de eventos medibles (ADR 0020, spec de evaluación §4).
+"""Closed catalog of measurable events (ADR 0020, evaluation spec section 4).
 
-Solo expone campos que el evento ya lleva en vista `audit`; ningún campo de datos de cliente. Agregar un
-evento medible es un cambio de catálogo y sube `SCHEMA_VERSION`.
+It only exposes fields the event already carries in the `audit` view; no customer data field. Adding a
+measurable event is a catalog change and bumps `SCHEMA_VERSION`.
 """
 
 from collections.abc import Mapping, Sequence
@@ -61,7 +61,7 @@ METRIC_EVENT_CATALOG: Mapping[str, Mapping[str, FieldKind]] = MappingProxyType({
 
 
 def catalog_fields(event: str) -> Mapping[str, FieldKind] | None:
-    """Campos medibles de `event`, o None si no está en el catálogo. Nunca lanza."""
+    """Measurable fields of `event`, or None if it is not in the catalog. Never raises."""
     return METRIC_EVENT_CATALOG.get(event)
 
 
@@ -82,10 +82,10 @@ def _scalar_matches(kind: str, value: object) -> bool:
 
 
 def predicate_problems(event: str, predicates: Sequence[Predicate]) -> list[tuple[int, str, str]]:
-    """Lo que está mal en `predicates` frente a los campos de `event`: `(índice, "field" | "value", mensaje)`.
+    """What is wrong with `predicates` against the fields of `event`: `(index, "field" | "value", message)`.
 
-    El campo debe existir, el valor debe corresponder a su tipo y los operadores de orden exigen un campo
-    numérico. Un evento fuera del catálogo devuelve lista vacía: lo reporta quien llama. Nunca lanza.
+    The field must exist, the value must match its type and ordering operators require a numeric
+    field. An event outside the catalog yields an empty list: the caller reports it. Never raises.
     """
     fields = catalog_fields(event)
     if fields is None:
