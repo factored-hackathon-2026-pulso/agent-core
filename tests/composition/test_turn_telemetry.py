@@ -40,6 +40,8 @@ REGISTRY = Path("tests/fixtures/registry-demo")
 RUNS = Path("tests/fixtures/runs")
 # The six paths of `registry-demo`; `transferencia` (phase 7) has its own registry and fixture directory.
 DEMO_PATHS = sorted(set(SCENARIOS) - set(SCENARIO_REGISTRY))
+TRANSFER_REGISTRY = Path("tests/fixtures/registry-transfer-demo")
+TRANSFER_RUN = Path("tests/fixtures/runs-transfer/transferencia.yaml")
 CATALOG = Path("tests/fixtures/catalogo-datos-prueba.yaml")
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 CHILDREN = (tel.DECIDE, tel.RULE, tel.EXECUTE_TOOL)
@@ -373,6 +375,38 @@ def test_recording_with_live_telemetry_keeps_every_fixture_byte_identical(  # T-
     assert (RUNS / f"{camino}.yaml").read_text(encoding="utf-8") == grabado
     names = [s.name for s in otel.get_finished_spans()]
     assert tel.INVOKE_AGENT in names and tel.DECIDE in names  # the telemetry really ran
+
+
+def test_recording_the_transfer_session_with_live_telemetry_keeps_its_fixture_byte_identical(  # T-M11-15
+        otel: InMemorySpanExporter, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str]) -> None:
+    """Phase 7: the linked chains of the transfer session are the same bytes with live telemetry, and the
+    committed fixture still replays as `match` on an engine without telemetry."""
+    from agent_core.cli import main
+    from agent_core.turn import NoTurnTelemetry, TurnEngine
+    from testing.replay import runner
+
+    grabado = dump_fixture(record_scenario("transferencia", TRANSFER_REGISTRY, telemetry=OtelTurnTelemetry()))
+    assert TRANSFER_RUN.read_text(encoding="utf-8") == grabado
+    spans = otel.get_finished_spans()
+    names = [s.name for s in spans]
+    assert names.count(tel.TRANSFER) == 1 and tel.DECIDE in names  # the telemetry really ran
+    assert len({dict(s.attributes or {})["run_id"] for s in spans if s.name == tel.INVOKE_AGENT}) == 2
+    otel.clear()
+
+    engines: list[TurnEngine] = []
+    build = runner.build_turn_engine
+
+    def capturing(deps: Any) -> TurnEngine:
+        engines.append(build(deps))
+        return engines[-1]
+
+    monkeypatch.setattr(runner, "build_turn_engine", capturing)
+    code = main(["replay", str(TRANSFER_RUN), "--mode", "fixture", "--registry", str(TRANSFER_REGISTRY),
+                 "--catalog", str(CATALOG)])
+    assert code == 0 and capsys.readouterr().out.startswith("match")
+    assert engines and all(isinstance(e._telemetry, NoTurnTelemetry) for e in engines)
+    assert otel.get_finished_spans() == ()
 
 
 def _played(camino: str) -> tuple[EngineWorld, list[EngineEvent]]:

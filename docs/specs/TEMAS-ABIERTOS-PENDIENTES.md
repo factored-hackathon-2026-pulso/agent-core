@@ -140,7 +140,7 @@ ADR 0021 (propuesto; implementado en las ramas `feat/transferencia-entre-agentes
 **Trabajo fuera de las fases 1 a 6 (decisión P7 del plan):**
 - **REL-T1** (compatibilidad de `accepts` al publicar recepción) y la **evaluación** de la spec §7 (`transferred_to`, `transfer_packet`, `routing_scenarios`, gate del especialista, `yardstick_loosened`). Dependen de `feat/eval-metrics`.
 - ~~**Agentes de la demo** (fase 7)~~: **hecho** (recepción, disputas y consultas; registro `registry-transfer-demo`, demo en proceso y HTTP, fixture grabado). Las **suites de evaluación** de esos agentes quedan para la fase 8 (decisión del usuario).
-- ~~**Spans OTel** (`agentcore.transfer` y el *span link*).~~ **Hecho (2026-10-02)** (spec de transferencia §8, T-TR-16; m04 §3.9). El enlace entre spans no se persiste.
+- ~~**Spans OTel** (`agentcore.transfer` y el *span link*).~~ **Hecho (2026-10-02)** (spec de transferencia §8, T-TR-16; m04 §3.9). El enlace entre spans no se persiste; el fixture grabado de la sesión es idéntico con y sin telemetría (T-M11-15).
 - **Replay de sesión:** el modo `fixture` ya reproduce la sesión (fase 7). Pendiente: conectar `verify_transfer_link` sobre el almacén de auditoría a `agentcore replay` y el replay por `run_id` (modo `audit`).
 - **Vuelta a recepción** (`on_out_of_scope: transfer`) y **especialistas que exigen `step_up`** (hoy se excluyen del directorio).
 - **Tope y presupuesto por sesión:** `max_transfers_per_session = 1` es un valor de la demo.
