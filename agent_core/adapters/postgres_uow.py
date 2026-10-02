@@ -58,6 +58,17 @@ class PostgresStore:
     def connect(self) -> "psycopg.Connection[Any]":
         return psycopg.connect(self._dsn, autocommit=True, options=self._options)
 
+    def ping(self, timeout_s: int = 3) -> bool:
+        """`True` si la base responde a `SELECT 1`. Falla cerrado y sin detalle: el error de psycopg puede
+        traer el host o la contraseña."""
+        try:
+            with psycopg.connect(self._dsn, autocommit=True, options=self._options,
+                                 connect_timeout=timeout_s) as conn:
+                conn.execute("SELECT 1")
+        except psycopg.Error:
+            return False
+        return True
+
     def uow(self) -> "PostgresUoW":
         return PostgresUoW(self.connect())
 
