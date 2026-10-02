@@ -90,6 +90,19 @@ def _allowed(name: str, attrs: Mapping[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in attrs.items() if k in ALLOWED_ATTRIBUTES and v is not None}
 
 
+def _missing_context(name: str, merged: Mapping[str, Any]) -> bool:
+    """`True` (skip the span) without `run_id` or `agentcore.release`; strict mode raises instead."""
+    missing = [k for k in _REQUIRED if k not in merged]
+    if not missing:
+        return False
+    if _strict:
+        raise MissingTelemetryContext(f"span {name!r} sin {', '.join(missing)}; usa bind(...)")
+    if name not in _warned:  # I4: telemetry never fails a turn; warn once per span name and process
+        _warned.add(name)
+        _LOG.warning("span %s sin %s: se omite", name, ", ".join(missing))
+    return True
+
+
 def mark_error(active: Span, exc: BaseException) -> None:
     """Only the type: an exception's message may carry secrets or PII (rule 6)."""
     active.set_attribute("error.type", type(exc).__name__)
@@ -102,13 +115,7 @@ def span(name: str, *, attributes: Mapping[str, Any] | None = None, links: Seque
     """A live span under `context` (default: the current one). The bound context (`bind`) wins over
     `attributes` and kwargs: a span cannot change its run_id or release."""
     merged = _allowed(name, {**{_key(k): v for k, v in attrs.items()}, **(attributes or {}), **current()})
-    missing = [k for k in _REQUIRED if k not in merged]
-    if missing:
-        if _strict:
-            raise MissingTelemetryContext(f"span {name!r} sin {', '.join(missing)}; usa bind(...)")
-        if name not in _warned:  # I4: telemetry never fails a turn; warn once per span name and process
-            _warned.add(name)
-            _LOG.warning("span %s sin %s: se omite", name, ", ".join(missing))
+    if _missing_context(name, merged):
         yield trace.INVALID_SPAN
         return
     with _tracer(_SCOPE).start_as_current_span(
@@ -124,10 +131,13 @@ def span(name: str, *, attributes: Mapping[str, Any] | None = None, links: Seque
 def record_span(name: str, *, parent: Span, start_ns: int, end_ns: int,
                 attributes: Mapping[str, Any]) -> None:
     """A finished child of `parent` with explicit times (derived from audit events, M11 §3.2). No-op on a
-    non-recording parent (no provider, sampled out or a no-op span)."""
+    non-recording parent (no provider, sampled out or a no-op span). Needs the bound run context like `span()`
+    (strict mode raises without it)."""
     if not parent.is_recording():
         return
     merged = _allowed(name, {**attributes, **current()})
+    if _missing_context(name, merged):
+        return
     child = _tracer(_SCOPE).start_span(name, context=trace.set_span_in_context(parent), attributes=merged,
                                        start_time=start_ns, record_exception=False,
                                        set_status_on_exception=False)

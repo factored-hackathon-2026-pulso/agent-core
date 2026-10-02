@@ -220,3 +220,23 @@ def test_bound_context_wins_over_span_kwargs(otel: InMemorySpanExporter) -> None
     with tel.bind(run_id="run-0001", release="rel-1"), tel.span(tel.CHAT, run_id="run-otro"):
         pass
     assert dict(otel.get_finished_spans()[0].attributes or {})["run_id"] == "run-0001"
+
+
+def test_record_span_requires_the_run_context_in_strict_mode(otel: InMemorySpanExporter) -> None:  # M5
+    with tel.bind(run_id="run-0001", release="rel-1"), tel.span(tel.INVOKE_AGENT) as parent:
+        pass
+    with pytest.raises(tel.MissingTelemetryContext):  # the parent is still a recording span object
+        tel.record_span(tel.RULE, parent=_Recording(parent), start_ns=1, end_ns=2, attributes={})
+
+
+class _Recording:
+    """A recording parent seen outside any `bind` (e.g. a span handed to another thread)."""
+
+    def __init__(self, span: object) -> None:
+        self._span = span
+
+    def is_recording(self) -> bool:
+        return True
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._span, name)

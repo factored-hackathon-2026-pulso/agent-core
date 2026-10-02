@@ -49,3 +49,11 @@ def test_bound_context_and_trace_id_are_present(otel: InMemorySpanExporter) -> N
         line = json.loads(tel.JsonLogFormatter().format(_record()))
     assert line["run_id"] == "run-0001" and line["agentcore.agent"] == "atencion@1.0.0"
     assert len(line["trace_id"]) == 32
+
+
+def test_credentials_in_a_url_are_redacted() -> None:  # M3: SDK retry warnings may name the endpoint
+    record = logging.LogRecord("opentelemetry.exporter", logging.WARNING, __file__, 1,
+                               "retrying %s", ("https://usuario:SECRETO9@collector:4318/v1/traces",), None)
+    line = json.loads(tel.JsonLogFormatter().format(record))
+    assert "SECRETO9" not in line["message"] and "usuario" not in line["message"]
+    assert "https://***@collector:4318/v1/traces" in line["message"]

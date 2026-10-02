@@ -1,12 +1,19 @@
 """Operational plane of `agentcore serve` (ADR 0003 #1/#4): traces from the standard OTEL_* variables, JSON
-logs on root and flush on exit. Reads only the injected `env` (F4): the resource, sampler, endpoint and
-headers are passed to the SDK explicitly. Exception: the exporter's certificates, compression and timeout are
-still read by the SDK from `os.environ` (in production `env is os.environ`)."""
+logs on root and flush on exit.
+
+Configuration comes from the injected `env` (F4): the resource, sampler, endpoint and headers are validated
+here and passed to the SDK explicitly. The OTLP exporter still reads the process environment on its own: it
+re-parses `OTEL_EXPORTER_OTLP[_TRACES]_HEADERS` (and merges them under ours) and reads the certificates,
+compression and timeout. In production `env is os.environ`, so the headers it re-parses are the ones
+validated here; while the exporter is built, the SDK logger that would echo a rejected header entry is
+silenced (a header may be a credential)."""
 
 import logging
 import math
+import re
 import sys
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
@@ -21,6 +28,16 @@ from opentelemetry.trace import Tracer
 import agent_telemetry as tel
 
 _TRACES_PATH = "/v1/traces"
+# The SDK's header grammar (`opentelemetry.util.re`, W3C baggage plus its "liberal" spaces in values). An
+# entry outside it is one the OTLP exporter would reject and log verbatim, so it is a startup problem here.
+# `test_header_patterns_match_the_sdk` keeps these copies equal to the SDK's private ones.
+_KEY = r"[\x21\x23-\x27\x2a\x2b\x2d\x2e\x30-\x39\x41-\x5a\x5e-\x7a\x7c\x7e]+"
+_HEADER_PATTERN = re.compile(
+    rf"[ \t]*{_KEY}[ \t]*=[ \t]*[\x21\x23-\x2b\x2d-\x3a\x3c-\x5b\x5d-\x7e]*[ \t]*")
+_LIBERAL_HEADER_PATTERN = re.compile(
+    rf"[ \t]*{_KEY}[ \t]*=[ \t]*[\x20\x21\x23-\x2b\x2d-\x3a\x3c-\x5b\x5d-\x7e]*[ \t]*")
+# SDK loggers that write header text when parsing them (`parse_env_headers` logs a rejected entry verbatim).
+_HEADER_ECHOING_LOGGERS = ("opentelemetry.util.re",)
 _SDK_LOGGERS = ("openai", "httpx", "httpcore")  # the openai SDK logs request bodies (model view) at DEBUG
 _RATIO_SAMPLERS = ("traceidratio", "parentbased_traceidratio")
 _SAMPLERS: Mapping[str, sampling.Sampler | None] = {
@@ -67,10 +84,11 @@ def tracing_config(env: Mapping[str, str], *, version: str) -> TracingConfig | N
         if problems:
             raise ObservabilityConfigError(problems)
         return None
-    for name in ("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", "OTEL_EXPORTER_OTLP_PROTOCOL"):
-        if (protocol := env.get(name, "").strip()) and protocol != "http/protobuf":
-            problems.append(f"{name}: solo `http/protobuf` (no hay exportador gRPC ni http/json)")
-            break
+    # the signal-specific variable wins over the generic one (OTLP exporter specification)
+    traces_protocol = env.get("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", "").strip()
+    protocol_var = "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL" if traces_protocol else "OTEL_EXPORTER_OTLP_PROTOCOL"
+    if (protocol := env.get(protocol_var, "").strip()) and protocol != "http/protobuf":
+        problems.append(f"{protocol_var}: solo `http/protobuf` (no hay exportador gRPC ni http/json)")
     sampler = _sampler(env.get("OTEL_TRACES_SAMPLER"), env.get("OTEL_TRACES_SAMPLER_ARG"), problems)
     headers_var = ("OTEL_EXPORTER_OTLP_TRACES_HEADERS" if env.get("OTEL_EXPORTER_OTLP_TRACES_HEADERS")
                    else "OTEL_EXPORTER_OTLP_HEADERS")
@@ -106,18 +124,20 @@ def _sampler(name: str | None, arg: str | None, problems: list[str]) -> sampling
 
 
 def _headers(variable: str, raw: str, problems: list[str]) -> dict[str, str]:
-    """`k=v` pairs separated by commas, URL-decoded (W3C baggage format). Not the SDK's parser: it logs a
-    malformed entry verbatim, and an entry may be a credential. A problem names the position, never the
-    text."""
+    """`k=v` pairs separated by commas, with the SDK's grammar and decoding (URL-decoded only when the entry
+    is strict W3C baggage). Not the SDK's parser: it logs a rejected entry verbatim, and an entry may be a
+    credential. A problem names the variable and the position, never the text."""
     headers: dict[str, str] = {}
     for position, entry in enumerate(raw.split(","), start=1):
         if not entry.strip():
             continue
-        key, sep, value = entry.partition("=")
-        if not sep or not key.strip():
-            problems.append(f"{variable}: la entrada {position} no es `clave=valor`")
+        if _LIBERAL_HEADER_PATTERN.fullmatch(entry.strip()) is None:
+            problems.append(f"{variable}: la entrada {position} no es `clave=valor` válida")
             continue
-        headers[unquote(key).strip().lower()] = unquote(value).strip()
+        key, _, value = entry.strip().partition("=")
+        if _HEADER_PATTERN.fullmatch(entry.strip()) is not None:
+            key, value = unquote(key), unquote(value)
+        headers[key.strip().lower()] = value.strip()
     return headers
 
 
@@ -139,25 +159,40 @@ def _version() -> str:
         return "0+unknown"
 
 
-@dataclass
+@dataclass(frozen=True)
+class _SavedLogging:
+    handlers: tuple[logging.Handler, ...]
+    levels: Mapping[str, int]  # "" is root
+
+
+_SAVED: _SavedLogging | None = None  # logging as it was before the first live setup
+_ACTIVE: "Observability | None" = None  # the setup whose shutdown restores it; a later setup replaces it
+
+
+@dataclass(eq=False)
 class Observability:
-    """What `setup_observability` installed; `shutdown()` undoes it."""
+    """What `setup_observability` installed; `shutdown()` undoes it. A second setup replaces the first (like
+    `setup_tracing`): the replaced one's `shutdown()` is then a no-op, and the active one's restores the
+    logging saved before the first setup, so any shutdown order leaves the process as it was."""
 
     tracing: bool
     _handler: logging.Handler = field(repr=False)
-    _levels: Mapping[str, int] = field(repr=False, default_factory=dict)
 
     def tracer(self, name: str) -> Tracer:
         return tel.tracer(name)
 
     def shutdown(self) -> None:
-        """Flush pending spans (BatchSpanProcessor, I6), remove the root handler and restore the logger levels
-        it changed. Idempotent."""
+        """Flush pending spans (BatchSpanProcessor, I6), then put back the root handlers and the logger levels
+        saved before the first setup. Idempotent."""
+        global _ACTIVE, _SAVED
+        if _ACTIVE is not self:
+            return
         tel.shutdown_tracing()
-        root = logging.getLogger()
-        if self._handler in root.handlers:
-            root.removeHandler(self._handler)
-            for name, level in self._levels.items():
+        saved, _ACTIVE, _SAVED = _SAVED, None, None
+        if saved is not None:
+            root = logging.getLogger()
+            root.handlers[:] = list(saved.handlers)
+            for name, level in saved.levels.items():
                 logging.getLogger(name).setLevel(level)
 
 
@@ -168,30 +203,50 @@ def quiet_sdk_loggers() -> None:
 
 
 def install_json_logging(stream: TextIO, level: int = logging.INFO) -> logging.Handler:
-    """The only agentcore handler on root (replaces a previous one), with `JsonLogFormatter` (F6)."""
+    """Make `JsonLogFormatter` the **only** root handler (F6, I1). A foreign handler (e.g. the `basicConfig`
+    that the openai SDK runs at import with OPENAI_LOG=debug) would print an exception's message and stack in
+    plain text next to the JSON line; the caller restores the previous handlers on shutdown."""
     root = logging.getLogger()
-    for old in [h for h in root.handlers if getattr(h, "agentcore", False)]:
-        root.removeHandler(old)
     handler = logging.StreamHandler(stream)
     handler.setFormatter(tel.JsonLogFormatter())
     handler.agentcore = True  # type: ignore[attr-defined]  # marks the handler this module owns
-    root.addHandler(handler)
+    root.handlers[:] = [handler]
     root.setLevel(level)
     return handler
 
 
+@contextmanager
+def _sdk_header_logs_silenced() -> Iterator[None]:
+    loggers = [logging.getLogger(name) for name in _HEADER_ECHOING_LOGGERS]
+    previous = [lg.disabled for lg in loggers]
+    for lg in loggers:
+        lg.disabled = True
+    try:
+        yield
+    finally:
+        for lg, value in zip(loggers, previous, strict=True):
+            lg.disabled = value
+
+
 def setup_observability(env: Mapping[str, str], *, version: str | None = None,
                         exporter: SpanExporter | None = None, stream: TextIO | None = None) -> Observability:
-    """Traces (when OTEL_* name an endpoint, or with an explicit `exporter` in tests), JSON logs on root at
-    INFO and the SDK loggers at WARNING. Raises `ObservabilityConfigError` before touching anything."""
+    """Traces (when OTEL_* name an endpoint, or with an explicit `exporter` in tests), JSON logs as the only
+    root handler at INFO and the SDK loggers at WARNING. Raises `ObservabilityConfigError` before touching
+    anything."""
+    global _ACTIVE, _SAVED
     config = tracing_config(env, version=version or _version())
-    levels = {name: logging.getLogger(name).level for name in ("", *_SDK_LOGGERS)}
-    if config is not None or exporter is not None:
-        tel.setup_tracing(
-            endpoint=config.endpoint if config is not None else None, exporter=exporter,
-            headers=config.headers if config is not None else None,
-            resource=Resource(dict(config.resource)) if config is not None else None,
-            sampler=config.sampler if config is not None else None)
+    if config is not None or exporter is not None:  # first: if it raises, logging is still untouched
+        with _sdk_header_logs_silenced():  # the exporter re-parses the process's header variables (C1)
+            tel.setup_tracing(
+                endpoint=config.endpoint if config is not None else None, exporter=exporter,
+                headers=config.headers if config is not None else None,
+                resource=Resource(dict(config.resource)) if config is not None else None,
+                sampler=config.sampler if config is not None else None)
+    if _SAVED is None:
+        root = logging.getLogger()
+        _SAVED = _SavedLogging(handlers=tuple(root.handlers),
+                               levels={name: logging.getLogger(name).level for name in ("", *_SDK_LOGGERS)})
     handler = install_json_logging(stream or sys.stderr)
     quiet_sdk_loggers()
-    return Observability(tracing=config is not None or exporter is not None, _handler=handler, _levels=levels)
+    _ACTIVE = Observability(tracing=config is not None or exporter is not None, _handler=handler)
+    return _ACTIVE

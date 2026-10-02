@@ -3,9 +3,12 @@
 `otel` installs agent_telemetry's own provider (never OpenTelemetry's global, F3) with an in-memory exporter
 and strict mode (a span without `bind` or with an attribute outside the closed list raises). On exit it shuts
 the provider down and restores the previous `configure` settings and the once-per-name warning memory.
-`root_logging` restores the root logger's handlers and level and the SDK loggers' levels."""
+`root_logging` restores the root logger's handlers and level and the SDK loggers' levels. `no_otel_env`
+removes the developer shell's OTEL_* and OPENAI_LOG variables for tests that go through
+`main(["serve", ...])`."""
 
 import logging
+import os
 from collections.abc import Iterator
 
 import pytest
@@ -48,3 +51,9 @@ def root_logging() -> Iterator[None]:
         root.setLevel(level)
         for name, value in quiet.items():
             logging.getLogger(name).setLevel(value)
+
+
+@pytest.fixture
+def no_otel_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in [n for n in os.environ if n.startswith("OTEL_") or n == "OPENAI_LOG"]:
+        monkeypatch.delenv(name)

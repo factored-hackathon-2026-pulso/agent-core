@@ -24,7 +24,8 @@ def test_serve_help_lists_the_piece_options(capsys: pytest.CaptureFixture[str]) 
 
 
 def test_serve_without_demo_and_without_pieces_exits_2_and_names_them(
-        capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, root_logging: None) -> None:
+        capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, root_logging: None,
+        no_otel_env: None) -> None:
     monkeypatch.delenv("AGENTCORE_ALLOW_DEMO", raising=False)
     code = main(["serve", "--dsn", "postgresql://x/y"])
     err = capsys.readouterr().err

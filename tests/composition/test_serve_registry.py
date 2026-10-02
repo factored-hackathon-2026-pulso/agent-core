@@ -126,7 +126,8 @@ def test_a_staff_keys_file_without_delegation_keys_is_enough(tmp_path: Path) -> 
 
 
 def test_the_eval_dsn_never_reaches_stderr(capsys: pytest.CaptureFixture[str],
-                                           monkeypatch: pytest.MonkeyPatch, root_logging: None) -> None:
+                                           monkeypatch: pytest.MonkeyPatch, root_logging: None,
+        no_otel_env: None) -> None:
     monkeypatch.delenv("AGENTCORE_ALLOW_DEMO", raising=False)
     code = main(["serve", "--dsn", "postgresql://u:MAINPW@h/d", "--registry-api",
                  "--eval-dsn", "postgresql://u:EVALPW@h/e"])

@@ -172,7 +172,8 @@ def test_static_config_problems_are_reported_together_before_any_factory_runs(tm
 
 
 def test_the_dsn_never_reaches_stderr(capsys: pytest.CaptureFixture[str],
-                                      monkeypatch: pytest.MonkeyPatch, root_logging: None) -> None:
+                                      monkeypatch: pytest.MonkeyPatch, root_logging: None,
+        no_otel_env: None) -> None:
     from agent_core.cli import main
 
     monkeypatch.delenv("AGENTCORE_ALLOW_DEMO", raising=False)

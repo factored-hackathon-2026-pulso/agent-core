@@ -243,3 +243,99 @@ def test_invalid_otel_configuration_exits_2(capsys: pytest.CaptureFixture[str], 
     err = capsys.readouterr().err
     assert code == 2 and "OTEL_TRACES_SAMPLER" in err and "SECRETO" not in err
     assert _handlers() == [] and tel_setup._PROVIDER is None
+
+
+# --- review of task 2: credentials, foreign root handlers, precedence and restore order ----------------
+
+
+@pytest.mark.parametrize("entry", [
+    "authorization=Bearer;SECRETO7", "x key=SECRETO2", 'clave=valor"SECRETO5', "clave=valor\\SECRETO6",
+])
+def test_a_header_entry_the_sdk_would_reject_is_a_startup_problem(entry: str) -> None:  # C1
+    with pytest.raises(ObservabilityConfigError) as info:
+        tracing_config({"OTEL_EXPORTER_OTLP_ENDPOINT": "http://x:1",
+                        "OTEL_EXPORTER_OTLP_HEADERS": f"ok=1,{entry}"}, version="1")
+    assert info.value.problems == ["OTEL_EXPORTER_OTLP_HEADERS: la entrada 2 no es `clave=valor` válida"]
+
+
+def test_a_credential_in_the_process_headers_never_reaches_stderr_or_logs(
+        monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+        caplog: pytest.LogCaptureFixture, root_logging: None, no_otel_env: None) -> None:  # C1, as serve
+    import os
+
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:9")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_HEADERS", "authorization=Bearer;SECRETO7")
+    seen: dict[str, Any] = {}
+    _wire(monkeypatch, seen)
+    world = seen["world"]
+    with caplog.at_level(logging.DEBUG):
+        code = serve_module.run_serve(argparse.Namespace(host="h", port=1), clock=world.clock, ids=world.ids,
+                                      env=os.environ, serve=lambda app, **kw: None)
+    captured = capsys.readouterr()
+    assert code == 2 and "OTEL_EXPORTER_OTLP_HEADERS" in captured.err
+    assert "SECRETO7" not in captured.err + captured.out + caplog.text
+
+
+def test_the_sdk_never_logs_process_headers_while_the_exporter_is_built(
+        monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+        caplog: pytest.LogCaptureFixture, root_logging: None, no_otel_env: None) -> None:  # C1, the guard
+    # The injected env is valid, but the OTLP exporter re-parses os.environ on its own and would log it.
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_HEADERS", "x key=SECRETO2")
+    stream = io.StringIO()
+    with caplog.at_level(logging.DEBUG):
+        observability = setup_observability({"OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:9"},
+                                            version="1", stream=stream)
+        observability.shutdown()
+    captured = capsys.readouterr()
+    assert "SECRETO2" not in captured.err + captured.out + caplog.text + stream.getvalue()
+    assert not logging.getLogger("opentelemetry.util.re").disabled  # the guard is undone
+
+
+def test_the_traces_specific_protocol_wins_over_the_generic_one() -> None:  # M1
+    env = {"OTEL_EXPORTER_OTLP_ENDPOINT": "http://x:1"}
+    assert tracing_config({**env, "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
+                           "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "http/protobuf"}, version="1") is not None
+    with pytest.raises(ObservabilityConfigError):
+        tracing_config({**env, "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
+                        "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": "grpc"}, version="1")
+
+
+def test_a_foreign_root_handler_never_prints_an_exception_while_serving(root_logging: None) -> None:  # I1
+    plain = io.StringIO()
+    foreign = logging.StreamHandler(plain)  # e.g. OPENAI_LOG=debug -> logging.basicConfig at import
+    foreign.setFormatter(logging.Formatter("%(message)s"))
+    logging.getLogger().addHandler(foreign)
+    json_stream = io.StringIO()
+    observability = setup_observability({}, version="1", stream=json_stream)
+    try:
+        raise RuntimeError("SECRETO-X")
+    except RuntimeError as exc:
+        logging.getLogger("uvicorn.error").error("Exception in ASGI application", exc_info=exc)
+    finally:
+        observability.shutdown()
+    assert "SECRETO-X" not in plain.getvalue() + json_stream.getvalue()
+    assert json.loads(json_stream.getvalue().splitlines()[-1])["exc_type"] == "RuntimeError"
+    assert foreign in logging.getLogger().handlers  # restored on shutdown
+
+
+@pytest.mark.parametrize("order", ["first-then-second", "second-then-first"])
+def test_two_setups_restore_the_original_logging_in_either_shutdown_order(order: str) -> None:  # M2
+    root, sdk = logging.getLogger(), [logging.getLogger(n) for n in ("openai", "httpx", "httpcore")]
+    before = (list(root.handlers), root.level, [lg.level for lg in sdk])
+    first = setup_observability({}, version="1", stream=io.StringIO())
+    second = setup_observability({}, version="1", stream=io.StringIO())
+    try:
+        assert len(_handlers()) == 1 and _handlers() == root.handlers
+    finally:
+        for observability in ((first, second) if order == "first-then-second" else (second, first)):
+            observability.shutdown()
+    assert (list(root.handlers), root.level, [lg.level for lg in sdk]) == before
+
+
+def test_header_patterns_match_the_sdk() -> None:  # C1: our grammar must be the one the exporter applies
+    from opentelemetry.util import re as sdk_re
+
+    from agent_core.composition import observability
+
+    assert observability._HEADER_PATTERN.pattern == sdk_re._HEADER_PATTERN.pattern
+    assert observability._LIBERAL_HEADER_PATTERN.pattern == sdk_re._LIBERAL_HEADER_PATTERN.pattern
