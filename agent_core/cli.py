@@ -39,6 +39,7 @@ from agent_core.audit import (
     load_fixture_file,
 )
 from agent_core.audit.replay.cli_support import EXIT, USAGE_ERROR, render_report
+from agent_core.composition.registry_openapi import check_registry_openapi, write_registry_openapi
 from agent_core.contracts import check_contracts, write_contracts
 from agent_core.domain import (
     AgentSelector,
@@ -324,13 +325,15 @@ def main(
         return _run_sweep(args, sweeper, clock)
     if args.command == "contracts":
         if args.check:
-            diffs = sorted({*check_contracts(args.out), *check_openapi(args.out)})
+            diffs = sorted({*check_contracts(args.out), *check_openapi(args.out),
+                            *check_registry_openapi(args.out)})
             for rel in diffs:
                 print(f"contracts desactualizado: {rel} (corre `uv run agentcore contracts`)",
                       file=sys.stderr)
             return 1 if diffs else 0
         write_contracts(args.out)
         write_openapi(args.out)
+        write_registry_openapi(args.out)
         return 0
     if args.command == "validate":
         clock = SystemClock()
