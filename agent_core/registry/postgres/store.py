@@ -30,13 +30,9 @@ from agent_core.registry.models import (
 )
 from agent_core.registry.store import RegistryTx, Status
 
-<<<<<<< HEAD
 _INSERT_ONLY = ("reg_blobs", "reg_entity_versions", "reg_releases", "reg_release_entities",
-                "reg_release_eval_suites", "reg_approvals", "reg_eval_runs", "reg_events", "reg_alias_log")
-=======
-_INSERT_ONLY = ("reg_blobs", "reg_entity_versions", "reg_releases", "reg_release_entities", "reg_approvals",
-                "reg_eval_runs", "reg_events", "reg_alias_log", "reg_draft_writes")
->>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796
+                "reg_release_eval_suites", "reg_approvals", "reg_eval_runs", "reg_events", "reg_alias_log",
+                "reg_draft_writes")
 # Mutables y controladas (spec §3.2): el rol de la aplicación nunca borra; cada tabla tiene lo mínimo que usa.
 _GRANTS_MUTABLE = {
     "reg_release_status": "SELECT, INSERT, UPDATE",   # alta al publicar, `revoke`

@@ -5,7 +5,7 @@
 - Repo: `agent-core`
 - Alcance: diseño transversal. Se implementa en piezas (§11); este documento especifica M0/M1 y el registry, y deja las interfaces hacia la unidad 6 y la analítica
 - ADRs: 0020 (este diseño); enmienda 0018 (gate de publicación); además 0003 (observabilidad), 0008 (vistas), 0017 (registry en Postgres), 0019 (agentes internos)
-- Specs relacionados: `2026-09-29-registry-design.md` (§3.2, §5.2, §7, §13, §17), `TEMAS-ABIERTOS-PENDIENTES.md` (#11, #19)
+- Specs relacionados: `2026-09-29-registry-design.md` (§3.2, §5.2, §7, §13, §17), `TEMAS-ABIERTOS-PENDIENTES.md` (#11, #20)
 - Autor: Juan Zapata, con Claude
 
 ## 1. Propósito y límites
@@ -251,7 +251,7 @@ Este trabajo especifica 1 y 2 y deja interfaces para 3 y 4.
 
 **ADR 0018:** punto 4 (métrica principal única) y punto 9 (`eval_suite`) quedan enmendados por el ADR 0020.
 
-**`TEMAS-ABIERTOS-PENDIENTES.md`:** #11 apunta a este spec; nuevo #19 para el conector de datasets reales.
+**`TEMAS-ABIERTOS-PENDIENTES.md`:** #11 apunta a este spec; nuevo #20 para el conector de datasets reales.
 
 ## 13. Abiertos
 

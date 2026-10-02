@@ -2,7 +2,7 @@
 
 It lives in the registry and not in M0: it is not part of the engine release. A scenario is `scripted`
 (synthetic script run on the real engine with sandboxed tools; enabled) or `dataset` (real cases by id and
-hash; designed but DISABLED until a separate ADR, open topic #19). Gate thresholds are per metric
+hash; designed but DISABLED until a separate ADR, open topic #20). Gate thresholds are per metric
 (`thresholds`).
 """
 
@@ -101,7 +101,7 @@ class Scenario(_M):
 
 
 class DatasetScenario(_M):
-    """`dataset` scenario: real cases by id and hash. DISABLED (`dataset_source_disabled`, topic #19).
+    """`dataset` scenario: real cases by id and hash. DISABLED (`dataset_source_disabled`, topic #20).
 
     Real data never lives in the repo or the registry: only its id and hash."""
 

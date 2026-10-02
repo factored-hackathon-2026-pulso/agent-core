@@ -253,7 +253,6 @@ def test_a_platform_guardrail_unmeasured_on_the_old_suite_fails_with_a_base(whic
     partial = SuiteMeasurement(metrics={k: v for k, v in full.metrics.items() if k != gap},
                                scenarios={"s1": True})
     reports = {"base_on_old": full, "cand_on_old": full} | {which: partial}
-<<<<<<< HEAD
     verdict, items = evaluate_gate(base, base, GateRuns(**reports, cand_on_new=full))
     assert verdict == "fail" and failed(items) == [gap]
 
@@ -268,7 +267,3 @@ def test_a_base_without_a_recorded_suite_is_judged_by_floors_only() -> None:  # 
     _, low = evaluate_gate(base, base_yardstick(),
                            only_new(measured({"quality": "0.4", "speed": "0.5", "leaks": "0"})))
     assert failed(low) == ["quality"]
-=======
-    verdict = evaluate_gate(base, base, GateRuns(**reports, cand_on_new=full))
-    assert verdict.status == "failed" and failed(verdict) == [gap]
->>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796

@@ -8,8 +8,10 @@ from agent_core.domain.base import (
     MutableModel,
     NodeId,
     Probability,
+    SaveAs,
     UtcDatetime,
 )
+from agent_core.domain.eligibility import transfer_ineligibility
 from agent_core.domain.entities import (
     ENTITY_KIND,
     Agent,
@@ -79,6 +81,7 @@ from agent_core.domain.events import (
     EscalatedPayload,
     ExpiryEvaluated,
     ExpiryEvaluatedPayload,
+    FilteredPage,
     GuardsOutput,
     HandoffCreatedPayload,
     HandoffResolved,
@@ -86,6 +89,8 @@ from agent_core.domain.events import (
     InjectionFlagged,
     InjectionFlaggedPayload,
     InjectionGuard,
+    KnowledgeRead,
+    KnowledgeReadPayload,
     LabelScore,
     LangGuard,
     LangScore,
@@ -102,10 +107,17 @@ from agent_core.domain.events import (
     RunClosedPayload,
     RunStarted,
     RunStartedPayload,
+    RunTransferred,
+    RunTransferredPayload,
     StepUpRequested,
     StepUpRequestedPayload,
     ToolCalled,
     ToolCalledPayload,
+    TransferReceived,
+    TransferReceivedPayload,
+    TransferRejected,
+    TransferRejectedPayload,
+    TransferRejectReason,
     TurnCompleted,
     TurnCompletedPayload,
     TurnStages,
@@ -130,7 +142,6 @@ from agent_core.domain.json import (
     sha256_hex,
     to_jsonable,
 )
-<<<<<<< HEAD
 from agent_core.domain.knowledge import (
     AUDIENCES,
     Audience,
@@ -147,8 +158,6 @@ from agent_core.domain.knowledge import (
     parse_page_ref,
     parse_page_spec,
 )
-=======
->>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796
 from agent_core.domain.metric_catalog import METRIC_EVENT_CATALOG, catalog_fields, predicate_problems
 from agent_core.domain.metrics import (
     PLATFORM_METRIC_PREFIX,
@@ -181,6 +190,8 @@ from agent_core.domain.nodes import (
     EscalateConfig,
     EscalateNode,
     GenerateConfig,
+    KnowledgeConfig,
+    KnowledgeNode,
     Node,
     RespondConfig,
     RespondNode,
@@ -191,6 +202,9 @@ from agent_core.domain.nodes import (
     SubflowNode,
     ToolConfig,
     ToolNode,
+    TransferConfig,
+    TransferNode,
+    TransferPacketSpec,
     VerifyConfig,
     VerifyNode,
     WriteToolConfig,
@@ -240,6 +254,18 @@ from agent_core.domain.state import (
     RunStatus,
     Slot,
 )
+from agent_core.domain.transfer import (
+    AcceptedSlot,
+    DirectoryEntry,
+    DirectorySnapshot,
+    RoutingCard,
+    RunOrigin,
+    SlotType,
+    TransferContract,
+    TransferPacket,
+    directory_hash,
+    packet_problem,
+)
 from agent_core.domain.turn import (
     ConfirmAnswer,
     ConfirmationPrompt,
@@ -255,10 +281,7 @@ from agent_core.domain.version import (
 )
 
 __all__ = [
-<<<<<<< HEAD
     "AUDIENCES",
-=======
->>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796
     "DECLARABLE",
     "ENTITY_KIND",
     "EVENT_EMITTERS",
@@ -273,6 +296,7 @@ __all__ = [
     "SCHEMA_VERSION",
     "TERMINAL",
     "WAITING",
+    "AcceptedSlot",
     "AccessDenied",
     "AccessDeniedPayload",
     "AccessDeniedReason",
@@ -297,10 +321,7 @@ __all__ = [
     "AlertThreshold",
     "AnyEvent",
     "Approver",
-<<<<<<< HEAD
     "Audience",
-=======
->>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796
     "AuthInfo",
     "AuthLevel",
     "AwaitApprovalConfig",
@@ -325,6 +346,8 @@ __all__ = [
     "DecisionMade",
     "DecisionMadePayload",
     "DecisionModelDef",
+    "DirectoryEntry",
+    "DirectorySnapshot",
     "DomainError",
     "EncryptedBlob",
     "EndConfig",
@@ -346,10 +369,7 @@ __all__ = [
     "ExpiryEvaluatedPayload",
     "Fact",
     "FactSource",
-<<<<<<< HEAD
     "FilteredPage",
-=======
->>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796
     "Fingerprint",
     "Flow",
     "GatewayError",
@@ -370,7 +390,6 @@ __all__ = [
     "InvalidationReason",
     "JsonValue",
     "JudgeExpr",
-<<<<<<< HEAD
     "KnowledgeConfig",
     "KnowledgeNode",
     "KnowledgePage",
@@ -378,10 +397,6 @@ __all__ = [
     "KnowledgeReadPayload",
     "KnowledgeSnapshot",
     "KnowledgeView",
-=======
-    "KnowledgePage",
-    "KnowledgeSnapshot",
->>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796
     "LabelScore",
     "LangGuard",
     "LangScore",
@@ -403,15 +418,12 @@ __all__ = [
     "OnBehalfOf",
     "OutboxMessage",
     "Outcome",
-<<<<<<< HEAD
     "PageMeta",
     "PageRecord",
     "PageRef",
     "PageSpec",
     "PageStatus",
     "PageView",
-=======
->>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796
     "PendingIntent",
     "Policy",
     "Predicate",
@@ -422,10 +434,7 @@ __all__ = [
     "ProblemCode",
     "Prompt",
     "ProviderSpec",
-<<<<<<< HEAD
     "Purpose",
-=======
->>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796
     "ReasonCode",
     "ReasonCodeStr",
     "RefSpec",
@@ -439,6 +448,7 @@ __all__ = [
     "ResponseFailed",
     "ResponseFailedPayload",
     "RiskClass",
+    "RoutingCard",
     "RuleConfig",
     "RuleEvaluated",
     "RuleEvaluatedPayload",
@@ -446,17 +456,18 @@ __all__ = [
     "RunClosed",
     "RunClosedPayload",
     "RunInput",
+    "RunOrigin",
     "RunResult",
     "RunStarted",
     "RunStartedPayload",
     "RunState",
     "RunStatus",
-<<<<<<< HEAD
+    "RunTransferred",
+    "RunTransferredPayload",
     "SaveAs",
-=======
->>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796
     "SchemaError",
     "Slot",
+    "SlotType",
     "SlotValidator",
     "StartFlowAction",
     "StepUpPrompt",
@@ -475,6 +486,16 @@ __all__ = [
     "ToolStatus",
     "TranscriptEntry",
     "TranscriptRef",
+    "TransferConfig",
+    "TransferContract",
+    "TransferNode",
+    "TransferPacket",
+    "TransferPacketSpec",
+    "TransferReceived",
+    "TransferReceivedPayload",
+    "TransferRejectReason",
+    "TransferRejected",
+    "TransferRejectedPayload",
     "TurnCompleted",
     "TurnCompletedPayload",
     "TurnInProgress",
@@ -493,24 +514,21 @@ __all__ = [
     "canonical_bytes",
     "catalog_fields",
     "check_output",
-<<<<<<< HEAD
     "check_page_path",
-=======
->>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796
+    "directory_hash",
     "dumps",
     "is_declarable",
     "iter_refspecs",
     "loads",
     "node_kind",
-<<<<<<< HEAD
+    "packet_problem",
     "page_ref",
     "parse_page_ref",
     "parse_page_spec",
-=======
->>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796
     "predicate_problems",
     "require_exact_refs",
     "sha256_hex",
     "to_jsonable",
+    "transfer_ineligibility",
     "unsupported_keyword",
 ]

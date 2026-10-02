@@ -57,13 +57,8 @@ DO $$
 DECLARE t text;
 BEGIN
     FOREACH t IN ARRAY ARRAY['reg_blobs', 'reg_entity_versions', 'reg_releases', 'reg_release_entities',
-<<<<<<< HEAD
                              'reg_release_eval_suites', 'reg_approvals', 'reg_eval_runs', 'reg_events',
-                             'reg_alias_log'] LOOP
-=======
-                             'reg_approvals', 'reg_eval_runs', 'reg_events', 'reg_alias_log',
-                             'reg_draft_writes'] LOOP
->>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796
+                             'reg_alias_log', 'reg_draft_writes'] LOOP
         EXECUTE format('DROP TRIGGER IF EXISTS %I_no_update ON %I', t, t);
         EXECUTE format('CREATE TRIGGER %I_no_update BEFORE UPDATE OR DELETE ON %I '
                        'FOR EACH ROW EXECUTE FUNCTION reg_immutable()', t, t);

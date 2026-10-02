@@ -7,12 +7,11 @@ from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-<<<<<<< HEAD
-from agent_core.domain import Agent, EntityKind, MetricDef, Principal, RegistryEntity, Release, loads
-=======
 from agent_core.domain import (
+    Agent,
     EntityKind,
     JsonValue,
+    MetricDef,
     Principal,
     RegistryEntity,
     Release,
@@ -20,7 +19,6 @@ from agent_core.domain import (
     loads,
     sha256_hex,
 )
->>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796
 from agent_core.flows import Violation
 from agent_core.ports import Clock, IdKind, IdSource
 from agent_core.registry.candidate import (
@@ -136,18 +134,15 @@ def _violations_payload(violations: Sequence[Violation]) -> list[dict[str, str |
             for v in violations]
 
 
-<<<<<<< HEAD
 def _agent_metrics(entities: Sequence[RegistryEntity], agent_id: str) -> list[MetricDef]:
     """The agent's metrics in a set of entities (candidate or base); [] if it is not there."""
     for entity in entities:
         if isinstance(entity, Agent) and entity.id == agent_id:
             return list(entity.metrics)
     return []
-=======
 def _request_hash(op: str, payload: JsonValue) -> str:
     """Huella del contenido de una escritura: una clave solo se reutiliza con el mismo contenido."""
     return sha256_hex(canonical_bytes({"op": op, "payload": payload}))
->>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796
 
 
 class RegistryService:
@@ -305,16 +300,13 @@ class RegistryService:
         if problems:
             raise RegistryError(RegistryErrorCode.validation_failed, "el borrador excede los límites",
                                 payload=_violations_payload(problems))  # type: ignore[arg-type]
-<<<<<<< HEAD
         edits = platform_edits(changes)
         if edits:
             raise RegistryError(RegistryErrorCode.forbidden_role,
                                 "los guardarraíles de plataforma no se editan desde una propuesta",
                                 payload=edits)  # type: ignore[arg-type]
-=======
         request = _request_hash("put_draft", {"proposal_id": proposal_id, "expected_rev": expected_rev,
                                               "changes": [c.model_dump(mode="json") for c in changes]})
->>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796
         with self._store.transaction() as tx:
             p = self._proposal(tx, proposal_id)
             if self._replayed(tx, idempotency_key, "put_draft", request) is not None:

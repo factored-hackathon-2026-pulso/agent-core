@@ -325,7 +325,6 @@ def test_cli_cycle_on_postgres_with_export_to_disk(registry_store: PgRegistrySto
     assert any(tmp_path.rglob("*.yaml"))
 
 
-<<<<<<< HEAD
 def test_release_records_its_eval_suite(registry_store: PgRegistryStore) -> None:  # ADR 0020 section 5
     evaluator = FakeEvaluator()
     service = RegistryService(registry_store, evaluator, FakeClock(), FakeIds())
@@ -359,7 +358,6 @@ def test_approval_keeps_the_accepted_loosening(registry_store: PgRegistryStore) 
     with registry_store.transaction() as tx:
         approval = tx.latest_approval(p.proposal_id, h)
     assert approval is not None and [c.kind for c in approval.yardstick_loosened] == ["repetitions_lowered"]
-=======
 def _seed_directory_agent(store: PgRegistryStore, agent_id: str, tag: str | None, *, release_id: str) -> None:
     from agent_core.domain import Agent
     from agent_core.registry.entities import content_hash, encode_entity, version_ref
@@ -472,4 +470,3 @@ def test_a_draft_is_never_served_as_executable_content(registry_store: PgRegistr
             runtime.get(EntityRef.parse(ref), Prompt)
     after = runtime.resolve_release(AgentSelector.parse(AGENT), principal())
     assert after.id == before.id  # un borrador no mueve el alias ni crea una release
->>>>>>> 4f7743d4a85e3b3adef7e19fa6fa75624985b796
