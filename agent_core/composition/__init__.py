@@ -5,20 +5,29 @@ from agent_core.composition.decision import DecisionAdapter
 from agent_core.composition.directory import DIRECTORY_TOOL, DirectoryToolExecutor
 from agent_core.composition.engine import (
     BuiltEngine,
-    DerivedTrace,
     EngineConfig,
     EngineDeps,
+    RequestTraceIds,
     build_engine,
     build_turn_engine,
 )
 from agent_core.composition.evaluation import EngineScenarioHarness, EvalStorage
+from agent_core.composition.observability import (
+    Observability,
+    ObservabilityConfigError,
+    setup_observability,
+    tracing_config,
+)
 from agent_core.composition.registry import UowRunReleases, build_registry_service
 from agent_core.composition.responder import ContextFactory, ResponderAdapter
 from agent_core.composition.runtime import EngineRuntime, EngineRuntimeFactory, RuntimeConfig
+from agent_core.composition.telemetry import OtelTurnTelemetry, TransferLink
 
 __all__ = [
     "BUILDER_TOOL_DEFS", "DIRECTORY_TOOL", "BuilderToolExecutor", "BuiltEngine", "ContextFactory",
-    "DecisionAdapter", "DerivedTrace", "DirectoryToolExecutor", "EngineConfig", "EngineDeps",
-    "EngineRuntime", "EngineRuntimeFactory", "EngineScenarioHarness", "EvalStorage", "ResponderAdapter",
-    "RuntimeConfig", "UowRunReleases", "build_engine", "build_registry_service", "build_turn_engine",
+    "DecisionAdapter", "DirectoryToolExecutor", "EngineConfig", "EngineDeps", "EngineRuntime",
+    "EngineRuntimeFactory", "EngineScenarioHarness", "EvalStorage", "Observability",
+    "ObservabilityConfigError", "OtelTurnTelemetry", "RequestTraceIds", "ResponderAdapter", "RuntimeConfig",
+    "TransferLink", "UowRunReleases", "build_engine", "build_registry_service", "build_turn_engine",
+    "setup_observability", "tracing_config",
 ]

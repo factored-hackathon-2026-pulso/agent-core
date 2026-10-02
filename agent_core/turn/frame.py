@@ -20,7 +20,8 @@ from agent_core.ports import UnitOfWork
 from agent_core.turn.buffer import EventBuffer, TurnEventSink
 from agent_core.turn.events import TurnEvents
 from agent_core.turn.metering import StageMeter
-from agent_core.turn.ports import TurnRuntime
+from agent_core.turn.ports import TurnRuntime, TurnSpan
+from agent_core.turn.telemetry import NO_SPAN
 
 if TYPE_CHECKING:
     from agent_core.turn.transfer import TransferPlan
@@ -56,3 +57,5 @@ class TurnFrame:
     output: dict[str, JsonValue] | None = None  # `end.output_map` (modo task)
     pending_transfer: TransferRequest | None = None  # a `transfer` node stopped the flow; M4 resolves it
     transfer_plan: "TransferPlan | None" = None  # validated transfer: the origin closed, the target opens
+    span: TurnSpan = NO_SPAN  # telemetry of this turn (m04 §3.9): it reads the chained events, never writes
+    transfer_link: object | None = None  # opaque handle of the transfer span, for the target turn's links

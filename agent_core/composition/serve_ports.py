@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import psycopg
+from opentelemetry.trace import Tracer
 
 from agent_core.adapters.env_keys import EnvKeyProvider, KeyConfigError
 from agent_core.adapters.identity_keys import load_identity_verifier
@@ -163,7 +164,7 @@ def _agents(args: argparse.Namespace, env: Mapping[str, str]) -> tuple[str, ...]
 
 
 def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
-                  clock: Clock, ids: IdSource) -> ServePorts:
+                  clock: Clock, ids: IdSource, *, tracer: Tracer | None = None) -> ServePorts:
     problems: list[str] = []
     demo = env.get(DEMO_ENV) == "1"
 
@@ -235,7 +236,7 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         try:
             piece = _load(path)(ctx)
         except Exception as exc:  # código de usuario: cualquier fallo es un problema de configuración
-            problems.append(f"no se pudo cargar {name} ({path}): {type(exc).__name__}: {exc}; "
+            problems.append(f"no se pudo cargar {name} ({path}): {type(exc).__name__}; "
                             "revisa la ruta modulo:atributo y que la fábrica acepte un DemoContext")
             continue
         if piece is None:
@@ -261,7 +262,7 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         registry_api = RegistryApiPorts(store=registry_store, staff_verifier=staff_verifier,
                                         eval_uow_factory=eval_store.uow, eval_audit=eval_store.audit())
 
-    gateway = OpenAICompatGateway(pg_registry, endpoints, env)
+    gateway = OpenAICompatGateway(pg_registry, endpoints, env, tracer=tracer)
     jev = JevProvider(HttpJevTransport(lambda: _jev_key(env), clock))
     return ServePorts(
         clock=clock, ids=ids, keys=keys, uow_factory=store.uow, audit=store.audit(), counters=store.costs(),

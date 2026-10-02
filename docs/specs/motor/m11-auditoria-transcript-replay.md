@@ -1,6 +1,6 @@
 # M11 — Auditoría, transcript y replay
 
-- Estado: rev. 4 (2026-10-01) · Fase 2 (cadena, spans, transcript) y fase 5 (replay)
+- Estado: rev. 5 (2026-10-02): plano operativo cableado · Fase 2 (cadena, spans, transcript) y fase 5 (replay)
 - Paquete: `agent_core.audit` (+ paquete común `agent-telemetry`)
 - Origen: spec general §8.4, §11, §13.2, §13.6 (huellas del transcript)
 - ADRs: 0003 (dos planos, transcript separado, replay en dos modos), 0008 (huellas con clave)
@@ -11,7 +11,7 @@
 Tres responsabilidades:
 
 1. **Log de auditoría:** encadenar por hash los eventos de cada run y persistirlos (append-only).
-2. **Trazas y transcript:** spans OTel con atributos `agentcore.*`; envío del texto del turno al transcript store con huella con clave.
+2. **Trazas y transcript:** spans OTel en vivo (`invoke_agent` por turno, `chat`, `agentcore.transfer`) e hijos derivados de los eventos (`decide`, `rule`, `execute_tool`), con atributos `agentcore.*`; envío del texto del turno al transcript store con huella con clave.
 3. **Replay:** reconstruir un run desde sus registros en modo `fixture` (CI) o `audit` (runs reales).
 
 **No hace:** el esquema completo del log ni la entrega de eventos salientes (unidad 4), la retención del transcript (unidad 7), comparar releases distintas (unidad 6).
@@ -36,8 +36,21 @@ class TranscriptReader:
     def read_rendered(self, run_id, reader, on_behalf_of) -> list[RenderedEntry]      # M7 render, purpose "transcript_read"
 def verify_transfer_link(target: RunState, sink: AuditSink) -> list[str]   # enlace entre cadenas (§3.1b); [] = válido
 def link_problems(origin: RunOrigin, target_run_id, source_events, target_events) -> list[str]  # núcleo puro (interno)
-# agent-telemetry
-def span(name, **attrs) -> ContextManager       # agrega run_id, turn_id, session_id, agentcore.release
+# agent-telemetry (plano operativo, ADR 0003)
+def bind(*, run_id=None, turn_id=None, session_id=None, release=None, agent=None) -> ContextManager
+def correlation() -> Mapping[str, str]          # atributos de correlación enlazados (solo lectura)
+def span(name, *, attributes=None, links=(), context=None, **attrs) -> ContextManager[Span]
+    # agrega los de bind; sin run_id o agentcore.release: no-op + un aviso por nombre (estricto: MissingTelemetryContext)
+    # nunca registra la excepción: solo error.type y Status(ERROR) sin descripción
+def record_span(name, *, parent: Span, start_ns: int, end_ns: int, attributes) -> None   # hijo con tiempos explícitos
+def set_attributes(span, attributes) -> None    # pasa por la lista cerrada
+def mark_error(span, exc) -> None               # solo el tipo
+ALLOWED_ATTRIBUTES: frozenset[str]              # lista cerrada; fuera de ella se descarta (estricto: ValueError)
+def configure(*, capture_content: bool | None = None, strict: bool | None = None) -> None
+def tracer(name) -> Tracer                      # del provider propio, con schema_url = SCHEMA_URL
+def setup_tracing(endpoint=None, exporter=None, *, resource=None, sampler=None, headers=None) -> TracerProvider
+def shutdown_tracing() -> None                  # vacía, cierra y vuelve a no-op (idempotente)
+class JsonLogFormatter(logging.Formatter)       # timestamp, level, logger, message, exc_type, bind, trace_id
 # Replay
 class ReplayReport: mode; run_id; release; verdict: Literal["match", "diverged", "chain_broken"]
                     first_divergence: {event_seq, expected, actual} | None; chain_broken_at: int | None; duration_ms: int | None
@@ -73,6 +86,37 @@ class Replayer:
 ### 3.2 Spans
 
 `invoke_agent` › `agentcore.decide`, `agentcore.rule`, `execute_tool`, `chat`, con `agentcore.release`, `agentcore.agent`, `agentcore.flow`, `agentcore.node`, `agentcore.principal_type`, `agentcore.locale` y `gen_ai.*` (versión de semconv fijada). Captura de contenido desactivada por defecto; si se activa, vista `audit`. Exportación OTLP a Phoenix en la demo.
+
+Cómo se generan (spans híbridos, U4 y F13 del plan de observabilidad):
+
+- **`invoke_agent`, en vivo, uno por turno.** Lo abre M4 a través de su puerto local `TurnTelemetry` (m04 §3.9); M4 no importa OpenTelemetry ni `agent_telemetry`. La implementación real es `OtelTurnTelemetry` (`agent_core/composition/telemetry.py`): `bind` del turno (`run_id`, `turn_id`, `session_id`, `agentcore.release`, `agentcore.agent`) y un `span()` con `gen_ai.operation.name`, `gen_ai.agent.name`, `agentcore.entry`, `agentcore.principal_type` y `agentcore.locale`. Sus ids y tiempos salen del SDK de OTel; no recibe `Clock` ni `IdSource`.
+- **Hijos derivados de los eventos.** Cada vez que M4 encadena eventos del turno (`TurnSpan.record`), `derived_spans(events)` los convierte en spans terminados, hijos del `invoke_agent` del turno, que `record_span` exporta con tiempos explícitos:
+  - `decision_made` → `agentcore.decide`, de `ts − latency_ms` a `ts`, con `agentcore.decision.id`, `.model`, `.provider`, `.fallback_depth` y `.tokens`;
+  - `rule_evaluated` → `agentcore.rule`, instantáneo en `ts`, con `agentcore.node`, `agentcore.rule.result` y `agentcore.rule.policy` si la regla tiene política;
+  - `tool_called` → `execute_tool`, de `ts − latency_ms` a `ts`, con `gen_ai.operation.name = "execute_tool"`, `gen_ai.tool.name`, `gen_ai.tool.call.id`, `agentcore.tool`, `agentcore.node`, `agentcore.tool.status` y `agentcore.tool.attempt`.
+
+  Todos los emisores toman `ts` **después** de la llamada (`decision/service.py`; `actions/execution.py`; `interpreter/handlers/tool.py` y `agent.py`), así que el span termina en `ts` y empieza `latency_ms` antes. Ningún otro evento genera hijos (tampoco `agent_step` ni `knowledge_read`). `derived_spans` es pura y de solo lectura: lee ids, referencias, enums y contadores, nunca un dict de payload (`args`, `result`, `error`, `inputs`, `value`), y nunca escribe en un evento, cuyos dicts comparte la cadena del motor. La derivación no pide hora ni ids nuevos: usa el `ts` de cada evento (que produjo el `Clock` del motor). Solo los ids y los tiempos de los spans en vivo salen del SDK de OTel. Los hijos de los eventos de un turno que luego se revierte se exportan igual: la telemetría es de mejor esfuerzo y no deduplica (m04 §3.9).
+- **`chat`, en vivo**, desde el gateway de LLM (spec del gateway §3.5), dentro del `invoke_agent` del turno y con sus atributos de `bind`.
+- **Lista cerrada de atributos** (abajo), también para los hijos derivados.
+- **No-op en el replay.** El motor del replay y de `agentcore record` usa `NoTurnTelemetry`. Con telemetría real o sin ella, el motor produce los mismos eventos y hashes: grabar los seis caminos con `OtelTurnTelemetry` y un exportador en memoria da los mismos bytes que los fixtures commiteados, los seis caminos y la sesión con transferencia de la fase 7 (T-M11-15).
+
+Reglas de `agent_telemetry`:
+
+- **La telemetría nunca hace fallar a quien llama (I4).** Un `span()` sin `run_id` o `agentcore.release` entrega un span no-op y avisa **una vez por nombre de span y proceso** en el logger `agent_telemetry`. Con `configure(strict=True)` (pruebas, fixture `otel` de `tests/support/otel.py`) lanza `MissingTelemetryContext`.
+- **Nunca se registra una excepción (C2, regla 6).** `span()` y `record_span()` abren sus spans con `record_exception=False` y `set_status_on_exception=False`. Una excepción deja `error.type` (el nombre del tipo) y `Status(ERROR)` sin descripción; nunca su mensaje ni su stack.
+- **Lista cerrada de atributos (regla 6).** Todo atributo de `span()`, `record_span()` y `set_attributes()` pasa por `ALLOWED_ATTRIBUTES`: ids, referencias, enums, contadores y booleanos; nunca un valor de payload (`args`, `result`, `inputs`, `value`, `p_cal`, `top_k`…) ni texto del cliente. Fuera de la lista se descarta en silencio; en modo estricto, `ValueError`. Agregar un nombre es un cambio de interfaz del plano operativo y se justifica en este spec. **Excepciones**, que no pasan por la lista y tienen su propia lista cerrada en el código que las abre:
+  - `set_content` (contenido en vista `audit`, apagado por defecto);
+  - los spans de tracers crudos de `tracer(name)`: `agentcore.api.request` de M9 (`http.request.method`, `http.response.status_code`, `error.type`) y `chat` del gateway (atributos `gen_ai.*` y `agentcore.*` del gateway, spec del gateway §3.5);
+  - el evento `agentcore.access_rejected` del log de seguridad de M9 (`agentcore.reason`, `agentcore.principal_type`), que se agrega al span activo.
+
+  La prueba de claves cerradas (T-M11-16) cubre `agentcore.api.request`, `chat {modelo}` y el evento `agentcore.access_rejected` con sus propias listas: la de `chat {modelo}` es la del gateway (la vigila también T-U5-19), con la correlación del turno incluida. En los caminos del motor sin M9 exige además que no aparezca ningún span fuera de `invoke_agent` y sus hijos.
+- **Provider propio (F3, I5).** `setup_tracing` no instala el provider global de OTel: todo tracer de agentcore sale de `tracer(name)`, que declara `schema_url = SCHEMA_URL` (semconv fijada). Sin provider, `tracer()` es no-op. `shutdown_tracing()` vacía y cierra el exportador y deja todo en no-op.
+- **Logs JSON (F6, I3).** `JsonLogFormatter` emite un conjunto cerrado: `timestamp` (ISO 8601 UTC con milisegundos, de `record.created`; no es el `Clock` porque no decide nada ni entra a eventos), `level`, `logger`, `message`, `exc_type` (solo con `exc_info`), los de `bind` y `trace_id`. Nunca `exc_text`, el stack, `stack_info` ni campos `extra`. Los mensajes de arranque de `serve` y de `registry` ante una pieza que no carga nombran solo el tipo de la excepción, nunca su texto. Las credenciales dentro de una URL del mensaje (`esquema://usuario:clave@host`) se reemplazan por `***`, porque los avisos de reintento del exportador OTLP pueden nombrar el endpoint.
+- **Arranque de `serve` (composition, `agent_core/composition/observability.py`).** `setup_observability(env)` lee del `env` inyectado las variables `OTEL_*` estándar (`OTEL_SDK_DISABLED`, `OTEL_TRACES_EXPORTER` = `otlp` | `none`, `OTEL_EXPORTER_OTLP[_TRACES]_ENDPOINT`, `OTEL_EXPORTER_OTLP[_TRACES]_PROTOCOL` = `http/protobuf`, `OTEL_EXPORTER_OTLP[_TRACES]_HEADERS`, `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_TRACES_SAMPLER` y `OTEL_TRACES_SAMPLER_ARG` con los seis samplers estándar). Sin endpoint no hay trazas y los logs JSON siguen. Un valor inválido es un error de arranque (exit 2) que nombra la variable y nunca el valor de los headers. La variable de la señal (`…_TRACES_…`) gana sobre la genérica, como en la especificación del exportador OTLP.
+  - **Headers:** se aceptan solo entradas de la gramática del SDK (`opentelemetry.util.re`, también la "liberal"); cualquier otra es un error de arranque que nombra la variable y la posición. El exportador OTLP vuelve a leer `OTEL_EXPORTER_OTLP[_TRACES]_HEADERS` del entorno del proceso y registraría tal cual una entrada rechazada: mientras se construye, el logger `opentelemetry.util.re` queda apagado. Certificados, compresión y timeout del exportador también salen del entorno del proceso (en producción `env is os.environ`).
+  - **Logs:** el formatter JSON queda como **único** handler de root (`INFO`): un handler ajeno (p. ej. el `basicConfig` que hace el SDK de openai con `OPENAI_LOG=debug`) imprimiría el mensaje y el stack de una excepción en texto plano. Sube `openai`, `httpx` y `httpcore` a `WARNING`.
+  - **Apagado:** `run_serve` llama a `shutdown()` en un `finally`; vacía el exportador y repone los handlers y niveles guardados antes del primer arranque. Un segundo `setup_observability` reemplaza al primero, y cualquier orden de `shutdown()` deja el proceso como estaba.
+  - **uvicorn** arranca con `log_config=None` y `access_log=False` (F5).
 
 ### 3.3 Transcript
 
@@ -148,6 +192,9 @@ Ninguno de dominio. Encadena y persiste los de todos los módulos.
 | T-M11-11 | Enlace de transferencia (§3.1b): válido; un evento posterior en el origen no lo rompe; origen alterado, hash falsificado o de otro evento, `from_agent`, `from_release_id`, `to_agent` o `to_release_id` falsos (cada uno solo, sobre cadenas re-encadenadas válidas), `turn_completed` de otro turno, cadena de origen ausente, `run_transferred` ausente, con otro `transfer_id` o con otro `to_run_id`, y `run_started` del destino con otro origen dan problemas legibles sin datos; un run sin origen da `[]` (`tests/m11/test_transfer_links.py`) | — |
 | T-M11-12 | Sesión con transferencia (decisión 24): `RecordedIds` reparte `to_run_id` y `transfer_id` sin repetir el run destino; un fixture sin `linked` se escribe sin la clave, los seis fixtures commiteados cargan con `linked == []` y se reescriben byte a byte, y uno con `linked` va y vuelve con `linked` como última clave; `from_event_hash` no se compara pero `transfer_id`, `from_run_id` y `depth` sí; el motor recibe `events + linked`, y un evento cambiado o un run ausente en lo producido diverge; una cadena enlazada alterada da `chain_broken` con `chain_broken_run` y motivo, y una del origen sin `chain_broken_run`; **enlace roto → `chain_broken` antes de correr el motor** (aunque el motor de prueba daría `match`): hash falsificado (`"0"*64`), cadena cambiada de otra grabación con los mismos ids, hash de otro evento, `transfer_id` del intento rechazado, `from_run_id`/`from_agent`/`from_release_id` falsos, agente del destino distinto de `to_agent`, run no nombrado por ningún `to_run_id`, run repetido del origen y run sin `origin`; un segundo run enlazado cuyo origen es el primero (profundidad 2) da `match`; solo un sha256 hex exacto en minúsculas queda exento en `check_fixture`, y no en un campo `pii_direct` (`tests/m11/test_replay_transfer.py`) | 2 |
 | T-M11-13 | Fixture grabado de la sesión con transferencia (decisión 24, fase 7): `agentcore replay` de `tests/fixtures/runs-transfer/transferencia.yaml` con `--catalog` da `match` (dos runs, dos releases); el fixture está vigente (regrabarlo da los mismos bytes); su `full` de `directory/list` lleva `choices: [consultas, disputas]`; `linked` empieza con el `run_started` del destino con `origin`, y `verify_transfer_link` sobre las cadenas grabadas da `[]`; un enlace falsificado sobre ese fixture (`from_event_hash`, `transfer_id` o `from_release_id`, con la cadena del destino re-encadenada y válida) da problemas y `chain_broken` con `chain_broken_run` y el motivo; un evento del destino alterado sin re-encadenar da `chain_broken`; una release que el registro no tiene es un error del runner, y también lo es una release que existe pero no es el alias `prod` del agente de entrada del `run_started` grabado (p. ej. `disputas-demo` con entrada en `recepcion`: `ValueError`, y la CLI sale con 3); una sesión con un turno después de la transferencia da `match` (el runner deduplica los `turn_id`: el destino repite el del origen, y sin eso el turno posterior tomaría el instante equivocado) (`tests/composition/test_replay_transfer_fixture.py`) | 2 |
+| T-M11-14 | Plano operativo: configuración por `OTEL_*` (endpoint, headers, resource, samplers, errores de arranque sin eco de headers), logs JSON con `timestamp` y solo `exc_type`, sin campos `extra`, y vaciado del exportador al salir de `serve` (también si uvicorn falla); `span()` no-op sin `bind` fuera del modo estricto, sin excepciones registradas y con la lista cerrada de atributos; `setup_tracing` no toca el provider global (`tests/composition/test_observability.py`, `tests/m11/test_json_logs.py`, `tests/m11/test_telemetry.py`) | 2 |
+| T-M11-15 | Grabar los seis caminos con telemetría real (`OtelTurnTelemetry` y un exportador en memoria) deja los fixtures idénticos byte a byte, con `event_id`, `ts` y `hash`, y el exportador recibe `invoke_agent` y `agentcore.decide`; lo mismo para la sesión con transferencia de la fase 7 (`tests/fixtures/runs-transfer/transferencia.yaml`, con sus cadenas enlazadas): regrabada con telemetría real da los mismos bytes (el exportador recibe un `agentcore.transfer` y un `invoke_agent` por run) y su replay sigue en `match`; el motor del replay no tiene telemetría (`NoTurnTelemetry`, también en el replay de la transferencia) (`tests/composition/test_turn_telemetry.py`) | 2 |
+| T-M11-16 | Hijos derivados: `decide` y `execute_tool` terminan en `ts` y duran `latency_ms`, `rule` es instantáneo; cada hijo cuelga del `invoke_agent` de su turno, uno por evento; derivar no modifica los eventos; toda clave exportada está en su lista cerrada (`ALLOWED_ATTRIBUTES`; `agentcore.api.request`, `chat {modelo}` —lista del gateway, también T-U5-19— y el evento `agentcore.access_rejected` con las suyas) y ningún valor de atributo es una hoja de `args`, `result`, `error`, `inputs`, `value` ni texto del cliente (salvo ids, también los de agente y release de la transferencia); las dos comprobaciones corren sobre los siete escenarios, la transferencia con los dos runs de su sesión y su `agentcore.transfer` (`tests/composition/test_turn_telemetry.py`) | 2 |
 
 ## 8. Evaluación
 
@@ -162,6 +209,7 @@ Es la **fuente de datos** de la unidad 6 y de la auto-mejora: exportación de ev
 ## 10. Definición de terminado
 
 - Fase 2: cadena, spans, transcript y T-M11-06…09.
+- **Spans de la fase 2 (hecho):** `invoke_agent` en vivo por turno (m04 §3.9) e hijos `agentcore.decide`, `agentcore.rule` y `execute_tool` derivados de los eventos (§3.2); T-M11-15 y T-M11-16. El span `agentcore.transfer` y el link del run destino (spec de transferencia §8, T-TR-16; sus seis claves `agentcore.transfer.*` están en la lista cerrada) también están hechos.
 - T-M11-10 va con el replay (fase 5).
 - Transferencia entre agentes (rev. 4): `verify_transfer_link` y T-M11-11.
 - Transferencia, fase 7: replay `fixture` de una sesión que transfiere (decisión 24) y T-M11-12. Pendientes: `verify_transfer_link` en `agentcore replay` y replay por `run_id` de la sesión.
@@ -191,7 +239,7 @@ Es la **fuente de datos** de la unidad 6 y de la auto-mejora: exportación de ev
 12. **`ReplayReport`** añade campos opcionales (aditivos): `chain_broken_at: int | None` y `duration_ms: int | None`. `verdict` y `first_divergence` como en el spec.
 13. **Catálogo de datos de prueba (§13.2 no lo define):** archivo YAML `tests/fixtures/catalogo-datos-prueba.yaml` con `email_domains`, `numbers` (documentos/teléfonos/productos inventados) y `values` (valores `pii_direct` permitidos). Un fixture se rechaza si en `inputs`/`full`/`drafts` hay un email fuera de los dominios, un número de 6+ dígitos fuera de `numbers`, o una hoja de un campo `pii_direct`/`pii_quasi` (según `FieldClassifier`) fuera de `values`. Los `events` no se escanean (vista `audit`, con hashes hex que darían falsos positivos). **Exención sha256 (fase 7, decisión del usuario):** una hoja que es exactamente un sha256 hex en minúsculas (`[0-9a-f]{64}`, coincidencia completa) no se rechaza por dígitos ni por email, por la misma razón: el resultado `full` de `directory/list` lleva el `hash` del directorio. No exime una hoja de un campo `pii_direct`/`pii_quasi` (esa regla va antes), ni un hash dentro de otro texto, en mayúsculas o de otra longitud.
 14. **Formato del fixture:** YAML, `tests/fixtures/runs/<camino>.yaml`. Los números con decimales se leen como `Decimal` (loader propio); un `Decimal` se escribe como escalar `float` explícito. El campo opcional `linked` (último) va solo si no está vacío (decisión 24).
-15. **`agent-telemetry`:** paquete de primer nivel `agent_telemetry/` en este repo (el "paquete común" se extraerá luego sin cambios de API). La versión de semconv GenAI queda fijada en la constante `SEMCONV_VERSION` (ADR 0003 no pudo confirmar su estabilidad; **verifica la versión contra el paquete `opentelemetry-semantic-conventions` instalado antes de fijarla**).
+15. **`agent-telemetry`:** paquete de primer nivel `agent_telemetry/` en este repo (el "paquete común" se extraerá luego sin cambios de API). La versión de semconv GenAI queda fijada en la constante `SEMCONV_VERSION` (ADR 0003 no pudo confirmar su estabilidad; **verifica la versión contra el paquete `opentelemetry-semantic-conventions` instalado antes de fijarla**). Enmienda (2026-10-02, refactor de observabilidad F3): el provider es propio de `agent_telemetry` y no se instala como global de OTel; `SEMCONV_VERSION` y `SCHEMA_URL` viven en `agent_telemetry/semconv.py`.
 16. **Exportación de evaluación (§8):** `export_events(sink, run_ids, release=None)` recibe la lista de `run_id` (el `AuditSink` no tiene listado por release; el listado es de la unidad 6/4).
 17. **Códigos de salida de `agentcore replay`:** `0` match, `1` diverged, `2` chain_broken, `3` error de uso o motor no disponible.
 18. **Dónde vive el `EngineRunner` (decisión del usuario, 2026-09-29):** no en `agent_core.cli` sino en `testing/replay/` (herramienta de desarrollo; necesita el almacén en memoria de `testing.fakes`). `agent_core.cli.load_engine(registry)` importa `testing.replay` de forma perezosa; si el paquete `testing` no existe (wheel instalado) o falta `--registry`, sale con 3. Sustituye al marcador `agent_core.turn.build_engine_runner` (que `turn` no podía proveer: no puede importar `response`, `views` ni `adapters`).

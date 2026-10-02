@@ -1,5 +1,7 @@
 """M9 F1: errores `application/problem+json` con `trace_id` (T-M9-13, spec §3.5)."""
 
+import logging
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -111,3 +113,15 @@ def test_trace_id_is_unique_per_request_and_uses_the_id_source() -> None:
     second = client.get("/no-existe").json()["trace_id"]
     assert first != second
     assert first == "event-0001"
+
+
+def test_an_unhandled_error_is_logged_with_trace_id_location_and_route_never_its_text(
+        caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.ERROR, logger="agentcore.api")
+    resp = _client().get("/boom")
+    trace_id = resp.json()["trace_id"]
+    (record,) = [r for r in caplog.records if r.name == "agentcore.api"]
+    message = record.getMessage()
+    assert "RuntimeError" in message and f"trace_id={trace_id}" in message
+    assert "ruta=/boom" in message and "test_problems.py:" in message  # file:line of the raising frame
+    assert "secreto-interno-xyz" not in caplog.text

@@ -75,13 +75,21 @@ class TurnEventSink:
     Si `turn_started` está reservado y sin llenar, lo materializa antes (`ensure_turn_started`)."""
 
     def __init__(
-        self, buffer: EventBuffer, chain: EventChain, ensure_turn_started: Callable[[], None]
+        self,
+        buffer: EventBuffer,
+        chain: EventChain,
+        ensure_turn_started: Callable[[], None],
+        observe: Callable[[list[EngineEvent]], None] | None = None,
     ) -> None:
         self._buffer = buffer
         self._chain = chain
         self._ensure = ensure_turn_started
+        self._observe = observe
 
     def record(self, uow: UnitOfWork, state: RunState, events: list[EngineEvent]) -> None:
         if self._buffer.turn_started_reserved and not self._buffer.turn_started_filled:
             self._ensure()
-        self._chain.append(uow, state.run_id, [*self._buffer.drain(), *events])
+        appended = [*self._buffer.drain(), *events]
+        self._chain.append(uow, state.run_id, appended)
+        if self._observe is not None:  # telemetry (m04 §3.9): reads what was chained, after the append
+            self._observe(appended)

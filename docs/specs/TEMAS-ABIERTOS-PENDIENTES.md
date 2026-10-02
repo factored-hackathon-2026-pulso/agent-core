@@ -1,6 +1,6 @@
 # Temas abiertos — Motor de decisión (spec 2026-09-28)
 
-- Estado: **9 de 9 temas originales resueltos; #10 (`read` construido), #11, #12, #14, #15 y #16 cerrados el 2026-09-30 (decisiones abajo); #13 resuelto salvo las piezas reales de las unidades 3, 6 y 7 (2026-09-30); #18 decidido el 2026-09-30 (construcción pendiente); sigue abierto #17 (medio); #19 (transferencia entre agentes) con las fases 1 a 6 en `main` y la fase 7 en la rama `feat/transferencia-demo`, con pendientes; #20 (conector de datasets reales para las evals) abierto (medio).** Reemplaza la versión anterior de este documento, cuyo contenido se descartó por basarse en hallazgos incorrectos.
+- Estado: **9 de 9 temas originales resueltos; #10 (`read` construido), #11, #12, #14, #15 y #16 cerrados el 2026-09-30 (decisiones abajo); #13 resuelto salvo las piezas reales de las unidades 3, 6 y 7 (2026-09-30); #18 decidido el 2026-09-30 (construcción pendiente); sigue abierto #17 (medio); #19 (transferencia entre agentes) con las fases 1 a 7 en `main` (la 7 llegó desde la rama `feat/transferencia-demo`) y los spans OTel de la transferencia en la rama `feat/transferencia-otel`, con pendientes; #20 (conector de datasets reales para las evals) abierto (medio).** Reemplaza la versión anterior de este documento, cuyo contenido se descartó por basarse en hallazgos incorrectos.
 - Fecha: 2026-09-28
 - Spec: `2026-09-28-motor-de-decision-design.md` (rev. 15)
 - Regla de trabajo: antes de resolver cada tema se lee el ADR que lo gobierna.
@@ -36,7 +36,7 @@ Tampoco eran temas abiertos: la cadena de hash y `reportable_attrs` (ADR 0003), 
 | 16 | Límites, retención y topes del agente autónomo (registry) | Media | **Resuelto salvo el monto del tope de costo, que se fija al activar el constructor `task` (2026-09-30)** |
 | 17 | Clase `write_draft` y dependencias del constructor sobre el registry | Media | **Parcial: fases 1 a 5 hechas (2026-09-30); siguen el replay de M11, los agentes y `await_approval`** |
 | 18 | Auditoría de las lecturas de datos de clientes del administrador | Media | **Decidido (2026-09-30); construcción pendiente** |
-| 19 | Transferencia entre agentes: pendientes | Media | **Fases 1 a 6 en `main`; fase 7 (demo, cableado, índice de un run abierto por sesión y replay de la sesión) en la rama `feat/transferencia-demo`; sin spans OTel, pendiente de aprobación; abiertos y pendientes listados abajo** |
+| 19 | Transferencia entre agentes: pendientes | Media | **Fases 1 a 6 en `main`; fase 7 (demo, cableado, índice de un run abierto por sesión y replay de la sesión) de la rama `feat/transferencia-demo`, ya en `main`; spans OTel de la transferencia hechos (2026-10-02) en la rama `feat/transferencia-otel`; pendiente de aprobación; abiertos y pendientes listados abajo** |
 | 20 | Conector de datasets reales para las evals de los agentes | Media | **Abierto** |
 
 ## Resueltos
@@ -61,13 +61,13 @@ Sigue abierto, fuera de esta construcción: el modo `navigate` (esquema y G0-20 
 ## 11. Capa de analítica — resuelto
 **Decidido el 2026-09-30:**
 - **Cálculo:** vistas SQL sobre el log de eventos en Postgres; sin componentes nuevos.
-- **Consumo en la demo:** Phoenix para latencia y costo (ya hay spans OTel `agentcore.*`) y una vista SQL con las métricas de negocio (contención, resolución segura, `abandoned`, aclaraciones por run, modo degradado). No se construye un dashboard propio.
+- **Consumo en la demo:** Phoenix para latencia y costo (spans OTel `agentcore.*` desde el 2026-10-02: `invoke_agent` por turno con hijos derivados de los eventos y `agentcore.transfer`; ver M11 §3.2 y la sección «Telemetría» del README) y una vista SQL con las métricas de negocio (contención, resolución segura, `abandoned`, aclaraciones por run, modo degradado). No se construye un dashboard propio.
 - **Comparación entre releases:** no hay una regla nueva. El gate del registry (guardarraíles y margen de ruido, registry §6) decide las promociones; la analítica solo informa.
 - **Retención:** sin purga en el MVP (las tablas son inmutables y pequeñas); se revisa en la fase 2 junto con la retención del registry (#16).
 Actualización (2026-09-30): el DSL de métricas por agente, el catálogo de eventos y la regla de que no hay acción automática en producción se decidieron en el ADR 0020; este tema conserva el cálculo, la visualización, las alertas y la retención.
 Actualización (2026-10-01): el evaluador en memoria del DSL existe (`agent_core/registry/evaluation/metric_eval.py`): NULL para campos ausentes, percentil discreto y redondeo a 4 decimales son la semántica que el compilador a SQL debe reproducir (T-EVAL-14, hoy parcial; T-EVAL-04 pendiente).
 Abierto del gate (spec de evaluación §13.14): un agente sin `eval_suite` aún puede llegar a `validated`; lo frena el gate al evaluar (T-EVAL-11 parcial). Falta una relación agente → suite al validar.
-Pendiente de construcción: las vistas SQL y la conexión a Phoenix; no bloquean la fase 1 porque los eventos ya capturan los datos.
+Pendiente de construcción: las vistas SQL (la conexión a Phoenix queda documentada en la sección «Telemetría» del README); no bloquean la fase 1 porque los eventos ya capturan los datos.
 
 ## 12. Política del contexto conversacional — resuelto
 **Decidido el 2026-09-30** (ratifica lo que ya implementa `EngineConfig.recent_turns`; ver m04 §15 y m05 §3.2):
@@ -135,12 +135,12 @@ El administrador puede leer runs, transcripts y campos de clientes (ADR 0006, en
 **Pendiente de construcción:** el esquema del evento y su versión, la forma exacta del log de auditoría propio (tabla, retención y quién lo consulta) y el parámetro por el que M9 recibe el motivo. Hay que cerrar esos tres puntos antes de implementar.
 
 ## 19. Transferencia entre agentes: pendientes — abierto
-ADR 0021 (propuesto; implementado en las ramas `feat/transferencia-entre-agentes`, fases 1 a 6, y `feat/transferencia-demo`, fase 7, sin spans OTel, pendiente de aprobación) y spec `2026-09-30-transferencia-entre-agentes-design.md` (reconciliada con lo construido el 2026-10-01; §12 tiene el detalle). Lo que sigue no está decidido aquí, salvo lo marcado como cerrado.
+ADR 0021 (propuesto; implementado en las ramas `feat/transferencia-entre-agentes`, fases 1 a 6, `feat/transferencia-demo`, fase 7, y `feat/transferencia-otel`, spans OTel de la transferencia hechos el 2026-10-02; pendiente de aprobación) y spec `2026-09-30-transferencia-entre-agentes-design.md` (reconciliada con lo construido el 2026-10-01; §12 tiene el detalle). Lo que sigue no está decidido aquí, salvo lo marcado como cerrado.
 
 **Trabajo fuera de las fases 1 a 6 (decisión P7 del plan):**
 - **REL-T1** (compatibilidad de `accepts` al publicar recepción) y la **evaluación** de la spec §7 (`transferred_to`, `transfer_packet`, `routing_scenarios`, gate del especialista, `yardstick_loosened`). Dependen de `feat/eval-metrics`.
 - ~~**Agentes de la demo** (fase 7)~~: **hecho** (recepción, disputas y consultas; registro `registry-transfer-demo`, demo en proceso y HTTP, fixture grabado). Las **suites de evaluación** de esos agentes quedan para la fase 8 (decisión del usuario).
-- **Spans OTel** (`agentcore.transfer` y el *span link*).
+- ~~**Spans OTel** (`agentcore.transfer` y el *span link*).~~ **Hecho (2026-10-02)** (spec de transferencia §8, T-TR-16; m04 §3.9). El enlace entre spans no se persiste; el fixture grabado de la sesión es idéntico con y sin telemetría (T-M11-15).
 - **Replay de sesión:** el modo `fixture` ya reproduce la sesión (fase 7). Pendiente: conectar `verify_transfer_link` sobre el almacén de auditoría a `agentcore replay` y el replay por `run_id` (modo `audit`).
 - **Vuelta a recepción** (`on_out_of_scope: transfer`) y **especialistas que exigen `step_up`** (hoy se excluyen del directorio).
 - **Tope y presupuesto por sesión:** `max_transfers_per_session = 1` es un valor de la demo.
@@ -159,6 +159,17 @@ ADR 0021 (propuesto; implementado en las ramas `feat/transferencia-entre-agentes
 - **Decisiones del usuario (fase 7, plan):** Q1 sí (fixture con `linked`), Q2 consecuencia (exención de sha256), Q3 solo en el catálogo de la demo, Q4 `serve` demo no transfiere, Q5 sin suites de evaluación.
 - **Decisiones tomadas en la ejecución que el usuario debe confirmar:** `transfer` fuera de `TERMINAL` (M4 sigue `rejected`); `Slot` sin `source` (procedencia por `origin` y `accepted_slots`); `from_event_hash` = hash del `turn_completed`; `RunStartedPayload` omite `origin` cuando es `None` para no invalidar cadenas anteriores a 1.2.0; la tool `directory/list` vive en `composition` (cierra el Abierto 5 de la spec).
 - **Más decisiones a confirmar:** `SCHEMA_VERSION` 1.2.0 se asignó en la rama (la spec §12.7 decía "se asigna al integrar"); se usó la rama `feat/transferencia-entre-agentes` en lugar de la rama designada por la sesión.
+
+**Observabilidad (spans y logs, 2026-10-02): decisiones que el usuario debe confirmar.** Las 16 «Preguntas para el usuario» del plan (`docs/superpowers/plans/2026-10-02-observabilidad-y-spans-de-transferencia.md`) se aplicaron con la opción recomendada; ninguna se discutió con el usuario. Las que tocan el comportamiento:
+- **Un turno de abandono (`410 run_closed` por vencimiento) cierra `invoke_agent` con estado `ERROR` y `error.type = EngineError`.** El `410` se lanza dentro del span, para que lleve `agentcore.problem_code`; pero el vencimiento es un desenlace normal y un dashboard lo contaría como error. Opciones: dejarlo, o cerrar el span sin error y conservar solo el código.
+- **El aviso `WARNING` de «la telemetría falló» (logger `agent_core.turn`, solo el tipo de la excepción) no tiene límite de frecuencia:** con una telemetría rota de forma permanente sale uno por falla, y como `record` corre tras cada `EventChain.append`, eso es uno o más por turno (medido: 2 o 3 por turno con `FailingTelemetry('record', 'exit')`, 12 en 4 turnos en el camino de `step_up`).
+- **`setup_tracing` ya no instala el provider global de OTel.** Los tracers de agentcore salen de `tracer(name)`; una librería que use el tracer global de OTel no exportará por esta vía.
+- **`.importlinter` prohíbe a M4 importar `agent_telemetry`.** M4 informa por su puerto local `TurnTelemetry`; la implementación real vive en `composition`.
+- **uvicorn arranca con `log_config=None` y `access_log=False`;** el único handler de root es el formatter JSON, a nivel `INFO` fijo (no se configura por variable). Se silencian `openai`, `httpx` y `httpcore` (`WARNING`).
+- **Soporte parcial de `OTEL_*`:** solo las variables listadas en M11 §3.2 y el README; protocolo `http/protobuf` (no `grpc` ni `http/json`); un valor inválido o un header mal formado es un error de arranque (exit 2).
+- **Telemetría de mejor esfuerzo:** los hijos derivados de los eventos de un turno que luego se revierte se exportan igual, sin deduplicar (m04 §3.9). El `latency_ms` es monótono y el `ts` es de pared, así que el inicio derivado de un hijo es aproximado.
+- **Cierre con el colector inalcanzable:** el apagado vacía los spans pendientes y puede tardar hasta unos 10 s; un segundo Ctrl-C en ese lapso imprime un traceback de Python que no es JSON (sin secretos). Opciones: dejarlo (documentado en el README), o acortar el timeout del vaciado.
+- **Contenido apagado:** los atributos de span son una lista cerrada (`ALLOWED_ATTRIBUTES`). `set_content` (vista `audit`) solo actúa tras `agent_telemetry.configure(capture_content=True)`, y `agentcore serve` no tiene un interruptor para eso: hoy el contenido no sale de ninguna forma por configuración.
 
 **Pendientes y hallazgos de la revisión final (por lectura del código; lo marcado no se ejecutó):**
 - **Cablear `directory/list`** (cerrado en la fase 7; texto de la revisión final): `DirectoryToolExecutor`/`RegistryDirectory` no están en `composition/__init__.py` y `build_turn_engine`/`EngineDeps` no envuelven `deps.tools`; solo las pruebas los usan (`tests/m04/harness.py` importa el módulo interno).
