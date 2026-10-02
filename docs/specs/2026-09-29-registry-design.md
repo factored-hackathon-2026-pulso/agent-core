@@ -295,7 +295,7 @@ class RegistryService:
     def publish(self, actor, proposal_id, idempotency_key: str) -> ReleaseDetail
     def promote(self, actor, agent_id, alias, release_id) -> AliasChange
     def revoke(self, actor, release_id, reason: str) -> ReleaseDetail
-    def import_seed(self, actor, root: Path) -> list[ReleaseDetail]
+    def import_seed(self, actor, root: Path) -> list[ReleaseDetail]  # rechaza (validation_failed) y no guarda nada si una suite de la semilla tiene problemas (`suite_problems`) o su agente no tiene release en la semilla
 
     # Lecturas (cualquier builder autenticado)
     def get_proposal(self, proposal_id) -> ProposalDetail            # cambios, candidata, último reporte y `review` (spec de evaluación §8.5)
