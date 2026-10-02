@@ -84,6 +84,19 @@ class Replayer:
 
 `invoke_agent` › `agentcore.decide`, `agentcore.rule`, `execute_tool`, `chat`, con `agentcore.release`, `agentcore.agent`, `agentcore.flow`, `agentcore.node`, `agentcore.principal_type`, `agentcore.locale` y `gen_ai.*` (versión de semconv fijada). Captura de contenido desactivada por defecto; si se activa, vista `audit`. Exportación OTLP a Phoenix en la demo.
 
+Cómo se generan (spans híbridos, U4 y F13 del plan de observabilidad):
+
+- **`invoke_agent`, en vivo, uno por turno.** Lo abre M4 a través de su puerto local `TurnTelemetry` (m04 §3.9); M4 no importa OpenTelemetry ni `agent_telemetry`. La implementación real es `OtelTurnTelemetry` (`agent_core/composition/telemetry.py`): `bind` del turno (`run_id`, `turn_id`, `session_id`, `agentcore.release`, `agentcore.agent`) y un `span()` con `gen_ai.operation.name`, `gen_ai.agent.name`, `agentcore.entry`, `agentcore.principal_type` y `agentcore.locale`. Sus ids y tiempos salen del SDK de OTel; no recibe `Clock` ni `IdSource`.
+- **Hijos derivados de los eventos.** Cada vez que M4 encadena eventos del turno (`TurnSpan.record`), `derived_spans(events)` los convierte en spans terminados, hijos del `invoke_agent` del turno, que `record_span` exporta con tiempos explícitos:
+  - `decision_made` → `agentcore.decide`, de `ts − latency_ms` a `ts`, con `agentcore.decision.id`, `.model`, `.provider`, `.fallback_depth` y `.tokens`;
+  - `rule_evaluated` → `agentcore.rule`, instantáneo en `ts`, con `agentcore.node`, `agentcore.rule.result` y `agentcore.rule.policy` si la regla tiene política;
+  - `tool_called` → `execute_tool`, de `ts − latency_ms` a `ts`, con `gen_ai.operation.name = "execute_tool"`, `gen_ai.tool.name`, `gen_ai.tool.call.id`, `agentcore.tool`, `agentcore.node`, `agentcore.tool.status` y `agentcore.tool.attempt`.
+
+  Todos los emisores toman `ts` **después** de la llamada (`decision/service.py`; `actions/execution.py`; `interpreter/handlers/tool.py` y `agent.py`), así que el span termina en `ts` y empieza `latency_ms` antes. Ningún otro evento genera hijos (tampoco `agent_step` ni `knowledge_read`). `derived_spans` es pura y de solo lectura: lee ids, referencias, enums y contadores, nunca un dict de payload (`args`, `result`, `error`, `inputs`, `value`), y nunca escribe en un evento, cuyos dicts comparte la cadena del motor. Ni ids ni tiempos salen del `Clock` o del `IdSource` del motor.
+- **`chat`, en vivo**, desde el gateway de LLM (spec del gateway §3.5), dentro del `invoke_agent` del turno y con sus atributos de `bind`.
+- **Lista cerrada de atributos** (abajo), también para los hijos derivados.
+- **No-op en el replay.** El motor del replay y de `agentcore record` usa `NoTurnTelemetry`. Con telemetría real o sin ella, el motor produce los mismos eventos y hashes: grabar los seis caminos con `OtelTurnTelemetry` y un exportador en memoria da los mismos bytes que los fixtures commiteados (T-M11-13).
+
 Reglas de `agent_telemetry` (refactor de observabilidad, tarea 2):
 
 - **La telemetría nunca hace fallar a quien llama (I4).** Un `span()` sin `run_id` o `agentcore.release` entrega un span no-op y avisa **una vez por nombre de span y proceso** en el logger `agent_telemetry`. Con `configure(strict=True)` (pruebas, fixture `otel` de `tests/support/otel.py`) lanza `MissingTelemetryContext`.
@@ -93,7 +106,7 @@ Reglas de `agent_telemetry` (refactor de observabilidad, tarea 2):
   - los spans de tracers crudos de `tracer(name)`: `agentcore.api.request` de M9 (`http.request.method`, `http.response.status_code`, `error.type`) y `chat` del gateway (atributos `gen_ai.*` y `agentcore.*` del gateway, spec del gateway §3.5);
   - el evento `agentcore.access_rejected` del log de seguridad de M9 (`agentcore.reason`, `agentcore.principal_type`), que se agrega al span activo.
 
-  La prueba de claves cerradas de la tarea 4 (todo atributo exportado ∈ `ALLOWED_ATTRIBUTES`) tiene que cubrir estos spans con sus propias listas o excluirlos por nombre de forma explícita.
+  La prueba de claves cerradas (T-M11-14) cubre `agentcore.api.request` y el evento `agentcore.access_rejected` con sus propias listas y excluye `chat` por nombre: su lista es la del gateway y la vigila T-U5-19. En los caminos del motor sin M9 exige además que no aparezca ningún span fuera de `invoke_agent` y sus hijos.
 - **Provider propio (F3, I5).** `setup_tracing` no instala el provider global de OTel: todo tracer de agentcore sale de `tracer(name)`, que declara `schema_url = SCHEMA_URL` (semconv fijada). Sin provider, `tracer()` es no-op. `shutdown_tracing()` vacía y cierra el exportador y deja todo en no-op.
 - **Logs JSON (F6, I3).** `JsonLogFormatter` emite un conjunto cerrado: `timestamp` (ISO 8601 UTC con milisegundos, de `record.created`; no es el `Clock` porque no decide nada ni entra a eventos), `level`, `logger`, `message`, `exc_type` (solo con `exc_info`), los de `bind` y `trace_id`. Nunca `exc_text`, el stack, `stack_info` ni campos `extra`. Las credenciales dentro de una URL del mensaje (`esquema://usuario:clave@host`) se reemplazan por `***`, porque los avisos de reintento del exportador OTLP pueden nombrar el endpoint.
 - **Arranque de `serve` (composition, `agent_core/composition/observability.py`).** `setup_observability(env)` lee del `env` inyectado las variables `OTEL_*` estándar (`OTEL_SDK_DISABLED`, `OTEL_TRACES_EXPORTER` = `otlp` | `none`, `OTEL_EXPORTER_OTLP[_TRACES]_ENDPOINT`, `OTEL_EXPORTER_OTLP[_TRACES]_PROTOCOL` = `http/protobuf`, `OTEL_EXPORTER_OTLP[_TRACES]_HEADERS`, `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, `OTEL_TRACES_SAMPLER` y `OTEL_TRACES_SAMPLER_ARG` con los seis samplers estándar). Sin endpoint no hay trazas y los logs JSON siguen. Un valor inválido es un error de arranque (exit 2) que nombra la variable y nunca el valor de los headers. La variable de la señal (`…_TRACES_…`) gana sobre la genérica, como en la especificación del exportador OTLP.
@@ -173,6 +186,8 @@ Ninguno de dominio. Encadena y persiste los de todos los módulos.
 | T-M11-10 | Un run grabado cuyos campos de medición difieren de los recalculados da `match`; un cambio en cualquier otro campo del mismo evento da `diverged` | 2 |
 | T-M11-11 | Enlace de transferencia (§3.1b): válido; un evento posterior en el origen no lo rompe; origen alterado, hash falsificado o de otro evento, `from_agent`, `from_release_id`, `to_agent` o `to_release_id` falsos (cada uno solo, sobre cadenas re-encadenadas válidas), `turn_completed` de otro turno, cadena de origen ausente, `run_transferred` ausente, con otro `transfer_id` o con otro `to_run_id`, y `run_started` del destino con otro origen dan problemas legibles sin datos; un run sin origen da `[]` (`tests/m11/test_transfer_links.py`) | — |
 | T-M11-12 | Plano operativo: configuración por `OTEL_*` (endpoint, headers, resource, samplers, errores de arranque sin eco de headers), logs JSON con `timestamp` y solo `exc_type`, sin campos `extra`, y vaciado del exportador al salir de `serve` (también si uvicorn falla); `span()` no-op sin `bind` fuera del modo estricto, sin excepciones registradas y con la lista cerrada de atributos; `setup_tracing` no toca el provider global (`tests/composition/test_observability.py`, `tests/m11/test_json_logs.py`, `tests/m11/test_telemetry.py`) | — |
+| T-M11-13 | Grabar los seis caminos con telemetría real (`OtelTurnTelemetry` y un exportador en memoria) deja los fixtures idénticos byte a byte, con `event_id`, `ts` y `hash`, y el exportador recibe `invoke_agent` y `agentcore.decide`; el motor del replay no tiene telemetría (`tests/composition/test_turn_telemetry.py`) | 2 |
+| T-M11-14 | Hijos derivados: `decide` y `execute_tool` terminan en `ts` y duran `latency_ms`, `rule` es instantáneo; cada hijo cuelga del `invoke_agent` de su turno, uno por evento; derivar no modifica los eventos; toda clave exportada está en su lista cerrada (`ALLOWED_ATTRIBUTES`; `agentcore.api.request` y el evento `agentcore.access_rejected` con las suyas; `chat` excluido por nombre, lo cubre T-U5-19) y ningún valor de atributo es una hoja de `args`, `result`, `error`, `inputs`, `value` ni texto del cliente (`tests/composition/test_turn_telemetry.py`) | — |
 
 ## 8. Evaluación
 
@@ -187,6 +202,7 @@ Es la **fuente de datos** de la unidad 6 y de la auto-mejora: exportación de ev
 ## 10. Definición de terminado
 
 - Fase 2: cadena, spans, transcript y T-M11-06…09.
+- **Spans de la fase 2 (refactor de observabilidad, hecho):** `invoke_agent` en vivo por turno (m04 §3.9) e hijos `agentcore.decide`, `agentcore.rule` y `execute_tool` derivados de los eventos (§3.2); T-M11-13 y T-M11-14. El span `agentcore.transfer` y el link del run destino van en la tarea 5.
 - T-M11-10 va con el replay (fase 5).
 - Transferencia entre agentes (rev. 4): `verify_transfer_link` y T-M11-11.
 - Fase 5: replay `fixture` en CI con los seis caminos y T-M11-01…05; `audit` si alcanza.

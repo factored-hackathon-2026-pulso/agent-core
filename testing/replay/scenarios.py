@@ -8,6 +8,7 @@ from pathlib import Path
 
 from agent_core.audit import Fixture, build_fixture
 from agent_core.ports import ToolStatus
+from agent_core.turn import TurnTelemetry
 from testing.engine_world import REGISTRY_DEMO, EngineWorld
 from testing.fakes.tools import Scripted
 
@@ -79,8 +80,10 @@ SCENARIOS: dict[str, Scenario] = {
 }
 
 
-def record_scenario(name: str, registry_root: Path = REGISTRY_DEMO) -> Fixture:
-    world = EngineWorld(registry_root=registry_root, record=True)
+def record_scenario(name: str, registry_root: Path = REGISTRY_DEMO, *,
+                    telemetry: TurnTelemetry | None = None) -> Fixture:
+    """`telemetry` only observes: the fixture is byte-identical with it or without it (T-M11-13)."""
+    world = EngineWorld(registry_root=registry_root, record=True, telemetry=telemetry)
     SCENARIOS[name](world)
     assert world.driver.run_id is not None and world.recording_tools and world.recording_llm
     return build_fixture(name, world.driver.run_id, world.release.id, world.audit.read(world.driver.run_id),
