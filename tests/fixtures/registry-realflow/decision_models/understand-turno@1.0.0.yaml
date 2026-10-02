@@ -6,6 +6,31 @@ output_schema:
   properties:
     command: {type: string}
 calibrated_fields: [command, flow, interrupt]
-providers: [{provider: jev}]
+providers:
+  - provider: jev
+    config:
+      model: jev-1.13.0
+      timeout_ms: 10000
+      questions:
+        command:
+          instructions: >-
+            ¿Qué quiere hacer la persona con su último mensaje? Usa el contexto de la conversación
+            (turnos recientes, nodo actual, si hay una confirmación pendiente).
+          criteria:
+            start_flow: No hay nodo actual (current_node vacío) y la persona describe el trámite que quiere hacer (por ejemplo, que no reconoce un cargo), o pide un trámite nuevo distinto del que está en curso.
+            continue: Hay un nodo actual esperando un dato y la persona lo responde o lo aporta, aunque al hacerlo mencione un trámite (por ejemplo, al preguntarle en qué se le puede ayudar, cuenta que no reconoce un cargo), o sigue con el trámite en curso.
+            affirm: Responde que sí o acepta lo que se le preguntó.
+            deny: Responde que no o rechaza lo que se le preguntó.
+            clarify: El mensaje es ambiguo o incompleto, no se entiende qué quiere.
+            cancel: Quiere abandonar o cancelar el trámite que está en curso.
+            handoff: Pide hablar con una persona o un agente humano.
+            out_of_scope: Pide algo sin relación con disputas de cargos o reclamos.
+            interrupt: Reporta un fraude o un robo, algo urgente que interrumpe lo que se estaba haciendo.
+        flow:
+          instructions: Si la persona quiere iniciar un trámite, ¿cuál es? Elige el más cercano.
+        interrupt:
+          instructions: ¿La persona reporta un fraude, robo o suplantación?
+          criteria:
+            fraude: Dice que le robaron la tarjeta, que hay un fraude o que alguien más usó sus datos.
 calibration: {method: none}
 thresholds_from: cal-transfer-demo
