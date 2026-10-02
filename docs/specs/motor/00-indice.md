@@ -43,6 +43,8 @@ La spec general describe el motor completo en un solo documento. Aquí se parte 
 
 Paquete `agent_core.registry/` (unidad 2): implementado (rev. 2, entrega). Solo lo importa `composition` (evaluador, servicio y CLI; la API lo monta como extensión `registry_extension`); ningún módulo del motor lo importa.
 
+**Eventos salientes (2026-10-02):** el contrato público de eventos para otros servicios (lista cerrada, sobre, proyección pura) vive fuera de M0, en `agent_core.outbound`, con spec propia en `../2026-10-02-eventos-salientes-design.md` y esquemas en `contracts/events/`. Solo importa `agent_core.domain`; la entrega es de la unidad 4 (ADR 0013).
+
 **Documentos relacionados:** evaluación y métricas por agente (`Agent.metrics`, `eval_suite`, gate con doble vara), en `../2026-09-30-evaluacion-y-metricas-design.md` y `../../adr/0020-evaluacion-y-metricas-por-agente.md`. Añade a M0 los tipos del DSL de métricas (`SCHEMA_VERSION` 1.2.0) y a M1 las reglas `MT-01` a `MT-06`.
 
 ## 3. Dependencias
