@@ -535,7 +535,7 @@ Todos **aditivos**.
 - **Unidad 3:** implementa `SandboxPort`. Hasta entonces se usa `LocalSandbox`.
 - **Unidad 6 / otra persona del equipo:** escenarios de negocio de la demo y `Judge`.
 
-- **M0** (2026-09-30, `SCHEMA_VERSION` 1.2.0): `Agent.metrics` y los tipos del DSL de métricas (ADR 0020).
+- **M0** (2026-09-30, `SCHEMA_VERSION` 1.3.0): `Agent.metrics` y los tipos del DSL de métricas (ADR 0020).
 
 ## 16. Fase 2 (diseño de producción, fuera de la entrega)
 

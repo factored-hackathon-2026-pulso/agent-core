@@ -22,3 +22,7 @@ class ReplayReport(Model):
     first_divergence: Divergence | None = None
     chain_broken_at: int | None = None
     duration_ms: int | None = None
+    # Session replay (decision 24): the linked run whose chain or link is broken (None: the replayed run) and
+    # a fixed reason without data (the `check_chain` reason or a `link_problems` message).
+    chain_broken_run: str | None = None
+    chain_broken_reason: str | None = None

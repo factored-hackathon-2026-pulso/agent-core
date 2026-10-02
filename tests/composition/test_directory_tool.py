@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from agent_core.composition.directory import DIRECTORY_TOOL, DirectoryToolExecutor
+from agent_core.composition import DIRECTORY_TOOL, DirectoryToolExecutor
 from agent_core.domain import Agent, EntityRef, JsonValue, Principal, Release, SubjectRef, directory_hash
 from agent_core.ports import AuthzDecision, DirectoryMember, ToolCallContext, ToolStatus
 from testing.builders import principal

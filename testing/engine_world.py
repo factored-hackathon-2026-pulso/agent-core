@@ -4,15 +4,27 @@ Solo datos sintéticos. Sirve a las pruebas de `tests/composition` y a `agentcor
 Los únicos dobles son los del mundo exterior: LLM, proveedores de decisión, tools, almacenamiento y
 autorización."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from agent_core.audit import RecordingGateway, RecordingToolExecutor
-from agent_core.composition import EngineConfig, EngineDeps, build_turn_engine
+from agent_core.composition import (
+    DIRECTORY_TOOL,
+    DirectoryToolExecutor,
+    EngineConfig,
+    EngineDeps,
+    build_turn_engine,
+)
 from agent_core.decision import RawPrediction
-from agent_core.decision.calibration.artifact import CalibrationArtifact, InMemoryCalibrationSource, Target
+from agent_core.decision.calibration.artifact import (
+    CalibrationArtifact,
+    DirectoryCalibrationSource,
+    InMemoryCalibrationSource,
+    Target,
+)
 from agent_core.domain import (
     AgentSelector,
     ConfirmAnswer,
@@ -30,24 +42,35 @@ from agent_core.domain import (
     ToolDef,
     TurnInput,
 )
-from agent_core.ports import AuditSink, AuthzDecision, GenerationResult, KnowledgeSource, UnitOfWorkFactory
+from agent_core.ports import (
+    AuditSink,
+    AuthzDecision,
+    GenerationResult,
+    KnowledgeSource,
+    ToolExecutor,
+    UnitOfWorkFactory,
+)
 from agent_core.turn import TurnEngine
 from agent_core.views import DEFAULT_CATALOG, FieldClassifier, FieldRule
 from testing.builders import NOW
 from testing.builders import principal as make_principal
 from testing.fakes.authz import TableAuthz
 from testing.fakes.clock import FakeClock
+from testing.fakes.directory import InMemoryDirectory
 from testing.fakes.gateway import ScriptedGateway
 from testing.fakes.ids import FakeIds
 from testing.fakes.keys import FakeKeyProvider
 from testing.fakes.provider import ScriptedProvider
-from testing.fakes.registry_dir import registry_from_directory
+from testing.fakes.registry_dir import registry_from_releases
 from testing.fakes.storage import InMemoryAuditSink, InMemoryStore
 from testing.fakes.tools import FakeToolExecutor, Scripted
 from testing.fakes.transcript import InMemoryTranscript
 
 REGISTRY_DEMO = Path(__file__).parents[1] / "tests" / "fixtures" / "registry-demo"
 RELEASE_ID = "demo"
+TRANSFER_DEMO = Path(__file__).parents[1] / "tests" / "fixtures" / "registry-transfer-demo"
+TRANSFER_RELEASES = ("recepcion-demo", "disputas-demo", "consultas-demo")
+TRANSFER_CALIBRATION = "cal-transfer-demo"
 DRAFT = "Tu disputa quedó radicada y te avisaremos cuando haya novedades."
 CANDIDATAS: list[JsonValue] = [
     {"transaction_id": "tx-1", "amount": Decimal("120.50"), "currency": "USD"},
@@ -60,6 +83,14 @@ CATALOG = {
     "currency": FieldRule(field_class="public"),
     "status": FieldRule(field_class="public"),
     "id": FieldRule(field_class="public"),
+    # Directory option ids (ADR 0021, spec §3.2, §12.14): not PII; if tokenized,
+    # `decide_choice` could not choose.
+    "directory.choices": FieldRule(field_class="public"),
+    "directory.entries.agent_id": FieldRule(field_class="public"),
+    "directory.entries.release_id": FieldRule(field_class="public"),
+    # Routing cards: registry-authored text, shown to the router wrapped as untrusted (never tokenized).
+    "directory.entries.summary": FieldRule(field_class="untrusted_text"),
+    "directory.entries.examples": FieldRule(field_class="untrusted_text"),
 }
 
 
@@ -136,6 +167,13 @@ def demo_calibration() -> CalibrationArtifact:
                                thresholds=thresholds, target=target)
 
 
+def transfer_calibration() -> CalibrationArtifact:
+    """The hand-made artifact of the transfer demo (U2): its `"*"` threshold lets a runtime choice pass."""
+    artifact = DirectoryCalibrationSource(TRANSFER_DEMO / "calibrations").get(TRANSFER_CALIBRATION)
+    assert artifact is not None, "falta calibrations/cal-transfer-demo.json en el registro de la demo"
+    return artifact
+
+
 def principal_at(level: str) -> Principal:
     return make_principal(auth={"level": level, "at": NOW})
 
@@ -150,6 +188,7 @@ class Driver:
     - `{"op": "confirm", "answer": "yes"|"no", "auth"?}` responde la última confirmación pendiente."""
 
     engine: TurnEngine
+    agent: str = "atencion"  # entry agent of `start`; not written into the recorded op
     ops: list[dict[str, JsonValue]] = field(default_factory=list)
     session_id: str | None = None
     run_id: str | None = None
@@ -165,7 +204,7 @@ class Driver:
         if kind == "start":
             lang = op.get("lang")
             run_input = RunInput.model_validate({
-                "agent": AgentSelector(id="atencion", alias="prod"), "idempotency_key": "key-1",
+                "agent": AgentSelector(id=self.agent, alias="prod"), "idempotency_key": "key-1",
                 **({"lang": lang} if lang is not None else {})})
             result = self.engine.start_run(principal, None, run_input)
             self.session_id, self.run_id = result.session_id, result.run_id
@@ -196,12 +235,15 @@ class EngineWorld:
                  audit: AuditSink | None = None, config: EngineConfig | None = None,
                  gateway: ScriptedGateway | None = None, record: bool = False,
                  clock: FakeClock | None = None, ids: FakeIds | None = None,
-                 knowledge: KnowledgeSource | None = None) -> None:
+                 knowledge: KnowledgeSource | None = None, releases: tuple[str, ...] = (RELEASE_ID,),
+                 agent: str = "atencion", directory: bool = False,
+                 calibrations: Mapping[str, CalibrationArtifact] | None = None) -> None:
         self.clock = clock or FakeClock()
         self.ids = ids or FakeIds()
-        self.registry = registry_from_directory(registry_root, RELEASE_ID)
+        self.registry = registry_from_releases(registry_root, releases)
+        self._release_ids = releases
         self.release: Release = self.registry.resolve_release(
-            AgentSelector(id="atencion", alias="prod"), principal_at("step_up"))
+            AgentSelector(id=agent, alias="prod"), principal_at("step_up"))
         self.store = InMemoryStore()
         self.uow_factory = uow_factory or self.store.uow
         self.audit = audit or InMemoryAuditSink(self.store)
@@ -210,28 +252,46 @@ class EngineWorld:
         self.jev = ScriptedProvider("jev", clock=self.clock)
         self.classifier = ScriptedProvider("classifier", clock=self.clock)
         self.tools = FakeToolExecutor(self.ids)
+        self._tool_versions = self._union_of_tools()
         self._register_tools()
-        self.recording_tools = RecordingToolExecutor(self.tools) if record else None
+        self.authz = SyntheticAuthz()
+        self.directory = InMemoryDirectory(self.registry) if directory else None
+        inner: ToolExecutor = self.tools
+        if self.directory is not None and record:
+            # F5: the recording must see `directory/list` to replay it (replay serves every tool from
+            # the record).
+            inner = DirectoryToolExecutor(self.tools, self.directory, self.authz, self.ids)
+        self.recording_tools = RecordingToolExecutor(inner) if record else None
         self.recording_llm = RecordingGateway(self.gateway) if record else None
         self.deps = EngineDeps(
             clock=self.clock, ids=self.ids, keys=FakeKeyProvider.default(), uow_factory=self.uow_factory,
             audit=self.audit, registry=self.registry, releases=self._release,
-            tools=self.recording_tools or self.tools, gateway=self.recording_llm or self.gateway,
+            tools=self.recording_tools or inner, gateway=self.recording_llm or self.gateway,
             providers={"jev": self.jev, "classifier": self.classifier},
-            calibrations=InMemoryCalibrationSource({"cal-demo": demo_calibration()}),
-            transcript=self.transcript, authz=SyntheticAuthz(), classifier=FieldClassifier(CATALOG),
-            config=config or EngineConfig(), knowledge=knowledge)
+            calibrations=InMemoryCalibrationSource(calibrations or {"cal-demo": demo_calibration()}),
+            transcript=self.transcript, authz=self.authz, classifier=FieldClassifier(CATALOG),
+            config=config or EngineConfig(), knowledge=knowledge,
+            directory=None if record else self.directory)
         self.engine: TurnEngine = build_turn_engine(self.deps)
         self.runtimes = self.engine._runtimes  # RuntimeFactory real
-        self.driver = Driver(self.engine)
+        self.driver = Driver(self.engine, agent=agent)
         self.principal = principal_at("step_up")
 
     def _release(self, release_id: str) -> Release:
-        assert release_id == self.release.id
-        return self.release
+        return self.registry.resolve_release_by_id(release_id)
+
+    def _union_of_tools(self) -> dict[str, str]:
+        """Tools of every pinned release; `directory/list` is left out: `DirectoryToolExecutor` serves it."""
+        versions: dict[str, str] = {}
+        for release_id in self._release_ids:
+            release = self.registry.resolve_release_by_id(release_id)
+            for tool_id, version in release.entities.get(EntityKind.tool, {}).items():
+                if tool_id != DIRECTORY_TOOL.id:
+                    versions.setdefault(tool_id, version)
+        return versions
 
     def _register_tools(self) -> None:
-        for tool_id, version in self.release.entities[EntityKind.tool].items():
+        for tool_id, version in self._tool_versions.items():
             definition = self.registry.get(EntityRef(id=tool_id, version=version), ToolDef)
             if tool_id == "obtener_pqr":
                 self.tools.register_readback(definition, of=EntityRef(id="radicar_pqr", version=version))
@@ -240,7 +300,7 @@ class EngineWorld:
 
     def script_tool(self, tool_id: str, *items: Scripted) -> None:
         """Resultados guionados que tienen prioridad sobre el manejador de la tool (p. ej. `uncertain`)."""
-        version = self.release.entities[EntityKind.tool][tool_id]
+        version = self._tool_versions[tool_id]
         ref = EntityRef(id=tool_id, version=version)
         definition = self.registry.get(ref, ToolDef)
         self.tools.register(definition, script=items, handler=_HANDLERS.get(tool_id, _radicar))
@@ -261,6 +321,10 @@ class EngineWorld:
         self.classifier.push(RawPrediction(value={"match": "unica", "transaction": transaction},
                                            p_raw={"match": 0.9}, tokens=10))
 
+    def routes(self, choice: str, p: float = 0.9) -> None:
+        """`elegir-especialista` (classifier) picks `choice` among the directory options."""
+        self.classifier.push(RawPrediction(value={"choice": choice}, p_raw={"choice": p}, tokens=10))
+
     # --- turnos ------------------------------------------------------------------------------------------
 
     def start(self, **over: Any) -> Any:
@@ -271,3 +335,13 @@ class EngineWorld:
 
     def confirm(self, answer: str = "yes", **over: Any) -> Any:
         return self.driver.apply({"op": "confirm", "answer": answer, **over})
+
+
+def transfer_world(**over: Any) -> EngineWorld:
+    """Reception and two specialists over `registry-transfer-demo` (ADR 0021, phase 7)."""
+    options: dict[str, Any] = {
+        "registry_root": TRANSFER_DEMO, "releases": TRANSFER_RELEASES, "agent": "recepcion",
+        "directory": True,
+        "calibrations": {TRANSFER_CALIBRATION: transfer_calibration()},
+    }
+    return EngineWorld(**(options | over))

@@ -187,3 +187,11 @@ def test_dsn_help_recommends_the_env_var_over_argv(capsys: pytest.CaptureFixture
         main(["serve", "--help"])
     out = " ".join(capsys.readouterr().out.split())
     assert "AGENTCORE_REGISTRY_DSN" in out and "lista de procesos" in out
+
+
+def test_serve_wires_the_registry_directory() -> None:
+    from agent_core.registry import RegistryDirectory
+
+    ports = _resolve(AGENTCORE_ALLOW_DEMO="1")
+    assert isinstance(ports.directory, RegistryDirectory)
+    assert "directory" not in ports.doubles  # a real piece over the registry, not a demo double

@@ -1,0 +1,19 @@
+id: recepcion
+version: 1.0.0
+priority: 50
+nodes:
+  - {id: entender, type: collect, config: {slot: problema, prompt_ref: t/pedir_problema, max_attempts: 2},
+     next: {ok: listar, max_attempts: esc_sin_datos}}
+  - {id: listar, type: tool, config: {tool: directory/list@1, args: {directory: atencion-cliente, locale: es}, save_as: directorio},
+     next: {ok: elegir, error: esc_directorio, timeout: esc_directorio, denied: esc_directorio}}
+  - {id: elegir, type: decide, config: {model: elegir-especialista@1, branch_on: choice, save_as: ruta,
+       choices_from: facts.directorio.value.choices, input_view: [slots.problema, facts.directorio.value.entries]},
+     next: {chosen: avisar, none: aclarar, low_confidence: aclarar}}
+  - {id: avisar, type: respond, config: {template_ref: t/te_comunico}, next: {next: transferir}}
+  - {id: transferir, type: transfer, config: {target_from: decisions.ruta.choice, directory_from: directorio,
+       packet: {reason: routed, slots: [problema]}},
+     next: {rejected: esc_rechazo}}
+  - {id: aclarar, type: respond, config: {template_ref: t/aclarar_problema, await: true}, next: {next: entender}}
+  - {id: esc_sin_datos, type: escalate, config: {reason_code: low_confidence}}
+  - {id: esc_directorio, type: escalate, config: {reason_code: tool_failure}}
+  - {id: esc_rechazo, type: escalate, config: {reason_code: "policy:transfer_rejected"}}

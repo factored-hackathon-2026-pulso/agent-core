@@ -4,7 +4,12 @@ Semántica idéntica a la del doble en memoria (`tests/contracts/test_uow_contra
 todas las escrituras se acumulan en la UoW y se aplican en **una** transacción en `commit()` (por eso un
 turno hace una sola transacción de estado); el bloqueo optimista es `UPDATE ... WHERE state_version = base`
 dentro de esa transacción (0 filas → `VersionConflict`, y no se aplica nada); el lease de turno se toma en una
-sentencia autocommit propia (visible de inmediato; no lo deshace un rollback). Cada UoW abre su conexión."""
+sentencia autocommit propia (visible de inmediato; no lo deshace un rollback). Cada UoW abre su conexión.
+
+At most one open run per session: the partial unique index `runs_one_open_per_session` (`sql/schema.sql`)
+enforces it. `_apply` writes the runs that do not end open first, and a violation is a `VersionConflict` with
+its own message (`ONE_OPEN_RUN_MESSAGE`). Not run against a real Postgres in phase 7 (no docker):
+unverified."""
 
 from bisect import insort
 from collections.abc import Iterator
@@ -31,6 +36,9 @@ from agent_core.domain import (
     dumps,
     loads,
 )
+
+ONE_OPEN_RUN_INDEX = "runs_one_open_per_session"
+ONE_OPEN_RUN_MESSAGE = "la sesión ya tiene un run abierto (runs_one_open_per_session)"
 
 
 def apply_schema(conn: "psycopg.Connection[Any]", app_role: str | None = None) -> None:
@@ -248,16 +256,27 @@ class PostgresUoW:
         try:
             with self._conn.transaction():  # una sola transacción: se aplica completa o no se aplica
                 self._apply()
-        except psycopg.errors.UniqueViolation:
+        except psycopg.errors.UniqueViolation as exc:
+            if exc.diag.constraint_name == ONE_OPEN_RUN_INDEX:
+                # A second open run in the session (this commit, or another writer that committed first).
+                # Nobody retries: neither M4 nor M9 catches `VersionConflict`, so the client gets
+                # `500 internal_error` from M9's generic handler (m09 §3.5).
+                raise VersionConflict(ONE_OPEN_RUN_MESSAGE) from None
             # Otro escritor encadenó el mismo `seq` (o repitió el `event_id`) sin pasar por `save_run`: es una
-            # carrera de versión, no un error de base. Se aplica nada y quien llama reintenta.
+            # carrera de versión, no un error de base. No se aplica nada; tampoco hay reintento (M9 responde
+            # 500 internal_error).
             raise VersionConflict("la cadena de auditoría cambió: otro escritor commiteó primero") from None
         finally:
             self._done = True
 
     def _apply(self) -> None:
         conn = self._conn
-        for run_id, base in self._base_versions.items():
+        # Writes that leave a run not open go first: `runs_one_open_per_session` cannot be deferred and is
+        # checked on every row, so the UPDATE that closes a transfer's origin must precede the INSERT of its
+        # open target, whatever order the caller saved them in. `sorted` is stable: save order is kept within
+        # each group.
+        ordered = sorted(self._base_versions.items(), key=lambda item: self._runs[item[0]].status == "open")
+        for run_id, base in ordered:
             state = self._runs[run_id]
             values = (state.session_id, state.state_version, state.status, state.inactive_after,
                       dumps(state))

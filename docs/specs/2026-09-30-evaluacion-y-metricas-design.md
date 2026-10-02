@@ -251,11 +251,11 @@ Este trabajo especifica 1 y 2 y deja interfaces para 3 y 4.
 
 **ADR 0018:** punto 4 (métrica principal única) y punto 9 (`eval_suite`) quedan enmendados por el ADR 0020.
 
-**`TEMAS-ABIERTOS-PENDIENTES.md`:** #11 apunta a este spec; nuevo #20 para el conector de datasets reales.
+**`TEMAS-ABIERTOS-PENDIENTES.md`:** #11 apunta a este spec; nuevo #20 para el conector de datasets reales (#13 en la rama `feat/eval-metrics`).
 
 ## 13. Abiertos
 
-1. **Conector de datasets reales:** origen (BD transaccional o warehouse), dueño de los datos, y el ADR que enmiende la regla 5 de CLAUDE.md y el registry §7 (tema #19).
+1. **Conector de datasets reales:** origen (BD transaccional o warehouse), dueño de los datos, y el ADR que enmiende la regla 5 de CLAUDE.md y el registry §7 (tema #20).
 2. **Eventos del registry y del motor:** si comparten tabla/log (M11 es el log del motor) o el compilador los une desde dos orígenes.
 3. **Valores:** `floor`, `noise_margin` y `repetitions` por defecto; la calibración corresponde a cada suite.
 4. **Gestión del juez LLM:** versión del perfil, cómo se calibra y qué hacer cuando el proveedor retira un modelo (cuenta como cambio de vara).

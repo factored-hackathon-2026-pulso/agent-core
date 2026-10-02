@@ -204,6 +204,72 @@ def check_session_prefers_the_open_run_and_lists_all(b: Backend) -> None:
         assert uow.list_runs_by_session("session-nope") == []
 
 
+_TRANSFERRED = {"status": "closed", "outcome": "transferred", "closed_at": NOW, "inactive_after": None}
+
+
+def check_a_session_holds_at_most_one_open_run(b: Backend) -> None:
+    _seed(b.factory, run_id="run-a")  # open, session-0001
+    with b.factory() as uow:
+        uow.save_run(run_state(run_id="run-b"), 0)  # a second open run in the same session
+        uow.append_events("run-b", [EVENT.model_copy(update={"run_id": "run-b"})])
+        with pytest.raises(VersionConflict, match="run abierto"):
+            uow.commit()
+    with b.factory() as uow:
+        assert uow.load_run("run-b") is None  # nothing applied
+        found = uow.find_run_by_session("session-0001")
+        assert found is not None and found.run_id == "run-a"
+    assert b.audit.read("run-b") == []
+
+
+def check_two_new_open_runs_of_one_session_in_one_commit_conflict(b: Backend) -> None:
+    with b.factory() as uow:
+        uow.save_run(run_state(run_id="run-a"), 0)
+        uow.save_run(run_state(run_id="run-b"), 0)
+        with pytest.raises(VersionConflict, match="run abierto"):
+            uow.commit()
+    with b.factory() as uow:
+        assert uow.list_runs_by_session("session-0001") == []
+
+
+def check_closing_the_origin_and_opening_the_target_commit_together(b: Backend) -> None:
+    _seed(b.factory, run_id="run-a")
+    with b.factory() as uow:
+        origin = uow.load_run("run-a")
+        assert origin is not None
+        uow.save_run(origin.model_copy(update=_TRANSFERRED), origin.state_version)
+        uow.save_run(run_state(run_id="run-b"), 0)
+        uow.commit()
+    with b.factory() as uow:
+        found = uow.find_run_by_session("session-0001")
+        assert found is not None and found.run_id == "run-b"
+
+
+def check_open_target_saved_before_closing_origin_still_commits(b: Backend) -> None:
+    """The index is checked per statement in Postgres: the UoW applies closing writes first (F6)."""
+    _seed(b.factory, run_id="run-a")
+    with b.factory() as uow:
+        origin = uow.load_run("run-a")
+        assert origin is not None
+        uow.save_run(run_state(run_id="run-b"), 0)  # target first
+        uow.save_run(origin.model_copy(update=_TRANSFERRED), origin.state_version)  # then the origin closes
+        uow.commit()
+    with b.factory() as uow:
+        assert [r.run_id for r in uow.list_runs_by_session("session-0001")] == ["run-a", "run-b"]
+        found = uow.find_run_by_session("session-0001")
+        assert found is not None and found.run_id == "run-b"
+
+
+def check_open_runs_of_other_sessions_and_task_runs_are_not_limited(b: Backend) -> None:
+    _seed(b.factory, run_id="run-a")
+    with b.factory() as uow:
+        uow.save_run(run_state(run_id="run-b", session_id="session-0002"), 0)
+        uow.save_run(run_state(run_id="task-a", session_id=None, mode="task"), 0)
+        uow.save_run(run_state(run_id="task-b", session_id=None, mode="task"), 0)
+        uow.commit()
+    with b.factory() as uow:
+        assert all(uow.load_run(rid) is not None for rid in ("run-a", "run-b", "task-a", "task-b"))
+
+
 def check_session_without_open_runs_returns_the_newest(b: Backend) -> None:
     closed = {"status": "closed", "outcome": "resolved", "closed_at": NOW, "inactive_after": None}
     _seed(b.factory, run_id="run-a", **closed)
