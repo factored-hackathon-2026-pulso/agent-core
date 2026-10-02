@@ -1,6 +1,6 @@
 # M11 — Auditoría, transcript y replay
 
-- Estado: rev. 4 (2026-10-01) · Fase 2 (cadena, spans, transcript) y fase 5 (replay)
+- Estado: rev. 5 (2026-10-02): plano operativo cableado · Fase 2 (cadena, spans, transcript) y fase 5 (replay)
 - Paquete: `agent_core.audit` (+ paquete común `agent-telemetry`)
 - Origen: spec general §8.4, §11, §13.2, §13.6 (huellas del transcript)
 - ADRs: 0003 (dos planos, transcript separado, replay en dos modos), 0008 (huellas con clave)
@@ -11,7 +11,7 @@
 Tres responsabilidades:
 
 1. **Log de auditoría:** encadenar por hash los eventos de cada run y persistirlos (append-only).
-2. **Trazas y transcript:** spans OTel con atributos `agentcore.*`; envío del texto del turno al transcript store con huella con clave.
+2. **Trazas y transcript:** spans OTel en vivo (`invoke_agent` por turno, `chat`, `agentcore.transfer`) e hijos derivados de los eventos (`decide`, `rule`, `execute_tool`), con atributos `agentcore.*`; envío del texto del turno al transcript store con huella con clave.
 3. **Replay:** reconstruir un run desde sus registros en modo `fixture` (CI) o `audit` (runs reales).
 
 **No hace:** el esquema completo del log ni la entrega de eventos salientes (unidad 4), la retención del transcript (unidad 7), comparar releases distintas (unidad 6).
@@ -35,7 +35,7 @@ class TranscriptReader:
     def __init__(self, store, uow_factory, views: ViewService, keys, ids)
     def read_rendered(self, run_id, reader, on_behalf_of) -> list[RenderedEntry]      # M7 render, purpose "transcript_read"
 def verify_transfer_link(target: RunState, sink: AuditSink) -> list[str]   # enlace entre cadenas (§3.1b); [] = válido
-# agent-telemetry (plano operativo, ADR 0003; refactor de observabilidad 2026-10-02)
+# agent-telemetry (plano operativo, ADR 0003)
 def bind(*, run_id=None, turn_id=None, session_id=None, release=None, agent=None) -> ContextManager
 def correlation() -> Mapping[str, str]          # atributos de correlación enlazados (solo lectura)
 def span(name, *, attributes=None, links=(), context=None, **attrs) -> ContextManager[Span]
@@ -92,12 +92,12 @@ Cómo se generan (spans híbridos, U4 y F13 del plan de observabilidad):
   - `rule_evaluated` → `agentcore.rule`, instantáneo en `ts`, con `agentcore.node`, `agentcore.rule.result` y `agentcore.rule.policy` si la regla tiene política;
   - `tool_called` → `execute_tool`, de `ts − latency_ms` a `ts`, con `gen_ai.operation.name = "execute_tool"`, `gen_ai.tool.name`, `gen_ai.tool.call.id`, `agentcore.tool`, `agentcore.node`, `agentcore.tool.status` y `agentcore.tool.attempt`.
 
-  Todos los emisores toman `ts` **después** de la llamada (`decision/service.py`; `actions/execution.py`; `interpreter/handlers/tool.py` y `agent.py`), así que el span termina en `ts` y empieza `latency_ms` antes. Ningún otro evento genera hijos (tampoco `agent_step` ni `knowledge_read`). `derived_spans` es pura y de solo lectura: lee ids, referencias, enums y contadores, nunca un dict de payload (`args`, `result`, `error`, `inputs`, `value`), y nunca escribe en un evento, cuyos dicts comparte la cadena del motor. Ni ids ni tiempos salen del `Clock` o del `IdSource` del motor.
+  Todos los emisores toman `ts` **después** de la llamada (`decision/service.py`; `actions/execution.py`; `interpreter/handlers/tool.py` y `agent.py`), así que el span termina en `ts` y empieza `latency_ms` antes. Ningún otro evento genera hijos (tampoco `agent_step` ni `knowledge_read`). `derived_spans` es pura y de solo lectura: lee ids, referencias, enums y contadores, nunca un dict de payload (`args`, `result`, `error`, `inputs`, `value`), y nunca escribe en un evento, cuyos dicts comparte la cadena del motor. La derivación no pide hora ni ids nuevos: usa el `ts` de cada evento (que produjo el `Clock` del motor). Solo los ids y los tiempos de los spans en vivo salen del SDK de OTel. Los hijos de los eventos de un turno que luego se revierte se exportan igual: la telemetría es de mejor esfuerzo y no deduplica (m04 §3.9).
 - **`chat`, en vivo**, desde el gateway de LLM (spec del gateway §3.5), dentro del `invoke_agent` del turno y con sus atributos de `bind`.
 - **Lista cerrada de atributos** (abajo), también para los hijos derivados.
 - **No-op en el replay.** El motor del replay y de `agentcore record` usa `NoTurnTelemetry`. Con telemetría real o sin ella, el motor produce los mismos eventos y hashes: grabar los seis caminos con `OtelTurnTelemetry` y un exportador en memoria da los mismos bytes que los fixtures commiteados (T-M11-13).
 
-Reglas de `agent_telemetry` (refactor de observabilidad, tarea 2):
+Reglas de `agent_telemetry`:
 
 - **La telemetría nunca hace fallar a quien llama (I4).** Un `span()` sin `run_id` o `agentcore.release` entrega un span no-op y avisa **una vez por nombre de span y proceso** en el logger `agent_telemetry`. Con `configure(strict=True)` (pruebas, fixture `otel` de `tests/support/otel.py`) lanza `MissingTelemetryContext`.
 - **Nunca se registra una excepción (C2, regla 6).** `span()` y `record_span()` abren sus spans con `record_exception=False` y `set_status_on_exception=False`. Una excepción deja `error.type` (el nombre del tipo) y `Status(ERROR)` sin descripción; nunca su mensaje ni su stack.
@@ -185,9 +185,9 @@ Ninguno de dominio. Encadena y persiste los de todos los módulos.
 | T-M11-09 | Todo span y evento lleva `run_id` y `agentcore.release`; `trace_id` en respuestas | — |
 | T-M11-10 | Un run grabado cuyos campos de medición difieren de los recalculados da `match`; un cambio en cualquier otro campo del mismo evento da `diverged` | 2 |
 | T-M11-11 | Enlace de transferencia (§3.1b): válido; un evento posterior en el origen no lo rompe; origen alterado, hash falsificado o de otro evento, `from_agent`, `from_release_id`, `to_agent` o `to_release_id` falsos (cada uno solo, sobre cadenas re-encadenadas válidas), `turn_completed` de otro turno, cadena de origen ausente, `run_transferred` ausente, con otro `transfer_id` o con otro `to_run_id`, y `run_started` del destino con otro origen dan problemas legibles sin datos; un run sin origen da `[]` (`tests/m11/test_transfer_links.py`) | — |
-| T-M11-12 | Plano operativo: configuración por `OTEL_*` (endpoint, headers, resource, samplers, errores de arranque sin eco de headers), logs JSON con `timestamp` y solo `exc_type`, sin campos `extra`, y vaciado del exportador al salir de `serve` (también si uvicorn falla); `span()` no-op sin `bind` fuera del modo estricto, sin excepciones registradas y con la lista cerrada de atributos; `setup_tracing` no toca el provider global (`tests/composition/test_observability.py`, `tests/m11/test_json_logs.py`, `tests/m11/test_telemetry.py`) | — |
+| T-M11-12 | Plano operativo: configuración por `OTEL_*` (endpoint, headers, resource, samplers, errores de arranque sin eco de headers), logs JSON con `timestamp` y solo `exc_type`, sin campos `extra`, y vaciado del exportador al salir de `serve` (también si uvicorn falla); `span()` no-op sin `bind` fuera del modo estricto, sin excepciones registradas y con la lista cerrada de atributos; `setup_tracing` no toca el provider global (`tests/composition/test_observability.py`, `tests/m11/test_json_logs.py`, `tests/m11/test_telemetry.py`) | 2 |
 | T-M11-13 | Grabar los seis caminos con telemetría real (`OtelTurnTelemetry` y un exportador en memoria) deja los fixtures idénticos byte a byte, con `event_id`, `ts` y `hash`, y el exportador recibe `invoke_agent` y `agentcore.decide`; el motor del replay no tiene telemetría (`tests/composition/test_turn_telemetry.py`) | 2 |
-| T-M11-14 | Hijos derivados: `decide` y `execute_tool` terminan en `ts` y duran `latency_ms`, `rule` es instantáneo; cada hijo cuelga del `invoke_agent` de su turno, uno por evento; derivar no modifica los eventos; toda clave exportada está en su lista cerrada (`ALLOWED_ATTRIBUTES`; `agentcore.api.request` y el evento `agentcore.access_rejected` con las suyas; `chat` excluido por nombre, lo cubre T-U5-19) y ningún valor de atributo es una hoja de `args`, `result`, `error`, `inputs`, `value` ni texto del cliente (`tests/composition/test_turn_telemetry.py`) | — |
+| T-M11-14 | Hijos derivados: `decide` y `execute_tool` terminan en `ts` y duran `latency_ms`, `rule` es instantáneo; cada hijo cuelga del `invoke_agent` de su turno, uno por evento; derivar no modifica los eventos; toda clave exportada está en su lista cerrada (`ALLOWED_ATTRIBUTES`; `agentcore.api.request` y el evento `agentcore.access_rejected` con las suyas; `chat` excluido por nombre, lo cubre T-U5-19) y ningún valor de atributo es una hoja de `args`, `result`, `error`, `inputs`, `value` ni texto del cliente (`tests/composition/test_turn_telemetry.py`) | 2 |
 
 ## 8. Evaluación
 
@@ -202,7 +202,7 @@ Es la **fuente de datos** de la unidad 6 y de la auto-mejora: exportación de ev
 ## 10. Definición de terminado
 
 - Fase 2: cadena, spans, transcript y T-M11-06…09.
-- **Spans de la fase 2 (refactor de observabilidad, hecho):** `invoke_agent` en vivo por turno (m04 §3.9) e hijos `agentcore.decide`, `agentcore.rule` y `execute_tool` derivados de los eventos (§3.2); T-M11-13 y T-M11-14. El span `agentcore.transfer` y el link del run destino (spec de transferencia §8, T-TR-16; sus seis claves `agentcore.transfer.*` están en la lista cerrada) también están hechos.
+- **Spans de la fase 2 (hecho):** `invoke_agent` en vivo por turno (m04 §3.9) e hijos `agentcore.decide`, `agentcore.rule` y `execute_tool` derivados de los eventos (§3.2); T-M11-13 y T-M11-14. El span `agentcore.transfer` y el link del run destino (spec de transferencia §8, T-TR-16; sus seis claves `agentcore.transfer.*` están en la lista cerrada) también están hechos.
 - T-M11-10 va con el replay (fase 5).
 - Transferencia entre agentes (rev. 4): `verify_transfer_link` y T-M11-11.
 - Fase 5: replay `fixture` en CI con los seis caminos y T-M11-01…05; `audit` si alcanza.

@@ -1,6 +1,6 @@
 # Spec — Transferencia entre agentes: recepción, directorio y especialistas
 
-- Estado: **borrador para revisión; implementado en la rama `feat/transferencia-entre-agentes` (fases 1 a 6) y, con los spans OTel de la transferencia, en `feat/transferencia-otel`; pendiente de aprobación.** Reconciliado con la implementación el 2026-10-01 (decisiones P1 a P7 del plan y las del libro de la ejecución); lo que sigue sin decidir está en §12
+- Estado: **borrador para revisión; implementado en la rama `feat/transferencia-entre-agentes` (fases 1 a 6); los spans OTel de la transferencia están hechos (2026-10-02); pendiente de aprobación.** Reconciliado con la implementación el 2026-10-01 (decisiones P1 a P7 del plan y las del libro de la ejecución); lo que sigue sin decidir está en §12
 - Fecha: 2026-09-30 (rev. 2026-10-01)
 - Repo: `agent-core`
 - ADR: 0021 (este diseño); se apoya en 0004, 0006, 0013, 0017, 0018, 0019 y 0020
@@ -200,13 +200,13 @@ entender (collect / agent con input_view) → directorio (tool directory/list) �
 
 - **Correlación:** `session_id` en todo evento (ya existe en `EngineEvent`) y `transfer_id` en los tres eventos de transferencia.
 - **Enlace verificable:** `RunOrigin.from_event_hash` ata la cadena del destino al `turn_completed` exacto del origen. `verify_transfer_link(target, sink)` (M11, `agent_core/audit/links.py`) lo comprueba: la cadena de origen verifica, el hash es de un `turn_completed` del turno que transfirió, hay un único `run_transferred` que apunta al destino, y los agentes y releases de `origin`, de los `run_started` y de `run_transferred` coinciden. Comprueba solo el enlace, no la integridad de la cadena del destino. **Pendiente:** conectarlo a `agentcore replay` (§12.10).
-- **OTel (construido en `feat/transferencia-otel`; ADR 0003 #4, m04 §3.9):**
+- **OTel (hecho el 2026-10-02; ADR 0003 #4, m04 §3.9):**
   - El span `agentcore.transfer` es hijo del `invoke_agent` del turno del origen y cubre la validación de la transferencia (§5.2).
   - Atributos, todos ids o enums (lista cerrada de `agent_telemetry`): `agentcore.transfer.id`, `agentcore.transfer.from_agent`, `agentcore.transfer.to_agent`, `agentcore.transfer.to_release_id` y `agentcore.transfer.outcome` (`transferred` | `rejected`). `from_agent` y `to_agent` son ids de agente, sin versión (la versión del destino la da `to_release_id`). Además de los de correlación (`run_id`, `turn_id`, `session_id`, release y agente del origen).
   - En un rechazo va `agentcore.transfer.reason_code` y no hay `to_release_id`; `to_agent` va solo si `transfer_rejected` lo repite, es decir, si el destino está en el directorio que el run leyó.
   - El `invoke_agent` del run destino es **hermano** del del origen (mismo padre y misma traza) y lleva un *span link* al span `agentcore.transfer`. Es hermano solo en el árbol de la traza: en el tiempo el destino corre **dentro** del `invoke_agent` del origen, que sigue abierto mientras se procesa el destino (la duración de la recepción sí incluye el trabajo del especialista). Si el origen no tiene un span padre (hay provider pero no hay span de request), el destino cuelga del `invoke_agent` del origen para quedar en la misma traza. Una transferencia dentro del destino cuelga de su propio `invoke_agent`. Un rechazo no abre turno de destino y no enlaza nada.
   - **No se persiste nada** (ni evento, ni campo de `RunOrigin`; sin cambio de M0 ni de `SCHEMA_VERSION`): el enlace de la traza vive solo en el exportador, y el enlace verificable es el de la cadena (arriba). La telemetría no cambia eventos ni hashes (las dos cadenas son idénticas con o sin ella) y en el replay es no-op. Si la telemetría falla, M4 lo contiene y el turno sigue sin ella.
-  - **Límites:** la telemetría es de mejor esfuerzo. Si el turno se revierte después (falla del `commit`), los spans ya emitidos se exportan igual. Sin `OTEL_EXPORTER_OTLP_ENDPOINT` no hay trazas.
+  - **Límites:** la telemetría es de mejor esfuerzo. Si el turno se revierte después (falla del `commit`), los spans ya emitidos se exportan igual. Sin endpoint OTLP (`OTEL_EXPORTER_OTLP_ENDPOINT` o `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`) no hay trazas.
 - **Linaje por sesión:** §5.3. **Pendiente:** el linaje por run del registry (`RunLineage`, `lineage_for_run`) no tiene `origin` y no lo lee; hoy `origin` solo se ve en el linaje por sesión (§5.3).
 - **Sin PII:** el paquete solo aparece como `packet_fp`; los slots viajan por las vistas de M7.
 
@@ -254,7 +254,7 @@ entender (collect / agent con input_view) → directorio (tool directory/list) �
 | 3 | Registry: directorio, hash y tool `directory/list` (adaptador en `composition`) | implementada, **sin cablear en la raíz de composición** (solo la usan las pruebas; cableado pendiente, fase 7) |
 | 4 | M5 y M2: `decide` con `choices_from` y manejador de `transfer` | hecha |
 | 5 | M4 y M9: sesión con varios runs, transferencia atómica, `TurnResult.run_id`/`agent`, linaje por sesión | hecha |
-| 6 | M11: enlace por hash (`verify_transfer_link`) | hecha, **sin replay de sesión**. Los spans OTel (§8) se construyeron aparte, en `feat/transferencia-otel` |
+| 6 | M11: enlace por hash (`verify_transfer_link`) | hecha, **sin replay de sesión**; con los spans OTel de §8 (2026-10-02) |
 | 7 | Demo: recepción más dos especialistas (`disputas`, a partir de `atencion`, y uno de consulta) con sus suites | pendiente, con su propio plan |
 | 8 | Evaluación (§7) y REL-T1, en coordinación con la rama `feat/eval-metrics` | pendiente, con su propio plan |
 

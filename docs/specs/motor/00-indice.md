@@ -93,6 +93,8 @@ Las unidades 2–7 aún no existen. El motor habla con ellas solo por estos puer
 
 `DecisionProvider` no es un puerto de M0: es la interfaz de adaptadores internos de M5 (`ScriptedProvider` lo entrega M5).
 
+`TurnTelemetry` tampoco es un puerto de M0: es un puerto **local de M4** (`agent_core/turn/ports.py`, m04 §3.9). Su valor por defecto es `NoTurnTelemetry` (no hace nada: pruebas, replay, `record`); la implementación real, `OtelTurnTelemetry`, vive en `composition` sobre `agent_telemetry`, y `.importlinter` prohíbe que M4 importe `agent_telemetry`. Dobles en `testing/fakes/telemetry.py`.
+
 Todo JSON que entra al núcleo se lee con `agent_core.domain.loads` (números con decimales como `Decimal`), y toda canonización para hashes y huellas usa `canonical_bytes` de M0 (JCS).
 
 ## 5. Dueños del estado del run
@@ -223,7 +225,7 @@ M0 define el esquema de cada evento; M11 los encadena y persiste. El módulo emi
 
 | Tema | Módulo | Estado |
 |---|---|---|
-| Transferencia entre agentes (ADR 0021) | M0, M1, M2, M4, M5, M9, M11, registry, composition | **implementada en la rama `feat/transferencia-entre-agentes`** (fases 1 a 6, `SCHEMA_VERSION` 1.2.0); los spans OTel de la transferencia están en `feat/transferencia-otel`; pendiente de aprobación. Pendientes y abiertos: `TEMAS-ABIERTOS-PENDIENTES.md` #19 y §12 de la spec |
+| Transferencia entre agentes (ADR 0021) | M0, M1, M2, M4, M5, M9, M11, registry, composition | **implementada en la rama `feat/transferencia-entre-agentes`** (fases 1 a 6, `SCHEMA_VERSION` 1.2.0); los spans OTel de la transferencia están hechos (2026-10-02); pendiente de aprobación. Pendientes y abiertos: `TEMAS-ABIERTOS-PENDIENTES.md` #19 y §12 de la spec |
 | #10 Integración de ADR 0015 (conocimiento) | M12, M1, M8 | **resuelto** (diseño 2026-09-30) y **`read` construido** (2026-09-30, `SCHEMA_VERSION` 1.0.0); `navigate` y `search` siguen fuera |
 | Formato numérico por país: el `locale` del run es `es`/`pt`, pero ADR 0011 parsea por `es-CO`/`es-MX`/`es-AR`/`pt` | M8 | **resuelto** en M8 rev. 2 (parcial): `number_format` es dato opcional del contexto producido fuera de M8; sin él, solo lecturas inequívocas |
 | Detector de injection: la spec dice "marca y cuenta" pero no define el método | M6 | **resuelto** en M6 rev. 2: reglas regex/frase versionadas en la release, texto normalizado; reemplazable por un clasificador detrás de `scan_injection` |

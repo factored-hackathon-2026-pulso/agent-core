@@ -16,7 +16,11 @@ El reto exige trazas, registros de ejecución y auditoría determinista, y advie
    - Se exportan por OTLP.
    - El backend de la demo es Arize Phoenix: un contenedor, OTel nativo, con datasets y experimentos.
    - La versión de semconv queda fijada.
-   - **Enmienda (2026-10-02):** la telemetría nativa de FastAPI (≥ 0.142) se apaga; la exportación la configura la raíz de composición (paso 2 del refactor de observabilidad).
+   - **Enmienda (2026-10-02):** la telemetría nativa de FastAPI (≥ 0.142) se apaga; la exportación la configura la raíz de composición (`setup_observability`, `agentcore serve`).
+     - **Configuración:** variables `OTEL_*` estándar (subconjunto: OTLP/HTTP-protobuf, `otlp` o `none`, los seis samplers estándar; M11 §3.2). Sin endpoint no hay trazas y los logs JSON siguen.
+     - **Provider propio, sin global:** `agent_telemetry` crea su provider y no lo instala como el global de OTel; los tracers de agentcore salen de `tracer(name)`.
+     - **Spans híbridos:** `invoke_agent` es en vivo, uno por turno, y lo abre M4 por un puerto local (`TurnTelemetry`, m04 §3.9) sin importar OpenTelemetry. Los hijos `agentcore.decide`, `agentcore.rule` y `execute_tool` se derivan de los eventos ya encadenados, con los tiempos de su `ts` y `latency_ms`. Esto no rompe el determinismo: la telemetría solo lee eventos ya construidos, no recibe `Clock` ni `IdSource`, y el replay usa la implementación no-op. Grabar los seis caminos con telemetría real da los mismos bytes que los fixtures (T-M11-13).
+     - **Mejor esfuerzo:** una falla de la telemetría no rompe el turno, y los hijos de un turno que luego se revierte se exportan igual.
 2. **Log de auditoría**
    - Tabla append-only en Postgres, con un evento por decisión, encadenado por hash **dentro de cada run** (enmienda I1). La cadena usa `sha256` sobre eventos que ya están en vista `audit`.
    - El núcleo no define "caso": un caso de negocio es un `subject {kind: case, ref}`, y los reportes por caso agrupan runs por subject.
@@ -38,6 +42,7 @@ El reto exige trazas, registros de ejecución y auditoría determinista, y advie
      - Así la evaluación de Understand, el held-out tomado de tráfico y la auto-mejora tienen el texto que necesitan, sin atar datos personales a un log inmutable.
 4. **Paquete común `agent-telemetry`, que usa todo repo**
    - Toda respuesta de API lleva `trace_id`.
+     - **Enmienda (2026-10-02):** es el trace id del request (el de OTel si hay una traza activa; si no, un respaldo del `IdSource` de M9). Un reintento deduplicado devuelve el del intento original. Fuera de un request, sin provider, el motor usa `trace-{turn_id}`.
    - Todo span y todo evento llevan `run_id`, `turn_id` (si aplica), `session_id` (si aplica) y `agentcore.release`.
    - `run_started` lleva los atributos de reporte autorizados (`reportable_attrs`: p. ej. país, segmento, canal, locale), y cada `turn_started` lleva el idioma detectado, para comparar resultados por idioma y segmento sin re-identificar (hallazgo R3).
    - La captura de contenido **en trazas** está desactivada por defecto y, cuando se activa, usa la vista `audit`.
@@ -61,6 +66,7 @@ El reto exige trazas, registros de ejecución y auditoría determinista, y advie
 - **(#3)** Los fixtures de CI se generan solo con datos sintéticos. La cobertura de fixtures por camino del flow es lo que hace útil el modo `fixture`.
 - **(#3)** El modo `audit` sirve para demostrar integridad y consistencia del camino, no para detectar bugs que solo aparecen con datos reales.
 - **(#4)** El núcleo calcula la huella del transcript; el transcript store (unidad 7) devuelve solo un `entry_id`.
+- **(2026-10-02)** Los atributos de span son una lista cerrada (`ALLOWED_ATTRIBUTES`): ids, referencias, enums y contadores; nunca un valor de payload ni texto del cliente. Un atributo fuera de la lista se descarta; en modo estricto (pruebas) lanza `ValueError`. Los tracers crudos (`agentcore.api.request`, `chat`) tienen su propia lista cerrada.
 
 ## Riesgos y lo no verificado
 - No pude confirmar que las GenAI semconv de OTel sean estables; se fija la versión que se usa.
