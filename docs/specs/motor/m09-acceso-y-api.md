@@ -133,6 +133,9 @@ Cuando M4 devuelve `awaiting: step_up`, M9 responde `200` con `step_up: {require
 
 Un span `agentcore.api.request` por request (OpenTelemetry, provider de `agent_telemetry`), con una lista cerrada de atributos (método y status). El `trace_id` de la respuesta es el de la traza si hay una activa; si no, uno del `IdSource`. `agent_telemetry.span()` exige `run_id` y `agentcore.release`, que no existen en un 401, por eso la puerta usa la API de OTel directamente. Nada de credenciales, `principal.id` ni body en atributos.
 
+- La telemetría nativa de FastAPI está apagada (`FASTAPI_TELEMETRY_OFF` en `agent_core/api/app.py`: trazas, métricas, logs, spans de operación y autoconfiguración desde `OTEL_*`), así que `agentcore.api.request` es el único span de servidor y no hay `url.path` ni `url.query`.
+- En un error, el span lleva `error.type` y `http.response.status_code`, y nunca el evento `exception` ni una descripción de estado.
+
 ### 3.8 Formato de la credencial (`raw_credential`, decisión 2026-09-29)
 
 JWS compacto `header.payload.firma` (base64url sin relleno), firmado con Ed25519. Lo verifica `JwsIdentityVerifier` (`agent_core/adapters/jws_identity.py`), que implementa `IdentityVerifier`; lo emite el servicio de identidad y, en la demo, `TestIdentityIssuer`.
@@ -181,6 +184,8 @@ Con `TestClient` de FastAPI, `StubVerifier` (tokens opacos sintéticos), `TableA
 | T-M9-12 | Exceso de tasa o costo → `429` | 12 | `test_api`, `test_limits`, `test_m9_postgres` |
 | T-M9-13 | Todas las respuestas llevan `trace_id` y los errores son `problem+json` | — | `test_problems`, `test_api` |
 | T-M9-14 | `awaiting: step_up` devuelve `step_up` en el cuerpo | 5 | `test_api` |
+| T-M9-15 | La telemetría nativa de FastAPI está apagada, incluso con `OTEL_EXPORTER_OTLP_ENDPOINT`: sin providers globales ni exportadores propios | — | `test_fastapi_telemetry` |
+| T-M9-16 | Una excepción no controlada no deja mensaje ni stack en el span: solo `error.type`, `http.response.status_code` y estado `ERROR` sin descripción | — | `test_fastapi_telemetry` |
 | T-TR-10 | `GET /v1/sessions/{id}/lineage` devuelve la cadena con releases y `transfer_id`; otro cliente recibe `403`; no expone `from_event_hash` | — | `test_session_lineage` |
 
 Además: IDOR de lecturas (dueño, asesor con delegación, run sin subject, anónimos entre sí), decimales en el body, JSON ambiguo, `openapi.json` al día, fixture `TableAuthz`.

@@ -16,6 +16,7 @@ El reto exige trazas, registros de ejecución y auditoría determinista, y advie
    - Se exportan por OTLP.
    - El backend de la demo es Arize Phoenix: un contenedor, OTel nativo, con datasets y experimentos.
    - La versión de semconv queda fijada.
+   - **Enmienda (2026-10-02):** la telemetría nativa de FastAPI (≥ 0.142) se apaga; la exportación la configura la raíz de composición (paso 2 del refactor de observabilidad).
 2. **Log de auditoría**
    - Tabla append-only en Postgres, con un evento por decisión, encadenado por hash **dentro de cada run** (enmienda I1). La cadena usa `sha256` sobre eventos que ya están en vista `audit`.
    - El núcleo no define "caso": un caso de negocio es un `subject {kind: case, ref}`, y los reportes por caso agrupan runs por subject.
