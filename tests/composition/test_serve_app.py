@@ -16,7 +16,8 @@ def make_ports(world: EngineWorld, issuer: TestIdentityIssuer, doubles: tuple[st
         clock=d.clock, ids=d.ids, keys=d.keys, uow_factory=d.uow_factory, audit=d.audit,
         counters=InMemoryCostCounters(world.store), registry=d.registry, releases=d.releases,
         gateway=d.gateway, providers=d.providers, tools=d.tools, authz=d.authz, transcript=d.transcript,
-        calibrations=d.calibrations, classifier=d.classifier, verifier=issuer.verifier(), doubles=doubles)
+        calibrations=d.calibrations, classifier=d.classifier, verifier=issuer.verifier(), doubles=doubles,
+        directory=d.directory)
 
 
 def _client(world: EngineWorld, issuer: TestIdentityIssuer) -> TestClient:
@@ -66,3 +67,17 @@ def test_a_bad_credential_is_rejected_before_the_engine() -> None:
     resp = client.post("/v1/runs", json={"agent": "atencion"},
                        headers={"Authorization": "Bearer no-es-un-jws", "Idempotency-Key": "k-3"})
     assert resp.status_code == 401
+
+
+def test_build_api_deps_passes_the_directory_to_the_engine() -> None:
+    from dataclasses import replace
+
+    from agent_core.composition import DirectoryToolExecutor
+    from agent_core.composition.serve import build_api_deps
+    from testing.fakes.directory import InMemoryDirectory
+
+    world = EngineWorld()
+    issuer = TestIdentityIssuer(world.clock)
+    ports = replace(make_ports(world, issuer), directory=InMemoryDirectory(world.registry))
+    deps = build_api_deps(ports)
+    assert isinstance(deps.turns._runtimes._tools, DirectoryToolExecutor)  # type: ignore[attr-defined]

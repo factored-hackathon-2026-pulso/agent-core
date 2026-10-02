@@ -18,6 +18,7 @@ from agent_core.decision import DecisionConfigError, DecisionProvider, HttpJevTr
 from agent_core.decision.calibration.artifact import CalibrationSource
 from agent_core.domain import Release, SchemaError
 from agent_core.ports import (
+    AgentDirectory,
     AuditSink,
     AuthzPort,
     Clock,
@@ -31,7 +32,7 @@ from agent_core.ports import (
     TranscriptStore,
     UnitOfWorkFactory,
 )
-from agent_core.registry import PgRegistryStore, PostgresRegistry, RegistryStore
+from agent_core.registry import PgRegistryStore, PostgresRegistry, RegistryDirectory, RegistryStore
 from agent_core.views import FieldClassifier
 
 DEMO_ENV = "AGENTCORE_ALLOW_DEMO"
@@ -102,6 +103,7 @@ class ServePorts:
     agents: tuple[str, ...] = ()  # agentes cuya release `prod` se revisa al arrancar (aviso de alias)
     endpoints: Mapping[str, EndpointConfig] = field(default_factory=dict)
     registry_api: RegistryApiPorts | None = None  # solo con --registry-api
+    directory: AgentDirectory | None = None  # ADR 0021: directorio de especialistas (sobre el registry)
 
 
 def _flag(attr: str) -> str:
@@ -268,4 +270,5 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         tools=built["tools"], authz=built["authz"], transcript=built["transcript"],
         calibrations=built["calibration"], classifier=built["field-classifier"], verifier=verifier,
         doubles=tuple(doubles), agents=_agents(args, env), endpoints=endpoints,
-        registry_api=registry_api)
+        registry_api=registry_api,
+        directory=RegistryDirectory(registry_store, pg_registry, pg_registry.release))

@@ -29,6 +29,8 @@ class Fixture(Model):
     events: list[AnyEvent]
     full: dict[str, FullToolResult] = Field(repr=False)
     drafts: list[JsonValue] = Field(repr=False)
+    # Chains of the runs this run transferred to (same session, creation order; ADR 0021, M11 decision 24).
+    linked: list[AnyEvent] = Field(default_factory=list)
 
 
 class _Loader(yaml.SafeLoader):
@@ -64,7 +66,10 @@ _Dumper.add_representer(Decimal, _represent_decimal)
 
 
 def dump_fixture(fixture: Fixture) -> str:
-    return yaml.dump(to_jsonable(fixture), Dumper=_Dumper, sort_keys=False, allow_unicode=True)
+    data = to_jsonable(fixture)
+    if not fixture.linked:
+        data.pop("linked")  # a fixture without a transfer keeps its committed bytes
+    return yaml.dump(data, Dumper=_Dumper, sort_keys=False, allow_unicode=True)
 
 
 def load_fixture(text: str) -> Fixture:

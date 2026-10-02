@@ -1,0 +1,12 @@
+id: elegir-especialista
+version: 1.0.0
+output_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    choice: {type: string}
+calibrated_fields: [choice]
+input_view: [slots.problema, facts.directorio.value.entries]
+providers: [{provider: classifier, config: {artifact: sintetico}}]
+calibration: {method: none}
+thresholds_from: cal-transfer-demo

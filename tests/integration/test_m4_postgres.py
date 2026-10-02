@@ -107,6 +107,32 @@ def test_si_el_transcript_falla_no_persiste_nada_del_turno_y_el_lease_se_libera(
             uow.acquire_turn(RUN_ID, "turn-siguiente", w.clock.now(), timedelta(seconds=60))  # lease libre
 
 
+def test_the_schema_has_the_one_open_run_per_session_index() -> None:
+    """Unverified in the phase-7 environment (no docker): run it with `docker compose up -d postgres`."""
+    with postgres_store("m4_one_open") as pg, pg.reading() as conn:
+        row = conn.execute(
+            "SELECT indexdef FROM pg_indexes WHERE schemaname = 'm4_one_open' "
+            "AND indexname = 'runs_one_open_per_session'").fetchone()
+    assert row is not None
+    assert "UNIQUE" in row[0] and "WHERE" in row[0] and "status" in row[0] and "session_id" in row[0]
+
+
+def test_two_concurrent_transactions_cannot_both_open_a_run_in_one_session() -> None:
+    """The first writer has already committed, so the second one's INSERT violates the index at once and its
+    commit fails with `VersionConflict`, applying nothing."""
+    from testing.builders import run_state
+
+    with postgres_store("m4_one_open") as pg:
+        with pg.uow() as first, pg.uow() as second:
+            first.save_run(run_state(run_id="run-a"), 0)
+            second.save_run(run_state(run_id="run-b"), 0)
+            first.commit()
+            with pytest.raises(VersionConflict, match="runs_one_open_per_session"):
+                second.commit()
+        with pg.uow() as uow:
+            assert [r.run_id for r in uow.list_runs_by_session("session-0001")] == ["run-a"]
+
+
 def test_dos_escritores_de_la_cadena_de_auditoria_no_pisan_ni_dan_error_crudo() -> None:
     """Dos UoW encadenan el mismo `seq` sin pasar por `save_run`: la segunda pierde con `VersionConflict`."""
     from pydantic import TypeAdapter

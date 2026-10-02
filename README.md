@@ -46,6 +46,31 @@ uv run agentcore record cancelado --out cancelado.yaml --registry tests/fixtures
 
 Caminos grabados en `tests/fixtures/runs/`: `resuelto`, `cancelado`, `escalado_por_monto`, `uncertain_verify`, `step_up` e `interrupcion`.
 
+Demo de transferencia entre agentes (ADR 0021; sin red ni Postgres). Recepción entiende el problema, lee el directorio `atencion-cliente`, elige al especialista y le transfiere la conversación; el especialista responde en el mismo turno.
+
+```bash
+# validar el registro de la demo: recepcion, disputas y consultas, una release por agente
+uv run agentcore validate tests/fixtures/registry-transfer-demo
+
+# la sesión completa en proceso y por HTTP (linaje con los dos runs y enlace por hash)
+uv run pytest tests/composition/test_transfer_demo.py
+
+# reproducir la sesión grabada (las dos cadenas)
+uv run agentcore replay tests/fixtures/runs-transfer/transferencia.yaml --mode fixture \
+  --registry tests/fixtures/registry-transfer-demo \
+  --catalog tests/fixtures/catalogo-datos-prueba.yaml
+
+# volver a grabarla
+uv run agentcore record transferencia --out transferencia.yaml --registry tests/fixtures/registry-transfer-demo \
+  --catalog tests/fixtures/catalogo-datos-prueba.yaml
+```
+
+Qué tener en cuenta:
+- El umbral con que recepción acepta la elección sale de `calibrations/cal-transfer-demo.json`, un artefacto **hecho a mano** con el umbral comodín `"*"`; no es una calibración (spec §12.1). Sin él, recepción pide aclarar y no transfiere.
+- El modelo que elige especialista usa un proveedor guionado. Con `agentcore serve` el directorio está cableado (`RegistryDirectory` sobre el registry de Postgres), pero el proveedor real de esa elección sigue abierto, así que la demo por `serve` todavía no transfiere.
+- Los flows de los especialistas no leen el slot `problema` transferido: vuelven a preguntar al usuario.
+- La base impone un run abierto por sesión (índice `runs_one_open_per_session`); la ruta de Postgres no se ha verificado (no hubo docker en la ejecución).
+
 ## Comandos
 
 | Comando | Para qué |
@@ -60,7 +85,7 @@ Caminos grabados en `tests/fixtures/runs/`: `resuelto`, `cancelado`, `escalado_p
 | `uv run agentcore contracts` | Regenera `contracts/` (con `--check` solo verifica) |
 | `uv run agentcore validate <registro>` | Valida un registro de autoría |
 | `uv run agentcore replay <fixture> --mode fixture\|audit` | Reproduce un run grabado |
-| `uv run agentcore record <camino> --out <archivo> --registry <dir>` | Graba un camino |
+| `uv run agentcore record <camino> --out <archivo> --registry <dir>` | Graba un camino (`transferencia` con `--registry tests/fixtures/registry-transfer-demo`) |
 | `uv run agentcore sweep --registry <dir> --once` | Cierra como `abandoned` los runs inactivos (necesita Postgres: `--dsn` o `AGENTCORE_DATABASE_URL`) |
 
 Lo mismo corre el CI en `.github/workflows/ci.yml`.

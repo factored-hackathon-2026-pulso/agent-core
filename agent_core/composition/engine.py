@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 
 from agent_core.actions import ActionManager
 from agent_core.audit import AuditLog, TranscriptReader, TurnRecorder
+from agent_core.composition.directory import DirectoryToolExecutor
 from agent_core.composition.runtime import EngineRuntimeFactory, RuntimeConfig
 from agent_core.decision import DecisionProvider, DecisionService, UnderstandService
 from agent_core.decision.calibration.artifact import CalibrationSource
@@ -17,6 +18,7 @@ from agent_core.handoff import HandoffService
 from agent_core.interpreter import CircuitBreaker
 from agent_core.knowledge import KnowledgeService
 from agent_core.ports import (
+    AgentDirectory,
     AuditSink,
     AuthzPort,
     Clock,
@@ -64,7 +66,15 @@ class EngineDeps:
     classifier: FieldClassifier | None = None
     trace: TraceIds | None = None
     knowledge: KnowledgeSource | None = None  # M12: sin fuente, un nodo `knowledge` es un error de cableado
+    directory: AgentDirectory | None = None   # ADR 0021: con él el motor sirve `directory/list`
     config: EngineConfig = field(default_factory=EngineConfig)
+
+
+def _tools(deps: EngineDeps) -> ToolExecutor:
+    """`deps.tools`, wrapped to serve `directory/list` when a directory is wired (ADR 0021, spec §4)."""
+    if deps.directory is None:
+        return deps.tools
+    return DirectoryToolExecutor(deps.tools, deps.directory, deps.authz, deps.ids)
 
 
 class DerivedTrace:
@@ -90,7 +100,7 @@ def build_engine(deps: EngineDeps) -> BuiltEngine:
     actions = ActionManager(deps.ids, deps.clock)
     runtimes = EngineRuntimeFactory(
         clock=deps.clock, ids=deps.ids, keys=deps.keys, registry=deps.registry, releases=deps.releases,
-        tools=deps.tools, gateway=deps.gateway, decisions=decisions, actions=actions, views=views,
+        tools=_tools(deps), gateway=deps.gateway, decisions=decisions, actions=actions, views=views,
         uow_factory=deps.uow_factory, authz=deps.authz, breaker=CircuitBreaker(),
         knowledge=None if deps.knowledge is None else KnowledgeService(deps.knowledge, deps.authz),
         config=RuntimeConfig(number_format=cfg.number_format, max_regenerations=cfg.max_regenerations,

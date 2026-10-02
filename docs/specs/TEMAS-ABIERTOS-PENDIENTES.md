@@ -1,6 +1,6 @@
 # Temas abiertos — Motor de decisión (spec 2026-09-28)
 
-- Estado: **9 de 9 temas originales resueltos; #10 (`read` construido), #11, #12, #14, #15 y #16 cerrados el 2026-09-30 (decisiones abajo); #13 resuelto salvo las piezas reales de las unidades 3, 6 y 7 (2026-09-30); #18 decidido el 2026-09-30 (construcción pendiente); sigue abierto #17 (medio); #19 (transferencia entre agentes) implementado en rama, con pendientes; #20 (conector de datasets reales para las evals) abierto (medio).** Reemplaza la versión anterior de este documento, cuyo contenido se descartó por basarse en hallazgos incorrectos.
+- Estado: **9 de 9 temas originales resueltos; #10 (`read` construido), #11, #12, #14, #15 y #16 cerrados el 2026-09-30 (decisiones abajo); #13 resuelto salvo las piezas reales de las unidades 3, 6 y 7 (2026-09-30); #18 decidido el 2026-09-30 (construcción pendiente); sigue abierto #17 (medio); #19 (transferencia entre agentes) con las fases 1 a 6 en `main` y la fase 7 en la rama `feat/transferencia-demo`, con pendientes; #20 (conector de datasets reales para las evals) abierto (medio).** Reemplaza la versión anterior de este documento, cuyo contenido se descartó por basarse en hallazgos incorrectos.
 - Fecha: 2026-09-28
 - Spec: `2026-09-28-motor-de-decision-design.md` (rev. 15)
 - Regla de trabajo: antes de resolver cada tema se lee el ADR que lo gobierna.
@@ -36,7 +36,7 @@ Tampoco eran temas abiertos: la cadena de hash y `reportable_attrs` (ADR 0003), 
 | 16 | Límites, retención y topes del agente autónomo (registry) | Media | **Resuelto salvo el monto del tope de costo, que se fija al activar el constructor `task` (2026-09-30)** |
 | 17 | Clase `write_draft` y dependencias del constructor sobre el registry | Media | **Parcial: fases 1 a 5 hechas (2026-09-30); siguen el replay de M11, los agentes y `await_approval`** |
 | 18 | Auditoría de las lecturas de datos de clientes del administrador | Media | **Decidido (2026-09-30); construcción pendiente** |
-| 19 | Transferencia entre agentes: pendientes | Media | **Implementada en la rama `feat/transferencia-entre-agentes` (fases 1 a 6, sin spans OTel), pendiente de aprobación; abiertos y pendientes listados abajo** |
+| 19 | Transferencia entre agentes: pendientes | Media | **Fases 1 a 6 en `main`; fase 7 (demo, cableado, índice de un run abierto por sesión y replay de la sesión) en la rama `feat/transferencia-demo`; sin spans OTel, pendiente de aprobación; abiertos y pendientes listados abajo** |
 | 20 | Conector de datasets reales para las evals de los agentes | Media | **Abierto** |
 
 ## Resueltos
@@ -134,29 +134,33 @@ El administrador puede leer runs, transcripts y campos de clientes (ADR 0006, en
 **Pendiente de construcción:** el esquema del evento y su versión, la forma exacta del log de auditoría propio (tabla, retención y quién lo consulta) y el parámetro por el que M9 recibe el motivo. Hay que cerrar esos tres puntos antes de implementar.
 
 ## 19. Transferencia entre agentes: pendientes — abierto
-ADR 0021 (propuesto; implementado en la rama `feat/transferencia-entre-agentes`, fases 1 a 6, sin spans OTel, pendiente de aprobación) y spec `2026-09-30-transferencia-entre-agentes-design.md` (reconciliada con lo construido el 2026-10-01; §12 tiene el detalle). Nada de lo que sigue está decidido aquí.
+ADR 0021 (propuesto; implementado en las ramas `feat/transferencia-entre-agentes`, fases 1 a 6, y `feat/transferencia-demo`, fase 7, sin spans OTel, pendiente de aprobación) y spec `2026-09-30-transferencia-entre-agentes-design.md` (reconciliada con lo construido el 2026-10-01; §12 tiene el detalle). Lo que sigue no está decidido aquí, salvo lo marcado como cerrado.
 
 **Trabajo fuera de las fases 1 a 6 (decisión P7 del plan):**
 - **REL-T1** (compatibilidad de `accepts` al publicar recepción) y la **evaluación** de la spec §7 (`transferred_to`, `transfer_packet`, `routing_scenarios`, gate del especialista, `yardstick_loosened`). Dependen de `feat/eval-metrics`.
-- **Agentes de la demo** (fase 7): recepción y dos especialistas con sus suites.
+- ~~**Agentes de la demo** (fase 7)~~: **hecho** (recepción, disputas y consultas; registro `registry-transfer-demo`, demo en proceso y HTTP, fixture grabado). Las **suites de evaluación** de esos agentes quedan para la fase 8 (decisión del usuario).
 - **Spans OTel** (`agentcore.transfer` y el *span link*).
-- **Replay de sesión:** conectar `verify_transfer_link` a `agentcore replay`; hoy solo existe la verificación del enlace.
+- **Replay de sesión:** el modo `fixture` ya reproduce la sesión (fase 7). Pendiente: conectar `verify_transfer_link` sobre el almacén de auditoría a `agentcore replay` y el replay por `run_id` (modo `audit`).
 - **Vuelta a recepción** (`on_out_of_scope: transfer`) y **especialistas que exigen `step_up`** (hoy se excluyen del directorio).
 - **Tope y presupuesto por sesión:** `max_transfers_per_session = 1` es un valor de la demo.
 
 **Abiertos de la implementación (decide el usuario):**
 - **Umbral comodín `"*"`:** P3 cierra solo la parte del umbral del Abierto 1 (spec §12.1). Nada genera `"*"` sin conexión (`calibrate` no lo emite): las elecciones de runtime son siempre `low_confidence` hasta que la calibración o un artefacto hecho a mano lo aporte. Siguen abiertos el proveedor (JEV `choice` o `llm_structured`) y cómo se genera.
 - **Hash del directorio en el linaje de la sesión** (m09 §11): (a) leer `run_transferred` de la cadena de origen con un puerto nuevo en `ApiDeps`; (b) `directory_hash` opcional en `RunOrigin` (cambio de M0); (c) retirarlo de la spec.
-- **Restricción en la base de "a lo sumo un run abierto por sesión":** la spec §5.3 dice que la base la impone; `schema.sql` no tiene ninguna. Candidato: índice único parcial `ON runs (session_id) WHERE status = 'open' AND session_id IS NOT NULL`; riesgos: orden de escritura (origen cerrado antes que el destino) y que hoy solo el motor lo garantiza.
+- ~~**Restricción en la base de "a lo sumo un run abierto por sesión"**~~: **cerrado en la fase 7** con el índice `runs_one_open_per_session` (spec §12.8). La ruta de Postgres está sin verificar (sin docker).
 - **Alcance de la atomicidad:** cubre runs, cadenas, uso y resultados; los transcripts y las escrituras de M3 quedan fuera (m04 §11). Falta decidir si el destino puede escribir en el turno de la transferencia y qué pasa con una escritura del origen seguida de una caída antes del `commit`.
 - **`client_turn_id` único por sesión:** requisito documentado, no comprobado.
-- **Rutas de Postgres sin verificar** (sin docker en la ejecución): `aliases_named` del registry y los métodos de sesión de la unidad de trabajo. Correr `docker compose up -d postgres && uv run pytest tests/integration`.
-- **Catálogos de campos de producción:** deben clasificar como `public` los campos del directorio (`choices`, `agent_id`, `release_id`).
+- **Rutas de Postgres sin verificar** (sin docker en la ejecución): `aliases_named` del registry, los métodos de sesión de la unidad de trabajo y, desde la fase 7, el índice `runs_one_open_per_session` con su traducción del `UniqueViolation` a `VersionConflict`. Correr `docker compose up -d postgres && uv run pytest tests/integration`.
+- **Catálogos de campos de producción:** deben clasificar como `public` los campos del directorio (`choices`, `agent_id`, `release_id`). Además, `accepts` y `supported_locales` de las fichas no tienen regla y un router real los vería tokenizados (`⟦pii:n⟧`); no es una línea de catálogo (nombres de slot dinámicos, búsqueda por último segmento): o se proyectan fuera de la entrada del router en el flow, o hay trabajo de catálogo de producción.
+- **Limitaciones de la demo (fase 7):** los flows `disputa-cargo` y `consulta-pqr` no leen el slot `problema` transferido (vuelven a preguntar); el bucle `aclarar` de recepción no tiene tope propio (solo lo acota el número de turnos del usuario); `serve` en modo demo no transfiere (Q4).
+- **`VersionConflict` del índice de run abierto** llega al cliente como `500 internal_error` (ni M4 ni M9 lo capturan): decidir si se mapea a 409 o se reintenta.
+- **Salida de replay:** `ReplayReport` y `--json` ganaron `chain_broken_run` y `chain_broken_reason`.
+- **Decisiones del usuario (fase 7, plan):** Q1 sí (fixture con `linked`), Q2 consecuencia (exención de sha256), Q3 solo en el catálogo de la demo, Q4 `serve` demo no transfiere, Q5 sin suites de evaluación.
 - **Decisiones tomadas en la ejecución que el usuario debe confirmar:** `transfer` fuera de `TERMINAL` (M4 sigue `rejected`); `Slot` sin `source` (procedencia por `origin` y `accepted_slots`); `from_event_hash` = hash del `turn_completed`; `RunStartedPayload` omite `origin` cuando es `None` para no invalidar cadenas anteriores a 1.2.0; la tool `directory/list` vive en `composition` (cierra el Abierto 5 de la spec).
 - **Más decisiones a confirmar:** `SCHEMA_VERSION` 1.2.0 se asignó en la rama (la spec §12.7 decía "se asigna al integrar"); se usó la rama `feat/transferencia-entre-agentes` en lugar de la rama designada por la sesión.
 
 **Pendientes y hallazgos de la revisión final (por lectura del código; lo marcado no se ejecutó):**
-- **Cablear `directory/list`** (fase 7): `DirectoryToolExecutor`/`RegistryDirectory` no están en `composition/__init__.py` y `build_turn_engine`/`EngineDeps` no envuelven `deps.tools`; solo las pruebas los usan (`tests/m04/harness.py` importa el módulo interno).
+- **Cablear `directory/list`** (cerrado en la fase 7; texto de la revisión final): `DirectoryToolExecutor`/`RegistryDirectory` no están en `composition/__init__.py` y `build_turn_engine`/`EngineDeps` no envuelven `deps.tools`; solo las pruebas los usan (`tests/m04/harness.py` importa el módulo interno).
 - **Linaje por run del registry** (`RunLineage`, `lineage_for_run`) sin `origin`.
 - **Replay del run origen que transfirió, por lectura del código, no ejecutado:** `RecordedIds.from_events` (`audit/replay/ports.py:113-122`) no recoge `run_transferred.to_run_id` ni `transfer_id`; `IdKind.run` está en `_RECORDED_KINDS` (`testing/replay/runner.py`), así que `Transferer.validate` recibe `run-replay-0001`; el motor reproducido seguiría hacia el destino; el runner conoce una sola release.
 - **G0-22 sin cambios ni prueba de transferencia:** `decide.choices_from` puede leer un hecho de un nodo `agent`; la garantía real es G0-26/G0-27 y destino ∈ `snapshot.choices` en M4. Endurecer queda pendiente.

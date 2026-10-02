@@ -1,0 +1,12 @@
+id: consulta-pqr
+version: 1.0.0
+priority: 50
+nodes:
+  - {id: pedir_radicado, type: collect, config: {slot: radicado, prompt_ref: t/pedir_radicado, max_attempts: 2},
+     next: {ok: consultar, max_attempts: esc_sin_datos}}
+  - {id: consultar, type: tool, config: {tool: obtener_pqr@1, args: {radicado: slots.radicado}, save_as: pqr},
+     next: {ok: responder, error: esc_tool, timeout: esc_tool, denied: esc_tool}}
+  - {id: responder, type: respond, config: {template_ref: t/estado_pqr}, next: {next: fin}}
+  - {id: fin, type: end, config: {outcome: resolved}}
+  - {id: esc_sin_datos, type: escalate, config: {reason_code: low_confidence}}
+  - {id: esc_tool, type: escalate, config: {reason_code: tool_failure}}

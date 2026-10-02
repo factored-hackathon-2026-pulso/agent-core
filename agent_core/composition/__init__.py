@@ -2,6 +2,7 @@
 
 from agent_core.composition.builder_tools import BUILDER_TOOL_DEFS, BuilderToolExecutor
 from agent_core.composition.decision import DecisionAdapter
+from agent_core.composition.directory import DIRECTORY_TOOL, DirectoryToolExecutor
 from agent_core.composition.engine import (
     BuiltEngine,
     DerivedTrace,
@@ -16,8 +17,8 @@ from agent_core.composition.responder import ContextFactory, ResponderAdapter
 from agent_core.composition.runtime import EngineRuntime, EngineRuntimeFactory, RuntimeConfig
 
 __all__ = [
-    "BUILDER_TOOL_DEFS", "BuilderToolExecutor", "BuiltEngine", "ContextFactory", "DecisionAdapter",
-    "DerivedTrace", "EngineConfig", "EngineDeps", "EngineRuntime",
-    "EngineRuntimeFactory", "EngineScenarioHarness", "EvalStorage", "ResponderAdapter", "RuntimeConfig",
-    "UowRunReleases", "build_engine", "build_registry_service", "build_turn_engine",
+    "BUILDER_TOOL_DEFS", "DIRECTORY_TOOL", "BuilderToolExecutor", "BuiltEngine", "ContextFactory",
+    "DecisionAdapter", "DerivedTrace", "DirectoryToolExecutor", "EngineConfig", "EngineDeps",
+    "EngineRuntime", "EngineRuntimeFactory", "EngineScenarioHarness", "EvalStorage", "ResponderAdapter",
+    "RuntimeConfig", "UowRunReleases", "build_engine", "build_registry_service", "build_turn_engine",
 ]

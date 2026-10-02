@@ -118,7 +118,9 @@ class RecordedIds:
             payload = getattr(e, "payload", None)
             for name, kind in (("call_id", IdKind.call), ("readback_call_id", IdKind.call),
                                ("decision_id", IdKind.decision), ("action_id", IdKind.action),
-                               ("handoff_ref", IdKind.handoff)):
+                               ("handoff_ref", IdKind.handoff),
+                               ("to_run_id", IdKind.run),          # ADR 0021: the target the engine opens
+                               ("transfer_id", IdKind.transfer)):  # transferred / rejected / received
                 add(kind, getattr(payload, name, None))
         return cls(out)
 
