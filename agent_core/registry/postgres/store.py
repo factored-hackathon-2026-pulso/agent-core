@@ -2,6 +2,7 @@
 
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
+from datetime import datetime
 from importlib import resources
 from typing import Any
 
@@ -15,6 +16,8 @@ from agent_core.registry.evaluation.report import EvalReport
 from agent_core.registry.models import (
     AliasChange,
     Approval,
+    AuditContext,
+    DraftWrite,
     EntityDraft,
     EvalRun,
     Proposal,
@@ -27,7 +30,7 @@ from agent_core.registry.models import (
 from agent_core.registry.store import RegistryTx, Status
 
 _INSERT_ONLY = ("reg_blobs", "reg_entity_versions", "reg_releases", "reg_release_entities", "reg_approvals",
-                "reg_eval_runs", "reg_events", "reg_alias_log")
+                "reg_eval_runs", "reg_events", "reg_alias_log", "reg_draft_writes")
 # Mutables y controladas (spec §3.2): el rol de la aplicación nunca borra; cada tabla tiene lo mínimo que usa.
 _GRANTS_MUTABLE = {
     "reg_release_status": "SELECT, INSERT, UPDATE",   # alta al publicar, `revoke`
@@ -253,6 +256,45 @@ class _PgTx:
     def put_publish_key(self, key: str, proposal_id: str, release_id: str) -> None:
         self._c.execute("INSERT INTO reg_publish_keys (key, proposal_id, release_id) VALUES (%s, %s, %s)",
                         (key, proposal_id, release_id))
+
+    def get_draft_write(self, key: str) -> DraftWrite | None:
+        row = self._one("SELECT op, proposal_id, rev_after, request_hash, result_ref, run_id, on_behalf_of, "
+                        "created_at FROM reg_draft_writes WHERE idempotency_key = %s", (key,))
+        if row is None:
+            return None
+        audit = (AuditContext(run_id=row[5], on_behalf_of=row[6])
+                 if row[5] is not None and row[6] is not None else None)
+        return DraftWrite(idempotency_key=key, op=row[0], proposal_id=row[1], rev_after=row[2],
+                          request_hash=row[3].strip(), result_ref=row[4], audit=audit, created_at=row[7])
+
+    def put_draft_write(self, write: DraftWrite) -> None:
+        audit = write.audit
+        self._c.execute(
+            "INSERT INTO reg_draft_writes (idempotency_key, op, proposal_id, rev_after, request_hash, "
+            "result_ref, run_id, on_behalf_of, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (write.idempotency_key, write.op, write.proposal_id, write.rev_after, write.request_hash,
+             write.result_ref, audit.run_id if audit else None, audit.on_behalf_of if audit else None,
+             write.created_at))
+
+    def get_eval_run(self, eval_run_id: str) -> EvalRun | None:
+        row = self._one("SELECT proposal_id, candidate_hash, base_release_id, suite, verdict, report, at "
+                        "FROM reg_eval_runs WHERE eval_run_id = %s", (eval_run_id,))
+        if row is None:
+            return None
+        return EvalRun(eval_run_id=eval_run_id, proposal_id=row[0], candidate_hash=row[1],
+                       base_release_id=row[2], suite=VersionRef.model_validate(loads(row[3])), verdict=row[4],
+                       report=EvalReport.model_validate(loads(row[5])), at=row[6])
+
+    def count_created_after(self, origin: str, after: datetime) -> int:
+        row = self._one("SELECT count(*) FROM reg_events "
+                        "WHERE event_json::jsonb->>'type' = 'proposal_created' "
+                        "AND event_json::jsonb->>'origin' = %s "
+                        "AND (event_json::jsonb->>'at')::timestamptz > %s", (origin, after))
+        return int(row[0])
+
+    def count_eval_runs(self, proposal_id: str) -> int:
+        row = self._one("SELECT count(*) FROM reg_eval_runs WHERE proposal_id = %s", (proposal_id,))
+        return int(row[0])
 
 
 class PgRegistryStore:

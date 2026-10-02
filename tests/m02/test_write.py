@@ -199,3 +199,40 @@ def test_verify_with_readback_down_follows_the_failed_branch_but_keeps_the_actio
     out = w.step(w.persist(proposed.state), answer, tools=_ReadbackDown(w.tools))
     assert out.state.active_flow is not None and out.state.active_flow.node_id == "esc"
     assert [a.state for a in out.state.actions] == [ActionState.uncertain]
+
+
+DRAFT_WRITE = {"id": "guardar", "type": "tool",
+               "config": {"draft": True, "tool": "guardar@1.0.0", "args": {"titulo": "mejorar", "n": 1},
+                          "save_as": "borrador"},
+               "next": {"ok": "verificar", "uncertain": "verificar", "denied": "esc"}}
+
+
+def _draft_world(*, write_script: tuple[Scripted, ...] = ()) -> tuple[World, Flow]:
+    w = World()
+    w.add_tool(tool_def("guardar", "write_draft"), script=write_script,
+               handler=lambda a: {"status": "Open", "id": "b-1", **a})
+    readback = tool_def("obtener")
+    w.add(readback)
+    w.tools.register_readback(readback, of=w.tools_ref("guardar"))
+    return w, flow(DRAFT_WRITE, VERIFY, *TAIL)
+
+
+def test_draft_write_runs_without_a_confirm_and_verifies() -> None:
+    w, f = _draft_world()
+    done = w.step(w.persist(w.state(f)))
+    assert done.stop is Stop.terminal and done.end_outcome is not None
+    [action] = done.state.actions
+    assert (action.state, action.confirm_node_id, action.write_node_id) == (ActionState.verified, None,
+                                                                            "guardar")
+    assert set(done.state.facts) == {"borrador", "pqr_ok"}
+    persisted = _types(w.store.events["run-0001"])
+    assert "action_dispatched" in persisted and "action_confirmed" not in persisted  # sin confirm
+    assert "action_verified" in _types(done.events)
+
+
+def test_draft_write_with_an_uncertain_result_is_resolved_by_the_verify() -> None:
+    effect = {"status": "Open", "id": "b-1"}  # el backend aplicó el efecto aunque la respuesta se perdió
+    w, f = _draft_world(write_script=(Scripted(ToolStatus.uncertain, result=effect, error="timeout"),))
+    done = w.step(w.persist(w.state(f)))
+    assert [a.state for a in done.state.actions] == [ActionState.verified]
+    assert len([c for c in w.tools.calls if c.tool == w.tools_ref("guardar")]) == 1  # una sola escritura

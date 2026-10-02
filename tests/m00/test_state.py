@@ -284,3 +284,26 @@ def test_action_hashes_must_be_sha256_hex() -> None:
             Action.model_validate(good.model_dump() | {field: "not-a-hash"})
         with pytest.raises(ValidationError):
             Action.model_validate(good.model_dump() | {field: "A" * 64})
+
+
+DRAFT = {"confirm_node_id": None, "write_node_id": "guardar", "confirmation_token_hash": None,
+         "token_exp": None, "state": "confirmed"}
+
+
+def test_draft_action_has_no_confirmation_fields() -> None:
+    draft = action(**DRAFT)
+    assert (draft.write_node_id, draft.confirm_node_id, draft.confirmation_token_hash, draft.token_exp) == (
+        "guardar", None, None, None)
+
+
+def test_draft_action_rejects_any_confirmation_field() -> None:  # Review Focus 5
+    for name, value in (("confirm_node_id", "confirmar"), ("confirmation_token_hash", "f" * 64),
+                        ("token_exp", NOW + timedelta(minutes=5))):
+        with pytest.raises(ValidationError):
+            action(**(DRAFT | {name: value}))
+
+
+def test_confirm_action_needs_every_confirmation_field() -> None:
+    for name in ("confirm_node_id", "confirmation_token_hash", "token_exp"):
+        with pytest.raises(ValidationError):
+            action(**{name: None})

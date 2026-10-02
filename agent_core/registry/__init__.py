@@ -8,7 +8,6 @@ from agent_core.registry.directory import RegistryDirectory
 from agent_core.registry.errors import HTTP_STATUS, IntegrityError, RegistryError, RegistryErrorCode
 from agent_core.registry.evaluation import (
     EvalPort,
-    EvalReport,
     EvalTarget,
     HarnessUnavailable,
     Judge,
@@ -18,22 +17,66 @@ from agent_core.registry.evaluation import (
     ScenarioEvaluator,
     ScenarioHarness,
 )
+from agent_core.registry.evaluation.report import EvalReport  # el que devuelve `EvalPort`
 from agent_core.registry.memory import InMemoryRegistryStore
-from agent_core.registry.models import EntityDraft, Origin, ProposalState, VersionDocs, VersionRef
+from agent_core.registry.models import (
+    AuditContext,
+    DraftWrite,
+    EntityDraft,
+    Origin,
+    Proposal,
+    ProposalState,
+    VersionDocs,
+    VersionRef,
+    WriteRecord,
+)
 from agent_core.registry.postgres.runtime import PostgresRegistry
 from agent_core.registry.postgres.store import PgRegistryStore, apply_registry_schema
+from agent_core.registry.quotas import DEFAULT_QUOTAS, Quotas
 from agent_core.registry.service import RegistryService, RunReleaseReader
 from agent_core.registry.snapshot import SnapshotRegistry
 from agent_core.registry.store import RegistryStore
 from agent_core.registry.suite import EvalSuite, SandboxSeed, Scenario, Step
 
 __all__ = [
-    "HTTP_STATUS", "BlobStore", "EntityDraft", "EvalPort", "EvalReport", "EvalSuite", "EvalTarget",
-    "HarnessUnavailable", "InMemoryBlobStore", "InMemoryRegistryStore", "IntegrityError", "Judge",
-    "LocalSandbox", "Origin", "PgRegistryStore", "PostgresRegistry", "ProposalState", "RegistryDirectory",
-    "RegistryError", "RegistryErrorCode", "RegistryService", "RegistryStore", "RunReleaseReader",
+    "DEFAULT_QUOTAS",
+    "HTTP_STATUS",
+    "AuditContext",
+    "BlobStore",
+    "DraftWrite",
+    "EntityDraft",
+    "EvalPort",
+    "EvalReport",
+    "EvalSuite",
+    "EvalTarget",
+    "HarnessUnavailable",
+    "InMemoryBlobStore",
+    "InMemoryRegistryStore",
+    "IntegrityError",
+    "Judge",
+    "LocalSandbox",
+    "Origin",
+    "PgRegistryStore",
+    "PostgresRegistry",
+    "Proposal",
+    "ProposalState",
+    "Quotas",
+    "RegistryDirectory",
+    "RegistryError",
+    "RegistryErrorCode",
+    "RegistryService",
+    "RegistryStore",
+    "RunReleaseReader",
     "SandboxHandle",
-    "SandboxPort", "SandboxSeed", "Scenario",
-    "ScenarioEvaluator", "ScenarioHarness", "SnapshotRegistry", "Step", "VersionDocs", "VersionRef",
+    "SandboxPort",
+    "SandboxSeed",
+    "Scenario",
+    "ScenarioEvaluator",
+    "ScenarioHarness",
+    "SnapshotRegistry",
+    "Step",
+    "VersionDocs",
+    "VersionRef",
+    "WriteRecord",
     "apply_registry_schema",
 ]

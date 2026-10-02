@@ -244,3 +244,23 @@ def test_agent_config_requires_save_as_and_output_schema(missing: str) -> None:
 def test_agent_save_as_is_an_identifier() -> None:
     with pytest.raises(ValidationError):
         NODE.validate_python({**AGENT, "config": {**AGENT["config"], "save_as": "Hallazgo 1"}})  # type: ignore[dict-item]
+
+
+def test_draft_write_node_has_its_own_tool_and_args() -> None:
+    node = NODE.validate_python(
+        _tool({"draft": True, "tool": "guardar@1.0.0", "args": {"q": "slots.x"}, "save_as": "borrador"}))
+    assert isinstance(node, WriteToolNode)
+    assert node_kind(node) == "tool_write"
+    assert node.config.draft and node.config.action_from is None
+
+
+def test_draft_write_rejects_action_from_and_needs_a_tool() -> None:
+    with pytest.raises(ValidationError):
+        NODE.validate_python(_tool({"draft": True, "tool": "g@1.0.0", "action_from": "c", "save_as": "b"}))
+    with pytest.raises(ValidationError):
+        NODE.validate_python(_tool({"draft": True, "action_from": None, "save_as": "b"}))
+
+
+def test_confirm_write_rejects_a_tool() -> None:
+    with pytest.raises(ValidationError):
+        NODE.validate_python(_tool({"action_from": "confirmar", "tool": "g@1.0.0", "save_as": "b"}))

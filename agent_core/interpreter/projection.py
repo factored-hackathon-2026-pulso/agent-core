@@ -8,9 +8,9 @@ from agent_core.views import Views
 
 
 def model_inputs(paths: list[str], state: RunState, ctx: StepContext) -> dict[str, JsonValue]:
-    """Entrada de un modelo (`decide`, `agent`): cada ruta en vista `model`, con los slots envueltos (D8).
+    """Input of a model (`decide`, `agent`): each path in the `model` view, with slots wrapped (D8).
 
-    Lanza `MissingPath` si una ruta no resuelve; cada nodo decide qué rama toma."""
+    Raises `MissingPath` if a path does not resolve; each node decides which branch to take."""
     projector = Projector(state, ctx)
     inputs: dict[str, JsonValue] = {}
     for raw in paths:

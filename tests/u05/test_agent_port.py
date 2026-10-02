@@ -93,7 +93,7 @@ def test_the_gateway_gets_the_prompt_locale_step_schema_and_the_catalog() -> Non
                           "error": None}]}
 
 
-def test_the_node_inputs_reach_the_model_as_given() -> None:  # T1: lo que declara `input_view`
+def test_the_node_inputs_reach_the_model_as_given() -> None:  # T1: what `input_view` declares
     port, gateway = _port(_step({"kind": "final", "output": {}}))
     inputs: dict[str, JsonValue] = {"slots.pregunta": "<datos_no_confiables>¿saldo?</datos_no_confiables>"}
     port.step(_request(inputs=inputs), run_state())

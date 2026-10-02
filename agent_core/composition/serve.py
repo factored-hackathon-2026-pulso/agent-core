@@ -66,8 +66,9 @@ def model_alias_warnings(registry: RegistryPort, agents: Iterable[str],
                 warnings.append(f"alias de LLM `{profile.endpoint_alias}` sin endpoint en LLM_ENDPOINTS "
                                 f"({where})")
             elif not env.get(endpoint.api_key_env, "").strip():
-                warnings.append(f"alias de LLM `{profile.endpoint_alias}`: la variable "
-                                f"{endpoint.api_key_env} está vacía ({where})")
+                warnings.append(
+                    f"alias de LLM `{profile.endpoint_alias}`: la variable de API key está vacía ({where})"
+                )
     return warnings
 
 

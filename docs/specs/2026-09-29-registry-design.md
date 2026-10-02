@@ -1,6 +1,6 @@
 # Spec — Registry (unidad 2: entidades, versionado y publicación)
 
-- Estado: **rev. 2 implementada (entrega), 2026-09-30.** Pendiente en §14: composición del motor con `PostgresRegistry` (raíz de composición del servidor, con el LLM gateway)
+- Estado: **rev. 2 implementada (entrega), 2026-09-30.** Pendiente en §14: composición del motor con `PostgresRegistry` (raíz de composición del servidor, con el LLM gateway). §6.4 enmendado por el ADR 0020
 - Fecha: 2026-09-29 (rev. 1) · 2026-09-30 (rev. 2)
 - Repo: `agent-core`
 - Paquete: `agent_core.registry`
@@ -69,6 +69,8 @@ En el código cada tabla lleva el prefijo `reg_` (`reg_blobs`, `reg_aliases`, �
 | `approvals` | `proposal_id`, `candidate_hash`, `actor`, `decision` (`approved` o `rejected`), `reason`, `at` |
 | `eval_runs` | `eval_run_id` PK, `proposal_id`, `candidate_hash`, `base_release_id`, `suite_ref`, `report` (JSON, §6.4), `verdict` (`pass`, `fail` o `failed_infra`), `at` |
 | `registry_events` | bitácora de auditoría (§12) |
+
+ADR 0020: `releases` gana `eval_suite_refs` (suites usadas; metadato de gobierno que el motor no lee). Diseñado; su persistencia sigue pendiente (`2026-09-30-evaluacion-y-metricas-design.md` §15).
 
 **Mutables y controladas** (el rol de la aplicación nunca tiene `DELETE`; `release_status` y `aliases` tienen `SELECT`, `INSERT` y `UPDATE`, `publish_keys` solo `SELECT` e `INSERT`):
 
@@ -244,6 +246,8 @@ class SandboxPort(Protocol):                                       # lo implemen
 
 ### 6.4 Veredicto y reporte
 
+> **Enmendado por el ADR 0020** (2026-09-30): las métricas las declara cada agente (`Agent.metrics`), puede haber N métricas `gate` evaluadas por separado en lugar de una sola métrica principal, y el gate aplica una doble vara (suite y métricas de la base, más las de la candidata). El algoritmo vigente está en `docs/specs/2026-09-30-evaluacion-y-metricas-design.md` §6 y lo implementa `evaluate_gate` (`agent_core.registry.evaluation`); el texto de abajo describe `decide`, el gate que usa hoy `ScenarioEvaluator`, hasta que el servicio adopte `evaluate_gate`.
+
 - `fail` si algún guardarraíl de la candidata supera al de la base (sin base, si alguno es mayor que 0).
 - `fail` si hay base y `principal_candidata < principal_base − noise_margin`.
 - `fail` si no hay base y `principal_candidata < floor`.
@@ -277,12 +281,12 @@ El directorio de transferencias es el puerto `AgentDirectory` (M0, `members(dire
 ```python
 class RegistryService:
     # Construcción (rol constructor)
-    def create_proposal(self, actor, agent_id, origin, title) -> Proposal
-    def put_draft(self, actor, proposal_id, changes: list[EntityDraft], expected_rev: int) -> Proposal
+    def create_proposal(self, actor, agent_id, origin, title, *, idempotency_key=None, audit=None) -> Proposal
+    def put_draft(self, actor, proposal_id, changes: list[EntityDraft], expected_rev: int, *, idempotency_key=None, audit=None) -> Proposal
     def validate(self, actor, proposal_id) -> ValidationReport
-    def freeze(self, actor, proposal_id) -> Candidate
-    def evaluate(self, actor, proposal_id, suite: EntityRef) -> EvalReport
-    def reopen(self, actor, proposal_id) -> Proposal
+    def freeze(self, actor, proposal_id, *, idempotency_key=None, audit=None) -> Candidate
+    def evaluate(self, actor, proposal_id, suite: EntityRef, *, idempotency_key=None, audit=None) -> EvalReport
+    def reopen(self, actor, proposal_id, *, idempotency_key=None, audit=None) -> Proposal
 
     # Decisiones (rol aprobador, principal humano)
     def approve(self, actor, proposal_id, candidate_hash: str) -> Approval
@@ -295,6 +299,7 @@ class RegistryService:
     # Lecturas (cualquier builder autenticado)
     def get_proposal(self, proposal_id) -> ProposalDetail            # cambios, violaciones, candidata, último reporte
     def get_entity(self, kind, entity_id, version: str | None) -> EntityVersion
+    def get_write(self, idempotency_key) -> WriteRecord | None       # readback de las escrituras con clave
     def list_versions(self, kind, entity_id) -> list[VersionSummary]
     def get_release(self, release_id) -> ReleaseDetail
     def diff_releases(self, a: str, b: str) -> ReleaseDiff           # refs añadidas, quitadas y cambiadas, con VersionDocs
@@ -350,6 +355,8 @@ Se monta en la app FastAPI de M9 como `ApiExtension` (`ApiDeps.extensions`, por 
 | `forbidden_role` | 403 | falta el rol, el principal no es `builder` o no es humano donde se exige |
 | `step_up_required` | 403 | una operación de `aprobador` o `admin` sin autenticación reforzada |
 | `integrity_error` | 500 | el hash de un contenido no coincide |
+| `idempotency_conflict` | 409 | una clave de idempotencia reutilizada con otro contenido |
+| `quota_exceeded` | 429 | tope del constructor autónomo (propuestas por día o evaluaciones por propuesta) |
 
 ### 7.5 CLI (`agentcore registry …`)
 
@@ -377,7 +384,8 @@ Quién es quién (decisión 2026-09-30, tema #14): el **supervisor** es una pers
 - **Quién firma:** las credenciales del staff (supervisor, administrador y bot) las emite un emisor propio, con una clave y un `kid` distintos de los del emisor de clientes y asesores. La API del registry se monta con un `authenticate` construido solo con esas claves, así que una credencial de cliente ni siquiera verifica. Los roles salen de los grupos del proveedor de identidad del staff al emitir la credencial; el núcleo solo los valida. En la demo los emite `TestStaffIssuer`, etiquetado como de prueba.
 - **Contenido no confiable:** todo lo que propone un agente o un LLM se valida contra el esquema estricto, nunca se ejecuta y tiene límites de tamaño y cantidad.
 - **Lo que el constructor lee** (trazas, documentación, páginas) es dato, no instrucción (ADR 0008, M12).
-- **Datos:** las suites y los `seed` del sandbox usan solo datos sintéticos.
+- **Datos:** las suites y los `seed` del sandbox usan solo datos sintéticos (fuente `scripted`). La fuente `dataset` para datos reales está diseñada y desactivada hasta un ADR aparte (ADR 0020).
+- **Topes del constructor autónomo (tema #16):** `create_proposal` con `origin = auto_detect` falla con `quota_exceeded` (429) si ya hay 10 creadas en las últimas 24 h (ventana móvil con el `Clock`), y `evaluate` sobre una propuesta `auto_detect` falla igual si ya tiene 20 evaluaciones (incluidas `failed_infra`). Se aplican en el servicio. El tope de costo por propuesta está diferido.
 
 ## 9. Linaje por ejecución
 
@@ -473,6 +481,7 @@ Las que necesitan Postgres van en `tests/integration/`; el resto usa dobles en m
 - [x] API montada en M9 (`registry_extension`, `ApiDeps.extensions`) y CLI (`agentcore registry …`).
 - [x] La composición del motor usa `PostgresRegistry` (`agentcore serve`, 2026-09-30, tema #13). `serve --registry-api` monta `registry_extension` con evaluador real y el verificador del staff (`registry_extension(service, verifier)`), spec `2026-09-30-serve-registry-api-design.md`.
 - [x] `contracts/` regenerado (`agentcore contracts --check` en verde).
+- [x] `agent_core.registry.evaluation` con `EvalSuite`, `suite_problems`, `classify_yardstick_change` y `evaluate_gate` (ADR 0020; en verde: T-EVAL-05 a 08, 11, 12, 13 y 15; T-EVAL-10 solo en su parte estructural `MT-05`; pendientes del servicio: T-EVAL-09, 16 y 17).
 - [x] Sin TODO sin issue (no hay `TODO` en `agent_core/`, `testing/` ni `tests/`).
 
 ### Trazabilidad de pruebas
@@ -514,8 +523,10 @@ Todos **aditivos**.
 
 - **M0** (aplicado el 2026-09-29, `SCHEMA_VERSION` 0.2.0): `EntityKind.knowledge_snapshot`, `KnowledgeSnapshot` y `Release.knowledge_snapshot`. No cambia `RegistryPort`, `EngineEvent` ni `ProblemCode`.
 - **M0:** `IdKind.proposal` y `IdKind.eval_run` (`SCHEMA_VERSION` 0.5.0).
+- **M0:** `Agent.metrics` y los tipos del DSL (`SCHEMA_VERSION` 1.3.0, ADR 0020).
 - **M1:** exporta `entity_ref_sites`, `RefSite` y `kind_of`.
 - **M1** (aplicado el 2026-09-29, rev. 3): `ReleaseDecl.knowledge`, `pin_release` con snapshot, `load_registry` con manifiestos. **Verificado:** `flows/__init__.py` exporta todo lo que el registry reutiliza (validación de flow, chequeos por agente y de release, `pin_release`, `Violation`, `AuthoringRegistry` construible en memoria) y existe un volcado a YAML para `export`.
+- **M1:** reglas `MT-01` a `MT-06` en `validate_agent` (ADR 0020).
 - **M3:** sin cambios (el sandbox entra como `ToolExecutor`).
 - **M9:** `ApiDeps.extensions`: cada extensión recibe la app y un `authenticate(request, authorization)`.
 - **M11:** expone por su interfaz pública la lectura del `release_id` de un run.
@@ -550,7 +561,7 @@ Diseño conservado de la rev. 1, que no se construye antes del 05/10:
 1. **Calibración de la suite de la demo:** `repetitions`, `noise_margin` y `floor` se fijan con corridas reales contra el LLM.
 2. **Entrega del `SandboxPort` real** por la unidad 3 (fecha y forma del `seed`). Mientras tanto, `LocalSandbox`.
 3. ~~**Límites concretos**~~ **Decidido 2026-09-30 (tema #16):** 50 cambios por propuesta, 262 144 bytes por entidad y 200 nodos por flow (`registry/validation.py`, `Limits`).
-4. ~~**Retención**~~ **Decidido 2026-09-30 (tema #16):** se conserva todo en el MVP; fase 2: purgar propuestas abandonadas de más de 90 días y conservar las últimas N evaluaciones por propuesta.
+4. ~~**Retención**~~ **Decidido 2026-09-30 (tema #16):** se conserva todo en el MVP; fase 2: purgar propuestas abandonadas de más de 90 días y conservar las últimas N evaluaciones por propuesta. Los topes del constructor autónomo (10 y 20) están implementados.
 
 ## 18. Dependencias del motor y de los agentes internos (ADR 0019)
 
@@ -560,14 +571,14 @@ Lo que el motor y los agentes internos (constructor, copiloto del asesor) necesi
 
 | # | Dependencia | Quién la necesita | Nota |
 |---|---|---|---|
-| 1 | **Borradores reversibles e idempotentes** (`put_draft` con `expected_rev`, reintento con la misma `idempotency_key` sin duplicar) y **`readback_by`** para verificar la escritura | tools `write_draft` del constructor | La clase `write_draft` solo es admisible si ninguna release publicada lee un borrador (§2 regla 7). Si no se garantiza, el constructor vuelve a `confirm → act → verify` |
-| 2 | **Adaptador de `ToolExecutor`** que envuelva la API de §6 (crear propuesta, editar borrador, validar, congelar, evaluar) con su propia credencial de rol `constructor` | constructor | `FakeToolExecutor` cubre las pruebas mientras tanto |
+| 1 | **Borradores reversibles e idempotentes** (`put_draft` con `expected_rev`, reintento con la misma `idempotency_key` sin duplicar) y **`readback_by`** para verificar la escritura | tools `write_draft` del constructor | La clase `write_draft` solo es admisible si ninguna release publicada lee un borrador (§2 regla 8). Si no se garantiza, el constructor vuelve a `confirm → act → verify`. **Construido (2026-09-30, spec write-draft fase 1):** `reg_draft_writes`, `idempotency_key` en `create_proposal`, `put_draft`, `freeze`, `reopen` y `evaluate`, y `get_write`. La regla 8 la guardan `tests/registry/test_rule8_invariant.py` y la prueba de contrato de `tests/integration/test_registry_postgres.py` |
+| 2 | **Adaptador de `ToolExecutor`** que envuelva la API de §6 (crear propuesta, editar borrador, validar, congelar, evaluar) con su propia credencial de rol `constructor` | constructor | `FakeToolExecutor` cubre las pruebas mientras tanto **Construido (2026-09-30):** `BuilderToolExecutor` en `agent_core/composition/builder_tools.py` (tools `registry/<nombre>@1.0.0`; sin aprobar, publicar, promover ni revocar). |
 | 3 | **`forbidden_role` en `ProblemCode`** (M0) y su verificación en el servidor | constructor | Hoy no existe en `agent_core` |
 | 4 | **Puerto de escritura de propuestas.** `RegistryPort` (M0) es solo lectura | constructor | Un puerto nuevo cambia M0 y `contracts/` |
 | 5 | **Roles del registry frente a `Principal.roles`** (lista libre) y sus scopes | constructor, `aprobador` | Definir cómo se emiten y quién los firma |
 | 6 | **Validación de referencias del nodo `agent`** (`prompt_ref`, `tools_allowed`) en el gate G0 | copiloto y constructor | Al levantar G0-01 para `agent` |
-| 7 | **Clase de riesgo de las tools del constructor** declarada en su `ToolDef` (`write_draft`) y comprobada por AG-02 | constructor | m01 §3.13 |
+| 7 | **Clase de riesgo de las tools del constructor** declarada en su `ToolDef` (`write_draft`) y comprobada por AG-02 | constructor | m01 §3.13 **Construido (2026-09-30):** `RiskClass.write_draft` (M0 1.2.0) y AG-02 (M1). |
 | 8 | **Publicación de conocimiento aprobado**, si el copiloto lo consulta | copiloto | Depende también de M12 y de habilitar `knowledge_refs` (G0-01) |
 | 9 | **Catálogo de campos y plantillas de handoff como entidades versionadas**, solo si se elige esa vía | M7, M10 | Hoy son valores por defecto en código |
-| 10 | **Topes del agente autónomo** (§17.4) | constructor por señal | Sin valores, el constructor `task` no debería activarse |
+| 10 | **Topes del agente autónomo** (§17.4) | constructor por señal | Sin valores, el constructor `task` no debería activarse **Construido (2026-09-30):** 10 propuestas por día y 20 evaluaciones por propuesta aplicados en `RegistryService`; sigue diferido el tope de costo, así que el constructor `task` aún no debe activarse. |
 | 11 | **Directorio de agentes y tool `directory/list`** | agente de recepción (transferencia, ADR 0021) | Implementado en la unidad de transferencia, **sin cablear en la raíz de composición** (solo lo usan las pruebas): `AgentDirectory`, `RegistryDirectory` (§7.1b) y `DirectoryToolExecutor` en `composition`, que envuelve al `ToolExecutor`. Cierra el abierto 5 de la spec de transferencia (dueño de la tool). La tool recibe `directory` y `locale` como argumentos, porque `ToolCallContext` no trae el idioma |

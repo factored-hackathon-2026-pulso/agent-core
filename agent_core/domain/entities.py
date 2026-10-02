@@ -22,6 +22,7 @@ from agent_core.domain.knowledge import (
     PageStatus,
     check_page_path,
 )
+from agent_core.domain.metrics import MetricDef
 from agent_core.domain.nodes import Node, PositiveTimedelta
 from agent_core.domain.outcomes import Mode
 from agent_core.domain.refs import EntityKind, EntityRef, RefSpec, require_exact_refs
@@ -77,6 +78,7 @@ class Agent(Model):
     on_clarify_exhausted: Literal["end", "escalate"]
     default_target_queue: str = Field(min_length=1)
     max_repair_turns_per_run: PositiveInt = 8
+    metrics: list[MetricDef] = Field(default_factory=list, max_length=32)  # ADR 0020; el motor no las ejecuta
     routing: RoutingCard | None = None  # without a card the agent is in no directory (ADR 0021)
     accepts: TransferContract | None = None  # without a contract the agent receives no transfers
 
@@ -276,9 +278,12 @@ class ModelProfile(Model):
 
 
 class RiskClass(StrEnum):
-    """Clase de riesgo de una tool; determina si escribe y qué confirmación exige (M0 §2.4)."""
+    """Clase de riesgo de una tool; determina si escribe y qué confirmación exige (M0 §2.4).
+
+    `write_draft` es la escritura confinada a un borrador del registry: va sin `confirm` (ADR 0019)."""
     read = "read"
     compute = "compute"
+    write_draft = "write_draft"
     write_reversible = "write_reversible"
     write_irreversible = "write_irreversible"
     money_movement = "money_movement"

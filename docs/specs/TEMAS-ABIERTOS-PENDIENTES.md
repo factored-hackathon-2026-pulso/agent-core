@@ -1,6 +1,6 @@
 # Temas abiertos — Motor de decisión (spec 2026-09-28)
 
-- Estado: **9 de 9 temas originales resueltos; #10 (`read` construido), #11, #12, #14, #15 y #16 cerrados el 2026-09-30 (decisiones abajo); #13 resuelto salvo las piezas reales de las unidades 3, 6 y 7 (2026-09-30); #18 decidido el 2026-09-30 (construcción pendiente); sigue abierto #17 (medio); #19 (transferencia entre agentes) implementado en ramas (fases 1 a 7), con pendientes.** Reemplaza la versión anterior de este documento, cuyo contenido se descartó por basarse en hallazgos incorrectos.
+- Estado: **9 de 9 temas originales resueltos; #10 (`read` construido), #11, #12, #14, #15 y #16 cerrados el 2026-09-30 (decisiones abajo); #13 resuelto salvo las piezas reales de las unidades 3, 6 y 7 (2026-09-30); #18 decidido el 2026-09-30 (construcción pendiente); sigue abierto #17 (medio); #19 (transferencia entre agentes) con las fases 1 a 6 en `main` y la fase 7 en la rama `feat/transferencia-demo`, con pendientes; #20 (conector de datasets reales para las evals) abierto (medio).** Reemplaza la versión anterior de este documento, cuyo contenido se descartó por basarse en hallazgos incorrectos.
 - Fecha: 2026-09-28
 - Spec: `2026-09-28-motor-de-decision-design.md` (rev. 15)
 - Regla de trabajo: antes de resolver cada tema se lee el ADR que lo gobierna.
@@ -34,9 +34,10 @@ Tampoco eran temas abiertos: la cadena de hash y `reportable_attrs` (ADR 0003), 
 | 14 | Emisión y firma de los roles `constructor`/`aprobador` y de `attrs.actor` | Alta | **Resuelto (2026-09-30)** |
 | 15 | Validador `decide` de `collect`: qué campo de la decisión valida | Media | **Resuelto: no soportado hasta la fase 2 (2026-09-30)** |
 | 16 | Límites, retención y topes del agente autónomo (registry) | Media | **Resuelto salvo el monto del tope de costo, que se fija al activar el constructor `task` (2026-09-30)** |
-| 17 | Clase `write_draft` y dependencias del constructor sobre el registry | Media | **Abierto** |
+| 17 | Clase `write_draft` y dependencias del constructor sobre el registry | Media | **Parcial: fases 1 a 5 hechas (2026-09-30); siguen el replay de M11, los agentes y `await_approval`** |
 | 18 | Auditoría de las lecturas de datos de clientes del administrador | Media | **Decidido (2026-09-30); construcción pendiente** |
-| 19 | Transferencia entre agentes: pendientes | Media | **Implementada en las ramas `feat/transferencia-entre-agentes` (fases 1 a 6) y `feat/transferencia-demo` (fase 7), sin spans OTel, pendiente de aprobación; abiertos y pendientes listados abajo** |
+| 19 | Transferencia entre agentes: pendientes | Media | **Fases 1 a 6 en `main`; fase 7 (demo, cableado, índice de un run abierto por sesión y replay de la sesión) en la rama `feat/transferencia-demo`; sin spans OTel, pendiente de aprobación; abiertos y pendientes listados abajo** |
+| 20 | Conector de datasets reales para las evals de los agentes | Media | **Abierto** |
 
 ## Resueltos
 - **#1 (rev. 6):** `respond.claims` declarado + derivado; invariante por camino hasta `verified`; `respond` seguro = sin reclamos. Spec §2, §5, §6.1, §8.2, §11, §13.3, §14, §15; ADR 0007.
@@ -64,6 +65,8 @@ Sigue abierto, fuera de esta construcción: el modo `navigate` (esquema y G0-20 
 - **Comparación entre releases:** no hay una regla nueva. El gate del registry (guardarraíles y margen de ruido, registry §6) decide las promociones; la analítica solo informa.
 - **Retención:** sin purga en el MVP (las tablas son inmutables y pequeñas); se revisa en la fase 2 junto con la retención del registry (#16).
 Pendiente de construcción: las vistas SQL y la conexión a Phoenix; no bloquean la fase 1 porque los eventos ya capturan los datos.
+
+Actualización (2026-09-30): el DSL de métricas por agente, el catálogo de eventos y la regla de que no hay acción automática en producción se decidieron en el ADR 0020; este tema conserva el cálculo, la visualización, las alertas y la retención.
 
 ## 12. Política del contexto conversacional — resuelto
 **Decidido el 2026-09-30** (ratifica lo que ya implementa `EngineConfig.recent_turns`; ver m04 §15 y m05 §3.2):
@@ -116,10 +119,11 @@ Pendiente de construcción: las vistas SQL y la conexión a Phoenix; no bloquean
 **Decidido el 2026-09-30:**
 - **Límites:** se ratifican los valores que ya aplica `registry/validation.py`: 50 cambios por propuesta, 262 144 bytes por entidad y 200 nodos por flow.
 - **Retención:** se conserva todo en el MVP. Fase 2: purgar propuestas abandonadas de más de 90 días y conservar las últimas N evaluaciones por propuesta.
-- **Topes del constructor autónomo (decidido el 2026-09-30):** 10 propuestas por día y 20 evaluaciones por propuesta. Sigue sin fijar el **monto del tope de costo por propuesta** (USD); se fija al activar el constructor en modo `task`, que no se activa en la demo. Aún no hay código que aplique los topes.
+- **Topes del constructor autónomo (decidido el 2026-09-30):** 10 propuestas por día y 20 evaluaciones por propuesta. Sigue sin fijar el **monto del tope de costo por propuesta** (USD); se fija al activar el constructor en modo `task`, que no se activa en la demo. Los topes de 10 propuestas por día y 20 evaluaciones por propuesta ya se aplican en `RegistryService` (2026-09-30); el tope de costo sigue diferido.
 
 ## 17. `write_draft` y dependencias del constructor — abierto
 Registry §18: clase de riesgo `write_draft` (G0-23, AG-02, ruta de M3), regla G0-25 del gateway (el prompt del nodo `agent` debe ser `structured: prompted`), adaptador de `ToolExecutor` del constructor con su propia credencial, `readback_by` de borradores y catálogo de campos y plantillas de handoff como entidades versionadas. Nada de esto está construido; el constructor solo puede correr de solo lectura.
+**Avance (2026-09-30):** hechos registry (idempotencia, `get_write`, topes), M0 (`RiskClass.write_draft`, nodo `draft`, `Action.write_node_id`) y M1 (G0-05, G0-13, G0-22, G0-23, G0-25, AG-02). Siguen M3, M2/M4, el adaptador del constructor, el replay y los agentes.
 
 ## 18. Auditoría de las lecturas de datos de clientes del administrador — decidido; construcción pendiente
 El administrador puede leer runs, transcripts y campos de clientes (ADR 0006, enmienda 2026-09-30), pero una lectura autorizada no deja hoy ningún evento: solo se registran los rechazos (`access_denied`).
@@ -161,3 +165,12 @@ ADR 0021 (propuesto; implementado en las ramas `feat/transferencia-entre-agentes
 - **Replay del run origen que transfirió, por lectura del código, no ejecutado:** `RecordedIds.from_events` (`audit/replay/ports.py:113-122`) no recoge `run_transferred.to_run_id` ni `transfer_id`; `IdKind.run` está en `_RECORDED_KINDS` (`testing/replay/runner.py`), así que `Transferer.validate` recibe `run-replay-0001`; el motor reproducido seguiría hacia el destino; el runner conoce una sola release.
 - **G0-22 sin cambios ni prueba de transferencia:** `decide.choices_from` puede leer un hecho de un nodo `agent`; la garantía real es G0-26/G0-27 y destino ∈ `snapshot.choices` en M4. Endurecer queda pendiente.
 - **Autorización y `locale`:** la tool filtra solo con `authorize_agent`, M4 también llama `authorize_subject`; `locale` es argumento del flow (el e2e fija `"es"`): un especialista listado puede rechazarse con `not_eligible` (falla seguro).
+
+## 20. Conector de datasets reales para las evals — abierto
+Encontrado al diseñar la evaluación por agente (`2026-09-30-evaluacion-y-metricas-design.md`, ADR 0020). En la rama `feat/eval-metrics` se numeró #13; al integrarla con la rama principal, donde #13 ya era el servidor arrancable, pasó a #20. Las evals podrán correr sobre casos de un dataset real, pero la fuente `dataset` está diseñada y desactivada. Falta decidir:
+- **Origen:** BD transaccional o warehouse, y quién es el dueño de los datos.
+- **Autorización:** el ADR firmado por el dueño que enmiende la regla 5 de CLAUDE.md y el registry §7.
+- **Protección:** paso por las vistas tokenizadas de M7 (ADR 0008), sin PII hacia modelos, logs ni eventos.
+- **Etiquetas:** cuándo el resultado histórico (por ejemplo, lo que hizo el asesor humano) sirve como referencia.
+
+Los datos reales no viven en el repo ni en el registry; el registry solo guarda `dataset_id` y `dataset_hash`. Por qué es media: no bloquea la fase 1, porque la suite `scripted` es la base obligatoria del gate.

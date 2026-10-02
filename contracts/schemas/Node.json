@@ -58,7 +58,7 @@
     },
     "AgentNodeConfig": {
       "additionalProperties": false,
-      "description": "Configuración del nodo `agent` (M0 §2.5, ADR 0019).\n\n`save_as` nombra el hecho donde entra la salida; `output_schema` es el JSON Schema de esa salida.\n`input_view` son las rutas (`slots`, `facts`) que el modelo ve en vista `model`; vacío, no ve ninguna.",
+      "description": "Configuration of the `agent` node (M0 §2.5, ADR 0019).\n\n`save_as` names the fact that receives the output; `output_schema` is the JSON Schema of that output.\n`input_view` lists the paths (`slots`, `facts`) the model sees in the `model` view; empty means none.",
       "properties": {
         "goal": {
           "title": "Goal",
@@ -1214,12 +1214,32 @@
     },
     "WriteToolConfig": {
       "additionalProperties": false,
-      "description": "Escritura: sin `args` propios; usa la acción congelada del `confirm` (ADR 0007).",
+      "description": "Escritura de un nodo `tool`.\n\nCon `action_from` usa la acción congelada de un `confirm` (ADR 0007) y no admite `tool` ni `args`.\nCon `draft: true` (ADR 0019) invoca una tool `write_draft` con sus propios `args`: no hay `confirm`; la\nacción se congela al entrar al nodo.",
       "properties": {
         "action_from": {
-          "pattern": "^[a-z0-9][a-z0-9_]*$",
-          "title": "Action From",
-          "type": "string"
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Action From"
+        },
+        "args": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Args",
+          "type": "object"
+        },
+        "draft": {
+          "default": false,
+          "title": "Draft",
+          "type": "boolean"
         },
         "save_as": {
           "pattern": "^[a-z][a-z0-9_]*$",
@@ -1231,10 +1251,20 @@
           "exclusiveMinimum": 0,
           "title": "Step Up Max Attempts",
           "type": "integer"
+        },
+        "tool": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RefSpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
-        "action_from",
         "save_as"
       ],
       "title": "WriteToolConfig",

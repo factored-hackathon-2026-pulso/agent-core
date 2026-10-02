@@ -1,6 +1,6 @@
 # ADR 0018 — Propuestas de cambio y gate de publicación
 
-- Estado: aceptado (2026-09-29)
+- Estado: aceptado (2026-09-29). **Enmendado por el ADR 0020** (2026-09-30): los puntos 4 (métrica principal única) y 9 (`eval_suite`) se reemplazan por métricas declaradas por agente, N métricas `gate` y doble vara
 - Unidad: 2 · Entidades, registro y versionado (contrato con la unidad 6)
 - Spec: `docs/specs/2026-09-29-registry-design.md`
 - Relacionados: ADR 0007 (escrituras y `verify`), ADR 0009 (políticas protegidas), ADR 0015 (conocimiento), ADR 0017 (Postgres como fuente de verdad)

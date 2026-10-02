@@ -173,7 +173,7 @@ def test_the_loop_is_deterministic() -> None:
     assert Resume().kind == "none"
 
 
-# --- input_view: lo que el nodo expone al modelo (T1) ------------------------------------------------
+# --- input_view: what the node exposes to the model (T1) ---------------------------------------------
 
 
 def test_without_input_view_the_model_gets_no_inputs() -> None:
@@ -194,9 +194,9 @@ def test_input_view_reaches_the_model_in_model_view_with_wrapped_slots() -> None
     assert list(inputs) == ["slots.pregunta", "facts.cliente.value.document_number"]
     text = inputs["slots.pregunta"]
     assert isinstance(text, str) and text.startswith("<datos_no_confiables") and "cobraron" in text
-    assert inputs["facts.cliente.value.document_number"] == "⟦doc:1⟧"  # vista `model`: el dato va tokenizado
+    assert inputs["facts.cliente.value.document_number"] == "⟦doc:1⟧"  # `model` view: the value is tokenized
     assert "12345678" not in repr(port.calls)
-    assert port.calls[1].inputs == inputs  # cada paso recibe las mismas entradas
+    assert port.calls[1].inputs == inputs  # every step gets the same inputs
 
 
 def _with_inputs(*steps: AgentStepResult, input_view: list[str],
@@ -209,7 +209,7 @@ def _with_inputs(*steps: AgentStepResult, input_view: list[str],
 
 def test_a_missing_input_gives_up_without_calling_the_model() -> None:
     w, port, state = _with_inputs(_final(), input_view=["slots.pregunta"],
-                                  slots={"pregunta": slot("x", "claimed")})  # claimed = ausente (D7)
+                                  slots={"pregunta": slot("x", "claimed")})  # claimed = absent (D7)
     out = w.step(state, agents=port)
     assert _node(out) == "esc" and port.calls == []
     assert out.state.budgets_used.turn_model_calls == 0
