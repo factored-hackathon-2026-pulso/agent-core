@@ -61,7 +61,8 @@ uv run agentcore replay tests/fixtures/runs-transfer/transferencia.yaml --mode f
   --catalog tests/fixtures/catalogo-datos-prueba.yaml
 
 # volver a grabarla
-uv run agentcore record transferencia --out transferencia.yaml --registry tests/fixtures/registry-transfer-demo
+uv run agentcore record transferencia --out transferencia.yaml --registry tests/fixtures/registry-transfer-demo \
+  --catalog tests/fixtures/catalogo-datos-prueba.yaml
 ```
 
 Qué tener en cuenta:
