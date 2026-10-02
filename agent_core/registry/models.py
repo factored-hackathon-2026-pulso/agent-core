@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agent_core.domain import EntityId, JsonValue, Release
 from agent_core.registry.evaluation.report import EvalReport, Verdict
+from agent_core.registry.evaluation.yardstick import YardstickChange
 
 
 class RegModel(BaseModel):
@@ -104,6 +105,7 @@ class Approval(RegModel):
     actor: str
     decision: Literal["approved", "rejected"]
     reason: str | None = None
+    yardstick_loosened: list[YardstickChange] = Field(default_factory=list)  # ADR 0020 §6.2: approved apart
     at: datetime
 
 

@@ -12,6 +12,7 @@ from agent_core.domain import Release, dumps, loads
 from agent_core.registry.blobs import BlobStore, verified
 from agent_core.registry.errors import IntegrityError
 from agent_core.registry.evaluation.report import EvalReport
+from agent_core.registry.evaluation.yardstick import YardstickChange
 from agent_core.registry.models import (
     AliasChange,
     Approval,
@@ -231,16 +232,21 @@ class _PgTx:
 
     def insert_approval(self, a: Approval) -> None:
         self._c.execute("INSERT INTO reg_approvals (proposal_id, candidate_hash, actor, decision, "
-                        "reason, at) VALUES (%s, %s, %s, %s, %s, %s)",
-                        (a.proposal_id, a.candidate_hash, a.actor, a.decision, a.reason, a.at))
+                        "reason, at, yardstick_loosened) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                        (a.proposal_id, a.candidate_hash, a.actor, a.decision, a.reason, a.at,
+                         dumps([c.model_dump(mode="json") for c in a.yardstick_loosened])))
 
     def latest_approval(self, proposal_id: str, candidate_hash: str) -> Approval | None:
-        row = self._one("SELECT actor, decision, reason, at FROM reg_approvals WHERE proposal_id = %s "
-                        "AND candidate_hash = %s ORDER BY seq DESC LIMIT 1", (proposal_id, candidate_hash))
+        row = self._one("SELECT actor, decision, reason, at, yardstick_loosened FROM reg_approvals "
+                        "WHERE proposal_id = %s AND candidate_hash = %s ORDER BY seq DESC LIMIT 1",
+                        (proposal_id, candidate_hash))
         if row is None:
             return None
+        loosened = loads(row[4])
+        assert isinstance(loosened, list)
         return Approval(proposal_id=proposal_id, candidate_hash=candidate_hash, actor=row[0],
-                        decision=row[1], reason=row[2], at=row[3])
+                        decision=row[1], reason=row[2], at=row[3],
+                        yardstick_loosened=[YardstickChange.model_validate(c) for c in loosened])
 
     def append_event(self, event: RegistryEvent) -> None:
         self._c.execute("INSERT INTO reg_events (event_json) VALUES (%s)", (dumps(event),))

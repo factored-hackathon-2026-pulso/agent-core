@@ -8,7 +8,7 @@ import pytest
 
 from agent_core.registry.errors import RegistryError, RegistryErrorCode
 from agent_core.registry.memory import InMemoryRegistryStore
-from agent_core.registry.models import Origin, VersionRef
+from agent_core.registry.models import Origin, ProposalState, VersionRef
 from agent_core.registry.service import RegistryService
 from testing.fakes.clock import FakeClock
 from testing.fakes.ids import FakeIds
@@ -102,3 +102,27 @@ def test_tightening_carries_no_loosening() -> None:
                                               suite_draft("1.1.0", repetitions=3)], expected_rev=0)
     w.service.freeze(ANA, p.proposal_id)
     assert w.service.evaluate(ANA, p.proposal_id, "disputas-suite").yardstick_changes == []
+
+
+def test_loosening_needs_its_own_approval() -> None:  # T-EVAL-17, decision D7
+    w = World()
+    pid, h = loosening_evaluated(w)
+    with pytest.raises(RegistryError) as info:
+        w.service.approve(ANA, pid, h)
+    assert info.value.code is RegistryErrorCode.loosening_not_accepted
+    assert [c["kind"] for c in info.value.payload] == ["repetitions_lowered"]  # type: ignore[union-attr,index]
+    assert w.service.get_proposal(pid).proposal.state is ProposalState.evaluated
+    approval = w.service.approve(ANA, pid, h, accept_yardstick_loosened=True)
+    assert [c.kind for c in approval.yardstick_loosened] == ["repetitions_lowered"]
+
+
+def test_review_shows_change_suite_and_loosening_apart() -> None:  # T-EVAL-17
+    w = World()
+    pid, _ = loosening_evaluated(w)
+    review = w.service.get_proposal(pid).review
+    assert review is not None
+    assert [d.kind for d in review.functional_changes] == ["prompt"]
+    assert [d.version for d in review.suite_changes] == ["1.1.0"]
+    assert str(review.suite) == "eval_suite:disputas-suite@1.1.0"
+    assert [c.kind for c in review.yardstick_loosened] == ["repetitions_lowered"]
+    assert review.gate == []  # the fake evaluator does not measure; ScenarioEvaluator brings the items

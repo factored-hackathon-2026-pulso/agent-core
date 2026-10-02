@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from agent_core.domain import CredentialsInvalid, Principal
 from agent_core.registry.http import registry_extension
 from tests.registry.helpers import AGENT, bot, human, prompt_draft
-from tests.registry.service_world import SUITE, World
+from tests.registry.service_world import SUITE, World, loosening_evaluated
 
 PRINCIPALS: dict[str, Principal] = {"ana": human(), "bot": bot("constructor", "aprobador")}
 
@@ -96,3 +96,13 @@ def test_idempotency_key_longer_than_255_is_rejected() -> None:  # T15-3
     c, _ = _client()
     assert c.post("/v1/registry/proposals/x/publish", headers=_h("ana", "k" * 256)).status_code == 422
     assert c.post("/v1/registry/proposals/x/publish", headers=_h("ana", "k" * 255)).status_code == 404
+
+
+def test_loosening_must_be_accepted_over_http() -> None:  # D7
+    c, w = _client()
+    pid, h = loosening_evaluated(w)
+    r = c.post(f"/v1/registry/proposals/{pid}/approve", json={"candidate_hash": h}, headers=_h("ana"))
+    assert r.status_code == 409 and r.json()["code"] == "loosening_not_accepted"
+    ok = c.post(f"/v1/registry/proposals/{pid}/approve",
+                json={"candidate_hash": h, "accept_yardstick_loosened": True}, headers=_h("ana"))
+    assert ok.status_code == 200 and ok.json()["yardstick_loosened"][0]["kind"] == "repetitions_lowered"

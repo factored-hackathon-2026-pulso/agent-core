@@ -17,11 +17,18 @@ from agent_core.registry.candidate import (
     parse_semver,
     release_hash,
 )
-from agent_core.registry.entities import AnyEntity, content_hash, decode_entity, encode_entity, version_ref
+from agent_core.registry.entities import (
+    SUITE_KIND,
+    AnyEntity,
+    content_hash,
+    decode_entity,
+    encode_entity,
+    version_ref,
+)
 from agent_core.registry.errors import IntegrityError, RegistryError, RegistryErrorCode
 from agent_core.registry.evaluation.ports import EvalPort, EvalRequest, EvalTarget
-from agent_core.registry.evaluation.report import EvalReport
-from agent_core.registry.evaluation.yardstick import Yardstick, classify_yardstick_change
+from agent_core.registry.evaluation.report import EvalReport, GateItem
+from agent_core.registry.evaluation.yardstick import Yardstick, YardstickChange, classify_yardstick_change
 from agent_core.registry.models import (
     AliasChange,
     Approval,
@@ -79,10 +86,23 @@ class CandidateView(_V):
     auto_bumped: list[VersionRef]
 
 
+class ApprovalReview(_V):
+    """What the approver sees, as three separate elements (evaluation spec §8.5, T-EVAL-17): the functional
+    change, the suite the candidate was measured with (and its draft, if it changed) together with each gate
+    item, and what the proposal loosens in the yardstick."""
+
+    functional_changes: list[EntityDraft]
+    suite: VersionRef
+    suite_changes: list[EntityDraft]
+    gate: list[GateItem]
+    yardstick_loosened: list[YardstickChange]
+
+
 class ProposalDetail(_V):
     proposal: Proposal
     changes: list[EntityDraft]
     last_eval: EvalRun | None
+    review: ApprovalReview | None = None
 
 
 PROMOTABLE_ALIASES = frozenset({"staging", "prod"})
@@ -277,7 +297,12 @@ class RegistryService:
         with self._store.transaction() as tx:
             p = self._proposal(tx, proposal_id, for_update=False)
             last = tx.latest_eval_run(p.proposal_id, p.candidate_hash) if p.candidate_hash else None
-            return ProposalDetail(proposal=p, changes=tx.get_changes(proposal_id), last_eval=last)
+            changes = tx.get_changes(proposal_id)
+            review = None if last is None else ApprovalReview(
+                functional_changes=[d for d in changes if d.kind != SUITE_KIND], suite=last.suite,
+                suite_changes=[d for d in changes if d.kind == SUITE_KIND], gate=list(last.report.items),
+                yardstick_loosened=list(last.report.yardstick_changes))
+            return ProposalDetail(proposal=p, changes=changes, last_eval=last, review=review)
 
     # --- evaluación --------------------------------------------------------------------------------------
 
@@ -349,7 +374,8 @@ class RegistryService:
 
     # --- decisiones humanas ------------------------------------------------------------------------------
 
-    def approve(self, actor: Principal, proposal_id: str, candidate_hash: str) -> Approval:
+    def approve(self, actor: Principal, proposal_id: str, candidate_hash: str, *,
+                accept_yardstick_loosened: bool = False) -> Approval:
         require_approver(actor)
         with self._store.transaction() as tx:
             p = self._proposal(tx, proposal_id)
@@ -360,8 +386,14 @@ class RegistryService:
             run = tx.latest_eval_run(proposal_id, candidate_hash)
             if run is None or run.verdict != "pass":
                 raise RegistryError(RegistryErrorCode.gate_failed, "no hay una evaluación aprobada vigente")
+            loosened = list(run.report.yardstick_changes)
+            if loosened and not accept_yardstick_loosened:
+                raise RegistryError(RegistryErrorCode.loosening_not_accepted,
+                                    "la propuesta afloja la vara: se aprueba aparte con "
+                                    "accept_yardstick_loosened",
+                                    payload=[c.model_dump(mode="json") for c in loosened])
             approval = Approval(proposal_id=proposal_id, candidate_hash=candidate_hash, actor=actor_id(actor),
-                                decision="approved", at=self._clock.now())
+                                decision="approved", yardstick_loosened=loosened, at=self._clock.now())
             tx.insert_approval(approval)
             p = self._save(tx, p, state=ProposalState.approved)
             self._event(tx, "approved", actor, p)

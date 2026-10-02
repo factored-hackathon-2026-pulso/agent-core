@@ -17,6 +17,7 @@ class RegistryErrorCode(StrEnum):
     step_up_required = "step_up_required"
     integrity_error = "integrity_error"
     not_found = "not_found"
+    loosening_not_accepted = "loosening_not_accepted"
 
 
 HTTP_STATUS: Mapping[RegistryErrorCode, int] = MappingProxyType({
@@ -29,6 +30,7 @@ HTTP_STATUS: Mapping[RegistryErrorCode, int] = MappingProxyType({
     RegistryErrorCode.step_up_required: 403,
     RegistryErrorCode.integrity_error: 500,
     RegistryErrorCode.not_found: 404,
+    RegistryErrorCode.loosening_not_accepted: 409,
 })
 
 

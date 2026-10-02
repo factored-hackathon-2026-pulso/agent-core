@@ -36,6 +36,7 @@ class _Evaluate(BaseModel):
 
 class _Approve(BaseModel):
     candidate_hash: str
+    accept_yardstick_loosened: bool = False
 
 
 class _Reason(BaseModel):
@@ -145,7 +146,9 @@ def registry_extension(service: RegistryService,
 
         @router.post("/proposals/{pid}/approve")
         def approve(request: Request, pid: str, body: _Approve, authorization: Auth = None) -> Response:
-            return _json(service.approve(who(request, authorization), pid, body.candidate_hash))
+            approval = service.approve(who(request, authorization), pid, body.candidate_hash,
+                                       accept_yardstick_loosened=body.accept_yardstick_loosened)
+            return _json(approval)
 
         @router.post("/proposals/{pid}/reject")
         def reject(request: Request, pid: str, body: _Reason, authorization: Auth = None) -> Response:

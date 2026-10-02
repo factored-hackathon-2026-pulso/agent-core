@@ -18,7 +18,7 @@ from testing.builders import principal
 from testing.fakes.clock import FakeClock
 from testing.fakes.ids import FakeIds
 from tests.contracts.test_registry_contract import CHECKS, EXACT_FLOW, KNOWLEDGE, RANGED_FLOW
-from tests.registry.helpers import AGENT, REGISTRY_DEMO, admin, human, prompt_draft
+from tests.registry.helpers import AGENT, REGISTRY_DEMO, admin, human, prompt_draft, suite_draft
 from tests.registry.service_world import SUITE, FakeEvaluator
 
 pytestmark = pytest.mark.integration
@@ -342,3 +342,19 @@ def test_release_eval_suites_are_insert_only(registry_store: PgRegistryStore) ->
     _publish(service)
     with registry_store.connect() as conn, pytest.raises(psycopg.errors.InsufficientPrivilege):
         conn.execute("DELETE FROM reg_release_eval_suites")
+
+
+def test_approval_keeps_the_accepted_loosening(registry_store: PgRegistryStore) -> None:  # D7
+    service = _service(registry_store)
+    service.import_seed(admin(), REGISTRY_DEMO)
+    _publish(service)
+    p = service.create_proposal(ANA, AGENT, Origin.manual, "loosen")
+    service.put_draft(ANA, p.proposal_id, [prompt_draft(version="1.2.0", text="Otra."),
+                                            suite_draft("1.1.0", repetitions=1)], expected_rev=0)
+    service.freeze(ANA, p.proposal_id)
+    service.evaluate(ANA, p.proposal_id, "disputas-suite")
+    h = service.get_proposal(p.proposal_id).proposal.candidate_hash or ""
+    service.approve(ANA, p.proposal_id, h, accept_yardstick_loosened=True)
+    with registry_store.transaction() as tx:
+        approval = tx.latest_approval(p.proposal_id, h)
+    assert approval is not None and [c.kind for c in approval.yardstick_loosened] == ["repetitions_lowered"]
