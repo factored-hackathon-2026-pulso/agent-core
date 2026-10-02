@@ -1,7 +1,8 @@
 """Generación de `contracts/` (ADR 0002): JSON Schema de tipos públicos, eventos y nodos + VERSION.
 
 Determinista: claves ordenadas, sangría de 2, LF y salto de línea final, sin datos del entorno. Solo
-gestiona `contracts/VERSION` y `contracts/schemas/`; otros archivos (p. ej. `openapi.json`, M9) no se tocan.
+gestiona `contracts/VERSION`, `contracts/schemas/` y `contracts/events/` (eventos salientes);
+otros archivos (p. ej. `openapi.json`, M9) no se tocan.
 """
 
 import enum
@@ -14,11 +15,13 @@ from typing import Any
 from pydantic import BaseModel, TypeAdapter
 
 from agent_core import domain as d
+from agent_core import outbound as o
 from agent_core import ports as p
 
 GENERATED_NOTICE = "GENERADO por `uv run agentcore contracts`; no editar a mano."
 _INFRA_BASES = frozenset({"Model", "MutableModel"})
 _SCHEMAS = "schemas"
+_EVENTS = "events"
 
 
 def _is_schema_type(obj: object) -> bool:
@@ -51,7 +54,21 @@ def render_contracts() -> dict[str, str]:
         schema["$comment"] = GENERATED_NOTICE
         files[f"{_SCHEMAS}/{name}.json"] = _encode(schema)
     files["VERSION"] = d.SCHEMA_VERSION + "\n"
+    files.update(_render_events())
     return files
+
+
+def _render_events() -> dict[str, str]:
+    """Contrato de eventos salientes (`agent_core.outbound`, fuera de M0): esquema de la unión y catálogo."""
+    schema = TypeAdapter(o.OutboundEvent).json_schema(mode="validation", by_alias=True)
+    schema["$comment"] = GENERATED_NOTICE
+    catalog = {
+        "$comment": GENERATED_NOTICE,
+        "spec_version": o.SPEC_VERSION,
+        "schema": "OutboundEvent.json",
+        "types": list(o.PUBLIC_TYPES),
+    }
+    return {f"{_EVENTS}/OutboundEvent.json": _encode(schema), f"{_EVENTS}/catalog.json": _encode(catalog)}
 
 
 def _existing(out: Path) -> set[str]:
@@ -60,6 +77,9 @@ def _existing(out: Path) -> set[str]:
     schemas = out / _SCHEMAS
     if schemas.is_dir():
         found |= {f"{_SCHEMAS}/{q.name}" for q in schemas.iterdir()}
+    events = out / _EVENTS
+    if events.is_dir():
+        found |= {f"{_EVENTS}/{q.name}" for q in events.iterdir()}
     if (out / "VERSION").exists():
         found.add("VERSION")
     return found
