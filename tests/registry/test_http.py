@@ -106,3 +106,45 @@ def test_loosening_must_be_accepted_over_http() -> None:  # D7
     ok = c.post(f"/v1/registry/proposals/{pid}/approve",
                 json={"candidate_hash": h, "accept_yardstick_loosened": True}, headers=_h("ana"))
     assert ok.status_code == 200 and ok.json()["yardstick_loosened"][0]["kind"] == "repetitions_lowered"
+
+
+def _create(c: TestClient, key: str | None, title: str = "t"):  # type: ignore[no-untyped-def]
+    return c.post("/v1/registry/proposals", json={"agent_id": AGENT, "origin": "manual", "title": title},
+                  headers=_h("ana", key))
+
+
+def test_create_with_the_same_idempotency_key_returns_the_same_proposal() -> None:
+    c, _ = _client()
+    first, again = _create(c, "k-1"), _create(c, "k-1")
+    assert first.status_code == again.status_code == 201
+    assert first.json()["proposal_id"] == again.json()["proposal_id"]
+    assert _create(c, "k-2").json()["proposal_id"] != first.json()["proposal_id"]
+
+
+def test_same_key_with_another_body_is_a_conflict() -> None:
+    c, _ = _client()
+    _create(c, "k-1")
+    r = _create(c, "k-1", title="otro")
+    assert r.status_code == 409 and r.json()["code"] == "idempotency_conflict"
+
+
+def test_draft_freeze_reopen_and_evaluate_accept_the_key_and_replay() -> None:
+    c, _ = _client()
+    pid = _create(c, None).json()["proposal_id"]
+    changes = [prompt_draft().model_dump(mode="json"), SUITE.model_dump(mode="json")]
+    body = {"expected_rev": 0, "changes": changes}
+    url = f"/v1/registry/proposals/{pid}"
+    one, two = (c.put(f"{url}/draft", json=body, headers=_h("ana", "d-1")) for _ in range(2))
+    assert one.status_code == two.status_code == 200  # sin 409 stale en el reintento
+    assert one.json()["rev"] == two.json()["rev"]
+    f1, f2 = (c.post(f"{url}/freeze", headers=_h("ana", "f-1")) for _ in range(2))
+    assert f1.status_code == f2.status_code == 200
+    assert f1.json()["candidate_hash"] == f2.json()["candidate_hash"]
+    e1, e2 = (c.post(f"{url}/evaluate", json={"suite_id": "disputas-suite"}, headers=_h("ana", "e-1"))
+              for _ in range(2))
+    assert e1.status_code == e2.status_code == 200 and e1.json() == e2.json()
+
+
+def test_an_overlong_key_on_a_write_is_rejected() -> None:
+    c, _ = _client()
+    assert _create(c, "x" * 256).status_code == 422

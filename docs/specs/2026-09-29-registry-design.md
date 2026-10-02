@@ -330,6 +330,8 @@ Más `SandboxPort` (§6.3) y, para el linaje, la lectura del `release_id` de un 
 
 Se monta en la app FastAPI de M9 como `ApiExtension` (`ApiDeps.extensions`, por defecto vacío) con la misma autenticación JWS (la función `authenticate` que M9 entrega a la extensión), `problem+json` y `trace_id` en toda respuesta.
 
+**Contrato publicado (2026-10-02).** `contracts/registry-openapi.json` (generado por `agentcore contracts`, verificado con `--check`) describe estas rutas con esquemas de éxito, `problem+json` y `bearerAuth`. `Idempotency-Key` es opcional (máx. 255) en crear, editar borrador, congelar, reabrir y evaluar, y obligatoria en publicar; un reintento con la misma clave devuelve el mismo resultado y otro cuerpo da `409 idempotency_conflict`. Los topes de cuota y el tope de costo no cambian.
+
 **Vigencia (2026-10-02).** Con el verificador del staff (`--staff-keys`) la API no pasa por la puerta de M9, y el verificador solo comprueba la firma. Por eso `registry_extension` exige un `Clock` junto al verificador y rechaza `exp <= now` con `401 principal_expired` en todas las rutas, igual que M9; sin reloj falla al construirse. Antes de este cambio una credencial vencida seguía operando el registry.
 
 | Método y ruta | Operación |
