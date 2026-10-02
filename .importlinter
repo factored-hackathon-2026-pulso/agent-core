@@ -290,6 +290,8 @@ forbidden_modules =
     agent_core.composition
     agent_core.contracts
     agent_core.registry
+    # M4 talks to telemetry through TurnTelemetry (F11, m04 §3.9): never agent_telemetry nor OpenTelemetry
+    agent_telemetry
 
 [importlinter:contract:api]
 name = M9 (api) solo usa domain, ports y turn, handoff, audit

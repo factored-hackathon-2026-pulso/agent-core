@@ -57,3 +57,9 @@ def test_credentials_in_a_url_are_redacted() -> None:  # M3: SDK retry warnings 
     line = json.loads(tel.JsonLogFormatter().format(record))
     assert "SECRETO9" not in line["message"] and "usuario" not in line["message"]
     assert "https://***@collector:4318/v1/traces" in line["message"]
+
+
+def test_without_a_trace_the_line_carries_the_request_fallback() -> None:  # U3: same id as problem+json
+    with tel.bind_trace_id("evt-0007"):
+        line = json.loads(tel.JsonLogFormatter().format(_record()))
+    assert line["trace_id"] == "evt-0007"

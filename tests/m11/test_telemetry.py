@@ -240,3 +240,19 @@ class _Recording:
 
     def __getattr__(self, name: str) -> object:
         return getattr(self._span, name)
+
+
+def test_without_a_trace_the_bound_fallback_is_the_trace_id() -> None:  # U3, F8 (2)
+    assert tel.current_trace_id() is None
+    with tel.bind_trace_id("evt-0001"):
+        assert tel.current_trace_id() == "evt-0001"
+        with tel.bind_trace_id("evt-0002"):
+            assert tel.current_trace_id() == "evt-0002"
+        assert tel.current_trace_id() == "evt-0001"
+    assert tel.current_trace_id() is None
+
+
+def test_an_active_trace_wins_over_the_bound_fallback(otel: InMemorySpanExporter) -> None:
+    with tel.bind_trace_id("evt-0001"), tel.bind(run_id="run-0001", release="rel-1"), tel.span(tel.CHAT):
+        trace_id = tel.current_trace_id()
+    assert trace_id is not None and trace_id != "evt-0001" and len(trace_id) == 32

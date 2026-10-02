@@ -6,6 +6,7 @@ from contextvars import ContextVar
 from types import MappingProxyType
 
 _CTX: ContextVar[Mapping[str, str]] = ContextVar("agent_telemetry_ctx", default=MappingProxyType({}))
+_TRACE_FALLBACK: ContextVar[str | None] = ContextVar("agent_telemetry_trace_fallback", default=None)
 
 
 @contextmanager
@@ -35,3 +36,19 @@ def current() -> Mapping[str, str]:
 def correlation() -> Mapping[str, str]:
     """The bound correlation attributes (read-only), for callers that build their own spans or log lines."""
     return _CTX.get()
+
+
+@contextmanager
+def bind_trace_id(trace_id: str) -> Iterator[None]:
+    """The request's trace id when no OTel trace is active (U3): M9's middleware binds the id it took from its
+    `IdSource`, so the turn's `TurnResult`, the logs and `problem+json` give the same value. Like any
+    `ContextVar`, it reaches the threadpool that runs a sync endpoint (anyio copies the context)."""
+    token = _TRACE_FALLBACK.set(trace_id)
+    try:
+        yield
+    finally:
+        _TRACE_FALLBACK.reset(token)
+
+
+def trace_fallback() -> str | None:
+    return _TRACE_FALLBACK.get()

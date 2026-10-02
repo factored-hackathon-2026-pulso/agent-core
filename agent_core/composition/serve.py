@@ -13,6 +13,7 @@ from agent_core.composition.engine import EngineDeps, build_engine
 from agent_core.composition.observability import ObservabilityConfigError, setup_observability
 from agent_core.composition.serve_ports import ServeConfigError, ServePorts, resolve_ports
 from agent_core.composition.serve_registry import build_registry_service_for_serve
+from agent_core.composition.telemetry import OtelTurnTelemetry
 from agent_core.domain import (
     AgentSelector,
     AuthInfo,
@@ -26,16 +27,18 @@ from agent_core.domain import (
 from agent_core.ports import Clock, IdSource, RegistryPort
 from agent_core.registry import RegistryService
 from agent_core.registry.http import registry_extension
+from agent_core.turn import TurnTelemetry
 
 GATEWAY_TRACER = "agent_core.adapters.llm"
 
 
-def build_api_deps(ports: ServePorts, *, registry_service: RegistryService | None = None) -> ApiDeps:
+def build_api_deps(ports: ServePorts, *, registry_service: RegistryService | None = None,
+                   telemetry: TurnTelemetry | None = None) -> ApiDeps:
     built = build_engine(EngineDeps(
         clock=ports.clock, ids=ports.ids, keys=ports.keys, uow_factory=ports.uow_factory, audit=ports.audit,
         registry=ports.registry, releases=ports.releases, tools=ports.tools, gateway=ports.gateway,
         providers=ports.providers, calibrations=ports.calibrations, transcript=ports.transcript,
-        authz=ports.authz, classifier=ports.classifier))
+        authz=ports.authz, classifier=ports.classifier, telemetry=telemetry))
     return ApiDeps(
         verifier=ports.verifier, authz=ports.authz, registry=ports.registry, uow_factory=ports.uow_factory,
         counters=ports.counters, clock=ports.clock, ids=ports.ids, turns=built.turns,
@@ -100,7 +103,10 @@ def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Map
         for warning in model_alias_warnings(ports.registry, ports.agents, ports.endpoints, env, ports.clock):
             print(f"AVISO: {warning}", file=sys.stderr)
         registry_service = build_registry_service_for_serve(ports) if ports.registry_api is not None else None
-        app = create_app(build_api_deps(ports, registry_service=registry_service))
+        # Always the real turn telemetry: without an exporter its spans are no-ops, but `bind` still
+        # correlates the turn's logs (m04 §3.9).
+        app = create_app(
+            build_api_deps(ports, registry_service=registry_service, telemetry=OtelTurnTelemetry()))
         if serve is None:
             import uvicorn
 

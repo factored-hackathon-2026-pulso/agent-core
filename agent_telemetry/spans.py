@@ -17,7 +17,7 @@ from opentelemetry import trace
 from opentelemetry.context import Context
 from opentelemetry.trace import Link, Span, Status, StatusCode
 
-from agent_telemetry.context import current
+from agent_telemetry.context import current, trace_fallback
 from agent_telemetry.semconv import SEMCONV_VERSION
 from agent_telemetry.setup import tracer as _tracer
 
@@ -157,5 +157,6 @@ def set_content(active: Span, key: str, audit_view: object) -> None:
 
 
 def current_trace_id() -> str | None:
+    """The active OTel trace id or, without one, the id bound by `bind_trace_id` (U3, F8)."""
     ctx = trace.get_current_span().get_span_context()
-    return format(ctx.trace_id, "032x") if ctx.is_valid else None
+    return format(ctx.trace_id, "032x") if ctx.is_valid else trace_fallback()

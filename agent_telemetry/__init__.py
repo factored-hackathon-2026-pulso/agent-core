@@ -1,6 +1,6 @@
 """Shared telemetry package (ADR 0003 #4): OTel spans with `agentcore.*` attributes and JSON logs."""
 
-from agent_telemetry.context import bind, correlation
+from agent_telemetry.context import bind, bind_trace_id, correlation
 from agent_telemetry.logging import JsonLogFormatter
 from agent_telemetry.semconv import SCHEMA_URL
 from agent_telemetry.setup import setup_tracing, shutdown_tracing, tracer
@@ -34,6 +34,7 @@ __all__ = [
     "JsonLogFormatter",
     "MissingTelemetryContext",
     "bind",
+    "bind_trace_id",
     "configure",
     "correlation",
     "current_trace_id",

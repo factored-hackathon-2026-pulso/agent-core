@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from dataclasses import replace
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from agent_core.actions import ActionManager
 from agent_core.domain import (
@@ -73,6 +73,9 @@ from agent_core.turn.ports import (
     TraceIds,
     TurnRecorderPort,
     TurnRuntime,
+    TurnScope,
+    TurnSpan,
+    TurnTelemetry,
     UnderstandOutcome,
     UnderstandPort,
     UnderstandRequest,
@@ -81,6 +84,7 @@ from agent_core.turn.recovery import position_at_verify
 from agent_core.turn.refs import pinned_ref
 from agent_core.turn.results import awaiting_for, build_turn_result
 from agent_core.turn.sweep import Sweeper, SweepReport
+from agent_core.turn.telemetry import NO_SPAN, NoTurnTelemetry, observed_turn
 from agent_core.turn.templates import render_engine
 from agent_core.turn.transfer import Transferer, TransferPlan, event_target
 
@@ -104,6 +108,7 @@ class TurnEngine:
         trace: TraceIds,
         config: TurnConfig | None = None,
         authz: AuthzPort | Any | None = None,
+        telemetry: TurnTelemetry | None = None,
     ) -> None:
         self._uow_factory = uow_factory
         self._registry = registry
@@ -120,6 +125,7 @@ class TurnEngine:
         self._trace = trace
         self._config = config or TurnConfig()
         self._authz = authz
+        self._telemetry: TurnTelemetry = telemetry or NoTurnTelemetry()
         self._events = TurnEvents(ids, clock)
         self._closer = Closer(actions=actions, handoff=handoff, audit=audit, clock=clock, registry=registry)
         self._env = Env(closer=self._closer, registry=registry)
@@ -147,6 +153,7 @@ class TurnEngine:
         runtime: TurnRuntime,
         meter: StageMeter,
         release: Any,
+        span: TurnSpan = NO_SPAN,
     ) -> TurnFrame:
         buffer = EventBuffer(turn_id)
         frame = TurnFrame(
@@ -162,9 +169,26 @@ class TurnEngine:
             buffer=buffer,
             events=self._events,
             initial_run_cost=state.budgets_used.run_cost,
+            span=span,
         )
-        frame.sink = TurnEventSink(buffer, self._chain, lambda: self._ensure_started(frame))
+        frame.sink = TurnEventSink(
+            buffer, self._chain, lambda: self._ensure_started(frame), observe=frame.span.record
+        )
         return frame
+
+    @staticmethod
+    def _scope(state: RunState, turn_id: str, entry: Literal["start_run", "turn"]) -> TurnScope:
+        """What the turn's telemetry is about (m04 §3.9): ids and closed-list values, never a payload."""
+        return TurnScope(
+            run_id=state.run_id,
+            turn_id=turn_id,
+            session_id=state.session_id,
+            release=state.release,
+            agent=state.agent,
+            entry=entry,
+            principal_type=state.principal.type.value,
+            locale=state.locale,
+        )
 
     def _ensure_started(self, frame: TurnFrame) -> None:
         """Materializa `turn_started` sin salida de M6 si alguien vuelca antes de las guardas."""
@@ -303,7 +327,9 @@ class TurnEngine:
             awaiting=awaiting,
         )
         saved = frame.uow.save_run(state, expected_version=state.state_version)
-        self._chain.append(frame.uow, saved.run_id, [*frame.buffer.drain(), completed])
+        chained = [*frame.buffer.drain(), completed]
+        self._chain.append(frame.uow, saved.run_id, chained)
+        frame.span.record(chained)  # telemetry reads, never writes, the turn's events (U4)
         cost = max(saved.budgets_used.run_cost - frame.initial_run_cost, Decimal("0"))
         frame.uow.add_usage(saved.principal.key, cost, now)
         result = build_turn_result(frame, saved, self._trace.current(frame.turn_id))
@@ -366,17 +392,20 @@ class TurnEngine:
         ]
         turn = frame.turn
         assert turn is not None  # P6: a transfer during `start_run` is rejected (`no_turn`)
-        result = self._process(
-            frame.uow,
-            target,
-            origin_state.principal,
-            origin_state.on_behalf_of,
-            turn,
-            frame.turn_id,
-            StageMeter(self._clock),
-            prelude=prelude,
-            store_result=False,
-        )
+        # The target's span covers its `_process`; the one commit of the turn comes later (m04 §3.9).
+        with observed_turn(self._telemetry, self._scope(target, frame.turn_id, "turn")) as span:
+            result = self._process(
+                frame.uow,
+                target,
+                origin_state.principal,
+                origin_state.on_behalf_of,
+                turn,
+                frame.turn_id,
+                StageMeter(self._clock),
+                prelude=prelude,
+                store_result=False,
+                span=span,
+            )
         if isinstance(result, EngineError):  # a fresh run cannot expire; never commit half a transfer
             raise result
         return result.model_copy(update={"messages": [*source.messages, *result.messages]})
@@ -413,11 +442,16 @@ class TurnEngine:
                 state = uow.load_run(found.run_id) or found  # estado fresco tras tomar el lease
                 if state.status != "open":
                     raise EngineError(ProblemCode.run_closed, "run cerrado")
-                outcome = self._process(uow, state, principal, on_behalf_of, turn, turn_id, meter)
-                uow.commit()
-                leased = None
-                if isinstance(outcome, EngineError):
-                    raise outcome
+                # m04 §3.9: the turn's span covers its processing and its commit; an `EngineError` the turn
+                # commits (expiry, P2) leaves the span inside it, so the span carries its problem code.
+                with observed_turn(self._telemetry, self._scope(state, turn_id, "turn")) as span:
+                    outcome = self._process(
+                        uow, state, principal, on_behalf_of, turn, turn_id, meter, span=span
+                    )
+                    uow.commit()
+                    leased = None
+                    if isinstance(outcome, EngineError):
+                        raise outcome
                 return outcome
         except Exception:
             if leased is not None:
@@ -471,6 +505,7 @@ class TurnEngine:
         *,
         prelude: Sequence[EngineEvent] = (),
         store_result: bool = True,
+        span: TurnSpan = NO_SPAN,
     ) -> TurnResult | EngineError:
         """Pasos 3 a 14. Devuelve un `EngineError` (ya commiteable) cuando el turno cierra el run sin
         procesar el mensaje (abandono, P2). `prelude` abre la cadena del run destino de una transferencia
@@ -480,7 +515,7 @@ class TurnEngine:
         runtime = self._runtimes.open(state, principal, on_behalf_of)
         agent, release = runtime.step.agent, runtime.step.release
         frame = self._new_frame(
-            uow, state, turn_id, "turn", turn.client_turn_id, agent, runtime, meter, release
+            uow, state, turn_id, "turn", turn.client_turn_id, agent, runtime, meter, release, span
         )
         frame.turn = turn
         frame.text_model = runtime.model_text(turn.text)  # C1: el texto crudo no sale de aquí
@@ -760,8 +795,13 @@ class TurnEngine:
         turn_id = self._ids.new_id(IdKind.turn)
         state = begin_turn(state, self._clock)
         runtime = self._runtimes.open(state, principal, on_behalf_of)
-        with self._uow_factory() as uow:
-            frame = self._new_frame(uow, state, turn_id, "start_run", None, agent, runtime, meter, release)
+        with (
+            self._uow_factory() as uow,
+            observed_turn(self._telemetry, self._scope(state, turn_id, "start_run")) as span,
+        ):  # m04 §3.9: the span covers the creation, `advance` and the commit
+            frame = self._new_frame(
+                uow, state, turn_id, "start_run", None, agent, runtime, meter, release, span
+            )
             frame.buffer.add(
                 self._events.run_started(state, agent_ref, self._reportable(principal)),
                 self._events.turn_started(state, turn_id, None, guards=None),

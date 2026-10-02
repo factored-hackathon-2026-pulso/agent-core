@@ -6,6 +6,7 @@ guionados es el motor de las pruebas y del replay `fixture`; con adaptadores rea
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 
+import agent_telemetry as tel
 from agent_core.actions import ActionManager
 from agent_core.audit import AuditLog, TranscriptReader, TurnRecorder
 from agent_core.composition.runtime import EngineRuntimeFactory, RuntimeConfig
@@ -30,7 +31,7 @@ from agent_core.ports import (
     UnitOfWorkFactory,
 )
 from agent_core.response import NumberFormat
-from agent_core.turn import DecisionUnderstand, TraceIds, TurnConfig, TurnEngine
+from agent_core.turn import DecisionUnderstand, TraceIds, TurnConfig, TurnEngine, TurnTelemetry
 from agent_core.views import FieldClassifier, ViewService
 
 
@@ -64,14 +65,17 @@ class EngineDeps:
     classifier: FieldClassifier | None = None
     trace: TraceIds | None = None
     knowledge: KnowledgeSource | None = None  # M12: sin fuente, un nodo `knowledge` es un error de cableado
+    telemetry: TurnTelemetry | None = None  # m04 §3.9: sin ella, no-op (pruebas, replay, evaluación)
     config: EngineConfig = field(default_factory=EngineConfig)
 
 
-class DerivedTrace:
-    """`TraceIds` por defecto: el `trace_id` se deriva del turno (M9 lo reemplaza con el del request)."""
+class RequestTraceIds:
+    """`TraceIds` (U3, F8): the request's trace id (the OTel one or M9's fallback, `bind_trace_id`); outside a
+    request (replay, `agentcore record`, registry evaluation, in-process tests), derived from the turn. Never
+    asks the IdSource: that would shift the recorded ids and change the committed fixtures."""
 
     def current(self, turn_id: str) -> str:
-        return f"trace-{turn_id}"
+        return tel.current_trace_id() or f"trace-{turn_id}"
 
 
 @dataclass(frozen=True)
@@ -104,8 +108,8 @@ def build_engine(deps: EngineDeps) -> BuiltEngine:
                                       recent_turns=cfg.recent_turns),
         actions=actions, handoff=handoffs,
         recorder=TurnRecorder(deps.transcript, deps.keys), chain=AuditLog(deps.audit),
-        audit=deps.audit, runtimes=runtimes, trace=deps.trace or DerivedTrace(), config=cfg.turn,
-        authz=deps.authz)
+        audit=deps.audit, runtimes=runtimes, trace=deps.trace or RequestTraceIds(), config=cfg.turn,
+        authz=deps.authz, telemetry=deps.telemetry)
     transcripts = TranscriptReader(deps.transcript, deps.uow_factory, views, deps.keys, deps.ids)
     return BuiltEngine(turns=turns, handoffs=handoffs, transcripts=transcripts)
 

@@ -135,6 +135,7 @@ Un span `agentcore.api.request` por request (OpenTelemetry, provider de `agent_t
 
 - La telemetría nativa de FastAPI está apagada (`FASTAPI_TELEMETRY_OFF` en `agent_core/api/app.py`: trazas, métricas, logs, spans de operación y autoconfiguración desde `OTEL_*`), así que `agentcore.api.request` es el único span de servidor y no hay `url.path` ni `url.query`.
 - En un error, el span lleva `error.type` y `http.response.status_code`, y nunca el evento `exception` ni una descripción de estado.
+- **Trace id del turno (U3):** el middleware publica el `trace_id` del request con `agent_telemetry.bind_trace_id` alrededor de `call_next`. El motor lo lee con `RequestTraceIds` (composition), así que el `TurnResult` del mismo request (`trace_id` y `first_turn.trace_id` de `POST /v1/runs`, `trace_id` de un turno) es el de la respuesta y el de `problem+json`, con OTel o con el respaldo del `IdSource`. El span y el `ContextVar` llegan igual al threadpool de los endpoints síncronos (anyio copia el contexto), y el `invoke_agent` del turno es hijo de `agentcore.api.request` (`tests/composition/test_turn_telemetry.py`). Un reintento deduplicado devuelve el `trace_id` del intento original, que está en el resultado guardado (F16). Los logs JSON sin traza activa llevan ese mismo respaldo.
 
 ### 3.8 Formato de la credencial (`raw_credential`, decisión 2026-09-29)
 

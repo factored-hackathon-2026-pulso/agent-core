@@ -31,7 +31,7 @@ from agent_core.domain import (
     TurnInput,
 )
 from agent_core.ports import AuditSink, AuthzDecision, GenerationResult, KnowledgeSource, UnitOfWorkFactory
-from agent_core.turn import TurnEngine
+from agent_core.turn import TurnEngine, TurnTelemetry
 from agent_core.views import DEFAULT_CATALOG, FieldClassifier, FieldRule
 from testing.builders import NOW
 from testing.builders import principal as make_principal
@@ -196,7 +196,7 @@ class EngineWorld:
                  audit: AuditSink | None = None, config: EngineConfig | None = None,
                  gateway: ScriptedGateway | None = None, record: bool = False,
                  clock: FakeClock | None = None, ids: FakeIds | None = None,
-                 knowledge: KnowledgeSource | None = None) -> None:
+                 knowledge: KnowledgeSource | None = None, telemetry: TurnTelemetry | None = None) -> None:
         self.clock = clock or FakeClock()
         self.ids = ids or FakeIds()
         self.registry = registry_from_directory(registry_root, RELEASE_ID)
@@ -220,7 +220,7 @@ class EngineWorld:
             providers={"jev": self.jev, "classifier": self.classifier},
             calibrations=InMemoryCalibrationSource({"cal-demo": demo_calibration()}),
             transcript=self.transcript, authz=SyntheticAuthz(), classifier=FieldClassifier(CATALOG),
-            config=config or EngineConfig(), knowledge=knowledge)
+            config=config or EngineConfig(), knowledge=knowledge, telemetry=telemetry)
         self.engine: TurnEngine = build_turn_engine(self.deps)
         self.runtimes = self.engine._runtimes  # RuntimeFactory real
         self.driver = Driver(self.engine)
