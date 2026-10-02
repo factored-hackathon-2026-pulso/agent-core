@@ -8,7 +8,6 @@ from agent_core.registry.directory import RegistryDirectory
 from agent_core.registry.errors import HTTP_STATUS, IntegrityError, RegistryError, RegistryErrorCode
 from agent_core.registry.evaluation import (
     EvalPort,
-    EvalReport,
     EvalTarget,
     HarnessUnavailable,
     Judge,
@@ -18,6 +17,7 @@ from agent_core.registry.evaluation import (
     ScenarioEvaluator,
     ScenarioHarness,
 )
+from agent_core.registry.evaluation.report import EvalReport  # el que devuelve `EvalPort`
 from agent_core.registry.memory import InMemoryRegistryStore
 from agent_core.registry.models import (
     AuditContext,

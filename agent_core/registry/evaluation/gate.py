@@ -1,6 +1,11 @@
-"""Veredicto del gate de evaluación con doble vara (ADR 0020, spec de evaluación §6).
+"""Veredicto del gate de evaluación.
 
-Función pura: recibe las definiciones y los reportes ya medidos (los produce `EvalPort`, unidad 6) y decide.
+- `evaluate_gate`: doble vara (ADR 0020, spec de evaluación §6).
+- `decide`: guardarraíles con tolerancia cero y métrica principal (spec del registry §6.4, ADR 0018); lo usa
+  `ScenarioEvaluator`.
+
+`evaluate_gate` es una función pura: recibe las definiciones y los reportes ya medidos (los produce
+`EvalPort`, unidad 6) y decide.
 Sin puntaje compuesto: cada métrica se juzga por separado y basta una que falle.
 """
 
@@ -12,7 +17,11 @@ from pydantic import Field
 from agent_core.domain import MetricDef, Model
 from agent_core.domain.metrics import MetricRole
 from agent_core.registry.evaluation.platform import PLATFORM_GUARDRAILS
+from agent_core.registry.evaluation.report import MetricCheck, SuiteMetrics
+from agent_core.registry.evaluation.report import Verdict as CheckVerdict
+from agent_core.registry.evaluation.scoring import GUARDRAILS
 from agent_core.registry.evaluation.yardstick import Yardstick, metric_identity
+from agent_core.registry.suite import EvalSuite as RegistrySuite
 
 Phase = Literal["base_yardstick", "new_yardstick", "platform"]
 
@@ -207,3 +216,23 @@ def evaluate_gate(base: Yardstick | None, cand: Yardstick, runs: GateRuns) -> Ve
     items += _new_items(base, cand, runs.cand_on_new)
     items += _platform_items(runs)
     return Verdict(status="passed" if all(item.passed for item in items) else "failed", items=items)
+
+
+def decide(
+    suite: RegistrySuite, candidate: SuiteMetrics, base: SuiteMetrics | None
+) -> tuple[CheckVerdict, list[MetricCheck]]:
+    checks: list[MetricCheck] = []
+    for name in GUARDRAILS:
+        value = candidate.guardrails.get(name, 0)
+        limit = base.guardrails.get(name, 0) if base is not None else 0
+        checks.append(MetricCheck(name=name, value=Decimal(value),
+                                  base=Decimal(limit) if base is not None else None,
+                                  threshold=Decimal(limit), passed=value <= limit))
+    if base is not None:
+        threshold = base.primary - suite.noise_margin
+        checks.append(MetricCheck(name="primary", value=candidate.primary, base=base.primary,
+                                  threshold=threshold, passed=candidate.primary >= threshold))
+    else:
+        checks.append(MetricCheck(name="primary", value=candidate.primary, base=None, threshold=suite.floor,
+                                  passed=candidate.primary >= suite.floor))
+    return ("pass" if all(c.passed for c in checks) else "fail"), checks

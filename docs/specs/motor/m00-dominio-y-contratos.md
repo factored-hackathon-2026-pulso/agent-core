@@ -1,6 +1,6 @@
 # M0 — Dominio y contratos
 
-- Estado: **rev. 12 · implementado** (fase 1; `write_draft`, transferencia entre agentes y `SCHEMA_VERSION` 1.2.0, 2026-09-30) · Fase 1
+- Estado: **rev. 13 · implementado** (fase 1; `write_draft`, transferencia entre agentes y `SCHEMA_VERSION` 1.2.0, 2026-09-30; `Agent.metrics` y `SCHEMA_VERSION` 1.3.0, 2026-10-02) · Fase 1
 - Paquetes: `agent_core.domain`, `agent_core.ports`, `testing/fakes`
 - Origen: spec general §2, §5 (esquemas de nodos), §8 (estado), §10 (códigos), §14 (dependencias)
 - ADRs: 0001 (stack), 0002 (contratos), 0006 (principal y delegación), 0007 (acciones), 0008 (vistas y claves)
@@ -83,6 +83,7 @@
   - eventos `run_transferred`, `transfer_received` y `transfer_rejected` (emisor M4; solo huella del paquete y nombres de slots) y `RunClosedPayload.closed_by = "transfer"`;
   - `TurnResult.agent: EntityRef | None = None` (el agente que respondió) e `IdKind.transfer`.
   Los estados, eventos y agentes guardados con la versión anterior siguen cargando (todo campo nuevo es opcional).
+- rev. 13 (2026-10-02), métricas por agente (ADR 0020; `SCHEMA_VERSION` 1.2.0 → **1.3.0**, menor: un campo opcional nuevo). `Agent.metrics: list[MetricDef] = []` y los tipos del DSL (`domain/metrics.py`, `domain/metric_catalog.py`). La rama de métricas lo había numerado 0.5.0, valor que ya usaba `IdKind.proposal`/`IdKind.eval_run` (rev. 9); al integrarla con la rama principal (1.2.0) pasa a 1.3.0. `contracts/` regenerado (`Agent`).
 - implementación de M0 (2026-09-29), decisiones que el spec no cubría:
   - `loads` rechaza claves duplicadas; `to_jsonable` rechaza claves que colisionan tras `str()`; `RecursionError` se convierte en `ValueError`; se rechaza un `Decimal` con |exponente| > 1000;
   - `dumps` escribe `Decimal` con `format(d, "f")` (no `str(d)`, que puede emitir `1E+3`);
@@ -252,7 +253,7 @@ Validadores: `default_locale ∈ supported_locales`; `ToolDef` de escritura exig
 
 `LanguageDetection` e `InjectionRuleset` son solo datos; la lógica es de M6. El formato de `thresholds_from` (artefacto de calibración) lo define M5.
 
-**`Agent.metrics` (ADR 0020, `SCHEMA_VERSION` 0.5.0).** Lista opcional de `MetricDef` (máximo 32): las métricas que el agente declara para el gate de evaluación y el monitoreo. El motor las ignora en runtime. Los tipos del DSL están en `domain/metrics.py` y el catálogo cerrado de eventos medibles en `domain/metric_catalog.py`. Spec: `docs/specs/2026-09-30-evaluacion-y-metricas-design.md`.
+**`Agent.metrics` (ADR 0020, `SCHEMA_VERSION` 1.3.0).** Lista opcional de `MetricDef` (máximo 32): las métricas que el agente declara para el gate de evaluación y el monitoreo. El motor las ignora en runtime. Los tipos del DSL están en `domain/metrics.py` y el catálogo cerrado de eventos medibles en `domain/metric_catalog.py`. Spec: `docs/specs/2026-09-30-evaluacion-y-metricas-design.md`.
 
 ### 2.5 Esquemas de nodos (`domain/nodes.py`)
 
