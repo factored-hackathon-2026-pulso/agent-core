@@ -1,0 +1,50 @@
+"""Test isolation for the operational plane: a private span exporter and a root logger left as found.
+
+`otel` installs agent_telemetry's own provider (never OpenTelemetry's global, F3) with an in-memory exporter
+and strict mode (a span without `bind` or with an attribute outside the closed list raises). On exit it shuts
+the provider down and restores the previous `configure` settings and the once-per-name warning memory.
+`root_logging` restores the root logger's handlers and level and the SDK loggers' levels."""
+
+import logging
+from collections.abc import Iterator
+
+import pytest
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+import agent_telemetry as tel
+from agent_telemetry import setup as tel_setup
+from agent_telemetry import spans as tel_spans
+
+_SDK_LOGGERS = ("openai", "httpx", "httpcore")
+
+
+@pytest.fixture
+def otel() -> Iterator[InMemorySpanExporter]:
+    # A provider left behind by another test would make this one export to the wrong place: fail loudly.
+    assert tel_setup._PROVIDER is None, "a previous test leaked an agent_telemetry provider"
+    settings = (tel_spans._capture_content, tel_spans._strict)
+    warned = set(tel_spans._warned)
+    exporter = InMemorySpanExporter()
+    tel.setup_tracing(exporter=exporter)
+    tel.configure(capture_content=False, strict=True)
+    try:
+        yield exporter
+    finally:
+        tel.shutdown_tracing()
+        tel.configure(capture_content=settings[0], strict=settings[1])
+        tel_spans._warned.clear()
+        tel_spans._warned.update(warned)
+
+
+@pytest.fixture
+def root_logging() -> Iterator[None]:
+    root = logging.getLogger()
+    handlers, level = list(root.handlers), root.level
+    quiet = {name: logging.getLogger(name).level for name in _SDK_LOGGERS}
+    try:
+        yield
+    finally:
+        root.handlers[:] = handlers
+        root.setLevel(level)
+        for name, value in quiet.items():
+            logging.getLogger(name).setLevel(value)

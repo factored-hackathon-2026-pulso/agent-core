@@ -11,6 +11,12 @@ from agent_core.composition.engine import (
     build_turn_engine,
 )
 from agent_core.composition.evaluation import EngineScenarioHarness, EvalStorage
+from agent_core.composition.observability import (
+    Observability,
+    ObservabilityConfigError,
+    setup_observability,
+    tracing_config,
+)
 from agent_core.composition.registry import UowRunReleases, build_registry_service
 from agent_core.composition.responder import ContextFactory, ResponderAdapter
 from agent_core.composition.runtime import EngineRuntime, EngineRuntimeFactory, RuntimeConfig
@@ -18,6 +24,7 @@ from agent_core.composition.runtime import EngineRuntime, EngineRuntimeFactory, 
 __all__ = [
     "BUILDER_TOOL_DEFS", "BuilderToolExecutor", "BuiltEngine", "ContextFactory", "DecisionAdapter",
     "DerivedTrace", "EngineConfig", "EngineDeps", "EngineRuntime",
-    "EngineRuntimeFactory", "EngineScenarioHarness", "EvalStorage", "ResponderAdapter", "RuntimeConfig",
-    "UowRunReleases", "build_engine", "build_registry_service", "build_turn_engine",
+    "EngineRuntimeFactory", "EngineScenarioHarness", "EvalStorage", "Observability",
+    "ObservabilityConfigError", "ResponderAdapter", "RuntimeConfig", "UowRunReleases", "build_engine",
+    "build_registry_service", "build_turn_engine", "setup_observability", "tracing_config",
 ]

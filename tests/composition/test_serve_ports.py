@@ -9,6 +9,8 @@ from agent_core.composition.serve_ports import ServeConfigError, ServePorts, add
 from testing.fakes.clock import FakeClock
 from testing.fakes.ids import FakeIds
 
+pytest_plugins = ["tests.support.otel"]
+
 DOUBLE_OPTIONS = ("--tools", "--authz", "--transcript", "--calibration", "--classifier",
                   "--field-classifier", "--grant-active")
 
@@ -170,7 +172,7 @@ def test_static_config_problems_are_reported_together_before_any_factory_runs(tm
 
 
 def test_the_dsn_never_reaches_stderr(capsys: pytest.CaptureFixture[str],
-                                      monkeypatch: pytest.MonkeyPatch) -> None:
+                                      monkeypatch: pytest.MonkeyPatch, root_logging: None) -> None:
     from agent_core.cli import main
 
     monkeypatch.delenv("AGENTCORE_ALLOW_DEMO", raising=False)
@@ -187,3 +189,18 @@ def test_dsn_help_recommends_the_env_var_over_argv(capsys: pytest.CaptureFixture
         main(["serve", "--help"])
     out = " ".join(capsys.readouterr().out.split())
     assert "AGENTCORE_REGISTRY_DSN" in out and "lista de procesos" in out
+
+
+# --- observabilidad (refactor del plano operativo, tarea 2) --------------------------------------------
+
+
+def test_resolve_ports_injects_the_given_tracer_in_the_gateway() -> None:
+    marker = object()
+    ports = resolve_ports(_args(), _env(AGENTCORE_ALLOW_DEMO="1"), FakeClock(), FakeIds(),
+                          tracer=marker)  # type: ignore[arg-type]
+    assert ports.gateway._tracer is marker  # type: ignore[attr-defined]
+
+
+def test_without_a_tracer_the_gateway_resolves_agent_telemetry_per_call() -> None:
+    ports = _resolve(AGENTCORE_ALLOW_DEMO="1")
+    assert ports.gateway._tracer is None  # type: ignore[attr-defined]

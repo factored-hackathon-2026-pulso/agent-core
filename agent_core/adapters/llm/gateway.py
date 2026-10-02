@@ -10,7 +10,6 @@ from typing import Any
 
 import openai
 from openai import OpenAI
-from opentelemetry import trace
 from opentelemetry.trace import Span, Status, StatusCode, Tracer
 
 from agent_core.adapters.llm.config import EndpointConfig, default_client
@@ -29,6 +28,7 @@ from agent_core.domain import (
     canonical_bytes,
 )
 from agent_core.ports import GenerationResult, RegistryPort
+from agent_telemetry import tracer as telemetry_tracer
 
 _LOG = logging.getLogger("agent_core.adapters.llm")
 SCHEMA_INSTRUCTION = (
@@ -47,7 +47,10 @@ class OpenAICompatGateway:
         self._endpoints = endpoints
         self._env = env
         self._client_factory = client_factory
-        self._tracer = tracer or trace.get_tracer("agent_core.adapters.llm")
+        self._tracer = tracer  # None: agent_telemetry's current provider, resolved per call (F3/I5)
+
+    def _active_tracer(self) -> Tracer:
+        return self._tracer if self._tracer is not None else telemetry_tracer("agent_core.adapters.llm")
 
     def generate(self, prompt: EntityRef, inputs_model_view: dict[str, JsonValue], locale: Locale,
                  schema: dict[str, JsonValue] | None = None) -> GenerationResult:
@@ -57,7 +60,7 @@ class OpenAICompatGateway:
         text = prompt_def.locales.get(locale)
         if text is None:
             raise SchemaError(f"el prompt {prompt} no tiene el locale {locale}")
-        with self._tracer.start_as_current_span(
+        with self._active_tracer().start_as_current_span(
                 "chat", record_exception=False, set_status_on_exception=False) as span:
             span.set_attribute("gen_ai.operation.name", "chat")
             span.set_attribute("gen_ai.provider.name", profile.endpoint_alias)

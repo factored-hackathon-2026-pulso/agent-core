@@ -18,6 +18,8 @@ from testing.fakes.identity import TestIdentityIssuer
 from testing.fakes.registry import InMemoryRegistry
 from tests.composition.test_serve_app import make_ports
 
+pytest_plugins = ["tests.support.otel"]
+
 
 def _profile(pid: str, alias: str) -> ModelProfile:
     return ModelProfile(
@@ -72,7 +74,7 @@ def test_no_agents_means_no_check() -> None:
 
 
 def test_serve_accepts_agents_and_prints_warnings_at_startup(
-        capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+        capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, root_logging: None) -> None:
     parser = argparse.ArgumentParser()
     add_serve_parser(parser.add_subparsers(dest="command", required=True))
     args = parser.parse_args(["serve", "--agents", "atencion,otro"])

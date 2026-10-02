@@ -5,7 +5,7 @@ from opentelemetry.trace import Status, StatusCode
 from starlette.middleware.base import RequestResponseEndpoint
 
 from agent_core.ports import IdKind, IdSource
-from agent_telemetry.setup import get_provider
+from agent_telemetry import tracer as telemetry_tracer
 
 FALLBACK_TRACE_ID = "unknown"
 
@@ -22,7 +22,7 @@ def install_tracing(app: FastAPI, ids: IdSource) -> None:
 
     @app.middleware("http")
     async def _trace(request: Request, call_next: RequestResponseEndpoint) -> Response:
-        tracer = get_provider().get_tracer("agentcore.api")
+        tracer = telemetry_tracer("agentcore.api")
         # C2: never an `exception` event (message, stack) nor a status description: only the type.
         with tracer.start_as_current_span(
             "agentcore.api.request",
