@@ -22,7 +22,8 @@ CAMINOS = ["cancelado", "escalado_por_monto", "interrupcion", "resuelto", "step_
 
 
 def test_estan_los_seis_caminos_del_flow_de_demo() -> None:
-    assert sorted(SCENARIOS) == CAMINOS
+    # `transferencia` (fase 7) es otro registro y vive en `tests/fixtures/runs-transfer/`.
+    assert sorted(SCENARIOS) == sorted([*CAMINOS, "transferencia"])
     assert sorted(path.stem for path in RUNS.glob("*.yaml")) == CAMINOS
 
 

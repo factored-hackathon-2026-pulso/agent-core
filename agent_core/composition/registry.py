@@ -105,6 +105,8 @@ def add_registry_parser(sub: Any) -> None:
     ap = cmds.add_parser("approve")
     ap.add_argument("proposal_id")
     ap.add_argument("candidate_hash")
+    ap.add_argument("--accept-yardstick-loosened", action="store_true",
+                    help="also approves what the proposal loosens in the yardstick (ADR 0020)")
     rj = cmds.add_parser("reject")
     rj.add_argument("proposal_id")
     rj.add_argument("reason")
@@ -189,7 +191,8 @@ def _dispatch(s: RegistryService, actor: Principal, a: argparse.Namespace) -> An
         case "evaluate":
             return s.evaluate(actor, a.proposal_id, a.suite_id)
         case "approve":
-            return s.approve(actor, a.proposal_id, a.candidate_hash)
+            return s.approve(actor, a.proposal_id, a.candidate_hash,
+                             accept_yardstick_loosened=a.accept_yardstick_loosened)
         case "reject":
             return s.reject(actor, a.proposal_id, a.reason)
         case "publish":

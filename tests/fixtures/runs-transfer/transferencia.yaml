@@ -1,0 +1,706 @@
+name: transferencia
+run_id: run-0001
+release: recepcion-demo
+inputs:
+- op: start
+- op: turn
+  text: no reconozco un cargo de ciento veinte dólares en una tienda
+events:
+- event_id: event-0001
+  run_id: run-0001
+  turn_id: turn-0001
+  session_id: session-0001
+  release: recepcion-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 0
+  prev_hash: 30d0ee2270111fd5aa8d67093ed7b2fffb254d69c9fd4423ab50f139e5f06e3b
+  hash: 77ee8061594f59b32d336a7258d4c6575ab6ad790390f0ad9a39269b35e9838c
+  type: run_started
+  payload:
+    agent:
+      id: recepcion
+      version: 1.0.0
+    mode: conversational
+    subject_kind: null
+    principal_type: customer
+    locale: es
+    reportable_attrs:
+      country: CO
+- event_id: event-0002
+  run_id: run-0001
+  turn_id: turn-0001
+  session_id: session-0001
+  release: recepcion-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 1
+  prev_hash: 77ee8061594f59b32d336a7258d4c6575ab6ad790390f0ad9a39269b35e9838c
+  hash: b9488efdb85d6a0f4da730befe2370bae9c6993fbca7c5484ea067d347b81906
+  type: turn_started
+  payload:
+    client_turn_id: null
+    guards: null
+- event_id: event-0003
+  run_id: run-0001
+  turn_id: turn-0001
+  session_id: session-0001
+  release: recepcion-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 2
+  prev_hash: b9488efdb85d6a0f4da730befe2370bae9c6993fbca7c5484ea067d347b81906
+  hash: 12a8fd89bbbd889488f8fbfa73ddfd4a2c18174a287feedfb077d16e4c740945
+  type: node_entered
+  payload:
+    flow:
+      id: recepcion
+      version: 1.0.0
+    node_id: entender
+    node_type: collect
+    resume_kind: none
+- event_id: event-0004
+  run_id: run-0001
+  turn_id: turn-0001
+  session_id: session-0001
+  release: recepcion-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 3
+  prev_hash: 12a8fd89bbbd889488f8fbfa73ddfd4a2c18174a287feedfb077d16e4c740945
+  hash: cc245659320cee3de451328dcae473b310dc7330b65e1dc2ce8d0c8ae0d158df
+  type: turn_completed
+  payload:
+    client_turn_id: null
+    entry: start_run
+    duration_ms: 0
+    stages:
+      guards_ms: null
+      understand_ms: null
+      flow_ms: 0
+      response_ms: 0
+    degraded: false
+    awaiting: slot
+- event_id: event-0006
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: recepcion-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 4
+  prev_hash: cc245659320cee3de451328dcae473b310dc7330b65e1dc2ce8d0c8ae0d158df
+  hash: 35e86b5c488c358e8ab893139b5c6c8c8c2c2608fd0c56804394d01380b9df03
+  type: turn_started
+  payload:
+    client_turn_id: c-1
+    guards:
+      lang:
+        detector: lingua@2.1.1
+        letters: 50
+        top2:
+        - lang: es
+          score: 0.990504
+        - lang: pt
+          score: 0.009415
+        decision: kept
+        locale_prior: es
+        locale: es
+      injection:
+        flagged: false
+        signals: []
+        ruleset: injection-rules@1.0.0
+      size_ok: true
+- event_id: event-0005
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: recepcion-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 5
+  prev_hash: 35e86b5c488c358e8ab893139b5c6c8c8c2c2608fd0c56804394d01380b9df03
+  hash: f01e88d4dfc5b3c7f44cb85ee98bbda735555d30902cf81dcf52d32b29abbad4
+  type: expiry_evaluated
+  payload:
+    now: '2026-09-28T12:00:00Z'
+    last_activity_at: '2026-09-28T12:00:00Z'
+    ttl: PT30M
+    expired: false
+- event_id: event-0007
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: recepcion-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 6
+  prev_hash: f01e88d4dfc5b3c7f44cb85ee98bbda735555d30902cf81dcf52d32b29abbad4
+  hash: 4992b25dc3364388eb1a285b865e4e74df25b580b2e5e110091c37fcd10da130
+  type: decision_made
+  payload:
+    decision_id: decision-0001
+    model:
+      id: understand-turno
+      version: 1.0.0
+    provider_used: jev
+    model_version: unknown
+    fallback_depth: 0
+    value:
+      command: continue
+    p_cal:
+      command: 0.95
+      flow: null
+      interrupt: null
+    p_raw:
+      command: 0.95
+      flow: null
+      interrupt: null
+    top_k: {}
+    above_threshold:
+      command: true
+      flow: false
+      interrupt: false
+    latency_ms: 0
+    tokens: 20
+    cost_usd: !!float '0'
+    locale: es
+- event_id: event-0008
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: recepcion-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 7
+  prev_hash: 4992b25dc3364388eb1a285b865e4e74df25b580b2e5e110091c37fcd10da130
+  hash: 48f2a8b22b889e0ec45d699feef0cc90b91aaf8ff9765511a7d0bf7989ef9573
+  type: command_emitted
+  payload:
+    command: continue
+    flow: null
+    interrupt: null
+    additional_flows: []
+    above_threshold:
+      command: true
+    decision_id: decision-0001
+    source: understand
+- event_id: event-0009
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: recepcion-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 8
+  prev_hash: 48f2a8b22b889e0ec45d699feef0cc90b91aaf8ff9765511a7d0bf7989ef9573
+  hash: 251523c94674e50d6ddceead18a919b876a66e2020321e0bf8c9710b3024a268
+  type: node_entered
+  payload:
+    flow:
+      id: recepcion
+      version: 1.0.0
+    node_id: entender
+    node_type: collect
+    resume_kind: slot_answer
+- event_id: event-0010
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: recepcion-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 9
+  prev_hash: 251523c94674e50d6ddceead18a919b876a66e2020321e0bf8c9710b3024a268
+  hash: d6fcfa7ff735c4e8c483868133f0ef646cad77daf75c097bd83951fbc39b04d6
+  type: node_entered
+  payload:
+    flow:
+      id: recepcion
+      version: 1.0.0
+    node_id: listar
+    node_type: tool
+    resume_kind: none
+- event_id: event-0011
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: recepcion-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 10
+  prev_hash: d6fcfa7ff735c4e8c483868133f0ef646cad77daf75c097bd83951fbc39b04d6
+  hash: efb579b2e80117f46113177a2b450c174863062095e9b7f617495bc0e258ad5d
+  type: tool_called
+  payload:
+    node_id: listar
+    tool:
+      id: directory/list
+      version: 1.0.0
+    call_id: call-0001
+    status: ok
+    args:
+      directory: '***'
+      locale: '***'
+    result:
+      directory: '***'
+      hash: '***'
+      entries:
+      - agent_id: consultas
+        release_id: consultas-demo
+        summary:
+          untrusted_text:
+            length: 42
+            fingerprint:
+              alg: HMAC-SHA256
+              kid: fp-1
+              value: 6e039708258871963b7496edb7cf1d4c69371a71acd101e1f5ebff6d47ae9dd6
+        examples:
+        - untrusted_text:
+            length: 20
+            fingerprint:
+              alg: HMAC-SHA256
+              kid: fp-1
+              value: 423a7ee120b798576ee8f848303bc7ae0a2d9295b900a3ae3f7d594f0d7e1665
+        - untrusted_text:
+            length: 32
+            fingerprint:
+              alg: HMAC-SHA256
+              kid: fp-1
+              value: 86b7c5781762a3e35d237e09a8b234eccadce4fa2fd9811838ff9f1851913184
+        accepts:
+          slots:
+            problema:
+              type: '***'
+              required: '***'
+        supported_locales:
+        - '***'
+        - '***'
+      - agent_id: disputas
+        release_id: disputas-demo
+        summary:
+          untrusted_text:
+            length: 58
+            fingerprint:
+              alg: HMAC-SHA256
+              kid: fp-1
+              value: ac9c8456fd7d1f1915301b20a929ee2ad616d3ce12a892dd1b5dc6464a9ef959
+        examples:
+        - untrusted_text:
+            length: 21
+            fingerprint:
+              alg: HMAC-SHA256
+              kid: fp-1
+              value: b858f147e1195dc8c2b5f3133bd7cc4ef2091fd5093d4c453a68f6494eee9236
+        - untrusted_text:
+            length: 30
+            fingerprint:
+              alg: HMAC-SHA256
+              kid: fp-1
+              value: e3ea348fb03924e4839afe594350923ab7c46ce2d9464ed369fc363a73f6e876
+        accepts:
+          slots:
+            problema:
+              type: '***'
+              required: '***'
+        supported_locales:
+        - '***'
+        - '***'
+      choices:
+      - consultas
+      - disputas
+    result_fp:
+      alg: HMAC-SHA256
+      kid: fp-1
+      value: 6e6a7b4f05710acca3158645c856188d8700e4e404c8dbcc5a1583aa74e96f75
+    error: null
+    attempt: 1
+    action_id: null
+    latency_ms: 0
+- event_id: event-0012
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: recepcion-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 11
+  prev_hash: efb579b2e80117f46113177a2b450c174863062095e9b7f617495bc0e258ad5d
+  hash: 68cb138d15929d33234414e1d326d0e0b0726f6ab99873d3fdb9050957368f28
+  type: node_entered
+  payload:
+    flow:
+      id: recepcion
+      version: 1.0.0
+    node_id: elegir
+    node_type: decide
+    resume_kind: none
+- event_id: event-0013
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: recepcion-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 12
+  prev_hash: 68cb138d15929d33234414e1d326d0e0b0726f6ab99873d3fdb9050957368f28
+  hash: 20fc748b0dc1bd894f53e4b125651bf6566074ba5c164e20d69339ec039f8fd2
+  type: decision_made
+  payload:
+    decision_id: decision-0002
+    model:
+      id: elegir-especialista
+      version: 1.0.0
+    provider_used: classifier
+    model_version: unknown
+    fallback_depth: 0
+    value:
+      choice: disputas
+    p_cal:
+      choice: 0.9
+    p_raw:
+      choice: 0.9
+    top_k: {}
+    above_threshold:
+      choice: true
+    latency_ms: 0
+    tokens: 10
+    cost_usd: !!float '0'
+    locale: es
+- event_id: event-0014
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: recepcion-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 13
+  prev_hash: 20fc748b0dc1bd894f53e4b125651bf6566074ba5c164e20d69339ec039f8fd2
+  hash: 029160f0b191782bf95f797d291124f4ffe5f275c6b757ce102c0cc89fe052f1
+  type: node_entered
+  payload:
+    flow:
+      id: recepcion
+      version: 1.0.0
+    node_id: avisar
+    node_type: respond
+    resume_kind: none
+- event_id: event-0015
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: recepcion-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 14
+  prev_hash: 029160f0b191782bf95f797d291124f4ffe5f275c6b757ce102c0cc89fe052f1
+  hash: 608030e368d4298933d364524a9ffb5ce956ebcc17f3358f17b70df9a2e7e2a7
+  type: response_emitted
+  payload:
+    node_id: avisar
+    kind: template
+    validator:
+      ok: true
+      failures: []
+      regenerations: 0
+    fallback_used: false
+    claims: []
+    transcript_fp:
+      alg: HMAC-SHA256
+      kid: fp-1
+      value: ca7485e85c52251e917340486fb02d935a22248c85dcf206875dbb8d0e06ea00
+    llm: null
+- event_id: event-0016
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: recepcion-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 15
+  prev_hash: 608030e368d4298933d364524a9ffb5ce956ebcc17f3358f17b70df9a2e7e2a7
+  hash: ac7e3f288495d13efc9a5f1179782519de37aaf0c7dda5e229f6265145f05e52
+  type: node_entered
+  payload:
+    flow:
+      id: recepcion
+      version: 1.0.0
+    node_id: transferir
+    node_type: transfer
+    resume_kind: none
+- event_id: event-0017
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: recepcion-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 16
+  prev_hash: ac7e3f288495d13efc9a5f1179782519de37aaf0c7dda5e229f6265145f05e52
+  hash: 4d9a9d026e405f1eb5f9b9c78903a786ba47a84367b000cf822f4cea62da8217
+  type: run_transferred
+  payload:
+    transfer_id: transfer-0001
+    to_agent:
+      id: disputas
+      version: 1.0.0
+    to_release_id: disputas-demo
+    to_run_id: run-0002
+    reason: routed
+    packet_fp:
+      alg: HMAC-SHA256
+      kid: fp-1
+      value: 9fb3ce7b92c9ba17d6e4f060d30a0151b58cf66db14c62c6ed693ce10a9c4dcc
+    directory: atencion-cliente
+    directory_hash: e162d7c2d9e37df9e1c343733dc3e1ef9e1efcd38f753d5246bfe8306178fd42
+    candidates:
+    - consultas
+    - disputas
+- event_id: event-0018
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: recepcion-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 17
+  prev_hash: 4d9a9d026e405f1eb5f9b9c78903a786ba47a84367b000cf822f4cea62da8217
+  hash: 0f2adbb3cbd52b3434a6fbb178de744c46b34cd4b69cd3f8ca9f8f39003fcc09
+  type: run_closed
+  payload:
+    outcome: transferred
+    closed_by: transfer
+- event_id: event-0019
+  run_id: run-0001
+  turn_id: turn-0002
+  session_id: session-0001
+  release: recepcion-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 18
+  prev_hash: 0f2adbb3cbd52b3434a6fbb178de744c46b34cd4b69cd3f8ca9f8f39003fcc09
+  hash: 307302bfa93767470bb2b217f2109b675d1fbf133d86163fafd1fbf5d7e09d10
+  type: turn_completed
+  payload:
+    client_turn_id: c-1
+    entry: turn
+    duration_ms: 0
+    stages:
+      guards_ms: 0
+      understand_ms: 0
+      flow_ms: 0
+      response_ms: 0
+    degraded: false
+    awaiting: none
+full:
+  call-0001:
+    status: ok
+    result_full:
+      directory: atencion-cliente
+      hash: e162d7c2d9e37df9e1c343733dc3e1ef9e1efcd38f753d5246bfe8306178fd42
+      entries:
+      - agent_id: consultas
+        release_id: consultas-demo
+        summary: Consulta el estado de una PQR ya radicada.
+        examples:
+        - ¿cómo va mi reclamo?
+        - quiero saber el estado de mi PQR
+        accepts:
+          slots:
+            problema:
+              type: string
+              required: true
+        supported_locales:
+        - es
+        - pt
+      - agent_id: disputas
+        release_id: disputas-demo
+        summary: Disputa un cargo de la tarjeta que la persona no reconoce.
+        examples:
+        - no reconozco un cargo
+        - me cobraron algo que no compré
+        accepts:
+          slots:
+            problema:
+              type: string
+              required: true
+        supported_locales:
+        - es
+        - pt
+      choices:
+      - consultas
+      - disputas
+    source: directory
+    error: null
+    required_level: null
+drafts: []
+linked:
+- event_id: event-0020
+  run_id: run-0002
+  turn_id: null
+  session_id: session-0001
+  release: disputas-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 0
+  prev_hash: 2658a2ed957500bc3c45ca4e1fe641c2559f1bd79f0b86c5448d712c8bb53bb4
+  hash: 45c520bb4be22a186735d70d72376c2c0674758a9e4b3030fa347c0c836bfdd1
+  type: run_started
+  payload:
+    agent:
+      id: disputas
+      version: 1.0.0
+    mode: conversational
+    subject_kind: null
+    principal_type: customer
+    locale: es
+    reportable_attrs:
+      country: CO
+    origin:
+      kind: transfer
+      transfer_id: transfer-0001
+      from_run_id: run-0001
+      from_agent:
+        id: recepcion
+        version: 1.0.0
+      from_release_id: recepcion-demo
+      from_event_hash: 307302bfa93767470bb2b217f2109b675d1fbf133d86163fafd1fbf5d7e09d10
+      depth: 1
+- event_id: event-0021
+  run_id: run-0002
+  turn_id: turn-0002
+  session_id: session-0001
+  release: disputas-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 1
+  prev_hash: 45c520bb4be22a186735d70d72376c2c0674758a9e4b3030fa347c0c836bfdd1
+  hash: 328ec9b1cf2cf580d2b16f9004c6a7083400366ed63eb603b76c5becdc00aa42
+  type: transfer_received
+  payload:
+    transfer_id: transfer-0001
+    accepted_slots:
+    - problema
+    packet_fp:
+      alg: HMAC-SHA256
+      kid: fp-1
+      value: 9fb3ce7b92c9ba17d6e4f060d30a0151b58cf66db14c62c6ed693ce10a9c4dcc
+- event_id: event-0023
+  run_id: run-0002
+  turn_id: turn-0002
+  session_id: session-0001
+  release: disputas-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 2
+  prev_hash: 328ec9b1cf2cf580d2b16f9004c6a7083400366ed63eb603b76c5becdc00aa42
+  hash: cd5395a0132cb693717c76b48519d8fbcc85c505b975f6c78e33212b6e93ed47
+  type: turn_started
+  payload:
+    client_turn_id: c-1
+    guards:
+      lang:
+        detector: lingua@2.1.1
+        letters: 50
+        top2:
+        - lang: es
+          score: 0.990504
+        - lang: pt
+          score: 0.009415
+        decision: kept
+        locale_prior: es
+        locale: es
+      injection:
+        flagged: false
+        signals: []
+        ruleset: injection-rules@1.0.0
+      size_ok: true
+- event_id: event-0022
+  run_id: run-0002
+  turn_id: turn-0002
+  session_id: session-0001
+  release: disputas-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 3
+  prev_hash: cd5395a0132cb693717c76b48519d8fbcc85c505b975f6c78e33212b6e93ed47
+  hash: b26d15c614639b0a07e5386249b1b489412e0520199e1cc5ad27d849d63adfae
+  type: expiry_evaluated
+  payload:
+    now: '2026-09-28T12:00:00Z'
+    last_activity_at: '2026-09-28T12:00:00Z'
+    ttl: PT30M
+    expired: false
+- event_id: event-0024
+  run_id: run-0002
+  turn_id: turn-0002
+  session_id: session-0001
+  release: disputas-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 4
+  prev_hash: b26d15c614639b0a07e5386249b1b489412e0520199e1cc5ad27d849d63adfae
+  hash: a8553e6be962b3920e347d90946eab10e789c5b4ab25693be82b72962c731faf
+  type: decision_made
+  payload:
+    decision_id: decision-0003
+    model:
+      id: understand-turno
+      version: 1.0.0
+    provider_used: jev
+    model_version: unknown
+    fallback_depth: 0
+    value:
+      command: start_flow
+      flow: disputa-cargo
+    p_cal:
+      command: 0.95
+      flow: 0.95
+      interrupt: null
+    p_raw:
+      command: 0.95
+      flow: 0.95
+      interrupt: null
+    top_k: {}
+    above_threshold:
+      command: true
+      flow: true
+      interrupt: false
+    latency_ms: 0
+    tokens: 20
+    cost_usd: !!float '0'
+    locale: es
+- event_id: event-0025
+  run_id: run-0002
+  turn_id: turn-0002
+  session_id: session-0001
+  release: disputas-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 5
+  prev_hash: a8553e6be962b3920e347d90946eab10e789c5b4ab25693be82b72962c731faf
+  hash: 4ef42bb718ef31abfcabc09c82341c6a661b35edb57962c5c6771c3be00c3371
+  type: command_emitted
+  payload:
+    command: start_flow
+    flow: disputa-cargo
+    interrupt: null
+    additional_flows: []
+    above_threshold:
+      command: true
+      flow: true
+    decision_id: decision-0003
+    source: understand
+- event_id: event-0026
+  run_id: run-0002
+  turn_id: turn-0002
+  session_id: session-0001
+  release: disputas-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 6
+  prev_hash: 4ef42bb718ef31abfcabc09c82341c6a661b35edb57962c5c6771c3be00c3371
+  hash: 5ce1e1b625e32e452212d182f7a7c71b0bb4aa1c3de4a489b41ebf677c361131
+  type: node_entered
+  payload:
+    flow:
+      id: disputa-cargo
+      version: 1.0.0
+    node_id: pedir_cargo
+    node_type: collect
+    resume_kind: none
+- event_id: event-0027
+  run_id: run-0002
+  turn_id: turn-0002
+  session_id: session-0001
+  release: disputas-demo
+  ts: '2026-09-28T12:00:00Z'
+  seq: 7
+  prev_hash: 5ce1e1b625e32e452212d182f7a7c71b0bb4aa1c3de4a489b41ebf677c361131
+  hash: 6b9456417e128a66e40608527e99ca6bf1ef50597f8908ac59a103c270a68eaa
+  type: turn_completed
+  payload:
+    client_turn_id: c-1
+    entry: turn
+    duration_ms: 0
+    stages:
+      guards_ms: 0
+      understand_ms: 0
+      flow_ms: 0
+      response_ms: 0
+    degraded: false
+    awaiting: slot

@@ -3,11 +3,12 @@
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 
-from agent_core.domain import Flow, canonical_bytes
+from agent_core.domain import PLATFORM_METRIC_PREFIX, Agent, Flow, canonical_bytes
 from agent_core.flows import AuthoringRegistry, Violation, validate_registry
 from agent_core.registry.candidate import Candidate, parse_semver
 from agent_core.registry.entities import encode_entity, version_ref
 from agent_core.registry.models import EntityDraft
+from agent_core.registry.suite import EvalSuite, SuiteProblem, suite_problems
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,25 @@ def check_draft_limits(drafts: Sequence[EntityDraft], limits: Limits) -> list[Vi
     return out
 
 
+def platform_edits(drafts: Sequence[EntityDraft]) -> list[str]:
+    """Paths in the draft that declare or set thresholds for a platform guardrail (evaluation spec section 7).
+
+    Guardrails belong to the platform: no proposal edits them, neither through the agent's metrics (which
+    M1 also rejects with `MT-05`) nor through the suite's thresholds."""
+    found: list[str] = []
+    for d in drafts:
+        where = f"{d.kind[:40]}:{d.id[:80]}"
+        if d.kind == "agent" and isinstance(metrics := d.content.get("metrics"), list):
+            for i, item in enumerate(metrics):
+                mid = item.get("id") if isinstance(item, dict) else None
+                if isinstance(mid, str) and mid.startswith(PLATFORM_METRIC_PREFIX):
+                    found.append(f"{where}/metrics/{i}/id")
+        elif d.kind == "eval_suite" and isinstance(thresholds := d.content.get("thresholds"), dict):
+            found.extend(f"{where}/thresholds/{key[:80]}" for key in sorted(thresholds)
+                         if key.startswith(PLATFORM_METRIC_PREFIX))
+    return found
+
+
 def validate_candidate(c: Candidate, *, base_versions: Mapping[tuple[str, str], str],
                        drafted: Collection[tuple[str, str]],
                        limits: Limits = DEFAULT_LIMITS) -> list[Violation]:
@@ -58,8 +78,14 @@ def validate_candidate(c: Candidate, *, base_versions: Mapping[tuple[str, str], 
                 out.append(Violation(rule="REG-VERSION", path=where,
                                      message=f"la versión {ref.version} debe ser mayor que la vigente "
                                              f"{base_versions[(ref.kind, ref.id)]}"))
+    agent = next((e for e in c.entities if isinstance(e, Agent) and e.id == c.agent_id), None)
     for suite in c.suites:
-        if suite.agent_id != c.agent_id:
-            out.append(Violation(rule="REG-SUITE", path=f"eval_suite:{suite.id}",
-                                 message=f"la suite es del agente {suite.agent_id}, no de {c.agent_id}"))
+        if agent is not None:  # without the agent the candidate already failed with REG-AGENT
+            out.extend(suite_violations(suite, suite_problems(agent, suite)))
     return out
+
+
+def suite_violations(suite: EvalSuite, problems: Sequence[SuiteProblem]) -> list[Violation]:
+    """A suite's problems as `REG-SUITE` violations (the problem code leads the message)."""
+    return [Violation(rule="REG-SUITE", path=f"eval_suite:{suite.id}{p.path}",
+                      message=f"{p.code.value}: {p.message}") for p in problems]

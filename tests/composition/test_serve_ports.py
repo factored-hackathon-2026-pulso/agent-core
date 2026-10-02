@@ -216,3 +216,11 @@ def test_a_failing_piece_factory_reports_only_the_exception_type() -> None:
         _resolve("--tools", "tests.composition.test_serve_ports:boom_factory", AGENTCORE_ALLOW_DEMO="1")
     text = " ".join(info.value.problems)
     assert "RuntimeError" in text and "SECRETO" not in text
+
+
+def test_serve_wires_the_registry_directory() -> None:
+    from agent_core.registry import RegistryDirectory
+
+    ports = _resolve(AGENTCORE_ALLOW_DEMO="1")
+    assert isinstance(ports.directory, RegistryDirectory)
+    assert "directory" not in ports.doubles  # a real piece over the registry, not a demo double

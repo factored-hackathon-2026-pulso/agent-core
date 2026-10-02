@@ -14,4 +14,8 @@ def render_report(report: ReplayReport, as_json: bool) -> str:
         line += f" · primera divergencia en seq {report.first_divergence.event_seq}"
     if report.chain_broken_at is not None:
         line += f" · cadena rota en seq {report.chain_broken_at}"
+    if report.chain_broken_run is not None:
+        line += f" del run enlazado {report.chain_broken_run}"
+    if report.chain_broken_reason is not None:
+        line += f" ({report.chain_broken_reason})"
     return line

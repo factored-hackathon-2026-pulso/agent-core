@@ -1,4 +1,4 @@
-"""M4 reports each turn to `TurnTelemetry` (m04 §3.9, T-M4-22). The default is a no-op, and a telemetry that
+"""M4 reports each turn to `TurnTelemetry` (m04 §3.9, T-M4-23). The default is a no-op, and a telemetry that
 fails never breaks a turn: M4 logs the failure's type and goes on."""
 
 import logging

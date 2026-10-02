@@ -178,3 +178,11 @@ def test_a_failing_harness_import_reports_only_the_exception_type(
     code, out, err = cli.run("--verifier", "testing.registry_demo:demo_verifier",
                              "--harness", "harness_que_falla:x", "show", "p", env={})
     assert code == 2 and "ImportError" in err and "SECRETO" not in err and "SECRETO" not in out
+
+
+def test_approve_accepts_the_loosening_flag() -> None:  # D7
+    parser = argparse.ArgumentParser()
+    add_registry_parser(parser.add_subparsers(dest="command", required=True))
+    args = parser.parse_args(["registry", "approve", "p-1", "h" * 64, "--accept-yardstick-loosened"])
+    assert args.accept_yardstick_loosened is True
+    assert parser.parse_args(["registry", "approve", "p-1", "h"]).accept_yardstick_loosened is False

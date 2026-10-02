@@ -1,6 +1,6 @@
 # Spec — Registry (unidad 2: entidades, versionado y publicación)
 
-- Estado: **rev. 2 implementada (entrega), 2026-09-30.** Pendiente en §14: composición del motor con `PostgresRegistry` (raíz de composición del servidor, con el LLM gateway). §6.4 enmendado por el ADR 0020
+- Estado: **rev. 2 implementada (entrega), 2026-09-30.** Pendiente en §14: composición del motor con `PostgresRegistry` (raíz de composición del servidor, con el LLM gateway). §5.2 y §6 reconciliados con el ADR 0020 (gate con doble vara, 2026-10-01)
 - Fecha: 2026-09-29 (rev. 1) · 2026-09-30 (rev. 2)
 - Repo: `agent-core`
 - Paquete: `agent_core.registry`
@@ -42,7 +42,7 @@ Clientes:
 | 3 | **Entidad versionada + release** | Cada entidad tiene su semver. Publicar crea una release que fija todas las versiones exactas. La traza guarda solo el `release_id`. |
 | 4 | **Una sola vía de cambio** | Toda modificación es una *propuesta* con el mismo ciclo, venga de una persona, del constructor o del detector (`origin`). |
 | 5 | **Evaluación por agente sobre escenarios** | Lo que se mide es si el agente resuelve mejor los casos, sin importar qué entidad cambió. Los escenarios corren con el motor real, el LLM real y acciones contra un sandbox. |
-| 6 | **Gate sin excepción manual** | Los guardarraíles no pueden empeorar y la métrica principal debe ser ≥ la de la base, dentro del margen de ruido. ADR 0018. |
+| 6 | **Gate sin excepción manual** | Doble vara (ADR 0020, spec de evaluación §6): los guardarraíles de plataforma valen 0, cada métrica `gate` del agente no empeora frente a la base más allá de su margen de ruido y supera su piso si es nueva o cambió. Sin métrica principal ni puntaje compuesto. ADR 0018 (enmendado por el ADR 0020). |
 | 7 | **Aprobación solo humana** | Un principal no humano (el constructor o el detector) nunca aprueba, publica, promueve ni revoca, aunque tenga el rol. Una persona sí puede aprobar su propia propuesta. |
 | 8 | **El motor solo lee lo publicado** | La candidata vive en memoria durante la evaluación (§5.3). Las versiones no publicadas nunca entran en `entity_versions`. |
 
@@ -66,11 +66,10 @@ En el código cada tabla lleva el prefijo `reg_` (`reg_blobs`, `reg_aliases`, �
 | `entity_versions` | `(kind, id, version)` PK, `content_hash` → `blobs`, `docs` (`VersionDocs`), `proposal_id`, `created_by`, `created_at` |
 | `releases` | `release_id` PK, `release_hash`, `agent_id`, `base_release_id`, `proposal_id`, `published_by`, `published_at` |
 | `release_entities` | `(release_id, kind, id, version)` |
-| `approvals` | `proposal_id`, `candidate_hash`, `actor`, `decision` (`approved` o `rejected`), `reason`, `at` |
+| `release_eval_suites` | `(release_id, id)` PK, `kind = eval_suite`, `version`; FK a `entity_versions`. Las suites con que la release pasó el gate (`eval_suite_refs`, ADR 0020): metadato de gobierno que el motor no lee y vara vieja de la siguiente propuesta. Solo inserción |
+| `approvals` | `proposal_id`, `candidate_hash`, `actor`, `decision` (`approved` o `rejected`), `reason`, `at`, `yardstick_loosened` (JSON: lo que la aprobación aceptó aflojar, `[]` si nada; columna añadida con `ALTER TABLE … ADD COLUMN IF NOT EXISTS`) |
 | `eval_runs` | `eval_run_id` PK, `proposal_id`, `candidate_hash`, `base_release_id`, `suite_ref`, `report` (JSON, §6.4), `verdict` (`pass`, `fail` o `failed_infra`), `at` |
 | `registry_events` | bitácora de auditoría (§12) |
-
-ADR 0020: `releases` gana `eval_suite_refs` (suites usadas; metadato de gobierno que el motor no lee). Diseñado; su persistencia sigue pendiente (`2026-09-30-evaluacion-y-metricas-design.md` §15).
 
 **Mutables y controladas** (el rol de la aplicación nunca tiene `DELETE`; `release_status` y `aliases` tienen `SELECT`, `INSERT` y `UPDATE`, `publish_keys` solo `SELECT` e `INSERT`):
 
@@ -126,8 +125,8 @@ create ─► draft ───┘ ──freeze──► candidate ──evaluate(
 | — → `draft` | `create_proposal(agent_id, origin, title)` | constructor | `base_release_id` = alias `staging` del agente (o null si el agente no tiene release) |
 | `draft` → `draft` | `put_draft(changes, expected_rev)` | constructor | reescribe `proposal_changes` y sube `rev`. Si `rev` no coincide → `proposal_stale` |
 | `draft` → `candidate` | `freeze()` | constructor | arma la candidata (§5.1) y ejecuta `validate` (§5.2). Con violaciones → `validation_failed` y sigue en `draft`. Sin violaciones → guarda `candidate_hash` |
-| `candidate` → `evaluated` | `evaluate(suite_ref)` | constructor | síncrono (§6). `pass` → `evaluated`; `fail` → `draft` y responde `gate_failed`; `failed_infra` → sigue en `candidate` |
-| `evaluated` → `approved` | `approve(candidate_hash)` | aprobador humano | exige una evaluación `pass` con ese hash. Si el hash es distinto → `candidate_changed` |
+| `candidate` → `evaluated` | `evaluate(suite_id, suite_version)` | constructor | síncrono (§6). `pass` → `evaluated`; `fail` → `draft` y responde `gate_failed`; `failed_infra` → sigue en `candidate` |
+| `evaluated` → `approved` | `approve(candidate_hash, accept_yardstick_loosened)` | aprobador humano | exige una evaluación `pass` con ese hash. Si el hash es distinto → `candidate_changed`. Si la evaluación trae `yardstick_changes` y no se acepta → `loosening_not_accepted` |
 | `evaluated` → `draft` | `reject(reason)` | aprobador humano | el motivo queda en `approvals` como entrada para iterar |
 | `approved` → `published` | `publish()` | aprobador humano | §5.4 |
 | `candidate`, `evaluated`, `approved` → `draft` | `reopen()` | constructor | borra `candidate_hash`; las evaluaciones y aprobaciones anteriores dejan de valer |
@@ -159,9 +158,11 @@ Sobre la candidata, en memoria:
 3. Versionado (§3.4).
 4. Límites de tamaño y cantidad por entidad y por propuesta (evitan entidades desbocadas escritas por un agente). Los valores viven en la configuración del paquete.
 5. La propuesta no crea ni modifica `knowledge_snapshot` (entrega).
-6. Cada `eval_suite` referenciada pertenece al agente de la propuesta.
+6. Cada `eval_suite` del borrador pasa `suite_problems` (spec de evaluación §5): `REG-SUITE`, con el código del problema al inicio del mensaje. La suite elegida al evaluar pasa la misma comprobación (`validation_failed`) y pertenece al agente de la propuesta.
 
 Devuelve `list[Violation]` (la de M1): `rule`, `entity`, `path` y un mensaje en lenguaje claro para personas no técnicas.
+
+> **Reconciliado (2026-10-01):** el gate de este registry es el de la spec de evaluación (`docs/specs/2026-09-30-evaluacion-y-metricas-design.md` §6, ADR 0020): las métricas las declara cada agente (`Agent.metrics`), puede haber N métricas `gate` evaluadas por separado y se aplica una doble vara (la de la base y la de la candidata). El rechazo de un agente sin suite al validar no está cableado (spec de evaluación §13.14).
 
 ### 5.3 `SnapshotRegistry`
 
@@ -197,11 +198,12 @@ Cualquier falla revierte todo.
 id: disputas-suite
 version: 1.0.0
 agent_id: soporte-tarjetas
-repetitions: 3                 # k corridas por escenario y release
-noise_margin: 0.05             # tolerancia de la métrica principal
-floor: 0.70                    # mínimo cuando no hay release base
+repetitions: 3                 # k corridas por escenario sin `repetitions` propio
+thresholds:                    # por id de métrica `gate` o `guardrail` del agente
+  tasa_resolucion: {noise_margin: 0.05, floor: 0.70}
 scenarios:
   - id: disputa-cargo-duplicado
+    repetitions: 5             # opcional, 1..10; sin él, las de la suite
     principal: {id: cust-001, attrs: {country: CO}}   # sintético; tipo customer
     steps:
       - {op: start}
@@ -212,22 +214,26 @@ scenarios:
         buscar_transacciones: [{status: ok, result: [{transaction_id: tx-1, amount: "120.50"}]}]
     sensitive_values: ["4111-1111"]
     expect: {outcome: resolved, actions_verified: [radicar_pqr], escalated: false}
+    assertions:                # opcional, hasta 20: eventos que deben (o no) aparecer
+      - {event: engine.escalated, expect: none}
 ```
+
+`noise_margin` y `floor` ya no son campos de la suite: cada métrica los declara en `thresholds` (spec de evaluación §5). Un escenario sin `source` es `scripted`; la fuente `dataset` está desactivada (`dataset_source_disabled`). El formato completo está en `agent_core/registry/suite.py`.
 
 Los escenarios de negocio de la demo los escribe otra persona del equipo; este paquete define el formato y su validación.
 
 ### 6.2 `ScenarioEvaluator` (implementa `EvalPort`)
 
-Para la candidata y para la base (si existe), con la misma suite congelada:
+Corre hasta tres mediciones (vara nueva sobre la candidata; vara vieja sobre la base y sobre la candidata; la vara vieja solo existe si la base registró su suite), cada una con su suite congelada (spec de evaluación §6.1):
 
 1. Compone el motor a través de un `ScenarioHarness` (protocolo del paquete) que implementa `agent_core.composition`: un `SnapshotRegistry` construido desde la candidata o desde la release base publicada (así la base no depende de que un alias se mueva durante la evaluación), el LLM gateway real y las tools apuntadas al sandbox (§6.3).
 2. Corre cada escenario `repetitions` veces. Cada corrida recibe su propio entorno de sandbox sembrado con el `seed` del escenario.
-3. **Califica desde los eventos del motor.** Una corrida pasa si cumple todo el `expect`. La métrica principal es la proporción de corridas que pasan.
-4. **Guardarraíles** (conteos sobre los eventos): afirmación de éxito sin `verify`, escritura sin verificación y datos de vista `full` en la respuesta o en un evento. Los emiten M2, M3, M6 y M8.
+3. **Califica desde los eventos del motor.** Una corrida pasa si cumple su `expect` y todas sus `assertions`; un escenario pasa si pasa en todas sus repeticiones. Las métricas del agente (`Agent.metrics`) se calculan con el evaluador en memoria del DSL (`evaluation/metric_eval.py`) sobre los eventos de la corrida de la suite.
+4. **Guardarraíles de plataforma** (conteos sobre los eventos, ids `platform_*`): `platform_pii_leak`, `platform_unverified_success_claim`, `platform_unverified_write` y `platform_unapproved_knowledge_citation` (definidos en la spec de evaluación §7). Los emiten M2, M3, M6 y M8.
 5. Corre en paralelo con un tope de concurrencia configurable.
 6. Una falla del gateway o de un proveedor de decisión (JEV, classifier) durante una corrida (la detecta una sonda del harness, porque el motor la absorbe) o del sandbox → `failed_infra`, igual que el tiempo vencido. Toda la evaluación queda `failed_infra`. Nunca hay un pase parcial.
 
-Costo orientativo: 2 releases × N escenarios × k corridas. Con 10 escenarios y k = 3, son 60 conversaciones por evaluación.
+Costo orientativo: hasta 3 mediciones × N escenarios × k corridas (si la suite vieja es igual a la nueva, la candidata se corre una vez y son 2). Con 10 escenarios y k = 3, son hasta 90 conversaciones por evaluación.
 
 ### 6.3 Sandbox
 
@@ -246,14 +252,9 @@ class SandboxPort(Protocol):                                       # lo implemen
 
 ### 6.4 Veredicto y reporte
 
-> **Enmendado por el ADR 0020** (2026-09-30): las métricas las declara cada agente (`Agent.metrics`), puede haber N métricas `gate` evaluadas por separado en lugar de una sola métrica principal, y el gate aplica una doble vara (suite y métricas de la base, más las de la candidata). El algoritmo vigente está en `docs/specs/2026-09-30-evaluacion-y-metricas-design.md` §6 y lo implementa `evaluate_gate` (`agent_core.registry.evaluation`); el texto de abajo describe `decide`, el gate que usa hoy `ScenarioEvaluator`, hasta que el servicio adopte `evaluate_gate`.
+Doble vara: spec de evaluación §6 (guardarraíles de plataforma en 0, N métricas `gate` por separado, sin métrica principal ni puntaje compuesto). Es `fail` si cualquier elemento falla; `failed_infra` no es veredicto.
 
-- `fail` si algún guardarraíl de la candidata supera al de la base (sin base, si alguno es mayor que 0).
-- `fail` si hay base y `principal_candidata < principal_base − noise_margin`.
-- `fail` si no hay base y `principal_candidata < floor`.
-- En otro caso, `pass`.
-
-`EvalReport` guarda cada métrica con su valor, su base y su umbral, y el resultado por escenario y corrida (para que quien aprueba vea *qué caso mejoró o empeoró*), más las notas del juez si las hay.
+`EvalReport` (`evaluation/report.py`): `verdict`, `items: list[GateItem]` (cada métrica, escenario o guardarraíl con su valor, `base_value`, `noise_margin` y `floor` por separado, y el motivo si falló), `runs: GateRuns` (las mediciones `base_on_old`, `cand_on_old` y `cand_on_new`), `results` (el resultado por escenario, corrida y repetición, para que quien aprueba vea *qué caso mejoró o empeoró*), `judge_notes` si las hay, `yardstick_changes` (lo que la propuesta afloja en la vara, spec de evaluación §6.2) y `detail`.
 
 **Juez LLM opcional:** un hook `Judge` que recibe las transcripciones y devuelve notas por escenario. Va al reporte como información y **no entra al veredicto**. Lo implementa otra persona del equipo; sin juez, el reporte omite esa sección.
 
@@ -285,19 +286,19 @@ class RegistryService:
     def put_draft(self, actor, proposal_id, changes: list[EntityDraft], expected_rev: int, *, idempotency_key=None, audit=None) -> Proposal
     def validate(self, actor, proposal_id) -> ValidationReport
     def freeze(self, actor, proposal_id, *, idempotency_key=None, audit=None) -> Candidate
-    def evaluate(self, actor, proposal_id, suite: EntityRef, *, idempotency_key=None, audit=None) -> EvalReport
+    def evaluate(self, actor, proposal_id, suite_id: str, suite_version: str | None = None, *, idempotency_key=None, audit=None) -> EvalReport
     def reopen(self, actor, proposal_id, *, idempotency_key=None, audit=None) -> Proposal
 
     # Decisiones (rol aprobador, principal humano)
-    def approve(self, actor, proposal_id, candidate_hash: str) -> Approval
+    def approve(self, actor, proposal_id, candidate_hash: str, *, accept_yardstick_loosened=False) -> Approval
     def reject(self, actor, proposal_id, reason: str) -> Proposal
     def publish(self, actor, proposal_id, idempotency_key: str) -> ReleaseDetail
     def promote(self, actor, agent_id, alias, release_id) -> AliasChange
     def revoke(self, actor, release_id, reason: str) -> ReleaseDetail
-    def import_seed(self, actor, root: Path) -> list[ReleaseDetail]
+    def import_seed(self, actor, root: Path) -> list[ReleaseDetail]  # rechaza (validation_failed) y no guarda nada si una suite de la semilla tiene problemas (`suite_problems`) o su agente no tiene release en la semilla
 
     # Lecturas (cualquier builder autenticado)
-    def get_proposal(self, proposal_id) -> ProposalDetail            # cambios, violaciones, candidata, último reporte
+    def get_proposal(self, proposal_id) -> ProposalDetail            # cambios, candidata, último reporte y `review` (spec de evaluación §8.5)
     def get_entity(self, kind, entity_id, version: str | None) -> EntityVersion
     def get_write(self, idempotency_key) -> WriteRecord | None       # readback de las escrituras con clave
     def list_versions(self, kind, entity_id) -> list[VersionSummary]
@@ -317,7 +318,7 @@ class BlobStore(Protocol):
     def get(self, hash: str) -> bytes                                # verifica el hash; si no coincide, IntegrityError
 
 class EvalPort(Protocol):
-    def run(self, suite: EvalSuite, candidate: EvalTarget, base: EvalTarget | None) -> EvalReport
+    def run(self, request: EvalRequest) -> EvalReport               # EvalRequest(candidate, new: Yardstick, base, old: Yardstick | None)
 
 class Judge(Protocol):                                               # opcional
     def score(self, suite: EvalSuite, transcripts: list[ScenarioTranscript]) -> list[JudgeNote]
@@ -335,7 +336,7 @@ Se monta en la app FastAPI de M9 como `ApiExtension` (`ApiDeps.extensions`, por 
 | `PUT /proposals/{id}/draft` | `put_draft` |
 | `POST /proposals/{id}/validate` · `/freeze` · `/reopen` | construir |
 | `POST /proposals/{id}/evaluate` | `evaluate` (síncrono; devuelve `EvalReport`) |
-| `POST /proposals/{id}/approve` · `/reject` | decidir |
+| `POST /proposals/{id}/approve` (cuerpo: `candidate_hash`, `accept_yardstick_loosened` opcional) · `/reject` | decidir |
 | `POST /proposals/{id}/publish` | `publish` (exige `Idempotency-Key`) |
 | `POST /aliases/{agent}/{alias}` | promover (`aprobador`) |
 | `POST /releases/{id}/revoke` | revocar (`admin`) |
@@ -352,15 +353,16 @@ Se monta en la app FastAPI de M9 como `ApiExtension` (`ApiDeps.extensions`, por 
 | `proposal_stale` | 409 | `expected_rev` desactualizado o `staging` movido antes de publicar |
 | `candidate_changed` | 409 | el hash aprobado o evaluado no es el de la candidata vigente |
 | `illegal_transition` | 409 | operación no permitida en el estado actual |
-| `forbidden_role` | 403 | falta el rol, el principal no es `builder` o no es humano donde se exige |
+| `forbidden_role` | 403 | falta el rol, el principal no es `builder` o no es humano donde se exige, o un borrador edita un guardarraíl de plataforma (métrica `platform_*` o su umbral) |
 | `step_up_required` | 403 | una operación de `aprobador` o `admin` sin autenticación reforzada |
 | `integrity_error` | 500 | el hash de un contenido no coincide |
+| `loosening_not_accepted` | 409 | la evaluación trae `yardstick_changes` y la aprobación no los acepta (`accept_yardstick_loosened`); el cuerpo lista los cambios |
 | `idempotency_conflict` | 409 | una clave de idempotencia reutilizada con otro contenido |
 | `quota_exceeded` | 429 | tope del constructor autónomo (propuestas por día o evaluaciones por propuesta) |
 
 ### 7.5 CLI (`agentcore registry …`)
 
-`import`, `export`, `propose`, `draft <propuesta> <archivos-o-carpeta> --rev N` (YAML con el formato de M1; `--rev` es la revisión esperada de la propuesta), `validate`, `freeze`, `reopen`, `show`, `evaluate`, `approve`, `reject`, `publish`, `promote`, `revoke`, `diff` y `lineage`. Es un cliente delgado sobre `RegistryService`, sin lógica propia.
+`import`, `export`, `propose`, `draft <propuesta> <archivos-o-carpeta> --rev N` (YAML con el formato de M1; `--rev` es la revisión esperada de la propuesta), `validate`, `freeze`, `reopen`, `show`, `evaluate`, `approve` (con `--accept-yardstick-loosened`), `reject`, `publish`, `promote`, `revoke`, `diff` y `lineage`. Es un cliente delgado sobre `RegistryService`, sin lógica propia.
 
 Formato de cada archivo de `draft` (una entidad por archivo YAML; una carpeta se recorre de forma recursiva): `{kind, docs: {description, rationale, changelog}, content: {...}}`, donde `content` es la entidad en el formato de M1. Las opciones globales son `--dsn` (o `AGENTCORE_REGISTRY_DSN`), `--credential` (o `AGENTCORE_CREDENTIAL`, el JWS del principal), `--verifier` y `--harness` (rutas `modulo:atributo`). **Son obligatorios y no tienen valor por defecto**: los dobles de PRUEBA de `testing.registry_demo` (claves y mundo sintéticos del repo) solo se usan si `AGENTCORE_ALLOW_DEMO=1` está en el entorno; así un `--dsn` de una base real nunca se combina por descuido con un verificador de prueba. Una ruta que no se puede importar termina con código 2 y un mensaje claro. La CLI evalúa con `max_workers=1` (el harness comparte reloj e ids entre corridas). `lineage` por CLI construye el servicio sin `RunReleaseReader` y responde `not_found` hasta que se cablee un lector de runs.
 
@@ -384,7 +386,8 @@ Quién es quién (decisión 2026-09-30, tema #14): el **supervisor** es una pers
 - **Quién firma:** las credenciales del staff (supervisor, administrador y bot) las emite un emisor propio, con una clave y un `kid` distintos de los del emisor de clientes y asesores. La API del registry se monta con un `authenticate` construido solo con esas claves, así que una credencial de cliente ni siquiera verifica. Los roles salen de los grupos del proveedor de identidad del staff al emitir la credencial; el núcleo solo los valida. En la demo los emite `TestStaffIssuer`, etiquetado como de prueba.
 - **Contenido no confiable:** todo lo que propone un agente o un LLM se valida contra el esquema estricto, nunca se ejecuta y tiene límites de tamaño y cantidad.
 - **Lo que el constructor lee** (trazas, documentación, páginas) es dato, no instrucción (ADR 0008, M12).
-- **Datos:** las suites y los `seed` del sandbox usan solo datos sintéticos (fuente `scripted`). La fuente `dataset` para datos reales está diseñada y desactivada hasta un ADR aparte (ADR 0020).
+- **Datos:** las suites y los `seed` del sandbox usan solo datos sintéticos. La fuente `dataset` para datos reales está diseñada y desactivada hasta un ADR aparte (ADR 0020).
+- **Datos:** las suites y los `seed` del sandbox usan solo datos sintéticos.
 - **Topes del constructor autónomo (tema #16):** `create_proposal` con `origin = auto_detect` falla con `quota_exceeded` (429) si ya hay 10 creadas en las últimas 24 h (ventana móvil con el `Clock`), y `evaluate` sobre una propuesta `auto_detect` falla igual si ya tiene 20 evaluaciones (incluidas `failed_infra`). Se aplican en el servicio. El tope de costo por propuesta está diferido.
 
 ## 9. Linaje por ejecución
@@ -451,9 +454,9 @@ Las que necesitan Postgres van en `tests/integration/`; el resto usa dobles en m
 | T-REG-05 | `new_version` repetida o no mayor que la de la base → violación |
 | T-REG-06 | Una entidad por encima de los límites de tamaño o cantidad se rechaza |
 | T-REG-07 | Una transición no permitida → `illegal_transition` |
-| T-REG-08 | Gate: un guardarraíl que empeora hace fallar aunque la métrica principal mejore |
-| T-REG-09 | Gate: la métrica principal dentro del margen pasa; fuera del margen falla |
-| T-REG-10 | Gate: sin base, se compara contra `floor` |
+| T-REG-08 | Gate: un guardarraíl que empeora falla aunque una métrica `gate` mejore (= T-EVAL-05) |
+| T-REG-09 | Gate: cada métrica `gate` dentro de su margen pasa, fuera falla (= T-EVAL-06) |
+| T-REG-10 | Gate: sin base, se compara contra los `floor` (= T-EVAL-13) |
 | T-REG-11 | `failed_infra` (LLM o sandbox caídos) no permite aprobar y deja reintentar |
 | T-REG-12 | `approve` con un hash distinto del vigente → `candidate_changed`; `reopen` invalida la evaluación y la aprobación |
 | T-REG-13 | Un principal no humano (sin `attrs.actor = "human"`), incluso con rol `aprobador`, no puede aprobar, rechazar, publicar, promover, revocar ni importar (`forbidden_role`) |
@@ -468,7 +471,7 @@ Las que necesitan Postgres van en `tests/integration/`; el resto usa dobles en m
 | T-REG-22 | `diff_releases` coincide con `release_entities` |
 | T-REG-23 | Evaluador: base y candidata parten del mismo `seed` y cada corrida tiene su propio entorno |
 | T-REG-24 | El evaluador se niega a correr con un `ToolExecutor` (el que entrega `SandboxPort.tools`) no marcado con `is_sandbox = True` |
-| T-REG-25 | Calificación: `expect` se evalúa desde los eventos, y los guardarraíles se cuentan bien con eventos sintéticos |
+| T-REG-25 | Calificación: `expect` se evalúa desde los eventos, y los guardarraíles de plataforma y las aserciones se cuentan bien con eventos sintéticos |
 | T-REG-26 | `import` de la carpeta YAML de la demo crea releases publicadas; `export` seguido de `import` conserva los `content_hash` |
 | T-REG-27 | **E2E:** `import` → propuesta (cambio de prompt) → `freeze` → `evaluate` (`LocalSandbox`, LLM falso determinista) → `approve` → `publish` → un run nuevo usa la release nueva → el linaje muestra la entidad cambiada con su `VersionDocs` |
 | T-REG-28 | Matriz de permisos por perfil: solo un `builder` opera el registry (lecturas incluidas); el bot construye pero nunca decide aunque su credencial traiga los roles; el supervisor construye, aprueba, publica y promueve a `prod` pero no revoca ni importa; el administrador hace todo; aprobar y revocar exigen `step_up`; el verificador del staff rechaza credenciales del emisor de clientes |
@@ -476,13 +479,13 @@ Las que necesitan Postgres van en `tests/integration/`; el resto usa dobles en m
 ## 14. Definición de terminado
 
 - [x] `RegistryService`, `BlobStore`, `EvalPort`, `SandboxPort`, `Judge`, `PostgresRegistry` y `SnapshotRegistry` exportados y tipados (`agent_core/registry/__init__.py`; `mypy` strict en verde).
-- [x] T-REG-01 a T-REG-27 en verde (suite completa con Postgres: 2956 pasaron, 1 omitida por `AGENT_CORE_PERF`, ajena al registry). Trazabilidad abajo.
+- [x] T-REG-01 a T-REG-27 en verde (suite completa con Postgres: 3909 pasaron, 1 omitida por `AGENT_CORE_PERF`, ajena al registry; al 2026-10-02). Trazabilidad abajo.
 - [x] `lint-imports`, `mypy` y `ruff` en verde.
 - [x] API montada en M9 (`registry_extension`, `ApiDeps.extensions`) y CLI (`agentcore registry …`).
 - [x] La composición del motor usa `PostgresRegistry` (`agentcore serve`, 2026-09-30, tema #13). `serve --registry-api` monta `registry_extension` con evaluador real y el verificador del staff (`registry_extension(service, verifier)`), spec `2026-09-30-serve-registry-api-design.md`.
 - [x] `contracts/` regenerado (`agentcore contracts --check` en verde).
-- [x] `agent_core.registry.evaluation` con `EvalSuite`, `suite_problems`, `classify_yardstick_change` y `evaluate_gate` (ADR 0020; en verde: T-EVAL-05 a 08, 11, 12, 13 y 15; T-EVAL-10 solo en su parte estructural `MT-05`; pendientes del servicio: T-EVAL-09, 16 y 17).
 - [x] Sin TODO sin issue (no hay `TODO` en `agent_core/`, `testing/` ni `tests/`).
+- [x] Gate con doble vara integrado (2026-10-01): `suite.py`, `evaluation/{metric_eval,scoring,gate,yardstick,evaluator}.py`; T-EVAL según la spec de evaluación §15 (pendientes allí: T-EVAL-04, el compilador SQL de T-EVAL-14 y el rechazo en `validated` de T-EVAL-11).
 
 ### Trazabilidad de pruebas
 
@@ -495,9 +498,9 @@ Las que necesitan Postgres van en `tests/integration/`; el resto usa dobles en m
 | 05 | `tests/registry/test_validation.py::test_version_not_greater_than_base_is_violation` |
 | 06 | `tests/registry/test_validation.py::test_entity_over_size_limit_is_violation` |
 | 07 | `tests/registry/test_service_build.py::test_illegal_transitions` |
-| 08 | `tests/registry/test_gate.py::test_guardrail_regression_fails_even_if_primary_improves` |
-| 09 | `tests/registry/test_gate.py::test_primary_within_margin_passes_outside_fails` |
-| 10 | `tests/registry/test_gate.py::test_without_base_uses_floor_and_zero_guardrails` |
+| 08 | `tests/registry/test_gate.py::test_a_worse_guardrail_fails_even_if_a_gate_metric_improves` (T-EVAL-05) |
+| 09 | `tests/registry/test_gate.py::test_each_gate_metric_is_judged_on_its_own` (T-EVAL-06) |
+| 10 | `tests/registry/test_gate.py::test_no_base_fails_when_a_floor_is_missing_or_not_met`, `::test_no_base_passes_when_every_metric_meets_its_floor` (T-EVAL-13) |
 | 11 | `tests/registry/test_service_decide.py::test_failed_infra_keeps_candidate_and_blocks_approval`, `tests/registry/test_evaluator.py::test_infra_failure_is_failed_infra` |
 | 12 | `tests/registry/test_service_decide.py::test_approve_with_other_hash_is_candidate_changed`, `::test_reopen_invalidates_approval` |
 | 13 | `tests/registry/test_service_decide.py::test_non_human_or_non_approver_cannot_decide`, `tests/registry/test_http.py::test_bot_gets_forbidden_role_problem` |
@@ -523,10 +526,8 @@ Todos **aditivos**.
 
 - **M0** (aplicado el 2026-09-29, `SCHEMA_VERSION` 0.2.0): `EntityKind.knowledge_snapshot`, `KnowledgeSnapshot` y `Release.knowledge_snapshot`. No cambia `RegistryPort`, `EngineEvent` ni `ProblemCode`.
 - **M0:** `IdKind.proposal` y `IdKind.eval_run` (`SCHEMA_VERSION` 0.5.0).
-- **M0:** `Agent.metrics` y los tipos del DSL (`SCHEMA_VERSION` 1.3.0, ADR 0020).
 - **M1:** exporta `entity_ref_sites`, `RefSite` y `kind_of`.
 - **M1** (aplicado el 2026-09-29, rev. 3): `ReleaseDecl.knowledge`, `pin_release` con snapshot, `load_registry` con manifiestos. **Verificado:** `flows/__init__.py` exporta todo lo que el registry reutiliza (validación de flow, chequeos por agente y de release, `pin_release`, `Violation`, `AuthoringRegistry` construible en memoria) y existe un volcado a YAML para `export`.
-- **M1:** reglas `MT-01` a `MT-06` en `validate_agent` (ADR 0020).
 - **M3:** sin cambios (el sandbox entra como `ToolExecutor`).
 - **M9:** `ApiDeps.extensions`: cada extensión recibe la app y un `authenticate(request, authorization)`.
 - **M11:** expone por su interfaz pública la lectura del `release_id` de un run.
@@ -535,6 +536,9 @@ Todos **aditivos**.
 - **M12:** el `KnowledgeSource` respaldado por el registry sustituye a `FileKnowledgeSource`.
 - **Unidad 3:** implementa `SandboxPort`. Hasta entonces se usa `LocalSandbox`.
 - **Unidad 6 / otra persona del equipo:** escenarios de negocio de la demo y `Judge`.
+
+- **M0** (2026-09-30, `SCHEMA_VERSION` 1.3.0): `Agent.metrics` y los tipos del DSL de métricas (ADR 0020).
+- **Registry** (2026-10-01): tabla `reg_release_eval_suites`, columna `reg_approvals.yardstick_loosened` (`ALTER TABLE … ADD COLUMN IF NOT EXISTS`, idempotente; las filas previas quedan con `[]`), código `loosening_not_accepted`. El formato de la suite cambió (`thresholds` por métrica en lugar de `noise_margin`/`floor` de la suite) sin migración de datos: las bases de desarrollo con suites del formato anterior se recrean. Sin cambios en M0.
 
 ## 16. Fase 2 (diseño de producción, fuera de la entrega)
 

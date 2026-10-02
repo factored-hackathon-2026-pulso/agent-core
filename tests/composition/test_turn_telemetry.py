@@ -1,4 +1,4 @@
-"""`OtelTurnTelemetry`: a live `invoke_agent` per turn; the turn trace id is the request one (U3, T-M4-22)."""
+"""`OtelTurnTelemetry`: a live `invoke_agent` per turn; the turn trace id is the request one (U3, T-M4-23)."""
 
 from collections.abc import Iterator
 from dataclasses import replace
@@ -17,11 +17,20 @@ from agent_core.audit import dump_fixture
 from agent_core.composition import OtelTurnTelemetry, RequestTraceIds
 from agent_core.composition.serve import build_api_deps
 from agent_core.composition.telemetry import derived_spans
-from agent_core.domain import DecisionMade, EngineEvent, JsonValue, RuleEvaluated, ToolCalled
+from agent_core.domain import (
+    DecisionMade,
+    EngineEvent,
+    JsonValue,
+    RuleEvaluated,
+    RunStarted,
+    RunTransferred,
+    ToolCalled,
+    TransferRejected,
+)
 from agent_core.ports import IdKind
-from testing.engine_world import EngineWorld
+from testing.engine_world import EngineWorld, transfer_world
 from testing.fakes.identity import TestIdentityIssuer
-from testing.replay import SCENARIOS, record_scenario
+from testing.replay import SCENARIO_REGISTRY, SCENARIOS, record_scenario
 from tests.composition.test_serve_app import make_ports
 
 pytest_plugins = ["tests.support.otel"]
@@ -29,6 +38,8 @@ pytest_plugins = ["tests.support.otel"]
 REQUEST = "agentcore.api.request"
 REGISTRY = Path("tests/fixtures/registry-demo")
 RUNS = Path("tests/fixtures/runs")
+# The six paths of `registry-demo`; `transferencia` (phase 7) has its own registry and fixture directory.
+DEMO_PATHS = sorted(set(SCENARIOS) - set(SCENARIO_REGISTRY))
 CATALOG = Path("tests/fixtures/catalogo-datos-prueba.yaml")
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 CHILDREN = (tel.DECIDE, tel.RULE, tel.EXECUTE_TOOL)
@@ -293,7 +304,7 @@ def tool_called(recorded: dict[str, list[EngineEvent]]) -> ToolCalled:
     return _first(recorded["resuelto"], ToolCalled)
 
 
-def test_a_decision_becomes_a_decide_span_ending_at_its_ts(decision_made: DecisionMade) -> None:  # T-M11-14
+def test_a_decision_becomes_a_decide_span_ending_at_its_ts(decision_made: DecisionMade) -> None:  # T-M11-16
     (span,) = derived_spans([decision_made])
     assert span.name == tel.DECIDE and span.end_ns == _ns(decision_made.ts)
     assert span.end_ns - span.start_ns == decision_made.payload.latency_ms * 1_000_000
@@ -306,7 +317,7 @@ def test_a_decision_becomes_a_decide_span_ending_at_its_ts(decision_made: Decisi
     }
 
 
-def test_a_rule_is_an_instant_span_without_its_inputs(rule_evaluated: RuleEvaluated) -> None:  # T-M11-14
+def test_a_rule_is_an_instant_span_without_its_inputs(rule_evaluated: RuleEvaluated) -> None:  # T-M11-16
     (span,) = derived_spans([rule_evaluated])
     assert span.name == tel.RULE and span.start_ns == span.end_ns == _ns(rule_evaluated.ts)
     assert span.attributes["agentcore.rule.result"] is rule_evaluated.payload.result
@@ -351,8 +362,12 @@ def test_deriving_the_children_never_touches_the_events(recorded: dict[str, list
     assert [e.model_dump(mode="json") for e in events] == before
 
 
-@pytest.mark.parametrize("camino", sorted(SCENARIOS))
-def test_recording_with_live_telemetry_keeps_every_fixture_byte_identical(  # T-M11-13, Review Focus 1
+def test_the_demo_paths_are_the_six_fixtures() -> None:
+    assert DEMO_PATHS == sorted(path.stem for path in RUNS.glob("*.yaml")) and len(DEMO_PATHS) == 6
+
+
+@pytest.mark.parametrize("camino", DEMO_PATHS)
+def test_recording_with_live_telemetry_keeps_every_fixture_byte_identical(  # T-M11-15, Review Focus 1
         camino: str, otel: InMemorySpanExporter) -> None:
     grabado = dump_fixture(record_scenario(camino, REGISTRY, telemetry=OtelTurnTelemetry()))
     assert (RUNS / f"{camino}.yaml").read_text(encoding="utf-8") == grabado
@@ -360,29 +375,38 @@ def test_recording_with_live_telemetry_keeps_every_fixture_byte_identical(  # T-
     assert tel.INVOKE_AGENT in names and tel.DECIDE in names  # the telemetry really ran
 
 
+def _played(camino: str) -> tuple[EngineWorld, list[EngineEvent]]:
+    """Plays `camino` with live telemetry; the events of every run of its session (a transfer has two)."""
+    make = transfer_world if camino in SCENARIO_REGISTRY else EngineWorld
+    world = make(telemetry=OtelTurnTelemetry())
+    SCENARIOS[camino](world)
+    assert world.driver.run_id is not None and world.driver.session_id is not None
+    with world.store.uow() as uow:
+        runs = uow.list_runs_by_session(world.driver.session_id)
+    return world, [e for r in runs for e in world.audit.read(r.run_id)]
+
+
 @pytest.mark.parametrize("camino", sorted(SCENARIOS))
 def test_children_match_the_events_and_hang_from_their_turn(camino: str, otel: InMemorySpanExporter) -> None:
-    world = EngineWorld(telemetry=OtelTurnTelemetry())
-    SCENARIOS[camino](world)
-    assert world.driver.run_id is not None
-    events = world.audit.read(world.driver.run_id)
+    _, events = _played(camino)
     spans = otel.get_finished_spans()
     for name, kind in ((tel.DECIDE, "decision_made"), (tel.RULE, "rule_evaluated"),
                        (tel.EXECUTE_TOOL, "tool_called")):
         assert sum(s.name == name for s in spans) == sum(e.type == kind for e in events), name
     turns = {s.context.span_id: s for s in spans if s.name == tel.INVOKE_AGENT and s.context is not None}
-    by_turn: dict[str, list[EngineEvent]] = {}
+    by_turn: dict[tuple[str, str], list[EngineEvent]] = {}  # a transfer's target repeats the origin's turn_id
     for e in events:
-        by_turn.setdefault(e.turn_id or "", []).append(e)
+        by_turn.setdefault((e.run_id, e.turn_id or ""), []).append(e)
     for child in (s for s in spans if s.name in CHILDREN):
         assert child.parent is not None and child.parent.span_id in turns
         parent = turns[child.parent.span_id]
         assert child.context is not None and parent.context is not None
         assert child.context.trace_id == parent.context.trace_id
-        turn_id = dict(parent.attributes or {})["turn_id"]
-        assert dict(child.attributes or {})["turn_id"] == turn_id
+        turn = dict(parent.attributes or {})
+        assert dict(child.attributes or {})["turn_id"] == turn["turn_id"]
+        assert dict(child.attributes or {})["run_id"] == turn["run_id"]
         assert child.end_time is not None and child.start_time is not None
-        own = derived_spans(by_turn[str(turn_id)])
+        own = derived_spans(by_turn[(str(turn["run_id"]), str(turn["turn_id"]))])
         expected = {(d.start_ns, d.end_ns) for d in own if d.name == child.name}
         assert (child.start_time, child.end_time) in expected  # the event's times, not the SDK clock
 
@@ -413,6 +437,14 @@ def _ids(events: list[EngineEvent]) -> set[str]:
     out = {x for e in events for x in (e.run_id, e.turn_id, e.session_id, e.release) if x is not None}
     out |= {e.payload.call_id for e in events if isinstance(e, ToolCalled)}
     out |= {e.payload.decision_id for e in events if isinstance(e, DecisionMade)}
+    # A transfer's ids (`agentcore.transfer.*`): agent and release ids, also present in `directory/list`.
+    out |= {e.payload.agent.id for e in events if isinstance(e, RunStarted)}
+    for e in events:
+        if isinstance(e, RunTransferred):
+            p = e.payload
+            out |= {p.transfer_id, p.to_agent.id, p.to_release_id, p.to_run_id}
+        elif isinstance(e, TransferRejected):
+            out |= {x for x in (e.payload.transfer_id, e.payload.to_agent) if x is not None}
     return out
 
 
@@ -428,15 +460,13 @@ def _assert_closed_keys(spans: Any) -> None:
 
 @pytest.mark.parametrize("camino", sorted(SCENARIOS))
 def test_no_span_attribute_carries_a_payload_value(camino: str, otel: InMemorySpanExporter) -> None:  # rule 6
-    world = EngineWorld(telemetry=OtelTurnTelemetry())
-    SCENARIOS[camino](world)
-    assert world.driver.run_id is not None
-    events = world.audit.read(world.driver.run_id)
+    world, events = _played(camino)
     texts = {str(op["text"]) for op in world.driver.ops if op.get("text")}
     leaves = (set(_string_leaves([v for e in events for v in _payload_values(e)])) | texts) - _ids(events)
     assert leaves  # the check has something to bite on
     spans = otel.get_finished_spans()
-    assert {s.name for s in spans} <= {tel.INVOKE_AGENT, *CHILDREN}  # no raw-tracer span escapes the check
+    # no raw-tracer span escapes the check
+    assert {s.name for s in spans} <= {tel.INVOKE_AGENT, tel.TRANSFER, *CHILDREN}
     _assert_closed_keys(spans)
     every = set(_string_leaves([v for e in events for v in _payload_values(e)], 1)) | texts
     for s in spans:

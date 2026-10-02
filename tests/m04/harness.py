@@ -4,7 +4,7 @@ from datetime import timedelta
 from typing import Any
 
 from agent_core.actions import ActionManager
-from agent_core.composition.directory import DIRECTORY_TOOL, DirectoryToolExecutor
+from agent_core.composition import DIRECTORY_TOOL, DirectoryToolExecutor
 from agent_core.domain import (
     ENTITY_KIND,
     Agent,

@@ -6,7 +6,7 @@ from agent_core.flows.agent import validate_agent
 from agent_core.flows.violations import Violation
 from tests.m01.cases import ENTITIES, agent, registry
 
-# Origen que `validate_agent` pone en las rutas: el archivo del agente, o la ruta por defecto en memoria.
+# Origin that `validate_agent` puts in paths: the agent's file, or the default in-memory path.
 WHERE = registry().source(EntityKind.agent, "atencion", "1.0.0") or "agents/atencion@1.0.0.yaml"
 
 
@@ -87,7 +87,7 @@ def test_mt_02_checks_the_rate_denominator() -> None:
     assert (found[0].path or "").endswith("/denominator/where/0/field")
 
 
-# MT-03 y Review Focus 4
+# MT-03 and Review Focus 4
 def test_mt_03_duplicate_metric_ids() -> None:
     found = mt([metric("same"), metric("same", event="engine.run_closed")])
     assert [(v.rule, v.path) for v in found] == [("MT-03", f"{WHERE}#/metrics/1/id")]
@@ -98,7 +98,7 @@ def test_mt_04_judge_target_event_outside_the_catalog() -> None:
     assert [v.rule for v in found] == ["MT-04"]
 
 
-# T-EVAL-10 (parte estructural): los ids de plataforma están reservados
+# T-EVAL-10 (structural part): platform ids are reserved
 def test_mt_05_platform_ids_are_reserved() -> None:
     found = mt([metric("platform_pii_leak")])
     assert [(v.rule, v.path) for v in found] == [("MT-05", f"{WHERE}#/metrics/0/id")]
@@ -109,7 +109,7 @@ def test_mt_06_judge_profile_must_exist() -> None:
     assert [v.rule for v in found] == ["MT-06"]
 
 
-# Review Focus 5: entradas enormes o con caracteres raros no rompen M1 ni producen mensajes sin acotar
+# Review Focus 5: huge or odd-character inputs do not break M1 nor produce unbounded messages
 def test_huge_and_odd_strings_are_clipped() -> None:
     odd = "ñ‮\x00" + "x" * 5000
     found = mt([metric(event=odd[:80], where=[{"field": odd[:80], "op": "eq", "value": odd}])])

@@ -1,5 +1,6 @@
 """Envoltorios para `agentcore record` (M11 §3.5): capturan lo `full` y los borradores de una corrida."""
 
+from collections.abc import Sequence
 from typing import cast
 
 from agent_core.audit.replay.fixture import Fixture, FullToolResult
@@ -38,7 +39,9 @@ class RecordingGateway:
 
 def build_fixture(name: str, run_id: str, release: str, events: list[EngineEvent],
                   inputs: list[dict[str, JsonValue]], tools: RecordingToolExecutor,
-                  llm: RecordingGateway) -> Fixture:
+                  llm: RecordingGateway, linked: Sequence[EngineEvent] = ()) -> Fixture:
+    """`linked`: the chains of the runs `run_id` transferred to, in creation order (ADR 0021)."""
     return Fixture(name=name, run_id=run_id, release=release, inputs=inputs,
                    events=cast("list[AnyEvent]", events),
-                   full=dict(tools.captured), drafts=list(llm.drafts))
+                   full=dict(tools.captured), drafts=list(llm.drafts),
+                   linked=cast("list[AnyEvent]", list(linked)))

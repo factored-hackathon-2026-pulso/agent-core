@@ -1,7 +1,7 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "additionalProperties": false,
-  "description": "Umbral de alerta de producción. No es el umbral del gate.",
+  "description": "Production alert threshold. It is not the gate threshold.",
   "properties": {
     "breach_when": {
       "enum": [

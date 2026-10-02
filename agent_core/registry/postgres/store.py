@@ -13,6 +13,7 @@ from agent_core.domain import Release, dumps, loads
 from agent_core.registry.blobs import BlobStore, verified
 from agent_core.registry.errors import IntegrityError
 from agent_core.registry.evaluation.report import EvalReport
+from agent_core.registry.evaluation.yardstick import YardstickChange
 from agent_core.registry.models import (
     AliasChange,
     Approval,
@@ -29,8 +30,9 @@ from agent_core.registry.models import (
 )
 from agent_core.registry.store import RegistryTx, Status
 
-_INSERT_ONLY = ("reg_blobs", "reg_entity_versions", "reg_releases", "reg_release_entities", "reg_approvals",
-                "reg_eval_runs", "reg_events", "reg_alias_log", "reg_draft_writes")
+_INSERT_ONLY = ("reg_blobs", "reg_entity_versions", "reg_releases", "reg_release_entities",
+                "reg_release_eval_suites", "reg_approvals", "reg_eval_runs", "reg_events", "reg_alias_log",
+                "reg_draft_writes")
 # Mutables y controladas (spec §3.2): el rol de la aplicación nunca borra; cada tabla tiene lo mínimo que usa.
 _GRANTS_MUTABLE = {
     "reg_release_status": "SELECT, INSERT, UPDATE",   # alta al publicar, `revoke`
@@ -73,6 +75,14 @@ class _PgBlobs:
         if row is None:
             raise IntegrityError(f"no existe el contenido {digest[:12]}…")
         return verified(digest, bytes(row[0]))
+
+
+def parse_loosened(raw: str) -> list[YardstickChange]:
+    """The `yardstick_loosened` column as changes; anything but a JSON list is corrupt stored data."""
+    loosened = loads(raw)
+    if not isinstance(loosened, list):
+        raise IntegrityError("la columna yardstick_loosened no es una lista")
+    return [YardstickChange.model_validate(c) for c in loosened]
 
 
 def _ref(kind: str, ident: str, version: str) -> VersionRef:
@@ -150,9 +160,12 @@ class _PgTx:
                         (release_id,))
         if row is None:
             return None
+        suites = self._c.execute("SELECT kind, id, version FROM reg_release_eval_suites "
+                                 "WHERE release_id = %s ORDER BY id", (release_id,)).fetchall()
         return StoredRelease(release=Release.model_validate(loads(row[0])), release_hash=row[1],
                              agent_id=row[2], agent_version=row[3], base_release_id=row[4],
-                             proposal_id=row[5], published_by=row[6], published_at=row[7])
+                             proposal_id=row[5], published_by=row[6], published_at=row[7],
+                             eval_suite_refs=[_ref(*r) for r in suites])
 
     def release_refs(self, release_id: str) -> list[VersionRef]:
         rows = self._c.execute("SELECT kind, id, version FROM reg_release_entities WHERE release_id = %s "
@@ -169,6 +182,11 @@ class _PgTx:
             cur.executemany("INSERT INTO reg_release_entities (release_id, kind, id, version) "
                             "VALUES (%s, %s, %s, %s)",
                             [(s.release.id, r.kind, r.id, r.version) for r in refs])
+        if s.eval_suite_refs:
+            with self._c.cursor() as cur:
+                cur.executemany("INSERT INTO reg_release_eval_suites (release_id, kind, id, version) "
+                                "VALUES (%s, %s, %s, %s)",
+                                [(s.release.id, r.kind, r.id, r.version) for r in s.eval_suite_refs])
         self._c.execute("INSERT INTO reg_release_status (release_id, status) VALUES (%s, 'active')",
                         (s.release.id,))
 
@@ -231,16 +249,20 @@ class _PgTx:
 
     def insert_approval(self, a: Approval) -> None:
         self._c.execute("INSERT INTO reg_approvals (proposal_id, candidate_hash, actor, decision, "
-                        "reason, at) VALUES (%s, %s, %s, %s, %s, %s)",
-                        (a.proposal_id, a.candidate_hash, a.actor, a.decision, a.reason, a.at))
+                        "reason, at, yardstick_loosened) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                        (a.proposal_id, a.candidate_hash, a.actor, a.decision, a.reason, a.at,
+                         dumps([c.model_dump(mode="json") for c in a.yardstick_loosened])))
 
     def latest_approval(self, proposal_id: str, candidate_hash: str) -> Approval | None:
-        row = self._one("SELECT actor, decision, reason, at FROM reg_approvals WHERE proposal_id = %s "
-                        "AND candidate_hash = %s ORDER BY seq DESC LIMIT 1", (proposal_id, candidate_hash))
+        row = self._one("SELECT actor, decision, reason, at, yardstick_loosened FROM reg_approvals "
+                        "WHERE proposal_id = %s AND candidate_hash = %s ORDER BY seq DESC LIMIT 1",
+                        (proposal_id, candidate_hash))
         if row is None:
             return None
+        loosened = parse_loosened(row[4])
         return Approval(proposal_id=proposal_id, candidate_hash=candidate_hash, actor=row[0],
-                        decision=row[1], reason=row[2], at=row[3])
+                        decision=row[1], reason=row[2], at=row[3],
+                        yardstick_loosened=loosened)
 
     def append_event(self, event: RegistryEvent) -> None:
         self._c.execute("INSERT INTO reg_events (event_json) VALUES (%s)", (dumps(event),))

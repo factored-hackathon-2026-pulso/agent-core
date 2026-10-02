@@ -1,4 +1,5 @@
-"""Los seis caminos del flow de demo (M11 §3.5, T-M11-01). Solo datos sintéticos.
+"""Los seis caminos del flow de demo (M11 §3.5, T-M11-01) y la sesión con transferencia de la fase 7
+(ADR 0021). Solo datos sintéticos.
 
 Cada escenario guía un `EngineWorld` con puertos externos guionados; `record_scenario` lo graba."""
 
@@ -7,9 +8,10 @@ from decimal import Decimal
 from pathlib import Path
 
 from agent_core.audit import Fixture, build_fixture
+from agent_core.domain import EngineEvent
 from agent_core.ports import ToolStatus
 from agent_core.turn import TurnTelemetry
-from testing.engine_world import REGISTRY_DEMO, EngineWorld
+from testing.engine_world import REGISTRY_DEMO, TRANSFER_DEMO, EngineWorld, transfer_world
 from testing.fakes.tools import Scripted
 
 TEXTO = "no reconozco un cargo de ciento veinte dólares en una tienda"
@@ -70,6 +72,16 @@ def interrupcion(w: EngineWorld) -> None:
     w.turn("creo que me están robando la tarjeta")
 
 
+def transferencia(w: EngineWorld) -> None:
+    """Recepción lee el directorio, elige `disputas` y le transfiere; `disputas` responde en el mismo
+    turno (ADR 0021)."""
+    w.start()
+    w.understands("continue")
+    w.routes("disputas")
+    w.understands("start_flow", flow="disputa-cargo")
+    w.turn(TEXTO)
+
+
 SCENARIOS: dict[str, Scenario] = {
     "resuelto": resuelto,
     "cancelado": cancelado,
@@ -77,14 +89,28 @@ SCENARIOS: dict[str, Scenario] = {
     "uncertain_verify": uncertain_verify,
     "step_up": step_up,
     "interrupcion": interrupcion,
+    "transferencia": transferencia,
 }
+# The authoring registry of each scenario that does not run on `registry-demo`.
+SCENARIO_REGISTRY: dict[str, Path] = {"transferencia": TRANSFER_DEMO}
+_WORLDS: dict[str, Callable[..., EngineWorld]] = {"transferencia": transfer_world}
 
 
-def record_scenario(name: str, registry_root: Path = REGISTRY_DEMO, *,
+def record_scenario(name: str, registry_root: Path | None = None, *,
                     telemetry: TurnTelemetry | None = None) -> Fixture:
-    """`telemetry` only observes: the fixture is byte-identical with it or without it (T-M11-13)."""
-    world = EngineWorld(registry_root=registry_root, record=True, telemetry=telemetry)
+    """Records `name` over `registry_root` (by default, the scenario's own registry). The fixture's `events`
+    are the entry run's chain; `linked`, the chains of the runs it transferred to, in creation order.
+    `telemetry` only observes: the fixture is byte-identical with it or without it (T-M11-15)."""
+    root = registry_root or SCENARIO_REGISTRY.get(name, REGISTRY_DEMO)
+    world = _WORLDS.get(name, EngineWorld)(registry_root=root, record=True, telemetry=telemetry)
     SCENARIOS[name](world)
     assert world.driver.run_id is not None and world.recording_tools and world.recording_llm
-    return build_fixture(name, world.driver.run_id, world.release.id, world.audit.read(world.driver.run_id),
-                         world.driver.ops, world.recording_tools, world.recording_llm)
+    origin = world.driver.run_id
+    linked: list[EngineEvent] = []
+    if world.driver.session_id is not None:
+        with world.store.uow() as uow:
+            runs = uow.list_runs_by_session(world.driver.session_id)
+        later = [r.run_id for r in runs if r.run_id != origin]
+        linked = [e for run_id in later for e in world.audit.read(run_id)]
+    return build_fixture(name, origin, world.release.id, world.audit.read(origin), world.driver.ops,
+                         world.recording_tools, world.recording_llm, linked=linked)

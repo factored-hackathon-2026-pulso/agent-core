@@ -1,4 +1,4 @@
-"""ADR 0003 #4 and I3: JSON logs with timestamp, exception type only, and run/trace correlation (T-M11-12)."""
+"""ADR 0003 #4 and I3: JSON logs with timestamp, exception type only, and run/trace correlation (T-M11-14)."""
 
 import json
 import logging

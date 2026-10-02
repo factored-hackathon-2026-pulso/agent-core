@@ -1,5 +1,5 @@
 """`setup_observability` (U2, I3, I5, I6, M5): standard OTEL_* variables, JSON logs on root, flush on exit
-(T-M11-12)."""
+(T-M11-14)."""
 
 import argparse
 import io

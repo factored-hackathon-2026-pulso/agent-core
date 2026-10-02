@@ -2,6 +2,7 @@
 
 from agent_core.composition.builder_tools import BUILDER_TOOL_DEFS, BuilderToolExecutor
 from agent_core.composition.decision import DecisionAdapter
+from agent_core.composition.directory import DIRECTORY_TOOL, DirectoryToolExecutor
 from agent_core.composition.engine import (
     BuiltEngine,
     EngineConfig,
@@ -23,11 +24,10 @@ from agent_core.composition.runtime import EngineRuntime, EngineRuntimeFactory, 
 from agent_core.composition.telemetry import OtelTurnTelemetry, TransferLink
 
 __all__ = [
-    "BUILDER_TOOL_DEFS", "BuilderToolExecutor", "BuiltEngine", "ContextFactory", "DecisionAdapter",
-    "EngineConfig", "EngineDeps", "EngineRuntime",
+    "BUILDER_TOOL_DEFS", "DIRECTORY_TOOL", "BuilderToolExecutor", "BuiltEngine", "ContextFactory",
+    "DecisionAdapter", "DirectoryToolExecutor", "EngineConfig", "EngineDeps", "EngineRuntime",
     "EngineRuntimeFactory", "EngineScenarioHarness", "EvalStorage", "Observability",
     "ObservabilityConfigError", "OtelTurnTelemetry", "RequestTraceIds", "ResponderAdapter", "RuntimeConfig",
-    "TransferLink",
-    "UowRunReleases", "build_engine",
-    "build_registry_service", "build_turn_engine", "setup_observability", "tracing_config",
+    "TransferLink", "UowRunReleases", "build_engine", "build_registry_service", "build_turn_engine",
+    "setup_observability", "tracing_config",
 ]
