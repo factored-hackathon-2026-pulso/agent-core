@@ -90,6 +90,7 @@ class ChatSession:
             return {"messages": []}
         for message in turn["messages"]:
             self._out(message["text"])
+        self.run_id = turn.get("run_id", self.run_id)  # una transferencia abre un run nuevo en la sesión
         self.awaiting = turn.get("awaiting")
         if turn.get("status") == "closed":
             self.closed = True
