@@ -8,6 +8,10 @@ from agent_core.outbound.models import (
     HandoffResolvedData,
     HandoffResolvedEvent,
     OutboundEvent,
+    ReleaseData,
+    ReleasePromotedEvent,
+    ReleasePublishedEvent,
+    ReleaseRevokedEvent,
     RunClosedData,
     RunClosedEvent,
     RunStartedData,
@@ -19,7 +23,8 @@ from agent_core.outbound.project import project_engine_event, project_outbox_mes
 
 __all__ = [
     "PUBLIC_TYPES", "SPEC_VERSION", "HandoffCreatedData", "HandoffCreatedEvent", "HandoffResolvedData",
-    "HandoffResolvedEvent", "OutboundEvent", "RunClosedData", "RunClosedEvent", "RunStartedData",
+    "HandoffResolvedEvent", "OutboundEvent", "ReleaseData", "ReleasePromotedEvent", "ReleasePublishedEvent",
+    "ReleaseRevokedEvent", "RunClosedData", "RunClosedEvent", "RunStartedData",
     "RunStartedEvent", "RunTransferredData", "RunTransferredEvent", "project_engine_event",
     "project_outbox_message",
 ]

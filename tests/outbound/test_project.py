@@ -53,7 +53,8 @@ def _keys(value: Any) -> set[str]:
 
 def test_the_public_list_is_closed() -> None:
     assert PUBLIC_TYPES == (
-        "run.started", "run.closed", "run.transferred", "handoff.created", "handoff.resolved")
+        "run.started", "run.closed", "run.transferred", "handoff.created", "handoff.resolved",
+        "release.published", "release.promoted", "release.revoked")
     assert SPEC_VERSION == 1
 
 

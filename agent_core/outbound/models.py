@@ -10,7 +10,9 @@ from agent_core.domain import EntityRef, Locale, Mode, Outcome, PrincipalType, R
 from agent_core.domain.base import Model, UtcDatetime
 
 SPEC_VERSION = 1
-PUBLIC_TYPES = ("run.started", "run.closed", "run.transferred", "handoff.created", "handoff.resolved")
+PUBLIC_TYPES = (
+    "run.started", "run.closed", "run.transferred", "handoff.created", "handoff.resolved",
+    "release.published", "release.promoted", "release.revoked")
 
 
 class RunStartedData(Model):
@@ -47,43 +49,72 @@ class HandoffResolvedData(Model):
     reader_type: PrincipalType
 
 
+class ReleaseData(Model):
+    """Sin actor ni motivo (personas, texto libre). Tampoco el agente: el evento del registry no lo guarda."""
+    release_id: str
+    proposal_id: str | None = None
+
+
 class _Envelope(Model):
     spec_version: Literal[1] = 1
     event_id: str
     occurred_at: UtcDatetime
-    source: Literal["engine"] = "engine"
     run_id: str | None = None
     session_id: str | None = None
     turn_id: str | None = None
     release_id: str | None = None
 
 
-class RunStartedEvent(_Envelope):
+class _EngineEnvelope(_Envelope):
+    source: Literal["engine"] = "engine"
+
+
+class _RegistryEnvelope(_Envelope):
+    source: Literal["registry"] = "registry"
+
+
+class RunStartedEvent(_EngineEnvelope):
     type: Literal["run.started"] = "run.started"
     data: RunStartedData
 
 
-class RunClosedEvent(_Envelope):
+class RunClosedEvent(_EngineEnvelope):
     type: Literal["run.closed"] = "run.closed"
     data: RunClosedData
 
 
-class RunTransferredEvent(_Envelope):
+class RunTransferredEvent(_EngineEnvelope):
     type: Literal["run.transferred"] = "run.transferred"
     data: RunTransferredData
 
 
-class HandoffCreatedEvent(_Envelope):
+class HandoffCreatedEvent(_EngineEnvelope):
     type: Literal["handoff.created"] = "handoff.created"
     data: HandoffCreatedData
 
 
-class HandoffResolvedEvent(_Envelope):
+class HandoffResolvedEvent(_EngineEnvelope):
     type: Literal["handoff.resolved"] = "handoff.resolved"
     data: HandoffResolvedData
 
 
+class ReleasePublishedEvent(_RegistryEnvelope):
+    type: Literal["release.published"] = "release.published"
+    data: ReleaseData
+
+
+class ReleasePromotedEvent(_RegistryEnvelope):
+    type: Literal["release.promoted"] = "release.promoted"
+    data: ReleaseData
+
+
+class ReleaseRevokedEvent(_RegistryEnvelope):
+    type: Literal["release.revoked"] = "release.revoked"
+    data: ReleaseData
+
+
 OutboundEvent = Annotated[
-    RunStartedEvent | RunClosedEvent | RunTransferredEvent | HandoffCreatedEvent | HandoffResolvedEvent,
+    RunStartedEvent | RunClosedEvent | RunTransferredEvent | HandoffCreatedEvent | HandoffResolvedEvent
+    | ReleasePublishedEvent | ReleasePromotedEvent | ReleaseRevokedEvent,
     Field(discriminator="type"),
 ]

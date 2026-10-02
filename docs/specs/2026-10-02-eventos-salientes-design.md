@@ -18,14 +18,17 @@ Un sobre estable (`OutboundEvent`) con una **lista cerrada** de tipos públicos,
 | `run.transferred` | evento `run_transferred` | `transfer_id`, `to_agent`, `to_release_id`, `to_run_id` |
 | `handoff.created` | `OutboxMessage` de tipo `handoff_created` | `handoff_ref`, `target_queue`, `priority`, `reason_code`, `language` |
 | `handoff.resolved` | evento `handoff_resolved` | `handoff_ref`, `handoff_quality`, `reader_type` |
+| `release.published` · `release.promoted` · `release.revoked` | evento `published`, `promoted`, `revoked` de `reg_events` | `release_id`, `proposal_id` |
 
-Fuera de la v1: eventos de turno, decisión, acción, seguridad y medición; y `release.published|promoted|revoked` del registry (pendientes: `RegistryEvent` no lleva agente ni `seq`, hace falta un proyector propio en el registry).
+Fuera de la v1: eventos de turno, decisión, acción, seguridad y medición.
+
+**Registry.** Los `release.*` salen con `source = "registry"`, sin `run_id` y con `event_id = reg-<seq>` (la posición en `reg_events`, que pone quien lee). El proyector vive en `agent_core.registry.outbound` (`project_registry_event`). No llevan actor, motivo, origen ni hash del candidato; tampoco el agente ni el alias, porque `RegistryEvent` no los guarda (ampliarlo es un cambio de registry aparte).
 
 **Excluido a propósito (decisión del usuario, 2026-10-02):** `reportable_attrs` (de `run_started` y `handoff_created`), `reason` de `run_transferred` y `resolution_code` de `handoff_resolved`. También quedan fuera `notes`, `origin`, `packet_fp`, `directory`, `directory_hash` y `candidates`.
 
 ## 3. Sobre
 
-`spec_version` (entero, 1), `event_id`, `type`, `occurred_at`, `source` (`engine`), `run_id`, `session_id`, `turn_id`, `release_id`, `data`.
+`spec_version` (entero, 1), `event_id`, `type`, `occurred_at`, `source` (`engine` o `registry`), `run_id`, `session_id`, `turn_id`, `release_id`, `data`.
 
 - **Sin campo `subject`** (ni referencia del cliente): solo `subject_kind` dentro de `run.started`.
 - `event_id` es el del evento de la cadena que lo origina (para `handoff.created`, el `message_id` del outbox). Es la clave de deduplicación.
@@ -49,6 +52,6 @@ Los consumidores ignoran campos y tipos desconocidos. Un campo opcional o un tip
 
 ## 7. Abiertos
 
-- Proyector de `release.*` en el registry.
+- Agente y alias en `release.*`: exigen guardarlos en `RegistryEvent`.
 - Quién consume esto y desde dónde (unidad 4): outbox transaccional o relay con cursor sobre la cadena.
 - `contracts/VERSION` no cambia con este contrato (no toca M0); `catalog.json` lleva su propia versión. Confirmar que ADR 0002 ("un solo semver") lo admite.

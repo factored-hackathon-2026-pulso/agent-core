@@ -7,6 +7,9 @@
     "run.closed",
     "run.transferred",
     "handoff.created",
-    "handoff.resolved"
+    "handoff.resolved",
+    "release.published",
+    "release.promoted",
+    "release.revoked"
   ]
 }
