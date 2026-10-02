@@ -7,8 +7,8 @@ from fastapi import APIRouter, FastAPI, Header, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from agent_core.domain import CredentialsInvalid, Principal, dumps
-from agent_core.ports import IdentityVerifier
+from agent_core.domain import CredentialsInvalid, EngineError, Principal, ProblemCode, dumps
+from agent_core.ports import Clock, IdentityVerifier
 from agent_core.registry.errors import HTTP_STATUS, RegistryError, RegistryErrorCode
 from agent_core.registry.models import EntityDraft, Origin
 from agent_core.registry.roles import require_builder
@@ -84,10 +84,14 @@ def _bearer(authorization: str | None) -> str:
     return rest.strip() if scheme.lower() == "bearer" else (authorization or "").strip()
 
 
-def registry_extension(service: RegistryService,
-                       verifier: IdentityVerifier | None = None) -> Callable[[FastAPI, Authenticate], None]:
+def registry_extension(service: RegistryService, verifier: IdentityVerifier | None = None,
+                       clock: Clock | None = None) -> Callable[[FastAPI, Authenticate], None]:
     """Con `verifier` (el del staff, spec §8) la API verifica solo con esas claves; sin él usa el
-    `authenticate` de M9."""
+    `authenticate` de M9. El verificador solo comprueba la firma, así que la vigencia (`exp <= now`, como la
+    puerta de M9) la comprueba esta API con `clock`, obligatorio junto al verificador: falla cerrado."""
+    if verifier is not None and clock is None:
+        raise ValueError("un verificador del staff exige un Clock para comprobar la vigencia")
+
     def install(app: FastAPI, authenticate: Authenticate) -> None:
         router = APIRouter(prefix="/v1/registry")
 
@@ -110,6 +114,8 @@ def registry_extension(service: RegistryService,
                 if not credential:
                     raise CredentialsInvalid("credencial ausente")
                 principal = verifier.verify(credential)
+                if clock is not None and principal.exp <= clock.now():
+                    raise EngineError(ProblemCode.principal_expired)
             require_builder(principal)  # incluye las lecturas
             return principal
 

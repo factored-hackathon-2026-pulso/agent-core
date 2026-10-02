@@ -330,6 +330,8 @@ Más `SandboxPort` (§6.3) y, para el linaje, la lectura del `release_id` de un 
 
 Se monta en la app FastAPI de M9 como `ApiExtension` (`ApiDeps.extensions`, por defecto vacío) con la misma autenticación JWS (la función `authenticate` que M9 entrega a la extensión), `problem+json` y `trace_id` en toda respuesta.
 
+**Vigencia (2026-10-02).** Con el verificador del staff (`--staff-keys`) la API no pasa por la puerta de M9, y el verificador solo comprueba la firma. Por eso `registry_extension` exige un `Clock` junto al verificador y rechaza `exp <= now` con `401 principal_expired` en todas las rutas, igual que M9; sin reloj falla al construirse. Antes de este cambio una credencial vencida seguía operando el registry.
+
 | Método y ruta | Operación |
 |---|---|
 | `POST /proposals` · `GET /proposals/{id}` | crear · ver |
