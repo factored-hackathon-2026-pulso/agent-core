@@ -86,7 +86,7 @@ Las unidades 2–7 aún no existen. El motor habla con ellas solo por estos puer
 | `UnitOfWork` | M4 (Postgres) | `InMemoryUoW` con inyección de fallas | M0 | M3, M4, M9, M10 |
 | `AuditSink` | unidad 4 | `InMemoryAuditSink` | M0 | M9, M11 |
 | `Outbox` | unidad 4 | `InMemoryOutbox` | M0 | unidad 4 |
-| `LLMGateway` | unidad 5: `OpenAICompatGateway` (`agent_core.adapters.llm`) | `ScriptedGateway` | M8 | M8, M5 (`llm_structured`) |
+| `LLMGateway` | unidad 5: `HttpLLMGateway` (`agent_core.adapters.llm`) sobre el servicio `llm-gateway` (ADR 0024) | `ScriptedGateway` | M8 | M8, M5 (`llm_structured`) |
 | `AgentPort` | unidad 5: `LLMAgentPort` (sobre `LLMGateway`, `prompted`) | `ScriptedAgent` | M2 | M2 (nodo `agent`) |
 | `TranscriptStore` | unidad 7 | `InMemoryTranscript` | M11 | M11, M5 (`recent_turns`) |
 | `KnowledgeSource` | unidad 7 | `FileKnowledgeSource` / `InMemoryKnowledgeSource` (`testing/fakes/knowledge.py`) | M12 (definitivo, rev. 2; contrato en `tests/contracts/test_knowledge_contract.py`) | M12 |

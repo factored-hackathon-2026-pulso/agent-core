@@ -31,12 +31,16 @@ from agent_core.ports import GenerationResult
 from testing.fakes.clock import FakeClock
 from testing.fakes.gateway import ScriptedGateway, gen
 from testing.fakes.registry import InMemoryRegistry
-from tests.u05.helpers import PROFILE, install_llm_entities
+from tests.gateway_http.helpers import PROFILE, install_llm_entities
 
 pytest_plugins = ["tests.support.otel"]
 pytestmark = pytest.mark.usefixtures("root_logging")  # `llm-smoke` quiets the SDK loggers process-wide
 
-ENDPOINTS = '{"o": {"base_url": "https://x.test/v1", "api_key_env": "K"}}'
+
+
+def _gateway_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGENTCORE_LLM_GATEWAY_URL", "https://gw.test")
+    monkeypatch.setenv("AGENTCORE_LLM_GATEWAY_TOKEN", "t")
 
 
 def test_percentile_uses_the_nearest_rank() -> None:
@@ -72,14 +76,14 @@ def test_the_smoke_registry_serves_a_synthetic_prompt_that_uses_the_profile() ->
     assert registry.get(PROFILE, ModelProfile).model == "vendor/modelo-x"  # lo demás va al registro real
 
 
-def test_llm_smoke_without_endpoints_is_a_usage_error(tmp_path, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
-    monkeypatch.delenv("LLM_ENDPOINTS", raising=False)
+def test_llm_smoke_without_a_gateway_is_a_usage_error(tmp_path, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.delenv("AGENTCORE_LLM_GATEWAY_URL", raising=False)
     code = main(["llm-smoke", "--registry", str(tmp_path), "--profile", "perfil@1.0.0"])
-    assert code == USAGE_ERROR and "LLM_ENDPOINTS" in capsys.readouterr().err
+    assert code == USAGE_ERROR and "AGENTCORE_LLM_GATEWAY_URL" in capsys.readouterr().err
 
 
 def test_llm_smoke_rejects_a_non_exact_profile(tmp_path, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
-    monkeypatch.setenv("LLM_ENDPOINTS", ENDPOINTS)
+    _gateway_env(monkeypatch)
     code = main(["llm-smoke", "--registry", str(tmp_path), "--profile", "perfil"])
     assert code == USAGE_ERROR and "id@versión" in capsys.readouterr().err
 
@@ -150,22 +154,20 @@ def test_the_agent_steps_run_through_llm_agent_port_and_the_synthetic_entities()
 
 
 def test_llm_smoke_with_an_unknown_profile_is_a_clean_usage_error(tmp_path, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
-    monkeypatch.setenv("LLM_ENDPOINTS", ENDPOINTS)
+    _gateway_env(monkeypatch)
     code = main(["llm-smoke", "--registry", str(tmp_path), "--profile", "perfil@1.0.0"])
     err = capsys.readouterr().err
     assert code == USAGE_ERROR and "perfil@1.0.0" in err and "Traceback" not in err
 
 
 def test_llm_smoke_rejects_n_below_one(tmp_path, monkeypatch, capsys) -> None:  # type: ignore[no-untyped-def]
-    monkeypatch.setenv("LLM_ENDPOINTS", ENDPOINTS)
+    _gateway_env(monkeypatch)
     code = main(["llm-smoke", "--registry", str(tmp_path), "--profile", "perfil@1.0.0", "--n", "0"])
     assert code == USAGE_ERROR and "--n" in capsys.readouterr().err
 
 
 def test_llm_smoke_silences_the_sdk_loggers(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    monkeypatch.delenv("LLM_ENDPOINTS", raising=False)
-    logging.getLogger("openai").setLevel(logging.DEBUG)
+    monkeypatch.delenv("AGENTCORE_LLM_GATEWAY_URL", raising=False)
     logging.getLogger("httpx").setLevel(logging.DEBUG)
     main(["llm-smoke", "--registry", str(tmp_path), "--profile", "perfil@1.0.0"])
-    assert logging.getLogger("openai").level == logging.WARNING
     assert logging.getLogger("httpx").level == logging.WARNING

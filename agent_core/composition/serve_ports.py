@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import psycopg
 from opentelemetry.trace import Tracer
@@ -14,7 +15,8 @@ from psycopg_pool import ConnectionPool
 
 from agent_core.adapters.env_keys import EnvKeyProvider, KeyConfigError
 from agent_core.adapters.identity_keys import ReloadingIdentityVerifier
-from agent_core.adapters.llm import EndpointConfig, OpenAICompatGateway, load_endpoints
+from agent_core.adapters.llm import HttpLLMGateway, UnconfiguredLLMGateway
+from agent_core.adapters.llm.http_gateway import LLM_GATEWAY_TOKEN_ENV, LLM_GATEWAY_URL_ENV
 from agent_core.adapters.postgres_uow import PostgresStore
 from agent_core.composition.blobs import blob_factory_from_env
 from agent_core.decision import DecisionConfigError, DecisionProvider, HttpJevTransport, JevProvider
@@ -105,8 +107,9 @@ class ServePorts:
     classifier: FieldClassifier | None
     verifier: IdentityVerifier
     doubles: tuple[str, ...]  # piezas que son dobles de demo (vacío = todo real)
-    agents: tuple[str, ...] = ()  # agentes cuya release `prod` se revisa al arrancar (aviso de alias)
-    endpoints: Mapping[str, EndpointConfig] = field(default_factory=dict)
+    agents: tuple[str, ...] = ()  # agentes cuya release `prod` se revisa al arrancar (aviso)
+    llm_gateway_url: str | None = None  # None: sin llm-gateway configurado (toda generación cae a plantilla)
+    endpoints: Mapping[str, Any] = field(default_factory=dict)  # deprecated, always empty (ADR 0022)
     registry_api: RegistryApiPorts | None = None  # solo con --registry-api
     directory: AgentDirectory | None = None  # ADR 0021: directorio de especialistas (sobre el registry)
     readiness: tuple[tuple[str, Callable[[], bool]], ...] = ()  # comprobaciones de `/readyz`
@@ -185,6 +188,23 @@ def _registry_connect(dsn: str, pool_max: int) -> Callable[[], Any]:
     return connection
 
 
+def _llm_gateway_config(env: Mapping[str, str], problems: list[str]) -> tuple[str | None, str | None]:
+    """The llm-gateway URL and token, both or neither. Neither is allowed (generation falls back to templates)
+    and announced at startup; half of the pair or an invalid URL is a configuration problem."""
+    url = (env.get(LLM_GATEWAY_URL_ENV) or "").strip()
+    token = (env.get(LLM_GATEWAY_TOKEN_ENV) or "").strip()
+    if not url and not token:
+        return None, None
+    if not url or not token:
+        problems.append(f"{LLM_GATEWAY_URL_ENV} y {LLM_GATEWAY_TOKEN_ENV} van juntas: falta una de las dos")
+        return None, None
+    parsed = urlsplit(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        problems.append(f"{LLM_GATEWAY_URL_ENV} debe ser una URL http(s) con host")
+        return None, None
+    return url, token
+
+
 def _agents(args: argparse.Namespace, env: Mapping[str, str]) -> tuple[str, ...]:
     raw = args.agents or env.get(AGENTS_ENV) or ""
     return tuple(a for a in (part.strip() for part in raw.split(",")) if a)
@@ -192,6 +212,8 @@ def _agents(args: argparse.Namespace, env: Mapping[str, str]) -> tuple[str, ...]
 
 def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
                   clock: Clock, ids: IdSource, *, tracer: Tracer | None = None) -> ServePorts:
+    """`tracer` is kept for the stable composition surface (ADR 0022) and is unused: the `chat` span is
+    emitted by the llm-gateway service (ADR 0024)."""
     problems: list[str] = []
     demo = env.get(DEMO_ENV) == "1"
 
@@ -240,11 +262,7 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
                 args.identity_keys, lambda ref, now: grant_active[0](ref, now), clock, reload_every)
         except SchemaError as exc:
             problems.append(str(exc))
-    endpoints: dict[str, EndpointConfig] = {}
-    try:
-        endpoints = load_endpoints(env)
-    except SchemaError as exc:
-        problems.append(str(exc))
+    llm_url, llm_token = _llm_gateway_config(env, problems)
     eval_dsn: str | None = None
     staff_verifier: IdentityVerifier | None = None
     if args.registry_api:
@@ -301,7 +319,8 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         registry_api = RegistryApiPorts(store=registry_store, staff_verifier=staff_verifier,
                                         eval_uow_factory=eval_store.uow, eval_audit=eval_store.audit())
 
-    gateway = OpenAICompatGateway(pg_registry, endpoints, env, tracer=tracer)
+    gateway: LLMGateway = (HttpLLMGateway(pg_registry, llm_url, llm_token)
+                           if llm_url is not None and llm_token is not None else UnconfiguredLLMGateway())
     jev = JevProvider(HttpJevTransport(lambda: _jev_key(env), clock))
     return ServePorts(
         clock=clock, ids=ids, keys=keys, uow_factory=store.uow, audit=store.audit(), counters=store.costs(),
@@ -309,7 +328,7 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         providers={"jev": jev, "classifier": built["classifier"]},
         tools=built["tools"], authz=built["authz"], transcript=built["transcript"],
         calibrations=built["calibration"], classifier=built["field-classifier"], verifier=verifier,
-        doubles=tuple(doubles), agents=_agents(args, env), endpoints=endpoints,
+        doubles=tuple(doubles), agents=_agents(args, env), llm_gateway_url=llm_url,
         registry_api=registry_api,
         directory=RegistryDirectory(registry_store, pg_registry, pg_registry.release),
         readiness=(("postgres", store.ping),), run_export=store.run_export())
