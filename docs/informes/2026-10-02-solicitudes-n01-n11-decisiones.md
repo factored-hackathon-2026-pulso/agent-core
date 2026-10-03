@@ -11,3 +11,11 @@ Cada decisión la tomó Claude trabajando de noche, sin poder preguntar. **Reví
 | D-05 | N-02: `GET /v1/registry/aliases/{agent_id}/{alias}` devuelve `AliasState` (release y estado) o 404; `GET /v1/registry/versions/{kind}/{eid:path}` devuelve la lista de versiones. Se usó el prefijo `/versions/` porque `/entities/{kind}/{eid:path}` se tragaría un sufijo `/versions`. Mismo permiso que el resto de las lecturas (`builder`). | `/entities/{kind}/{eid}/versions`. | `registry/http.py` |
 
 Hallazgo previo (no es de esta tarea): `tests/composition/test_transfer_spans.py` y `test_turn_telemetry.py` fallan de forma intermitente también en `main` sin estos cambios (estado global de OpenTelemetry entre tests).
+
+## Scope B (ADR 0022)
+
+| # | Decisión | Alternativa descartada | Dónde |
+|---|---|---|---|
+| D-06 | N-06: la superficie estable es la listada en el ADR 0022, fijada por firmas en una prueba; compatibilidad dentro de la misma versión mayor de `SCHEMA_VERSION`. | Declararla solo en prosa. | `tests/test_stable_surface.py` |
+| D-07 | N-05: se confirma que `{id, spec}` e `"id@spec"` son equivalentes y que el hash va sobre el modelo normalizado; se recomienda la forma de objeto. | Rechazar una de las dos formas. | ADR 0022 §2 |
+| D-08 | N-11: la garantía es una política expand-only más una prueba estática de los `.sql`; las limpiezas (*contract*) necesitan dos versiones y un ADR. No hay migraciones versionadas ni se construyó una prueba con Postgres contra el binario anterior. | Un runner de migraciones versionadas con `down`. | ADR 0022 §3 |
