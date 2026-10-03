@@ -183,6 +183,17 @@ def registry_extension(service: RegistryService, verifier: IdentityVerifier | No
             actor = who(request, authorization)
             return _json(service.promote(actor, agent_id, alias, body.release_id, body.reason))
 
+        @router.get("/aliases/{agent_id}/{alias}")
+        def alias_state(request: Request, agent_id: str, alias: str, authorization: Auth = None) -> Response:
+            who(request, authorization)
+            return _json(service.get_alias(agent_id, alias))
+
+        @router.get("/versions/{kind}/{eid:path}")
+        def versions(request: Request, kind: str, eid: str, authorization: Auth = None) -> Response:
+            """Versiones de una entidad, de la más antigua a la más reciente (`eid` admite `/`)."""
+            who(request, authorization)
+            return _json(service.list_versions(kind, eid))
+
         @router.post("/releases/{rid}/revoke")
         def revoke(request: Request, rid: str, body: _Reason, authorization: Auth = None) -> Response:
             return _json(service.revoke(who(request, authorization), rid, body.reason))

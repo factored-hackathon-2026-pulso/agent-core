@@ -201,6 +201,15 @@ class ReleaseDetail(RegModel):
     max_input_chars: int
 
 
+class AliasState(RegModel):
+    """Hacia qué release apunta un alias hoy y si esa release sigue activa (N-02)."""
+
+    agent_id: str
+    alias: str
+    release_id: str
+    status: Literal["active", "revoked"]
+
+
 class ChangedRef(RegModel):
     before: VersionRef
     after: VersionRef

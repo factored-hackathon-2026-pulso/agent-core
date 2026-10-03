@@ -42,6 +42,7 @@ from agent_core.registry.evaluation.report import EvalReport, GateItem
 from agent_core.registry.evaluation.yardstick import Yardstick, YardstickChange, classify_yardstick_change
 from agent_core.registry.models import (
     AliasChange,
+    AliasState,
     Approval,
     AuditContext,
     ChangedRef,
@@ -691,6 +692,15 @@ class RegistryService:
             assert isinstance(content, dict)
             return EntityVersion(ref=v.ref, content=content, content_hash=v.content_hash, docs=v.docs,
                                  created_by=v.created_by, created_at=v.created_at)
+
+    def get_alias(self, agent_id: str, alias: str) -> AliasState:
+        """Lectura pura del alias: no crea propuesta ni gasta cuota (N-02)."""
+        with self._store.transaction() as tx:
+            release_id = tx.get_alias(agent_id, alias)
+            status = None if release_id is None else tx.release_status(release_id)
+            if release_id is None or status is None:
+                raise RegistryError(RegistryErrorCode.not_found, "el alias no apunta a ninguna release")
+            return AliasState(agent_id=agent_id, alias=alias, release_id=release_id, status=status)
 
     def list_versions(self, kind: str, entity_id: str) -> list[VersionSummary]:
         with self._store.transaction() as tx:
