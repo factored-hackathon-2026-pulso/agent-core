@@ -25,3 +25,13 @@ Hallazgo previo (no es de esta tarea): `tests/composition/test_transfer_spans.py
 | # | Decisión | Alternativa descartada | Dónde |
 |---|---|---|---|
 | D-09 | N-09: recarga perezosa al verificar (a lo sumo cada `--keys-reload-seconds`, 5 s por defecto, 0 la apaga), sin hilo de fondo ni señal. Compara el contenido del archivo, no el mtime. Una recarga rota conserva las últimas claves buenas (`last_reload_error` guarda solo el tipo). El arranque sigue fallando cerrado. Aplica a `--identity-keys` y `--staff-keys`. | Recargar con SIGHUP (no existe en Windows) o con un hilo de vigilancia. Fallar cerrado ante una recarga rota (un archivo a medio escribir tumbaría todo el servicio). | `adapters/identity_keys.py` |
+
+### N-08 (exportación de runs y eventos)
+
+| # | Decisión | Alternativa descartada | Dónde |
+|---|---|---|---|
+| D-10 | Tres rutas de solo lectura, paginadas por cursor, bajo `/v1/export`: `runs` (cursor `run_seq`), `runs/{id}/events` (cursor `seq`, continuo dentro del run, la cadena de hashes detecta huecos) y `registry-events` (cursor = posición). Un consumidor se pone al día con dos cursores sin perder eventos aunque los commits lleguen desordenados entre runs. | Un cursor global de eventos (exige una columna de secuencia y se pierden filas por commits fuera de orden); exportar a archivos. | `composition/export_http.py`, `ports/export.py` |
+| D-11 | Rol nuevo `exporter` (solo lectura, sin persona ni step-up; `admin` también sirve). **El emisor del staff (infra) tiene que acuñar credenciales con ese rol.** Se monta solo con `--registry-api` y verificador del staff. | Reutilizar `admin` (demasiado poder para una ingesta). | `registry/roles.py` |
+| D-12 | El run exportado es un resumen sin datos de cliente (sin slots, hechos ni id del principal; solo su tipo). `RunSummary` es un modelo nuevo en `ports` y por eso aparece `contracts/schemas/RunSummary.json` (cambio de interfaz: avisar). | Exportar el `RunState` completo. | `ports/export.py` |
+| D-13 | **No** se exporta el outbox de la unidad 4: el contrato de eventos salientes (`agent_core.outbound`, `contracts/events/`) ya es el canal público de ese flujo; el `Outbox` es una cola interna. Si hace falta, es una tarea aparte. | Listar `outbox` pendientes por HTTP. | — |
+| D-14 | Las consultas de Postgres (`list_runs`, `read_after`) no se ejecutaron contra una base real: no hay daemon de Docker en la máquina. Hay un test de integración para `read_after`; falta uno para `list_runs`. | — | `adapters/postgres_uow.py` |

@@ -11,7 +11,9 @@ from agent_core.registry.errors import RegistryError, RegistryErrorCode
 CONSTRUCTOR = "constructor"
 APROBADOR = "aprobador"
 ADMIN = "admin"
-ROLES = frozenset({CONSTRUCTOR, APROBADOR, ADMIN})  # lista cerrada: un rol desconocido no concede nada
+EXPORTER = "exporter"  # solo lectura de runs y eventos para quien los ingiere (N-08)
+# lista cerrada: un rol desconocido no concede nada
+ROLES = frozenset({CONSTRUCTOR, APROBADOR, ADMIN, EXPORTER})
 HUMAN_ATTR = "actor"
 
 
@@ -36,6 +38,13 @@ def require_constructor(p: Principal) -> None:
     require_builder(p)
     if CONSTRUCTOR not in p.roles:
         raise RegistryError(RegistryErrorCode.forbidden_role, "se necesita el rol constructor")
+
+
+def require_exporter(p: Principal) -> None:
+    """Lectura de las exportaciones: `builder` con `exporter` (o `admin`); sin persona ni step-up."""
+    require_builder(p)
+    if EXPORTER not in p.roles and ADMIN not in p.roles:
+        raise RegistryError(RegistryErrorCode.forbidden_role, "se necesita el rol exporter")
 
 
 def _require_human_step_up(p: Principal, role: str, message: str) -> None:

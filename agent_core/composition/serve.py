@@ -6,10 +6,11 @@ from collections.abc import Callable, Iterable, Mapping
 from datetime import timedelta
 
 from agent_core.adapters.llm import EndpointConfig
-from agent_core.api.app import ApiDeps, create_app
+from agent_core.api.app import ApiDeps, ApiExtension, create_app
 from agent_core.api.security_log import OtelSecurityLog
 from agent_core.audit import AuditLog
 from agent_core.composition.engine import EngineDeps, build_engine
+from agent_core.composition.export_http import export_extension
 from agent_core.composition.observability import ObservabilityConfigError, setup_observability
 from agent_core.composition.serve_ports import ServeConfigError, ServePorts, resolve_ports
 from agent_core.composition.serve_registry import build_registry_service_for_serve
@@ -24,12 +25,23 @@ from agent_core.domain import (
     Principal,
     PrincipalType,
 )
-from agent_core.ports import Clock, IdSource, RegistryPort
+from agent_core.ports import Clock, IdSource, RegistryPort, RunExport
 from agent_core.registry import RegistryService
 from agent_core.registry.http import registry_extension
 from agent_core.turn import TurnTelemetry
 
 GATEWAY_TRACER = "agent_core.adapters.llm"
+
+
+def _extensions(ports: ServePorts, registry_service: RegistryService | None) -> tuple[ApiExtension, ...]:
+    """La API del registry y, con verificador del staff y un almacén que exporta, la exportación (N-08)."""
+    if registry_service is None:
+        return ()
+    staff = None if ports.registry_api is None else ports.registry_api.staff_verifier
+    found: list[ApiExtension] = [registry_extension(registry_service, staff, ports.clock)]
+    if staff is not None and isinstance(ports.audit, RunExport):
+        found.append(export_extension(ports.audit, registry_service, staff, ports.clock))
+    return tuple(found)
 
 
 def build_api_deps(ports: ServePorts, *, registry_service: RegistryService | None = None,
@@ -45,9 +57,7 @@ def build_api_deps(ports: ServePorts, *, registry_service: RegistryService | Non
         handoffs=built.handoffs, transcripts=built.transcripts,
         denials=AuditLog(ports.audit, ports.uow_factory), security=OtelSecurityLog(),
         readiness=ports.readiness, build_sha=build_sha,
-        extensions=() if registry_service is None else (registry_extension(
-            registry_service, None if ports.registry_api is None else ports.registry_api.staff_verifier,
-            ports.clock),))
+        extensions=_extensions(ports, registry_service))
 
 
 def model_alias_warnings(registry: RegistryPort, agents: Iterable[str],

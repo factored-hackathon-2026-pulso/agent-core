@@ -36,6 +36,7 @@ from agent_core.domain import (
     dumps,
     loads,
 )
+from agent_core.ports.export import RunSummary
 
 ONE_OPEN_RUN_INDEX = "runs_one_open_per_session"
 ONE_OPEN_RUN_MESSAGE = "la sesión ya tiene un run abierto (runs_one_open_per_session)"
@@ -351,6 +352,17 @@ class PostgresAuditSink:
     def append_outside_turn(self, run_id: str, events: list[EngineEvent]) -> None:
         with self._store.reading() as conn, conn.transaction():
             PgAuditEvents(conn).append_events(run_id, events)
+
+    # `RunExport` (N-08): lectura paginada para quien ingiere
+    def list_runs(self, after_seq: int, limit: int) -> list[RunSummary]:
+        with self._store.reading() as conn:
+            rows = conn.execute("SELECT run_seq, state_json FROM runs WHERE run_seq > %s ORDER BY run_seq "
+                                "LIMIT %s", (after_seq, max(limit, 0))).fetchall()
+        return [RunSummary.of(int(r[0]), RunState.model_validate(loads(r[1]))) for r in rows]
+
+    def events_after(self, run_id: str, after_seq: int, limit: int) -> list[EngineEvent]:
+        with self._store.reading() as conn:
+            return PgAuditEvents(conn).read_after(run_id, after_seq, limit)
 
 
 class PostgresOutbox:

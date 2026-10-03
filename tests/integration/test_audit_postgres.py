@@ -71,3 +71,10 @@ def test_tampering_through_a_privileged_bypass_is_detected_by_verify(admin_conn:
     admin_conn.execute("UPDATE audit_events SET event_json = replace(event_json, 'rel-2026-09-28', 'rel-x') "
                        "WHERE seq = 2")
     assert check_chain("run-0001", store.read("run-0001")).broken_at == 2
+
+
+def test_read_after_pages_by_seq_for_the_export(app_conn: PgConn) -> None:  # N-08
+    store = persisted(app_conn, count=5)
+    assert [e.seq for e in store.read_after("run-0001", -1, 2)] == [0, 1]
+    assert [e.seq for e in store.read_after("run-0001", 1, 10)] == [2, 3, 4]
+    assert store.read_after("run-0001", 4, 10) == []

@@ -693,6 +693,11 @@ class RegistryService:
             return EntityVersion(ref=v.ref, content=content, content_hash=v.content_hash, docs=v.docs,
                                  created_by=v.created_by, created_at=v.created_at)
 
+    def list_events(self, after: int, limit: int) -> list[RegistryEvent]:
+        """Eventos del registry en orden de registro; `after` es cuántos ya se leyeron (N-08)."""
+        with self._store.transaction() as tx:
+            return tx.events()[max(after, 0):max(after, 0) + max(limit, 0)]
+
     def get_alias(self, agent_id: str, alias: str) -> AliasState:
         """Lectura pura del alias: no crea propuesta ni gasta cuota (N-02)."""
         with self._store.transaction() as tx:

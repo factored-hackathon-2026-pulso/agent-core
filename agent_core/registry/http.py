@@ -86,6 +86,9 @@ def _problem(request: Request, exc: RegistryError) -> Response:
     return _Problem(dumps(body), status_code=status)
 
 
+problem_response = _problem  # para extensiones hermanas (p. ej. la exportación, N-08)
+
+
 def _bearer(authorization: str | None) -> str:
     scheme, _, rest = (authorization or "").strip().partition(" ")
     return rest.strip() if scheme.lower() == "bearer" else (authorization or "").strip()

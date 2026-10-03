@@ -52,6 +52,12 @@ class PgAuditEvents:
             (run_id,)).fetchone()
         return _decode(row[0]) if row else None
 
+    def read_after(self, run_id: str, after_seq: int, limit: int) -> list[EngineEvent]:
+        rows = self._conn.execute(
+            "SELECT event_json FROM audit_events WHERE run_id = %s AND seq > %s ORDER BY seq LIMIT %s",
+            (run_id, after_seq, max(limit, 0))).fetchall()
+        return [_decode(r[0]) for r in rows]
+
     def read(self, run_id: str) -> list[EngineEvent]:
         rows = self._conn.execute(
             "SELECT event_json FROM audit_events WHERE run_id = %s ORDER BY seq", (run_id,)).fetchall()
