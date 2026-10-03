@@ -5,7 +5,7 @@ calibración offline vive en `agent_core.decision.calibration`. M2 y M4 solo deb
 
 from agent_core.decision.providers.classifier import ArtifactLoader, ClassifierProvider
 from agent_core.decision.providers.jev import JevProvider, JevTransport, JevTransportError
-from agent_core.decision.providers.jev_http import HttpJevTransport
+from agent_core.decision.providers.jev_gateway import GatewayJevTransport, UnconfiguredJevTransport
 from agent_core.decision.providers.llm_structured import LlmStructuredProvider
 from agent_core.decision.providers.rule import RuleProvider
 from agent_core.decision.service import DecisionService
@@ -30,7 +30,7 @@ __all__ = [
     "DecisionProvider",
     "DecisionService",
     "EventScope",
-    "HttpJevTransport",
+    "GatewayJevTransport",
     "JevProvider",
     "JevTransport",
     "JevTransportError",
@@ -39,6 +39,7 @@ __all__ = [
     "ProviderTimeout",
     "RawPrediction",
     "RuleProvider",
+    "UnconfiguredJevTransport",
     "UnderstandContext",
     "UnderstandResult",
     "UnderstandService",

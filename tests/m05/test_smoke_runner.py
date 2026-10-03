@@ -160,9 +160,11 @@ def test_main_refuses_to_call_out_without_the_smoke_flag(monkeypatch: pytest.Mon
     assert "AGENT_CORE_JEV_SMOKE=1" in captured.err and "sk-sintetica" not in captured.out + captured.err
 
 
-def test_main_needs_the_key_and_never_prints_it(monkeypatch: pytest.MonkeyPatch,
+def test_main_needs_the_gateway_and_never_prints_the_token(monkeypatch: pytest.MonkeyPatch,
                                                 capsys: pytest.CaptureFixture[str]) -> None:
     monkeypatch.setenv("AGENT_CORE_JEV_SMOKE", "1")
-    monkeypatch.setenv("JEV_API_KEY", "  ")
+    monkeypatch.setenv("AGENTCORE_LLM_GATEWAY_URL", "  ")
+    monkeypatch.setenv("AGENTCORE_LLM_GATEWAY_TOKEN", "S3CRETO")
     assert main([]) == 2
-    assert "JEV_API_KEY" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "AGENTCORE_LLM_GATEWAY_URL" in err and "S3CRETO" not in err

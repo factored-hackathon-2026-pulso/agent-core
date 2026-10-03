@@ -17,7 +17,12 @@ from agent_core.adapters.identity_keys import ReloadingIdentityVerifier
 from agent_core.adapters.llm import HttpLLMGateway, UnconfiguredLLMGateway
 from agent_core.adapters.llm.http_gateway import LLM_GATEWAY_TOKEN_ENV, LLM_GATEWAY_URL_ENV
 from agent_core.adapters.postgres_uow import PostgresStore
-from agent_core.decision import DecisionConfigError, DecisionProvider, HttpJevTransport, JevProvider
+from agent_core.decision import (
+    DecisionProvider,
+    GatewayJevTransport,
+    JevProvider,
+    UnconfiguredJevTransport,
+)
 from agent_core.decision.calibration.artifact import CalibrationSource
 from agent_core.domain import Release, SchemaError
 from agent_core.ports import (
@@ -40,7 +45,6 @@ from agent_core.registry import PgRegistryStore, PostgresRegistry, RegistryDirec
 from agent_core.views import FieldClassifier
 
 DEMO_ENV = "AGENTCORE_ALLOW_DEMO"
-JEV_KEY_ENV = "AGENTCORE_JEV_API_KEY"
 DSN_ENV = "AGENTCORE_REGISTRY_DSN"
 EVAL_DSN_ENV = "AGENTCORE_EVAL_DSN"
 AGENTS_ENV = "AGENTCORE_SERVE_AGENTS"
@@ -159,13 +163,6 @@ def _is_test_double(path: str) -> bool:
     """Las rutas bajo `testing` son dobles de prueba: no se aceptan sin AGENTCORE_ALLOW_DEMO=1."""
     module = path.partition(":")[0]
     return module == "testing" or module.startswith("testing.")
-
-
-def _jev_key(env: Mapping[str, str]) -> str:
-    key = env.get(JEV_KEY_ENV)
-    if not key:
-        raise DecisionConfigError(f"falta {JEV_KEY_ENV}: no se puede llamar a JEV sin clave")
-    return key
 
 
 def _llm_gateway_config(env: Mapping[str, str], problems: list[str]) -> tuple[str | None, str | None]:
@@ -294,7 +291,8 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
 
     gateway: LLMGateway = (HttpLLMGateway(pg_registry, llm_url, llm_token)
                            if llm_url is not None and llm_token is not None else UnconfiguredLLMGateway())
-    jev = JevProvider(HttpJevTransport(lambda: _jev_key(env), clock))
+    jev = JevProvider(GatewayJevTransport(llm_url, llm_token) if llm_url is not None and llm_token is not None
+                      else UnconfiguredJevTransport())
     return ServePorts(
         clock=clock, ids=ids, keys=keys, uow_factory=store.uow, audit=store.audit(), counters=store.costs(),
         registry=pg_registry, releases=pg_registry.release, gateway=gateway,

@@ -133,13 +133,21 @@ def test_any_failing_or_empty_factory_is_a_clean_problem_not_a_traceback(path: s
     assert path in " ".join(info.value.problems)
 
 
-def test_a_missing_jev_key_is_a_config_error_that_is_not_swallowed_as_a_provider_error() -> None:
+def test_without_a_gateway_jev_is_a_config_error_that_is_not_swallowed_as_a_provider_error() -> None:
     from agent_core.decision import DecisionConfigError
 
     ports = _resolve(AGENTCORE_ALLOW_DEMO="1")
     transport = ports.providers["jev"]._transport  # type: ignore[attr-defined]
-    with pytest.raises(DecisionConfigError, match="AGENTCORE_JEV_API_KEY"):
+    with pytest.raises(DecisionConfigError, match="AGENTCORE_LLM_GATEWAY_URL"):
         transport.send({}, 1000)
+
+
+def test_with_a_gateway_jev_goes_through_it() -> None:
+    from agent_core.decision import GatewayJevTransport
+
+    ports = _resolve(AGENTCORE_ALLOW_DEMO="1", AGENTCORE_LLM_GATEWAY_URL="https://gw.test",
+                     AGENTCORE_LLM_GATEWAY_TOKEN="t")
+    assert isinstance(ports.providers["jev"]._transport, GatewayJevTransport)  # type: ignore[attr-defined]
 
 
 # --- menores del revisor: validación temprana y agregada ----------------------------------------------

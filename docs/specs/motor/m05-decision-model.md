@@ -62,7 +62,7 @@ class UnderstandService:
 
 # Proveedores (agent_core.decision): RuleProvider(), ClassifierProvider(loader: ArtifactLoader),
 # LlmStructuredProvider(gateway: LLMGateway), JevProvider(transport: JevTransport, capture=None),
-# HttpJevTransport(api_key: Callable[[], str], clock: Clock, *, base_url, max_retries, backoff_base_ms, sleep),
+# GatewayJevTransport(base_url, token, *, client)  (ADR 0024; antes HttpJevTransport),
 # JevTransportError(status: int | None)
 
 # Offline (paquete agent_core.decision.calibration)
@@ -109,7 +109,7 @@ def calibrate(model_def, dev_split: Sequence[DevExample], providers, *, targets:
 
 | Proveedor | Uso en el MVP | Notas |
 |---|---|---|
-| `jev` | preferido si pasa la prueba de humo | adaptador sobre transporte inyectable (`JevTransport`) con el contrato real de `POST /v1/systemone` (§3.3.1); `HttpJevTransport` (stdlib) recibe la key como `Callable[[], str]` que inyecta la composición (única que lee `JEV_API_KEY`); el adaptador nunca la ve; captura del request para medir fugas (M7) |
+| `jev` | preferido si pasa la prueba de humo | adaptador sobre transporte inyectable (`JevTransport`) con el contrato real de `POST /v1/systemone` (§3.3.1); `GatewayJevTransport` llama a `POST /v1/jev` del servicio llm-gateway, que guarda la key de JEV y hace los reintentos (ADR 0024); el adaptador nunca ve la key; captura del request para medir fugas (M7) |
 | `classifier` | respaldo y baseline | artefacto JSON `tfidf-logreg-v1` (ref + hash de datos) que exporta el científico de datos; TF-IDF + regresión logística evaluados en Python puro (sin `scikit-learn`); ver §3.5 |
 | `rule` | decisiones triviales | p ∈ {0, 1}; `config` en §3.5 |
 | `llm_structured` | **solo baseline en evaluación**, sin umbral | vía `LLMGateway`; `p_cal = null` salvo logprobs |
@@ -132,7 +132,7 @@ Request `{"state": {"locale", "input": <vista model>}, "model", "questions"}`; r
 - `config`: `model` (alias o ID; `model_version` = `"jev:" + model devuelto`), `timeout_ms` (obligatorio), `questions`, `multi_flow`, `input_usd_per_mtok` (coste = tokens de entrada; la salida no se cobra).
 - `instructions` sale de `config.questions.<campo>.instructions`, o de `description`/`title` del esquema, o de un texto por defecto. Sin ningún campo preguntable es `DecisionConfigError`.
 - `latency_ms = 0` (lo mide `decide`); `tokens = input + output`. Una respuesta sin `usage`, con tipo distinto al pedido, opción fuera del enum o probabilidad fuera de [0, 1] es `ProviderError` (con el uso parcial si se pudo leer).
-- `HttpJevTransport`: `timeout_ms` es el presupuesto total con reintentos; backoff exponencial en 429/529 (respeta `Retry-After`); sin reintento en 401/422 ni otros errores; no sigue redirects; `https` obligatorio salvo `localhost`; los errores llevan solo el código HTTP.
+- `GatewayJevTransport` (ADR 0024): envía `{request, timeout_ms, labels}` al servicio; `timeout_ms` es el presupuesto total con reintentos, que hace el servicio (backoff exponencial solo en 429/529, respeta `Retry-After`, sin reintento en 401/422 ni otros errores, sin redirects, `https` salvo `localhost`). Aquí no hay reintentos: `timeout` → `TimeoutError`; cualquier otra falla → `JevTransportError(status de JEV)`; el servicio rechazando el token → `DecisionConfigError`. `retryable_responses` cuenta los 429/529 que el servicio reintentó. Antes de ADR 0024 esto era `HttpJevTransport` (stdlib, con la key en este proceso); su comportamiento se portó al servicio.
 - Límites de `jev-1.13.0` (`/models`): 40 req/s, 100K tokens/s, contexto de 64k.
 
 ### 3.4 Calibración offline
