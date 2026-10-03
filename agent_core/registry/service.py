@@ -134,6 +134,11 @@ def _violations_payload(violations: Sequence[Violation]) -> list[dict[str, str |
             for v in violations]
 
 
+def _gate_payload(run: EvalRun) -> dict[str, JsonValue]:
+    """Cuerpo de `gate_failed`: el reporte y el id de la corrida que lo guardó (N-10)."""
+    return {**run.report.model_dump(mode="json"), "eval_run_id": run.eval_run_id}
+
+
 def _agent_metrics(entities: Sequence[RegistryEntity], agent_id: str) -> list[MetricDef]:
     """The agent's metrics in a set of entities (candidate or base); [] if it is not there."""
     for entity in entities:
@@ -432,7 +437,7 @@ class RegistryService:
             raise RegistryError(RegistryErrorCode.integrity_error, "la evaluación guardada no existe")
         if run.verdict == "fail":
             raise RegistryError(RegistryErrorCode.gate_failed, "la candidata no pasa el gate",
-                                payload=run.report.model_dump(mode="json"))
+                                payload=_gate_payload(run))
         return run.report
 
     def evaluate(self, actor: Principal, proposal_id: str, suite_id: str,
@@ -497,7 +502,7 @@ class RegistryService:
             self._remember(tx, idempotency_key, "evaluate", p, request, audit, result_ref=run.eval_run_id)
         if report.verdict == "fail":
             raise RegistryError(RegistryErrorCode.gate_failed, "la candidata no pasa el gate",
-                                payload=report.model_dump(mode="json"))
+                                payload=_gate_payload(run))
         return report
 
     # --- decisiones humanas ------------------------------------------------------------------------------
@@ -659,7 +664,11 @@ class RegistryService:
                              proposal_id=stored.proposal_id,
                              base_release_id=stored.base_release_id, published_by=stored.published_by,
                              published_at=stored.published_at,
-                             eval_suite_refs=list(stored.eval_suite_refs))
+                             eval_suite_refs=list(stored.eval_suite_refs),
+                             interrupts=list(stored.release.interrupts),
+                             language_detection=stored.release.language_detection,
+                             injection_ruleset=stored.release.injection_ruleset,
+                             max_input_chars=stored.release.max_input_chars)
 
     def get_release(self, release_id: str) -> ReleaseDetail:
         with self._store.transaction() as tx:

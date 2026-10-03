@@ -48,6 +48,13 @@ class _Promote(BaseModel):
     reason: str = ""
 
 
+# Cuerpos de request con nombre público: `agentcore contracts` los publica en `contracts/registry/` (N-01).
+REQUEST_BODIES: dict[str, type[BaseModel]] = {
+    "CreateProposalBody": _Create, "PutDraftBody": _Draft, "EvaluateBody": _Evaluate,
+    "ApproveBody": _Approve, "ReasonBody": _Reason, "PromoteBody": _Promote,
+}
+
+
 class _Problem(Response):
     media_type = "application/problem+json"
 

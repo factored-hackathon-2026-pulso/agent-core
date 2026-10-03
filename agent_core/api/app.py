@@ -2,6 +2,8 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
 from typing import Annotated, Final
 
 from fastapi import APIRouter, FastAPI, Header, Request
@@ -31,7 +33,15 @@ from agent_core.api.schemas import (
     session_lineage,
 )
 from agent_core.api.tracing import install_tracing, request_trace_id
-from agent_core.domain import EngineError, Principal, ProblemCode, RunInput, RunState, TurnInput
+from agent_core.domain import (
+    SCHEMA_VERSION,
+    EngineError,
+    Principal,
+    ProblemCode,
+    RunInput,
+    RunState,
+    TurnInput,
+)
 from agent_core.ports import (
     AuthzPort,
     Clock,
@@ -89,6 +99,14 @@ class ApiDeps:
     extensions: tuple[ApiExtension, ...] = ()  # rutas de otros paquetes; vacío = comportamiento previo
     # Comprobaciones de `/readyz` (nombre, función). Vacío = siempre listo. Las inyecta el cableado.
     readiness: tuple[tuple[str, Callable[[], bool]], ...] = ()
+    build_sha: str | None = None  # commit de la imagen (`AGENTCORE_GIT_SHA`); lo informa `/version` (N-04)
+
+
+def _package_version() -> str:
+    try:
+        return package_version("agent-core")
+    except PackageNotFoundError:
+        return "0+unknown"
 
 
 def _failed_checks(checks: tuple[tuple[str, Callable[[], bool]], ...]) -> list[str]:
@@ -130,7 +148,7 @@ FASTAPI_TELEMETRY_OFF: Final[TelemetryConfig] = {
 
 
 def create_app(deps: ApiDeps) -> FastAPI:
-    app = FastAPI(title="agent-core", version="1.0.0", telemetry=FASTAPI_TELEMETRY_OFF)
+    app = FastAPI(title="agent-core", version=SCHEMA_VERSION, telemetry=FASTAPI_TELEMETRY_OFF)
     install_tracing(app, deps.ids)
     install_error_handlers(app)
 
@@ -138,6 +156,11 @@ def create_app(deps: ApiDeps) -> FastAPI:
     def healthz() -> dict[str, str]:
         """Liveness: el proceso responde. No toca dependencias."""
         return {"status": "ok"}
+
+    @app.get("/version", include_in_schema=False)
+    def version() -> dict[str, str | None]:
+        """Qué corre: paquete, versión del contrato y commit de la imagen. Sin credencial y sin datos."""
+        return {"package": _package_version(), "contract": SCHEMA_VERSION, "sha": deps.build_sha}
 
     @app.get("/readyz", include_in_schema=False, response_model=None)
     def readyz() -> JSONResponse:

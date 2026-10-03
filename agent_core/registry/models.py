@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from agent_core.domain import EntityId, JsonValue, Release
+from agent_core.domain import EntityId, EntityRef, Interrupt, JsonValue, Release
 from agent_core.registry.evaluation.report import EvalReport, Verdict
 from agent_core.registry.evaluation.yardstick import YardstickChange
 
@@ -194,6 +194,11 @@ class ReleaseDetail(RegModel):
     published_by: str
     published_at: datetime
     eval_suite_refs: list[VersionRef] = Field(default_factory=list)  # the next proposal's old yardstick
+    # Campos de nivel release que entran en `release_hash` (N-03): con ellos se reconstruye sin dry-run.
+    interrupts: list[Interrupt] = Field(default_factory=list)
+    language_detection: EntityRef
+    injection_ruleset: EntityRef | None = None
+    max_input_chars: int
 
 
 class ChangedRef(RegModel):

@@ -33,7 +33,7 @@ GATEWAY_TRACER = "agent_core.adapters.llm"
 
 
 def build_api_deps(ports: ServePorts, *, registry_service: RegistryService | None = None,
-                   telemetry: TurnTelemetry | None = None) -> ApiDeps:
+                   telemetry: TurnTelemetry | None = None, build_sha: str | None = None) -> ApiDeps:
     built = build_engine(EngineDeps(
         clock=ports.clock, ids=ports.ids, keys=ports.keys, uow_factory=ports.uow_factory, audit=ports.audit,
         registry=ports.registry, releases=ports.releases, tools=ports.tools, gateway=ports.gateway,
@@ -44,7 +44,7 @@ def build_api_deps(ports: ServePorts, *, registry_service: RegistryService | Non
         counters=ports.counters, clock=ports.clock, ids=ports.ids, turns=built.turns,
         handoffs=built.handoffs, transcripts=built.transcripts,
         denials=AuditLog(ports.audit, ports.uow_factory), security=OtelSecurityLog(),
-        readiness=ports.readiness,
+        readiness=ports.readiness, build_sha=build_sha,
         extensions=() if registry_service is None else (registry_extension(
             registry_service, None if ports.registry_api is None else ports.registry_api.staff_verifier,
             ports.clock),))
@@ -108,7 +108,8 @@ def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Map
         # Always the real turn telemetry: without an exporter its spans are no-ops, but `bind` still
         # correlates the turn's logs (m04 §3.9).
         app = create_app(
-            build_api_deps(ports, registry_service=registry_service, telemetry=OtelTurnTelemetry()))
+            build_api_deps(ports, registry_service=registry_service, telemetry=OtelTurnTelemetry(),
+                           build_sha=env.get("AGENTCORE_GIT_SHA") or None))
         if serve is None:
             import uvicorn
 
