@@ -12,7 +12,7 @@ its own message (`ONE_OPEN_RUN_MESSAGE`). Not run against a real Postgres in pha
 unverified."""
 
 from bisect import insort
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -21,6 +21,7 @@ from types import TracebackType
 from typing import Any, Self
 
 import psycopg
+from psycopg_pool import ConnectionPool
 
 from agent_core.adapters.postgres_audit import PgAuditEvents, apply_audit_schema
 from agent_core.domain import (
@@ -52,12 +53,43 @@ def apply_schema(conn: "psycopg.Connection[Any]", app_role: str | None = None) -
 class PostgresStore:
     """Fábrica de UoW y de los puertos de lectura sobre una misma base. `schema` fija el `search_path`."""
 
-    def __init__(self, dsn: str, *, schema: str | None = None) -> None:
+    def __init__(self, dsn: str, *, schema: str | None = None, pool_max: int = 0, pool_min: int = 1) -> None:
+        """`pool_max > 0` reutiliza conexiones (un pool por proceso); con 0 cada UoW abre la suya, como antes.
+        Con muchas tareas detrás de un RDS Proxy el pool de cada una acota las conexiones que le toca."""
         self._dsn = dsn
         self._options = f"-c search_path={schema}" if schema else None
+        self._pool: ConnectionPool[Any] | None = None
+        self._pool_opened = False
+        if pool_max > 0:
+            self._pool = ConnectionPool(
+                dsn, min_size=min(pool_min, pool_max), max_size=pool_max, open=False,
+                kwargs={"autocommit": True, "options": self._options}, check=ConnectionPool.check_connection)
+
+    def open_pool(self, timeout_s: float = 10.0) -> None:
+        """Abre el pool y espera a que tenga conexiones (sin pool no hace nada). Lanza si la base no está."""
+        if self._pool is not None:
+            self._pool.open(wait=True, timeout=timeout_s)
+            self._pool_opened = True
+
+    def close(self) -> None:
+        if self._pool is not None:
+            self._pool.close()
 
     def connect(self) -> "psycopg.Connection[Any]":
+        if self._pool is not None:
+            if not self._pool_opened:
+                self._pool.open()  # perezoso y sin esperar: `getconn` espera hasta el timeout del pool
+                self._pool_opened = True
+            conn: psycopg.Connection[Any] = self._pool.getconn()
+            return conn
         return psycopg.connect(self._dsn, autocommit=True, options=self._options)
+
+    def release(self, conn: "psycopg.Connection[Any]") -> None:
+        """Devuelve la conexión al pool (que descarta la rota o con transacción abierta) o la cierra."""
+        if self._pool is not None:
+            self._pool.putconn(conn)
+        else:
+            conn.close()
 
     def ping(self, timeout_s: int = 3) -> bool:
         """`True` si la base responde a `SELECT 1`. Falla cerrado y sin detalle: el error de psycopg puede
@@ -71,7 +103,7 @@ class PostgresStore:
         return True
 
     def uow(self) -> "PostgresUoW":
-        return PostgresUoW(self.connect())
+        return PostgresUoW(self.connect(), self.release)
 
     def audit(self) -> "PostgresAuditSink":
         return PostgresAuditSink(self)
@@ -87,15 +119,20 @@ class PostgresStore:
 
     @contextmanager
     def reading(self) -> Iterator["psycopg.Connection[Any]"]:
-        with self.connect() as conn:
+        conn = self.connect()
+        try:
             yield conn
+        finally:
+            self.release(conn)
 
 
 class PostgresUoW:
     """Una instancia = una transacción. Lee sus propias escrituras; `acquire_turn` es inmediato."""
 
-    def __init__(self, conn: "psycopg.Connection[Any]") -> None:
+    def __init__(self, conn: "psycopg.Connection[Any]",
+                 release: Callable[["psycopg.Connection[Any]"], None] | None = None) -> None:
         self._conn = conn
+        self._release = release or (lambda c: c.close())
         self._runs: dict[str, RunState] = {}
         self._base_versions: dict[str, int] = {}
         self._turn_results: dict[tuple[str, str], TurnResult] = {}
@@ -113,7 +150,7 @@ class PostgresUoW:
     def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None,
                  tb: TracebackType | None) -> None:
         self._done = True  # lo no commiteado se descarta
-        self._conn.close()
+        self._release(self._conn)
 
     def _check_open(self) -> None:
         if self._done:

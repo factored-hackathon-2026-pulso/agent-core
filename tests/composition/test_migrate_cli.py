@@ -99,3 +99,16 @@ def test_the_subcommand_is_registered_in_the_cli(capsys: pytest.CaptureFixture[s
     assert info.value.code == 0
     out = capsys.readouterr().out
     assert "--dsn" in out and "--eval-dsn" in out and "--app-role" in out
+
+
+def test_with_a_blob_bucket_the_foreign_key_to_reg_blobs_is_dropped() -> None:
+    code, conns = _run("--dsn", "postgresql://a/b", env={"AGENTCORE_BLOB_BUCKET": "bucket"})
+
+    assert code == 0
+    assert any("DROP CONSTRAINT IF EXISTS reg_entity_versions_content_hash_fkey" in q for q in conns[0].sql)
+
+
+def test_without_a_blob_bucket_the_foreign_key_stays() -> None:
+    _, conns = _run("--dsn", "postgresql://a/b")
+
+    assert not any("DROP CONSTRAINT" in q for q in conns[0].sql)

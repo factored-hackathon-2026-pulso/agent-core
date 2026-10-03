@@ -3,14 +3,16 @@
 import argparse
 import importlib
 import json
+import os
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
 import psycopg
 from pydantic import ValidationError
 
+from agent_core.composition.blobs import blob_factory_from_env
 from agent_core.domain import Principal, dumps, loads
 from agent_core.flows import load_yaml
 from agent_core.ports import Clock, IdentityVerifier, IdSource, UnitOfWorkFactory
@@ -40,8 +42,9 @@ class UowRunReleases:
 
 
 def build_registry_service(dsn: str, *, evaluator: EvalPort, clock: Clock, ids: IdSource,
-                           runs: RunReleaseReader | None = None) -> RegistryService:
-    store = PgRegistryStore(lambda: psycopg.connect(dsn, autocommit=False))
+                           runs: RunReleaseReader | None = None,
+                           env: Mapping[str, str] | None = None) -> RegistryService:
+    store = PgRegistryStore(lambda: psycopg.connect(dsn, autocommit=False), blob_factory_from_env(env or {}))
     return RegistryService(store, evaluator, clock, ids, runs=runs)
 
 
@@ -156,7 +159,7 @@ def run_registry_cli(args: argparse.Namespace, *, clock: Clock, ids: IdSource,
         service = RegistryService(store, evaluator, clock, ids)
     else:
         assert dsn is not None
-        service = build_registry_service(dsn, evaluator=evaluator, clock=clock, ids=ids)
+        service = build_registry_service(dsn, evaluator=evaluator, clock=clock, ids=ids, env=os.environ)
     try:
         result = _dispatch(service, actor, args)
     except RegistryError as exc:
