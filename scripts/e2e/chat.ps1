@@ -8,8 +8,11 @@
 param(
     [ValidateSet("customer", "advisor", "supervisor")] [string]$As = "customer",
     [Parameter(Mandatory)] [string]$Agent,
-    [string]$Customer = "cust-001"
+    [string]$Customer = "cust-001",
+    [ValidateSet("es", "pt", "")] [string]$Lang = ""
 )
 . $PSScriptRoot\_env.ps1
 Set-Location $Root
-uv run python -m testing.chat --as $As --agent $Agent --customer $Customer
+$langArgs = @()
+if ($Lang) { $langArgs = @("--lang", $Lang) }
+uv run python -m testing.chat --as $As --agent $Agent --customer $Customer @langArgs

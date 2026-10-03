@@ -8,16 +8,14 @@ por aquí: `serve --registry-api` las enruta al `BuilderToolExecutor` real (ADR 
 from decimal import Decimal
 
 from agent_core.composition.serve_ports import DemoContext
+from agent_core.decision.calibration.artifact import CalibrationArtifact, InMemoryCalibrationSource
 from agent_core.domain import EntityRef, JsonValue, ToolDef
 from agent_core.ports import ToolCallContext, ToolResult
 from agent_core.views import FieldClassifier, FieldRule
-from testing.engine_world import CATALOG, _radicar
+from testing.engine_world import CATALOG, _radicar, demo_calibration, transfer_calibration
 from testing.fakes.tools import FakeToolExecutor
 from testing.realflow_demo import _HANDLERS as _CLIENT_HANDLERS
-from testing.realflow_demo import (  # noqa: F401  (se re-exportan como fábricas)
-    calibration,
-    classifier_provider,
-)
+from testing.realflow_demo import classifier_provider  # noqa: F401  (se re-exporta como fábrica)
 
 _MOVEMENTS: list[JsonValue] = [
     {"movement_id": "mv-1", "merchant": "Tienda Aurora", "amount": Decimal("120.50"), "currency": "USD",
@@ -92,3 +90,18 @@ def field_classifier(ctx: DemoContext) -> FieldClassifier:
              "credit_limit", "minimum_payment", "due_date", "case_id", "topic", "target_queue", "speaker")
     free_text = ("reason", "summary", "text")
     return FieldClassifier({**CATALOG, **dict.fromkeys(extra, public), **dict.fromkeys(free_text, untrusted)})
+
+
+def _with_portuguese(artifact: CalibrationArtifact) -> CalibrationArtifact:
+    """Los umbrales se buscan por idioma: sin una entrada `pt`, todo mensaje en portugués queda bajo umbral y
+    el agente solo pide aclarar. Hecho a mano para la demo (la calibración real es de la unidad 6)."""
+    thresholds = dict(artifact.thresholds)
+    for key, value in artifact.thresholds.items():
+        if key[-1] == "es":
+            thresholds[(*key[:-1], "pt")] = value
+    return artifact.model_copy(update={"thresholds": thresholds})
+
+
+def calibration(ctx: DemoContext) -> InMemoryCalibrationSource:
+    return InMemoryCalibrationSource({"cal-demo": _with_portuguese(demo_calibration()),
+                                      "cal-transfer-demo": _with_portuguese(transfer_calibration())})

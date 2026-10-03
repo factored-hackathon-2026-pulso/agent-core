@@ -22,7 +22,8 @@ class ChatSession:
     def __init__(self, *, transport: Transport, ids: IdSource, token: Callable[[], str], agent: str,
                  out: Callable[[str], None], ask: Callable[[str], str],
                  step_up_token: Callable[[], str] | None = None,
-                 extra_headers: Mapping[str, str] | None = None) -> None:
+                 extra_headers: Mapping[str, str] | None = None, lang: str | None = None) -> None:
+        self._lang = lang  # idioma con el que se abre el run (sin calibración no hay cambio por detección)
         self._extra = dict(extra_headers or {})  # p. ej. X-On-Behalf-Of del asesor, en cada llamada
         self._transport = transport
         self._ids = ids
@@ -41,7 +42,7 @@ class ChatSession:
         # M0 no tiene un IdKind de petición: `message` sirve de clave de idempotencia.
         headers = {"Authorization": f"Bearer {self._token()}", **self._extra,
                    "Idempotency-Key": self._ids.new_id(IdKind.message)}
-        status, body = self._transport("POST", "/v1/runs", headers, {"agent": self._agent})
+        status, body = self._transport("POST", "/v1/runs", headers, self._start_body())
         if status >= 400:
             self._show_problem(status, body)
             return
@@ -49,6 +50,9 @@ class ChatSession:
         self.session_id = body.get("session_id")
         for message in body["first_turn"]["messages"]:
             self._out(message["text"])
+
+    def _start_body(self) -> dict[str, Any]:
+        return {"agent": self._agent, **({"lang": self._lang} if self._lang else {})}
 
     def say(self, text: str) -> None:
         turn = self._turn({"text": text})
@@ -156,6 +160,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                              "o supervisor (persona con rol constructor, para el agente constructor)")
     parser.add_argument("--customer", default="cust-001")
     parser.add_argument("--advisor-id", default="adv-7")
+    parser.add_argument("--lang", choices=("es", "pt"), default=None,
+                        help="idioma con el que se abre el run (por defecto, el del agente: es)")
     args = parser.parse_args(argv)
     clock = SystemClock()
     issuer = TestIdentityIssuer(clock)  # claves TEST públicas: el servidor debe correr en demo
@@ -172,7 +178,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         token = lambda: issuer.customer(args.customer)  # noqa: E731
         step_up = lambda: issuer.stepped_up(args.customer)  # noqa: E731
     chat = ChatSession(transport=http_transport(args.base_url), ids=SystemIds(), token=token,
-                       step_up_token=step_up, agent=args.agent, out=print, ask=input, extra_headers=extra)
+                       step_up_token=step_up, agent=args.agent, out=print, ask=input, extra_headers=extra,
+                       lang=args.lang)
     repl(chat, read=input)
     return 0
 
