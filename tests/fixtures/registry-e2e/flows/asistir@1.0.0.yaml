@@ -1,0 +1,27 @@
+id: asistir
+version: 1.0.0
+priority: 50
+nodes:
+  - {id: pedir, type: collect, config: {slot: pedido, prompt_ref: t/pedir_pedido, max_attempts: 3},
+     next: {ok: investigar, max_attempts: fin_sin_pedido}}
+  - id: investigar
+    type: agent
+    config:
+      tools_allowed: [leer_movimientos@1, leer_productos@1, leer_pqr_cliente@1, obtener_handoff@1, leer_transcript@1]
+      max_steps: 6
+      prompt_ref: p/copiloto@1
+      goal: "Responder al asesor el pedido sobre el cliente que atiende, usando solo lo que leas con las tools."
+      save_as: hallazgo
+      input_view: [slots.pedido]
+      output_schema:
+        type: object
+        additionalProperties: false
+        required: [resumen]
+        properties:
+          resumen: {type: string}
+    next: {answered: responder, gave_up: no_pude}
+  - {id: responder, type: respond,
+     config: {generate: {prompt_ref: p/respuesta_asesor@1, allowed_facts: [facts.hallazgo], purpose: advisor_view, fallback_template_ref: t/copiloto_fallback@1}},
+     next: {next: pedir}}
+  - {id: no_pude, type: respond, config: {template_ref: t/copiloto_sin_respuesta}, next: {next: pedir}}
+  - {id: fin_sin_pedido, type: end, config: {outcome: abstained}}

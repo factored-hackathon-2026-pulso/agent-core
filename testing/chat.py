@@ -13,7 +13,7 @@ from typing import Any
 from agent_core.adapters.system_clock import SystemClock
 from agent_core.adapters.system_ids import SystemIds
 from agent_core.ports import IdKind, IdSource
-from testing.fakes.identity import TestIdentityIssuer
+from testing.fakes.identity import TestIdentityIssuer, TestStaffIssuer
 
 Transport = Callable[[str, str, Mapping[str, str], dict[str, Any] | None], tuple[int, dict[str, Any]]]
 
@@ -21,7 +21,9 @@ Transport = Callable[[str, str, Mapping[str, str], dict[str, Any] | None], tuple
 class ChatSession:
     def __init__(self, *, transport: Transport, ids: IdSource, token: Callable[[], str], agent: str,
                  out: Callable[[str], None], ask: Callable[[str], str],
-                 step_up_token: Callable[[], str] | None = None) -> None:
+                 step_up_token: Callable[[], str] | None = None,
+                 extra_headers: Mapping[str, str] | None = None) -> None:
+        self._extra = dict(extra_headers or {})  # p. ej. X-On-Behalf-Of del asesor, en cada llamada
         self._transport = transport
         self._ids = ids
         self._token = token
@@ -37,7 +39,7 @@ class ChatSession:
 
     def start(self) -> None:
         # M0 no tiene un IdKind de petición: `message` sirve de clave de idempotencia.
-        headers = {"Authorization": f"Bearer {self._token()}",
+        headers = {"Authorization": f"Bearer {self._token()}", **self._extra,
                    "Idempotency-Key": self._ids.new_id(IdKind.message)}
         status, body = self._transport("POST", "/v1/runs", headers, {"agent": self._agent})
         if status >= 400:
@@ -62,7 +64,7 @@ class ChatSession:
         if name not in paths:
             self._out(f"comando desconocido: {name} (usa /run, /transcript, /quit)")
             return
-        headers = {"Authorization": f"Bearer {self._current_token()}"}
+        headers = {"Authorization": f"Bearer {self._current_token()}", **self._extra}
         status, body = self._transport("GET", paths[name], headers, None)
         if status >= 400:
             self._show_problem(status, body)
@@ -77,13 +79,13 @@ class ChatSession:
         return (self._step_up_token if self._stepped_up and self._step_up_token else self._token)()
 
     def _turn(self, payload: dict[str, Any]) -> dict[str, Any]:
-        headers = {"Authorization": f"Bearer {self._current_token()}"}
+        headers = {"Authorization": f"Bearer {self._current_token()}", **self._extra}
         body = {"channel": "web", "client_turn_id": self._ids.new_id(IdKind.turn), **payload}
         path = f"/v1/sessions/{self.session_id}/turns"
         status, turn = self._transport("POST", path, headers, body)
         if status == 401 and turn.get("code") == "principal_expired":
             # Mismo `client_turn_id`: el servidor procesa el turno una sola vez.
-            headers = {"Authorization": f"Bearer {self._current_token()}"}
+            headers = {"Authorization": f"Bearer {self._current_token()}", **self._extra}
             status, turn = self._transport("POST", path, headers, body)
         if status >= 400:
             self._show_problem(status, turn)
@@ -148,14 +150,29 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="chat", description=__doc__)
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--agent", default="atencion")
+    parser.add_argument("--as", dest="role", choices=("customer", "advisor", "supervisor"),
+                        default="customer",
+                        help="quién habla: cliente (por defecto), asesor con delegación sobre --customer, "
+                             "o supervisor (persona con rol constructor, para el agente constructor)")
     parser.add_argument("--customer", default="cust-001")
+    parser.add_argument("--advisor-id", default="adv-7")
     args = parser.parse_args(argv)
     clock = SystemClock()
     issuer = TestIdentityIssuer(clock)  # claves TEST públicas: el servidor debe correr en demo
-    chat = ChatSession(transport=http_transport(args.base_url), ids=SystemIds(),
-                       token=lambda: issuer.customer(args.customer),
-                       step_up_token=lambda: issuer.stepped_up(args.customer),
-                       agent=args.agent, out=print, ask=input)
+    extra: dict[str, str] = {}
+    step_up = None
+    if args.role == "advisor":
+        principal, delegation = issuer.advisor(args.advisor_id, args.customer)
+        token = lambda: principal  # noqa: E731
+        extra = {"X-On-Behalf-Of": delegation}
+    elif args.role == "supervisor":
+        staff = TestStaffIssuer(clock)
+        token = lambda: staff.supervisor()  # noqa: E731
+    else:
+        token = lambda: issuer.customer(args.customer)  # noqa: E731
+        step_up = lambda: issuer.stepped_up(args.customer)  # noqa: E731
+    chat = ChatSession(transport=http_transport(args.base_url), ids=SystemIds(), token=token,
+                       step_up_token=step_up, agent=args.agent, out=print, ask=input, extra_headers=extra)
     repl(chat, read=input)
     return 0
 

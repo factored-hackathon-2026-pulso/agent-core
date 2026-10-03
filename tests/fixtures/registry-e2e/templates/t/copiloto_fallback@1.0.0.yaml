@@ -1,0 +1,5 @@
+id: t/copiloto_fallback
+version: 1.0.0
+locales:
+  es: "No pude armar una respuesta verificada; revisa los datos del cliente directamente."
+  pt: "No pude armar una respuesta verificada; revisa los datos del cliente directamente."

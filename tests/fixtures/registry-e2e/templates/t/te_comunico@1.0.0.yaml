@@ -1,0 +1,5 @@
+id: t/te_comunico
+version: 1.0.0
+locales:
+  es: "Te comunico con un especialista."
+  pt: "Vou te transferir para um especialista."

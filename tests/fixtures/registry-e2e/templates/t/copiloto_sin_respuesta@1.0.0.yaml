@@ -1,0 +1,5 @@
+id: t/copiloto_sin_respuesta
+version: 1.0.0
+locales:
+  es: "No encontré información suficiente para ese pedido. ¿Puedes darme más detalle?"
+  pt: "No encontré información suficiente para ese pedido. ¿Puedes darme más detalle?"

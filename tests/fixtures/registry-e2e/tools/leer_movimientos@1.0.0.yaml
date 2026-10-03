@@ -1,0 +1,12 @@
+id: leer_movimientos
+version: 1.0.0
+risk_class: read
+min_auth_level: session
+idempotent: true
+source: movimientos
+description: "Lista los últimos movimientos de la tarjeta del cliente atendido (monto, comercio, fecha, estado)."
+args_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    limite: {type: integer}

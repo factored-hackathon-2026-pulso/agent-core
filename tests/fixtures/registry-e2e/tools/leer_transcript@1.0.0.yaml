@@ -1,0 +1,12 @@
+id: leer_transcript
+version: 1.0.0
+risk_class: read
+min_auth_level: session
+idempotent: true
+source: transcript
+description: "Lee la conversación del cliente con el agente de atención (últimos turnos)."
+args_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    limite: {type: integer}

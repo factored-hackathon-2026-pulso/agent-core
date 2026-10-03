@@ -1,0 +1,20 @@
+# Postgres propio de la prueba E2E: puerto 55432 para no chocar con un Postgres local en 5432.
+# Credenciales de desarrollo local, no secretas. Proyecto aparte (-p agentcore-e2e): no toca tu docker-compose.yml.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: agentcore
+      POSTGRES_PASSWORD: agentcore-dev-only
+      POSTGRES_DB: agentcore
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - e2e-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentcore"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  e2e-pgdata:

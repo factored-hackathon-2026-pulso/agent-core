@@ -1,0 +1,13 @@
+id: directory/list
+version: 1.0.0
+risk_class: read
+min_auth_level: anonymous
+idempotent: true
+source: directory
+description: "Lists the specialists of a directory the current person can be transferred to."
+args_schema:
+  type: object
+  properties:
+    directory: {type: string}
+    locale: {type: string}
+  required: [directory, locale]

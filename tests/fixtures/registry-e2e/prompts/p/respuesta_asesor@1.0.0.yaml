@@ -1,0 +1,6 @@
+id: p/respuesta_asesor
+version: 1.0.0
+locales:
+  es: "Redacta para el asesor una respuesta breve y clara (máximo tres frases) basada solo en los hechos entregados. No inventes datos. Si faltan datos, dilo."
+  pt: "Redija para o assessor uma resposta breve baseada somente nos fatos fornecidos."
+model_profile: perfil-generacion@1
