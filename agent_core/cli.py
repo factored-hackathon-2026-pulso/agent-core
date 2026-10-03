@@ -13,7 +13,8 @@ from typing import Any, Protocol
 import psycopg
 
 from agent_core.actions import ActionManager
-from agent_core.adapters.llm import LLMAgentPort, OpenAICompatGateway, load_endpoints
+from agent_core.adapters.llm import HttpLLMGateway, LLMAgentPort
+from agent_core.adapters.llm.http_gateway import LLM_GATEWAY_TOKEN_ENV, LLM_GATEWAY_URL_ENV
 from agent_core.adapters.llm.smoke import (
     SMOKE_PROMPT,
     AgentStepRunner,
@@ -235,25 +236,22 @@ def _agent_step_runner(port: LLMAgentPort, clock: Clock) -> AgentStepRunner:
 
 def _run_llm_smoke(args: argparse.Namespace) -> int:
     """Prueba de humo del gateway: nunca imprime la clave ni el contenido generado."""
-    # El SDK `openai` registra los cuerpos de request en DEBUG (incluso con OPENAI_LOG=debug): se corta.
+    # Las librerías HTTP registran detalles de los requests en DEBUG: se corta.
     from agent_core.composition.observability import quiet_sdk_loggers
 
     quiet_sdk_loggers()
     if args.n < 1:
         print("--n debe ser al menos 1", file=sys.stderr)
         return USAGE_ERROR
+    url = os.environ.get(LLM_GATEWAY_URL_ENV, "").strip()
+    token = os.environ.get(LLM_GATEWAY_TOKEN_ENV, "").strip()
+    if not url or not token:
+        print(f"llm-smoke necesita {LLM_GATEWAY_URL_ENV} y {LLM_GATEWAY_TOKEN_ENV}", file=sys.stderr)
+        return USAGE_ERROR
     try:
-        endpoints = load_endpoints(os.environ)
-        if not endpoints:
-            print("llm-smoke necesita LLM_ENDPOINTS con al menos un endpoint", file=sys.stderr)
-            return USAGE_ERROR
-        try:
-            profile = EntityRef.parse(args.profile)
-        except DomainError:
-            print("--profile debe ser id@versión exacta", file=sys.stderr)
-            return USAGE_ERROR
-    except SchemaError as error:
-        print(str(error), file=sys.stderr)
+        profile = EntityRef.parse(args.profile)
+    except DomainError:
+        print("--profile debe ser id@versión exacta", file=sys.stderr)
         return USAGE_ERROR
     registry, violations = load_registry(args.registry)
     if violations:
@@ -266,7 +264,7 @@ def _run_llm_smoke(args: argparse.Namespace) -> int:
         print(f"el perfil {profile} no está en el registro {args.registry}", file=sys.stderr)
         return USAGE_ERROR
     smoke_registry = SmokeRegistry(agents, profile)  # type: ignore[arg-type]
-    gateway = OpenAICompatGateway(smoke_registry, endpoints, os.environ)
+    gateway = HttpLLMGateway(smoke_registry, url, token)
     clock = SystemClock()
     port = LLMAgentPort(gateway, smoke_registry, lambda kind, ref: ref.require_exact())
     report = run_smoke(gateway, SMOKE_PROMPT, clock, n=args.n, agent_step=_agent_step_runner(port, clock))

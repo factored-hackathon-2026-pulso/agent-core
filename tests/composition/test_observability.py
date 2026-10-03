@@ -114,7 +114,6 @@ def test_setup_installs_json_logs_on_root_and_quiets_the_sdk_loggers(root_loggin
         assert logging.getLogger().level == logging.INFO and len(_handlers()) == 1
         logging.getLogger("agentcore.api").warning("hola")
         assert json.loads(stream.getvalue().splitlines()[-1])["message"] == "hola"
-        assert logging.getLogger("openai").level == logging.WARNING
         assert logging.getLogger("httpx").level == logging.WARNING
         assert logging.getLogger("httpcore").level == logging.WARNING
     finally:
@@ -169,8 +168,7 @@ def _wire(monkeypatch: pytest.MonkeyPatch, seen: dict[str, Any]) -> list[bool]:
     issuer = TestIdentityIssuer(world.clock)
     seen["world"] = world
 
-    def resolve(args: Any, env: Any, clock: Any, ids: Any, *, tracer: Any = None) -> Any:
-        seen["tracer"] = tracer
+    def resolve(args: Any, env: Any, clock: Any, ids: Any) -> Any:
         return make_ports(world, issuer)
 
     monkeypatch.setattr(serve_module, "resolve_ports", resolve)
@@ -200,7 +198,7 @@ def test_run_serve_wires_observability_and_shuts_it_down(
     world = seen["world"]
     code = serve_module.run_serve(argparse.Namespace(host="h", port=1), clock=world.clock, ids=world.ids,
                                   env={}, serve=lambda app, **kw: started.update(kw))
-    assert code == 0 and shut == [True] and seen["tracer"] is not None
+    assert code == 0 and shut == [True]
     assert started["log_config"] is None and started["access_log"] is False
     assert _handlers() == []
 
@@ -320,7 +318,7 @@ def test_a_foreign_root_handler_never_prints_an_exception_while_serving(root_log
 
 @pytest.mark.parametrize("order", ["first-then-second", "second-then-first"])
 def test_two_setups_restore_the_original_logging_in_either_shutdown_order(order: str) -> None:  # M2
-    root, sdk = logging.getLogger(), [logging.getLogger(n) for n in ("openai", "httpx", "httpcore")]
+    root, sdk = logging.getLogger(), [logging.getLogger(n) for n in ("httpx", "httpcore")]
     before = (list(root.handlers), root.level, [lg.level for lg in sdk])
     first = setup_observability({}, version="1", stream=io.StringIO())
     second = setup_observability({}, version="1", stream=io.StringIO())

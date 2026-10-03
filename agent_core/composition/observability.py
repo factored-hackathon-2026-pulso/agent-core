@@ -38,7 +38,7 @@ _LIBERAL_HEADER_PATTERN = re.compile(
     rf"[ \t]*{_KEY}[ \t]*=[ \t]*[\x20\x21\x23-\x2b\x2d-\x3a\x3c-\x5b\x5d-\x7e]*[ \t]*")
 # SDK loggers that write header text when parsing them (`parse_env_headers` logs a rejected entry verbatim).
 _HEADER_ECHOING_LOGGERS = ("opentelemetry.util.re",)
-_SDK_LOGGERS = ("openai", "httpx", "httpcore")  # the openai SDK logs request bodies (model view) at DEBUG
+_SDK_LOGGERS = ("httpx", "httpcore")  # HTTP client loggers: DEBUG shows request details
 _RATIO_SAMPLERS = ("traceidratio", "parentbased_traceidratio")
 _SAMPLERS: Mapping[str, sampling.Sampler | None] = {
     "always_on": sampling.ALWAYS_ON,
@@ -197,14 +197,14 @@ class Observability:
 
 
 def quiet_sdk_loggers() -> None:
-    """The openai SDK logs request bodies at DEBUG (even with OPENAI_LOG=debug): never below WARNING."""
+    """HTTP client libraries log request details at DEBUG: never below WARNING."""
     for name in _SDK_LOGGERS:
         logging.getLogger(name).setLevel(logging.WARNING)
 
 
 def install_json_logging(stream: TextIO, level: int = logging.INFO) -> logging.Handler:
-    """Make `JsonLogFormatter` the **only** root handler (F6, I1). A foreign handler (e.g. the `basicConfig`
-    that the openai SDK runs at import with OPENAI_LOG=debug) would print an exception's message and stack in
+    """Make `JsonLogFormatter` the **only** root handler (F6, I1). A foreign handler (e.g. a `basicConfig`
+    run by a client library at import) would print an exception's message and stack in
     plain text next to the JSON line; the caller restores the previous handlers on shutdown."""
     root = logging.getLogger()
     handler = logging.StreamHandler(stream)

@@ -5,7 +5,8 @@ import sys
 from collections.abc import Callable, Iterable, Mapping
 from datetime import timedelta
 
-from agent_core.adapters.llm import EndpointConfig
+from agent_core.adapters.llm import gateway_is_up
+from agent_core.adapters.llm.http_gateway import LLM_GATEWAY_URL_ENV
 from agent_core.api.app import ApiDeps, ApiExtension, create_app
 from agent_core.api.security_log import OtelSecurityLog
 from agent_core.audit import AuditLog
@@ -19,9 +20,6 @@ from agent_core.domain import (
     AgentSelector,
     AuthInfo,
     AuthLevel,
-    EntityKind,
-    EntityRef,
-    ModelProfile,
     Principal,
     PrincipalType,
 )
@@ -29,8 +27,6 @@ from agent_core.ports import Clock, IdSource, RegistryPort
 from agent_core.registry import RegistryService
 from agent_core.registry.http import registry_extension
 from agent_core.turn import TurnTelemetry
-
-GATEWAY_TRACER = "agent_core.adapters.llm"
 
 
 def _extensions(ports: ServePorts, registry_service: RegistryService | None) -> tuple[ApiExtension, ...]:
@@ -60,34 +56,29 @@ def build_api_deps(ports: ServePorts, *, registry_service: RegistryService | Non
         extensions=_extensions(ports, registry_service))
 
 
-def model_alias_warnings(registry: RegistryPort, agents: Iterable[str],
-                         endpoints: Mapping[str, EndpointConfig], env: Mapping[str, str],
-                         clock: Clock) -> list[str]:
-    """Perfiles de la release `prod` de cada agente cuyo alias de LLM no tiene endpoint o cuya variable de key
-    está vacía (gateway §5). Solo avisos: el arranque no se bloquea y nunca se imprime el valor de una key."""
+def release_warnings(registry: RegistryPort, agents: Iterable[str], clock: Clock) -> list[str]:
+    """Agents named for the startup check that have no active `prod` release. Warnings only: startup is never
+    blocked. The model aliases are no longer checked here: they live in the llm-gateway service."""
     now = clock.now()
     startup = Principal(type=PrincipalType.service, id="serve-startup",
                         auth=AuthInfo(level=AuthLevel.session, at=now), exp=now + timedelta(minutes=1))
     warnings: list[str] = []
     for agent in agents:
         try:
-            release = registry.resolve_release(AgentSelector(id=agent, alias="prod"), startup)
+            registry.resolve_release(AgentSelector(id=agent, alias="prod"), startup)
         except KeyError:
-            warnings.append(f"el agente `{agent}` no tiene una release `prod` activa; "
-                            "no se revisaron sus perfiles")
-            continue
-        for pid, version in sorted(release.entities.get(EntityKind.model_profile, {}).items()):
-            profile = registry.get(EntityRef(id=pid, version=version), ModelProfile)
-            endpoint = endpoints.get(profile.endpoint_alias)
-            where = f"perfil {pid}@{version}, agente {agent}"
-            if endpoint is None:
-                warnings.append(f"alias de LLM `{profile.endpoint_alias}` sin endpoint en LLM_ENDPOINTS "
-                                f"({where})")
-            elif not env.get(endpoint.api_key_env, "").strip():
-                warnings.append(
-                    f"alias de LLM `{profile.endpoint_alias}`: la variable de API key está vacía ({where})"
-                )
+            warnings.append(f"el agente `{agent}` no tiene una release `prod` activa")
     return warnings
+
+
+def gateway_warnings(url: str | None) -> list[str]:
+    """Startup notes about the llm-gateway: not configured, or not answering `/healthz`. The URL is not
+    printed (it can carry credentials)."""
+    if url is None:
+        return [f"{LLM_GATEWAY_URL_ENV} sin definir: sin llm-gateway toda generación cae a plantilla"]
+    if not gateway_is_up(url):
+        return ["el llm-gateway configurado no responde en /healthz; sus generaciones fallarán"]
+    return []
 
 
 def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Mapping[str, str],
@@ -103,7 +94,7 @@ def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Map
         return 2
     try:
         try:
-            ports = resolve_ports(args, env, clock, ids, tracer=observability.tracer(GATEWAY_TRACER))
+            ports = resolve_ports(args, env, clock, ids)
         except ServeConfigError as exc:
             print("agentcore serve no puede arrancar:", file=sys.stderr)
             for problem in exc.problems:
@@ -112,7 +103,8 @@ def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Map
         if ports.doubles:
             print("AVISO: piezas que son DOBLES de demo (no producción): " + ", ".join(ports.doubles),
                   file=sys.stderr)
-        for warning in model_alias_warnings(ports.registry, ports.agents, ports.endpoints, env, ports.clock):
+        for warning in (*release_warnings(ports.registry, ports.agents, ports.clock),
+                        *gateway_warnings(ports.llm_gateway_url)):
             print(f"AVISO: {warning}", file=sys.stderr)
         registry_service = build_registry_service_for_serve(ports) if ports.registry_api is not None else None
         # Always the real turn telemetry: without an exporter its spans are no-ops, but `bind` still

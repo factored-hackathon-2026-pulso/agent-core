@@ -136,7 +136,7 @@ Lo mismo corre el CI en `.github/workflows/ci.yml`.
 | `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES` | recurso; `service.name` es `agentcore` por defecto |
 | `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG` | los seis samplers estándar (por defecto `parentbased_always_on`); el argumento es la razón de `traceidratio`, entre 0 y 1 |
 
-El certificado, la compresión y el timeout del exportador los lee el SDK del entorno del proceso. Al apagar el servidor se vacían los spans pendientes: con el colector inalcanzable el cierre puede tardar hasta unos 10 s, y un segundo Ctrl-C en ese lapso lo interrumpe con un traceback de Python en texto plano (no JSON; no incluye las cabeceras ni otros secretos). El nivel de log (`INFO`) es fijo y `openai`, `httpx` y `httpcore` se silencian por debajo de `WARNING`.
+El certificado, la compresión y el timeout del exportador los lee el SDK del entorno del proceso. Al apagar el servidor se vacían los spans pendientes: con el colector inalcanzable el cierre puede tardar hasta unos 10 s, y un segundo Ctrl-C en ese lapso lo interrumpe con un traceback de Python en texto plano (no JSON; no incluye las cabeceras ni otros secretos). El nivel de log (`INFO`) es fijo y `httpx` y `httpcore` se silencian por debajo de `WARNING`.
 
 **Con Phoenix (local)**
 
@@ -164,7 +164,7 @@ agent_core/
   composition/        raíz de composición que cablea los módulos
   registry/           registry de entidades: propuestas, gate de evaluación, publicación y linaje (unidad 2)
   knowledge/          pendiente: solo spec (M12)
-  adapters/llm/       gateway de LLM compatible con OpenAI y adaptador del nodo `agent` (unidad 5)
+  adapters/llm/       cliente del servicio llm-gateway (ADR 0024) y adaptador del nodo `agent` (unidad 5)
 agent_telemetry/      trazas OpenTelemetry y logs JSON correlacionados
 testing/fakes/        dobles en memoria de cada puerto
 tests/                pruebas por módulo, contratos e integración
@@ -186,7 +186,7 @@ docs/                 ADR, specs y planes
 El motor y sus módulos están implementados y probados con dobles y, donde aplica, sobre Postgres. Lo que **todavía no existe**:
 
 - **Conocimiento:** solo hay propuesta de spec (`docs/specs/motor/m12-conocimiento.md`).
-- **Adaptadores reales** para tools, autorización y transcript: hoy solo hay dobles en `testing/fakes/`. El gateway de LLM sí es real (`agent_core/adapters/llm`); falta correr `agentcore llm-smoke` contra OpenRouter.
+- **Adaptadores reales** para tools, autorización y transcript: hoy solo hay dobles en `testing/fakes/`. El gateway de LLM es un servicio aparte (`pulso-factored/llm-gateway`, ADR 0024) y `agent_core/adapters/llm` es su cliente; falta correr `agentcore llm-smoke` contra OpenRouter a través de él.
 
 ## Cómo contribuir
 
