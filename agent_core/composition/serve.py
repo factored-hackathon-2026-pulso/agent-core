@@ -6,10 +6,11 @@ from collections.abc import Callable, Iterable, Mapping
 from datetime import timedelta
 
 from agent_core.adapters.llm import EndpointConfig
-from agent_core.api.app import ApiDeps, create_app
+from agent_core.api.app import ApiDeps, ApiExtension, create_app
 from agent_core.api.security_log import OtelSecurityLog
 from agent_core.audit import AuditLog
 from agent_core.composition.engine import EngineDeps, build_engine
+from agent_core.composition.export_http import export_extension
 from agent_core.composition.observability import ObservabilityConfigError, setup_observability
 from agent_core.composition.serve_ports import ServeConfigError, ServePorts, resolve_ports
 from agent_core.composition.serve_registry import build_registry_service_for_serve
@@ -32,8 +33,19 @@ from agent_core.turn import TurnTelemetry
 GATEWAY_TRACER = "agent_core.adapters.llm"
 
 
+def _extensions(ports: ServePorts, registry_service: RegistryService | None) -> tuple[ApiExtension, ...]:
+    """La API del registry y, con verificador del staff y un almacén que exporta, la exportación (N-08)."""
+    if registry_service is None:
+        return ()
+    staff = None if ports.registry_api is None else ports.registry_api.staff_verifier
+    found: list[ApiExtension] = [registry_extension(registry_service, staff, ports.clock)]
+    if staff is not None and ports.run_export is not None:
+        found.append(export_extension(ports.run_export, registry_service, staff, ports.clock))
+    return tuple(found)
+
+
 def build_api_deps(ports: ServePorts, *, registry_service: RegistryService | None = None,
-                   telemetry: TurnTelemetry | None = None) -> ApiDeps:
+                   telemetry: TurnTelemetry | None = None, build_sha: str | None = None) -> ApiDeps:
     built = build_engine(EngineDeps(
         clock=ports.clock, ids=ports.ids, keys=ports.keys, uow_factory=ports.uow_factory, audit=ports.audit,
         registry=ports.registry, releases=ports.releases, tools=ports.tools, gateway=ports.gateway,
@@ -44,10 +56,8 @@ def build_api_deps(ports: ServePorts, *, registry_service: RegistryService | Non
         counters=ports.counters, clock=ports.clock, ids=ports.ids, turns=built.turns,
         handoffs=built.handoffs, transcripts=built.transcripts,
         denials=AuditLog(ports.audit, ports.uow_factory), security=OtelSecurityLog(),
-        readiness=ports.readiness,
-        extensions=() if registry_service is None else (registry_extension(
-            registry_service, None if ports.registry_api is None else ports.registry_api.staff_verifier,
-            ports.clock),))
+        readiness=ports.readiness, build_sha=build_sha,
+        extensions=_extensions(ports, registry_service))
 
 
 def model_alias_warnings(registry: RegistryPort, agents: Iterable[str],
@@ -108,7 +118,8 @@ def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Map
         # Always the real turn telemetry: without an exporter its spans are no-ops, but `bind` still
         # correlates the turn's logs (m04 §3.9).
         app = create_app(
-            build_api_deps(ports, registry_service=registry_service, telemetry=OtelTurnTelemetry()))
+            build_api_deps(ports, registry_service=registry_service, telemetry=OtelTurnTelemetry(),
+                           build_sha=env.get("AGENTCORE_GIT_SHA") or None))
         if serve is None:
             import uvicorn
 

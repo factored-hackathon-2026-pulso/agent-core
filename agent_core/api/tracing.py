@@ -22,7 +22,7 @@ def request_trace_id(request: Request) -> str:
 
 
 # Rutas de operación (M9 §3.9): se consultan cada pocos segundos; un 503 de `/readyz` no es un error.
-PROBE_PATHS: Final = frozenset({"/healthz", "/readyz"})
+PROBE_PATHS: Final = frozenset({"/healthz", "/readyz", "/version"})
 
 
 def install_tracing(app: FastAPI, ids: IdSource) -> None:

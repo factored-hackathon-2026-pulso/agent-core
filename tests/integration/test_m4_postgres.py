@@ -150,3 +150,18 @@ def test_dos_escritores_de_la_cadena_de_auditoria_no_pisan_ni_dan_error_crudo() 
             with pytest.raises(VersionConflict):
                 second.commit()
         assert [e.event_id for e in pg.audit().read(RUN_ID)] == [event.event_id]
+
+
+def test_n08_run_export_lists_runs_and_pages_their_events() -> None:
+    with postgres_store("m4_export") as pg:
+        w = PgWorld(pg)
+        w.open_run(active=True)
+        w.understand.push(cmd("out_of_scope"))
+        w.turn("hola")
+        export = pg.run_export()
+        runs = export.list_runs(0, 10)
+        assert [r.run_id for r in runs] == [RUN_ID] and runs[0].run_seq >= 1
+        assert export.list_runs(runs[0].run_seq, 10) == []
+        events = export.events_after(RUN_ID, -1, 100)
+        assert [e.seq for e in events] == list(range(len(events))) and len(events) >= 2
+        assert [e.seq for e in export.events_after(RUN_ID, 0, 1)] == [1]

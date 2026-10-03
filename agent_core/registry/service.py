@@ -42,6 +42,7 @@ from agent_core.registry.evaluation.report import EvalReport, GateItem
 from agent_core.registry.evaluation.yardstick import Yardstick, YardstickChange, classify_yardstick_change
 from agent_core.registry.models import (
     AliasChange,
+    AliasState,
     Approval,
     AuditContext,
     ChangedRef,
@@ -132,6 +133,11 @@ def release_id_for(candidate_hash: str) -> str:
 def _violations_payload(violations: Sequence[Violation]) -> list[dict[str, str | None]]:
     return [{"rule": v.rule, "path": v.path, "flow": v.flow, "node_id": v.node_id, "message": v.message}
             for v in violations]
+
+
+def _gate_payload(run: EvalRun) -> dict[str, JsonValue]:
+    """Cuerpo de `gate_failed`: el reporte y el id de la corrida que lo guardó (N-10)."""
+    return {**run.report.model_dump(mode="json"), "eval_run_id": run.eval_run_id}
 
 
 def _agent_metrics(entities: Sequence[RegistryEntity], agent_id: str) -> list[MetricDef]:
@@ -432,7 +438,7 @@ class RegistryService:
             raise RegistryError(RegistryErrorCode.integrity_error, "la evaluación guardada no existe")
         if run.verdict == "fail":
             raise RegistryError(RegistryErrorCode.gate_failed, "la candidata no pasa el gate",
-                                payload=run.report.model_dump(mode="json"))
+                                payload=_gate_payload(run))
         return run.report
 
     def evaluate(self, actor: Principal, proposal_id: str, suite_id: str,
@@ -497,7 +503,7 @@ class RegistryService:
             self._remember(tx, idempotency_key, "evaluate", p, request, audit, result_ref=run.eval_run_id)
         if report.verdict == "fail":
             raise RegistryError(RegistryErrorCode.gate_failed, "la candidata no pasa el gate",
-                                payload=report.model_dump(mode="json"))
+                                payload=_gate_payload(run))
         return report
 
     # --- decisiones humanas ------------------------------------------------------------------------------
@@ -659,7 +665,11 @@ class RegistryService:
                              proposal_id=stored.proposal_id,
                              base_release_id=stored.base_release_id, published_by=stored.published_by,
                              published_at=stored.published_at,
-                             eval_suite_refs=list(stored.eval_suite_refs))
+                             eval_suite_refs=list(stored.eval_suite_refs),
+                             interrupts=list(stored.release.interrupts),
+                             language_detection=stored.release.language_detection,
+                             injection_ruleset=stored.release.injection_ruleset,
+                             max_input_chars=stored.release.max_input_chars)
 
     def get_release(self, release_id: str) -> ReleaseDetail:
         with self._store.transaction() as tx:
@@ -682,6 +692,20 @@ class RegistryService:
             assert isinstance(content, dict)
             return EntityVersion(ref=v.ref, content=content, content_hash=v.content_hash, docs=v.docs,
                                  created_by=v.created_by, created_at=v.created_at)
+
+    def list_events(self, after: int, limit: int) -> list[RegistryEvent]:
+        """Eventos del registry en orden de registro; `after` es cuántos ya se leyeron (N-08)."""
+        with self._store.transaction() as tx:
+            return tx.events()[max(after, 0):max(after, 0) + max(limit, 0)]
+
+    def get_alias(self, agent_id: str, alias: str) -> AliasState:
+        """Lectura pura del alias: no crea propuesta ni gasta cuota (N-02)."""
+        with self._store.transaction() as tx:
+            release_id = tx.get_alias(agent_id, alias)
+            status = None if release_id is None else tx.release_status(release_id)
+            if release_id is None or status is None:
+                raise RegistryError(RegistryErrorCode.not_found, "el alias no apunta a ninguna release")
+            return AliasState(agent_id=agent_id, alias=alias, release_id=release_id, status=status)
 
     def list_versions(self, kind: str, entity_id: str) -> list[VersionSummary]:
         with self._store.transaction() as tx:

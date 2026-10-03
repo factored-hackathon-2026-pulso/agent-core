@@ -1,8 +1,9 @@
 """Generación de `contracts/` (ADR 0002): JSON Schema de tipos públicos, eventos y nodos + VERSION.
 
 Determinista: claves ordenadas, sangría de 2, LF y salto de línea final, sin datos del entorno. Solo
-gestiona `contracts/VERSION`, `contracts/schemas/` y `contracts/events/` (eventos salientes);
-otros archivos (p. ej. `openapi.json`, M9) no se tocan.
+gestiona `contracts/VERSION`, `contracts/schemas/`, `contracts/events/` (eventos salientes) y
+`contracts/registry/` (cuerpos y modelos del registry); otros archivos
+(p. ej. `openapi.json`, M9) no se tocan.
 """
 
 import enum
@@ -17,11 +18,15 @@ from pydantic import BaseModel, TypeAdapter
 from agent_core import domain as d
 from agent_core import outbound as o
 from agent_core import ports as p
+from agent_core.registry import models as registry_models
+from agent_core.registry.http import REQUEST_BODIES
+from agent_core.registry.suite import EvalSuite
 
 GENERATED_NOTICE = "GENERADO por `uv run agentcore contracts`; no editar a mano."
 _INFRA_BASES = frozenset({"Model", "MutableModel"})
 _SCHEMAS = "schemas"
 _EVENTS = "events"
+_REGISTRY = "registry"
 
 
 def _is_schema_type(obj: object) -> bool:
@@ -42,6 +47,17 @@ def _collect() -> dict[str, Any]:
 PUBLIC_TYPES: Mapping[str, Any] = MappingProxyType(_collect())
 
 
+def _registry_types() -> tuple[dict[str, Any], dict[str, Any]]:
+    """(entradas, salidas) del registry (N-01): cuerpos de request, `EvalSuite`, `EntityDraft` y
+    `VersionDocs`; y el resto de los modelos de `registry.models`, que son las respuestas."""
+    inputs: dict[str, Any] = {"EvalSuite": EvalSuite, **REQUEST_BODIES}
+    outputs: dict[str, Any] = {}
+    for name, obj in vars(registry_models).items():
+        if _is_schema_type(obj) and obj.__module__ == registry_models.__name__ and name != "RegModel":
+            (inputs if name in {"EntityDraft", "VersionDocs", "ReleaseSettings"} else outputs)[name] = obj
+    return dict(sorted(inputs.items())), dict(sorted(outputs.items()))
+
+
 def _encode(schema: dict[str, Any]) -> str:
     return json.dumps(schema, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
@@ -55,6 +71,18 @@ def render_contracts() -> dict[str, str]:
         files[f"{_SCHEMAS}/{name}.json"] = _encode(schema)
     files["VERSION"] = d.SCHEMA_VERSION + "\n"
     files.update(_render_events())
+    files.update(_render_registry())
+    return files
+
+
+def _render_registry() -> dict[str, str]:
+    inputs, outputs = _registry_types()
+    files: dict[str, str] = {}
+    for mode, group in (("validation", inputs), ("serialization", outputs)):
+        for name, tp in group.items():
+            schema = TypeAdapter(tp).json_schema(mode=mode, by_alias=True)  # type: ignore[arg-type]
+            schema["$comment"] = GENERATED_NOTICE
+            files[f"{_REGISTRY}/{name}.json"] = _encode(schema)
     return files
 
 
@@ -77,9 +105,10 @@ def _existing(out: Path) -> set[str]:
     schemas = out / _SCHEMAS
     if schemas.is_dir():
         found |= {f"{_SCHEMAS}/{q.name}" for q in schemas.iterdir()}
-    events = out / _EVENTS
-    if events.is_dir():
-        found |= {f"{_EVENTS}/{q.name}" for q in events.iterdir()}
+    for folder in (_EVENTS, _REGISTRY):
+        directory = out / folder
+        if directory.is_dir():
+            found |= {f"{folder}/{q.name}" for q in directory.iterdir()}
     if (out / "VERSION").exists():
         found.add("VERSION")
     return found

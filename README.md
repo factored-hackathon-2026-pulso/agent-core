@@ -91,6 +91,16 @@ Qué tener en cuenta:
 
 Lo mismo corre el CI en `.github/workflows/ci.yml`.
 
+## Imagen y operación
+
+- **Imagen:** `docker build --build-arg GIT_SHA=$(git rev-parse HEAD) -t agent-core .`. Arranca `agentcore serve` en `0.0.0.0:8000` como usuario sin privilegios y sin secretos; DSN, claves y `LLM_ENDPOINTS` llegan por variables de entorno. Con otro comando sirve para `agentcore migrate` y `agentcore sweep --once`.
+- **Sondas y versión** (sin credencial, fuera de `/v1`): `GET /healthz`, `GET /readyz` y `GET /version` (`{package, contract, sha}`; el SHA viene de `AGENTCORE_GIT_SHA`).
+- **Rotación de claves sin reiniciar:** `--identity-keys` y `--staff-keys` se vuelven a leer cada `--keys-reload-seconds` (5 por defecto, 0 lo apaga). Publica la clave nueva con su `kid` junto a la vieja y retira la vieja después; un archivo roto conserva las últimas claves buenas.
+- **Exportación para la ingesta** (con `--registry-api`; credencial del staff con rol `exporter`): `GET /v1/export/runs?after=<run_seq>`, `GET /v1/export/runs/{run_id}/events?after=<seq>` y `GET /v1/export/registry-events?after=<n>`, paginadas con `limit` (máx. 500) y `next_after`.
+- **Registry:** `GET /v1/registry/aliases/{agent}/{alias}` y `GET /v1/registry/versions/{kind}/{id}` leen sin crear propuesta. Los campos de la release (interrupciones, detección de idioma, `injection_ruleset`, `max_input_chars`) se cambian con un borrador `kind: "release_settings"` en `PUT draft`. Los esquemas de cuerpos y modelos están en `contracts/registry/`.
+- **Superficies estables y migraciones:** [`docs/adr/0022-superficies-estables-y-migraciones-compatibles.md`](docs/adr/0022-superficies-estables-y-migraciones-compatibles.md).
+
+
 ## Telemetría
 
 `agentcore serve` exporta trazas por OTLP y escribe logs JSON a stderr. Todo se configura con las variables estándar `OTEL_*`; el diseño está en [`docs/adr/0003-observabilidad-dos-planos.md`](docs/adr/0003-observabilidad-dos-planos.md) y en M11 §3.2.

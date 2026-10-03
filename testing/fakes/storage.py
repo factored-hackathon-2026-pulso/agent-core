@@ -38,6 +38,7 @@ from agent_core.domain import (
     TurnResult,
     VersionConflict,
 )
+from agent_core.ports.export import RunSummary
 
 FaultPoint = Literal["on_commit", "after_commit"]
 
@@ -311,6 +312,23 @@ class InMemoryAuditSink:
     def append_outside_turn(self, run_id: str, events: list[EngineEvent]) -> None:
         with self._store.lock:
             self._store.events.setdefault(run_id, []).extend(deepcopy(events))
+
+
+class InMemoryRunExport:
+    """`RunExport` (N-08), aparte del sink: el sink de auditoría no lee más que una cadena por run."""
+
+    def __init__(self, store: InMemoryStore) -> None:
+        self._store = store
+
+    def list_runs(self, after_seq: int, limit: int) -> list[RunSummary]:
+        with self._store.lock:  # el orden de inserción del diccionario es el orden de creación
+            rows = [(i, s) for i, s in enumerate(self._store.runs.values(), start=1) if i > after_seq]
+            return [RunSummary.of(i, deepcopy(s)) for i, s in rows[:max(limit, 0)]]
+
+    def events_after(self, run_id: str, after_seq: int, limit: int) -> list[EngineEvent]:
+        with self._store.lock:
+            found = [e for e in self._store.events.get(run_id, []) if e.seq is not None and e.seq > after_seq]
+            return deepcopy(found[:max(limit, 0)])
 
 
 class InMemoryOutbox:
