@@ -73,8 +73,9 @@ def demo_suite() -> EvalSuite:
             "expect": {"outcome": "resolved", "actions_verified": ["radicar_pqr"], "escalated": False}}]})
 
 
-def build_harness(gateway_error: GatewayError | None = None,
-                  provider_failure: Step | None = None) -> EngineScenarioHarness:
+def build_harness(gateway_error: GatewayError | None = None, provider_failure: Step | None = None,
+                  persistent: bool = False) -> EngineScenarioHarness:
+    """`persistent`: todas las ejecuciones comparten la base de evaluación, como en `serve`."""
     clock, ids = FakeClock(), FakeIds()
 
     class _Gateway(CitingGateway):
@@ -92,8 +93,10 @@ def build_harness(gateway_error: GatewayError | None = None,
             script(jev, classifier)
         return {"jev": jev, "classifier": classifier}
 
+    shared = InMemoryStore()
+
     def storage() -> EvalStorage:
-        store = InMemoryStore()
+        store = shared if persistent else InMemoryStore()
         return EvalStorage(uow_factory=store.uow, audit=InMemoryAuditSink(store),
                            transcript=InMemoryTranscript())
 

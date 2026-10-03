@@ -15,9 +15,11 @@ from pydantic import TypeAdapter
 from agent_core.audit.chain import genesis_hash
 from agent_core.domain import (
     AnyEvent,
+    EngineError,
     OutboxMessage,
     Outcome,
     PrincipalKey,
+    ProblemCode,
     RunResult,
     TurnInProgress,
     VersionConflict,
@@ -390,6 +392,34 @@ def check_first_idempotency_record_wins(b: Backend) -> None:
         uow.commit()
     with b.factory() as uow:
         assert uow.get_run_idempotency(CUSTOMER, "idem-1") == ("hash-1", first)
+
+
+def check_a_reserved_key_blocks_the_second_caller_until_released_or_expired(b: Backend) -> None:
+    ttl = timedelta(seconds=60)
+    with b.factory() as uow:
+        assert uow.reserve_run_idempotency(CUSTOMER, "idem-r", "hash-1", NOW, ttl) is None
+    with b.factory() as uow:
+        with pytest.raises(EngineError) as info:
+            uow.reserve_run_idempotency(CUSTOMER, "idem-r", "hash-1", NOW + timedelta(seconds=30), ttl)
+        assert info.value.code is ProblemCode.idempotency_conflict
+        assert uow.get_run_idempotency(CUSTOMER, "idem-r") is None  # reservada no es resultado
+        assert uow.reserve_run_idempotency(OTHER, "idem-r", "hash-1", NOW, ttl) is None  # otro principal
+        assert uow.reserve_run_idempotency(CUSTOMER, "idem-r", "hash-1", NOW + ttl, ttl) is None  # vencida
+        uow.release_run_idempotency(CUSTOMER, "idem-r")
+        assert uow.reserve_run_idempotency(CUSTOMER, "idem-r", "hash-1", NOW, ttl) is None  # liberada
+
+
+def check_a_committed_record_completes_the_reservation_and_is_returned_to_the_next_caller(b: Backend) -> None:
+    result = RunResult(run_id="run-0001", release="rel-1", status="open", trace_id="trace-1")
+    ttl = timedelta(seconds=60)
+    with b.factory() as uow:
+        assert uow.reserve_run_idempotency(CUSTOMER, "idem-c", "hash-1", NOW, ttl) is None
+        uow.put_run_idempotency(CUSTOMER, "idem-c", "hash-1", result)
+        uow.commit()
+    with b.factory() as uow:
+        assert uow.reserve_run_idempotency(CUSTOMER, "idem-c", "hash-2", NOW, ttl) == ("hash-1", result)
+        uow.release_run_idempotency(CUSTOMER, "idem-c")  # no toca un registro commiteado
+        assert uow.get_run_idempotency(CUSTOMER, "idem-c") == ("hash-1", result)
 
 
 def check_empty_handoff_packet_is_returned(b: Backend) -> None:

@@ -117,10 +117,11 @@ PROBLEM_STATUS: Mapping[ProblemCode, int] = MappingProxyType(
 class EngineError(Exception):
     """Error con código HTTP estable. Solo lo lanzan los módulos; M9 lo traduce."""
 
-    def __init__(self, code: ProblemCode, detail: str = "") -> None:
+    def __init__(self, code: ProblemCode, detail: str = "", *, retry_after: int | None = None) -> None:
         super().__init__(f"{code}: {detail}")
         self.code = code
         self.detail = detail
+        self.retry_after = retry_after  # segundos; sale como `Retry-After` en los 429
 
     @property
     def status(self) -> int:

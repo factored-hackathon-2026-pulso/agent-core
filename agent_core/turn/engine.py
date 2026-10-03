@@ -36,10 +36,12 @@ from agent_core.domain import (
     Slot,
     SubjectRef,
     TranscriptRef,
+    TransferContract,
     TurnInProgress,
     TurnInput,
     TurnResult,
     canonical_bytes,
+    packet_problem,
     sha256_hex,
 )
 from agent_core.handoff import HandoffService
@@ -775,13 +777,25 @@ class TurnEngine:
         body con la misma clave es `409 idempotency_conflict`. La clave va en la transacción del run."""
         body = run_input.model_copy(update={"idempotency_key": ""})
         body_hash = sha256_hex(canonical_bytes(body))
-        with self._uow_factory() as uow:
-            prior = uow.get_run_idempotency(principal.key, run_input.idempotency_key)
+        principal_key, idem_key = principal.key, run_input.idempotency_key
+        with self._uow_factory() as uow:  # reserva inmediata: la misma clave no corre dos veces a la vez
+            prior = uow.reserve_run_idempotency(principal_key, idem_key, body_hash, self._clock.now(),
+                                                self._config.lease_ttl)
         if prior is not None:
             prior_hash, prior_result = prior
             if prior_hash != body_hash:
                 raise EngineError(ProblemCode.idempotency_conflict)
             return prior_result
+        try:
+            return self._start_reserved(principal, on_behalf_of, run_input, body_hash)
+        except BaseException:
+            with self._uow_factory() as uow:  # el run no commiteó: la clave vuelve a estar libre
+                uow.release_run_idempotency(principal_key, idem_key)
+            raise
+
+    def _start_reserved(
+        self, principal: Principal, on_behalf_of: OnBehalfOf | None, run_input: RunInput, body_hash: str
+    ) -> RunResult:
         meter = StageMeter(self._clock)
         release = self._registry.resolve_release(run_input.agent, principal)
         version = release.entities.get(EntityKind.agent, {}).get(run_input.agent.id)
@@ -791,8 +805,16 @@ class TurnEngine:
         agent = self._registry.get(agent_ref, Agent)
         conversational = agent.mode == "conversational"
         locale = run_input.lang if run_input.lang in agent.supported_locales else agent.default_locale
+        # Un agente task con `input_schema` valida la entrada contra su contrato: entra como `validated`.
+        # Sin él (o conversacional), lo que trae el request sigue siendo una afirmación (`claimed`).
+        status: Literal["claimed", "validated"] = "claimed"
+        if agent.mode == "task" and agent.input_schema is not None:
+            problem = packet_problem(TransferContract(slots=agent.input_schema), run_input.input or {})
+            if problem is not None:
+                raise EngineError(ProblemCode.invalid_request, f"input: {problem}")
+            status = "validated"
         slots = {
-            name: Slot(value=value, status="claimed", source_turn=1)
+            name: Slot(value=value, status=status, source_turn=1)
             for name, value in (run_input.input or {}).items()
         }
         state = self._new_state(

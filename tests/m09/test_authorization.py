@@ -222,3 +222,44 @@ def test_existing_advisor_run_needs_the_delegation_on_every_turn() -> None:
     with pytest.raises(EngineError) as info:
         w.existing(advisor, None, run)
     assert info.value.code is ProblemCode.subject_forbidden
+
+
+# --- lectura de runs ajenos: regla fija, independiente del AuthzPort del consumidor ----------------------
+
+
+class _AllowEverything:
+    """Un `AuthzPort` permisivo (consumidor mal configurado): autoriza cualquier subject."""
+
+    def authorize_subject(self, *_: Any) -> Any:
+        from agent_core.ports import AuthzDecision
+
+        return AuthzDecision(allowed=True)
+
+
+def _permissive_authorizer() -> RunAuthorizer:
+    world = World()
+    return RunAuthorizer(_AllowEverything(), world.registry, FakeClock(), FakeIds(),  # type: ignore[arg-type]
+                         world.denials, world.security)
+
+
+def test_a_customer_cannot_read_another_customers_run_even_with_a_permissive_authz() -> None:
+    run = run_state(subject={"kind": "customer", "ref": "cust-999"})
+    stranger = principal(id="cust-002")
+    with pytest.raises(EngineError) as info:
+        _permissive_authorizer().authorize_read(Admitted(stranger, None), run, trace_id="t-1")
+    assert info.value.code is ProblemCode.subject_forbidden
+
+
+def test_an_anonymous_cannot_read_a_customers_run_even_with_a_permissive_authz() -> None:
+    run = run_state(subject={"kind": "customer", "ref": "cust-001"})
+    with pytest.raises(EngineError) as info:
+        _permissive_authorizer().authorize_read(Admitted(anonymous(), None), run, trace_id="t-1")
+    assert info.value.code is ProblemCode.subject_forbidden
+
+
+def test_the_owner_and_a_delegated_advisor_still_read() -> None:
+    run = run_state(subject={"kind": "customer", "ref": "cust-001"})
+    authorizer = _permissive_authorizer()
+    authorizer.authorize_read(Admitted(run.principal, None), run, trace_id="t-1")
+    advisor, obo = advisor_with_delegation()
+    authorizer.authorize_read(Admitted(advisor, obo), run, trace_id="t-1")

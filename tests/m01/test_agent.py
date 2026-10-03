@@ -114,3 +114,35 @@ def test_agent_violation_path_uses_the_loaded_file(tmp_path: Path) -> None:
     assert loaded == []
     found = [v for v in validate_registry(reg) if "fantasma@1" in v.message]
     assert [(v.rule, v.path) for v in found] == [("G0-02", "agents/atencion@1.0.0.yaml#/entry_flow")]
+
+
+# AG-04: un flow solo lee slots que alguien puede dejar validados
+def _task_flow_reading_a_slot() -> dict[str, object]:
+    d = task_base()
+    node(d, "buscar")["config"]["args"] = {"q": "slots.monto"}
+    return d
+
+
+def test_reading_a_slot_nobody_can_validate_is_ag_04() -> None:
+    found = validate_flow_for_agent(flow(_task_flow_reading_a_slot()), agent(mode="task"), registry())
+    assert [(v.rule, v.node_id) for v in found] == [("AG-04", "buscar")]
+
+
+def test_an_input_schema_makes_the_slot_readable() -> None:
+    task = agent(mode="task", input_schema={"monto": {"type": "decimal", "required": True}})
+    assert validate_flow_for_agent(flow(_task_flow_reading_a_slot()), task, registry()) == []
+
+
+def test_a_collect_node_makes_the_slot_readable() -> None:
+    d = base()
+    slot = node(d, "pedir")["config"]["slot"]
+    node(d, "buscar")["config"]["args"] = {"q": f"slots.{slot}"}
+    assert [v.rule for v in validate_flow_for_agent(flow(d), agent(), registry())] == []
+
+
+def test_input_schema_is_only_for_task_agents() -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        agent(input_schema={"monto": {"type": "decimal"}})

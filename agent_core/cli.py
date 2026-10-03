@@ -181,10 +181,14 @@ class _AuthoringAgents:
 def build_sweeper(dsn: str, registry_root: Path | None = None) -> Sweeper:
     """Sin `registry_root` el `Agent` de cada run sale del registry en Postgres (el mismo que lee `serve`);
     con él, del directorio de autoría (versión exacta)."""
+    from agent_core.composition.blobs import blob_factory_from_env
+
     store = PostgresStore(dsn)
     clock, ids = SystemClock(), SystemIds()
     if registry_root is None:
-        pg_store = PgRegistryStore(lambda: psycopg.connect(dsn, autocommit=False))
+        # Con `AGENTCORE_BLOB_BUCKET` los blobs de las versiones nuevas viven en S3, no en `reg_blobs`.
+        pg_store = PgRegistryStore(lambda: psycopg.connect(dsn, autocommit=False),
+                                   blob_factory_from_env(os.environ))
         registry: RegistryPort = PostgresRegistry(pg_store, clock)
     else:
         authoring, violations = load_registry(registry_root)
@@ -281,9 +285,19 @@ def _run_llm_smoke(args: argparse.Namespace) -> int:
     return 0 if report.ok > 0 else 1
 
 
+def _force_utf8_streams() -> None:
+    """En Windows stdout/stderr usan la página de códigos local (cp1252): imprimir un resultado ya confirmado
+    (p. ej. `registry publish`) fallaba con `UnicodeEncodeError` y el reintento chocaba con la transición."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(
     argv: Sequence[str] | None = None, *, sweeper: SweeperLike | None = None, clock: Clock | None = None
 ) -> int:
+    _force_utf8_streams()
     parser = argparse.ArgumentParser(prog="agentcore")
     sub = parser.add_subparsers(dest="command", required=True)
     contracts = sub.add_parser("contracts", help="genera o verifica contracts/")

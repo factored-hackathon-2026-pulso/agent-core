@@ -26,7 +26,7 @@ from agent_core.domain.metrics import MetricDef
 from agent_core.domain.nodes import Node, PositiveTimedelta
 from agent_core.domain.outcomes import Mode
 from agent_core.domain.refs import EntityKind, EntityRef, RefSpec, require_exact_refs
-from agent_core.domain.transfer import RoutingCard, TransferContract
+from agent_core.domain.transfer import AcceptedSlot, RoutingCard, TransferContract
 
 # Dinero y tarifas: `Decimal` finito (nunca `float`; NaN e Infinity se rechazan).
 PositiveMoney = Annotated[Decimal, Field(gt=0, allow_inf_nan=False)]
@@ -81,11 +81,16 @@ class Agent(Model):
     metrics: list[MetricDef] = Field(default_factory=list, max_length=32)  # ADR 0020; the engine ignores them
     routing: RoutingCard | None = None  # without a card the agent is in no directory (ADR 0021)
     accepts: TransferContract | None = None  # without a contract the agent receives no transfers
+    # Contract of the `input` of a `task` run. With it, `start_run` validates the input and the slots enter
+    # as `validated` (the caller is an authenticated service, not a user's claim); without it: `claimed`.
+    input_schema: dict[str, AcceptedSlot] | None = None
 
     @model_validator(mode="after")
     def _default_locale_supported(self) -> "Agent":
         if self.default_locale not in self.supported_locales:
             raise ValueError("default_locale debe estar en supported_locales")
+        if self.input_schema is not None and self.mode != "task":
+            raise ValueError("input_schema solo aplica a agentes de modo task")
         return self
 
 
@@ -116,6 +121,9 @@ class Interrupt(Model):
     priority: int
     action: Annotated[EscalateAction | StartFlowAction, Field(discriminator="type")]
     signal_policy: RefSpec | None = None
+    # Guardarraíl de plataforma: ninguna propuesta puede quitarla, bajarle la prioridad ni cambiarle la acción
+    # (solo se fija al sembrar o con el rol admin). Una candidata que la pierda no pasa la validación.
+    locked: bool = False
 
 
 class LanguageDetection(Model):

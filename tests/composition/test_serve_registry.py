@@ -142,3 +142,20 @@ def test_help_lists_the_new_options(capsys: pytest.CaptureFixture[str]) -> None:
     out = capsys.readouterr().out
     assert "--registry-api" in out and "--eval-dsn" in out and "--staff-keys" in out
     assert argparse
+
+
+def test_rate_limits_come_from_the_environment_and_bad_values_are_rejected() -> None:
+    from datetime import timedelta
+    from decimal import Decimal
+
+    from agent_core.composition.serve import rate_limits_from_env
+
+    config = rate_limits_from_env({"AGENTCORE_RATE_MAX_HITS": "120", "AGENTCORE_RATE_WINDOW_SECONDS": "30",
+                                   "AGENTCORE_DAILY_BUDGET_USD": "50.5"})
+    assert (config.max_hits, config.window, config.daily_budget_usd) == (120, timedelta(seconds=30),
+                                                                         Decimal("50.5"))
+    assert rate_limits_from_env({}).max_hits == 30  # sin variables, los valores de demo
+    for bad in ({"AGENTCORE_RATE_MAX_HITS": "mucho"}, {"AGENTCORE_RATE_MAX_HITS": "0"},
+                {"AGENTCORE_DAILY_BUDGET_USD": "-1"}):
+        with pytest.raises(ValueError):
+            rate_limits_from_env(bad)

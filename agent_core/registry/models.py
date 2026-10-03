@@ -2,9 +2,9 @@
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agent_core.domain import EntityId, EntityRef, Interrupt, JsonValue, Release
 from agent_core.registry.evaluation.report import EvalReport, Verdict
@@ -49,6 +49,10 @@ class ProposalState(StrEnum):
 RELEASE_SETTINGS = "release_settings"
 
 
+# Tope de `max_input_chars` por propuesta: un valor desmedido desactiva la guarda de largo de la entrada.
+MAX_INPUT_CHARS_CEILING = 100_000
+
+
 class ReleaseSettings(RegModel):
     """Contenido del borrador `release_settings`. Un campo omitido conserva el valor de la base; no hay forma
     de quitar el `injection_ruleset` ni la detección de idioma, solo de cambiarlos por otros del registry."""
@@ -56,7 +60,7 @@ class ReleaseSettings(RegModel):
     interrupts: list[Interrupt] | None = None  # reemplaza la lista completa; `[]` la vacía
     language_detection: str | None = None  # id de una entidad `language_detection` (se fija a su versión)
     injection_ruleset: str | None = None  # id de una entidad `injection_ruleset`
-    max_input_chars: PositiveInt | None = None
+    max_input_chars: Annotated[int, Field(gt=0, le=MAX_INPUT_CHARS_CEILING)] | None = None
 
 
 class EntityDraft(RegModel):

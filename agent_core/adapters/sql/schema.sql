@@ -11,6 +11,10 @@ CREATE TABLE IF NOT EXISTS runs (
     inactive_after timestamptz,
     state_json     text        NOT NULL
 );
+-- Cursor de la exportación (N-08): la transacción que escribió el run por última vez. A diferencia de `run_seq`
+-- (se asigna al insertar), ordena por commit y cambia cuando el run cambia (p. ej. al cerrarse).
+ALTER TABLE runs ADD COLUMN IF NOT EXISTS change_xid bigint NOT NULL DEFAULT (pg_current_xact_id()::text::bigint);
+CREATE INDEX IF NOT EXISTS runs_change_idx ON runs (change_xid);
 CREATE INDEX IF NOT EXISTS runs_session_idx ON runs (session_id, run_seq DESC) WHERE session_id IS NOT NULL;
 -- At most one open run per session (ADR 0021 D1; transfer spec §5.3). A transfer closes the origin and opens the
 -- target in one commit. A partial unique index cannot be deferred and Postgres checks it on every row written, so
@@ -50,9 +54,12 @@ CREATE TABLE IF NOT EXISTS run_idempotency (
     principal_id   text NOT NULL,
     idem_key       text NOT NULL,
     body_hash      text NOT NULL,
-    result_json    text NOT NULL,
+    result_json    text,           -- NULL mientras la clave está solo reservada (el run aún no commitea)
+    reserved_until timestamptz,    -- fin de la reserva; vencida, otra petición puede tomar la clave
     PRIMARY KEY (principal_type, principal_id, idem_key)
 );
+ALTER TABLE run_idempotency ALTER COLUMN result_json DROP NOT NULL;
+ALTER TABLE run_idempotency ADD COLUMN IF NOT EXISTS reserved_until timestamptz;
 
 CREATE TABLE IF NOT EXISTS handoffs (
     handoff_ref text PRIMARY KEY,

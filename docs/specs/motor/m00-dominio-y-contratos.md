@@ -467,6 +467,8 @@ class UnitOfWork(Protocol):          # context manager; una instancia = una tran
     def put_turn_result(self, run_id: str, client_turn_id: str, result: TurnResult) -> None
     def get_run_idempotency(self, principal: PrincipalKey, key: str) -> tuple[str, RunResult] | None   # (hash del body, resultado)
     def put_run_idempotency(self, principal: PrincipalKey, key: str, body_hash: str, result: RunResult) -> None
+    def reserve_run_idempotency(self, principal: PrincipalKey, key: str, body_hash: str, now: UtcDatetime, ttl: timedelta) -> tuple[str, RunResult] | None   # inmediata; None = reservada; vigente ajena = 409
+    def release_run_idempotency(self, principal: PrincipalKey, key: str) -> None
     def put_handoff(self, handoff_ref: str, packet: dict[str, JsonValue]) -> None
     def get_handoff(self, handoff_ref: str) -> dict[str, JsonValue] | None
     def append_events(self, run_id: str, events: list[EngineEvent]) -> None     # M11 ya los encadenó

@@ -43,13 +43,13 @@ def _start_runs(client: TestClient, issuer: TestIdentityIssuer, n: int) -> list[
     return ids
 
 
-def test_runs_are_paged_by_run_seq_without_customer_data() -> None:
+def test_runs_are_paged_by_commit_cursor_without_customer_data() -> None:
     client, issuer, staff, _ = _setup()
     run_ids = _start_runs(client, issuer, 3)
     head = _bearer(staff.exporter_bot())
     first = client.get("/v1/export/runs?limit=2", headers=head).json()
     assert [r["run_id"] for r in first["items"]] == run_ids[:2]
-    assert first["next_after"] == first["items"][-1]["run_seq"]
+    assert first["next_after"] == first["items"][-1]["cursor"]
     second = client.get(f"/v1/export/runs?after={first['next_after']}&limit=2", headers=head).json()
     assert [r["run_id"] for r in second["items"]] == run_ids[2:]
     done = client.get(f"/v1/export/runs?after={second['next_after']}", headers=head).json()
