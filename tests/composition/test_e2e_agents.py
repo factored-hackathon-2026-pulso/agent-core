@@ -6,10 +6,13 @@ from pathlib import Path
 
 import pytest
 
+from agent_core.composition import EngineConfig
 from agent_core.decision import ProviderError
 from agent_core.decision.providers.jev import JevProvider, JevTransportError
 from agent_core.domain import ActionState, DecisionModelDef, EntityRef, JsonValue, Message, Outcome
+from agent_core.guards import LangThresholds
 from agent_core.ports import GenerationResult
+from testing.e2e_demo import _with_portuguese as _pt
 from testing.engine_world import EngineWorld, transfer_calibration
 from testing.fakes.gateway import ScriptedGateway
 
@@ -111,3 +114,34 @@ def test_the_real_jev_provider_can_build_its_request_for_every_conversational_ag
         with pytest.raises(ProviderError):  # llegó a enviar: el request se armó sin error de configuración
             JevProvider(transport).predict(definition.providers[0], {"text": "hola"}, schema, "es")
         assert set(transport.requests[0]["questions"]) >= {"command", "flow", "interrupt"}  # type: ignore[arg-type]
+
+
+def _locales(w: EngineWorld, run_id: str) -> list[tuple[str, str]]:
+    found = []
+    for e in w.audit.read(run_id):
+        guards = e.payload.guards if e.type == "turn_started" else None
+        if guards is not None and guards.lang is not None:
+            found.append((guards.lang.decision, guards.lang.locale))
+    return found
+
+
+def test_the_run_switches_between_spanish_and_portuguese_when_the_thresholds_are_configured() -> None:
+    """Sin `lang_thresholds` el idioma nunca cambia (M6 §3.1.7); `serve --lang-thresholds` los aporta."""
+    def run(config: EngineConfig | None) -> list[tuple[str, str]]:
+        gateway = ScriptedGateway()
+        calibrations = {"cal-transfer-demo": _pt(transfer_calibration())}
+        w = EngineWorld(registry_root=E2E, releases=("copiloto-demo",), agent="copiloto-asesor",
+                        gateway=gateway, calibrations=calibrations, config=config)
+        w.start()
+        texts = ("Qual é o saldo devedor do cartão do cliente?", "¿Cuál es el último movimiento del cliente?")
+        for text in texts:
+            gateway.push(_gen({"kind": "final", "output": {"resumen": "ok"}}))
+            gateway.push(_gen({"text": "ok", "citations": []}))
+            w.understands("continue")
+            turn = w.turn(text)
+        return _locales(w, turn.run_id)
+
+    assert run(None) == [("kept", "es"), ("kept", "es")]
+    switching = run(EngineConfig(lang_thresholds={"lang-cal-demo": LangThresholds(
+        switch_threshold=0.9, unsupported_threshold=0.9, min_distance=0.2)}))
+    assert switching == [("switched", "pt"), ("switched", "es")]

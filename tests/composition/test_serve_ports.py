@@ -2,6 +2,7 @@
 
 import argparse
 import base64
+from pathlib import Path
 
 import pytest
 
@@ -74,6 +75,29 @@ def test_with_the_demo_switch_the_doubles_are_listed() -> None:
                                   "field-classifier", "grant-active", "identity"}
 
 
+
+
+def test_lang_thresholds_come_from_a_json_file_and_default_to_none(tmp_path: Path) -> None:
+    assert _resolve(AGENTCORE_ALLOW_DEMO="1").lang_thresholds == {}
+    path = tmp_path / "lang.json"
+    path.write_text('{"lang-cal": {"switch_threshold": 0.9, "unsupported_threshold": 0.95, '
+                    '"min_distance": 0.2}}', encoding="utf-8")
+    ports = _resolve("--lang-thresholds", str(path), AGENTCORE_ALLOW_DEMO="1")
+    assert ports.lang_thresholds["lang-cal"].switch_threshold == 0.9
+    assert ports.lang_thresholds["lang-cal"].switch_active
+    via_env = _resolve(AGENTCORE_ALLOW_DEMO="1", AGENTCORE_LANG_THRESHOLDS=str(path))
+    assert set(via_env.lang_thresholds) == {"lang-cal"}
+
+
+@pytest.mark.parametrize("content", ["no es json", "[1, 2]", '{"x": {"switch_threshold": 7}}'])
+def test_a_broken_lang_thresholds_file_is_a_startup_problem_not_a_silent_off(tmp_path: Path,
+                                                                             content: str) -> None:
+    path = tmp_path / "lang.json"
+    path.write_text(content, encoding="utf-8")
+    with pytest.raises(ServeConfigError) as info:
+        _resolve("--lang-thresholds", str(path), AGENTCORE_ALLOW_DEMO="1")
+    assert "--lang-thresholds" in " ".join(info.value.problems)
+    assert content not in " ".join(info.value.problems)  # el contenido del archivo no se imprime
 
 
 # --- pase de arreglos de la revisión final ------------------------------------------------------------

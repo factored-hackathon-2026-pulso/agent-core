@@ -5,3 +5,4 @@ candidates: [es, pt]
 unsupported: [en]
 min_letters: 12
 min_letters_unsupported: 20
+thresholds_from: lang-cal-demo

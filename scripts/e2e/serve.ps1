@@ -5,7 +5,7 @@ Import-E2EEnv
 if (-not $env:AGENTCORE_JEV_API_KEY) { throw "Falta AGENTCORE_JEV_API_KEY en $EnvFile (serve la exige)." }
 uv run agentcore serve `
     --identity-keys "$StateDir\identity-keys.json" --staff-keys "$StateDir\staff-keys.json" `
-    --registry-api `
+    --registry-api --lang-thresholds "$Root\scripts\e2e\lang-thresholds.json" `
     --agents "recepcion,disputas,consultas,copiloto-asesor,constructor-chat" `
     --tools testing.e2e_demo:tools --classifier testing.e2e_demo:classifier_provider `
     --field-classifier testing.e2e_demo:field_classifier --calibration testing.e2e_demo:calibration
