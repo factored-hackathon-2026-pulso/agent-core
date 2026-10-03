@@ -169,8 +169,7 @@ def _wire(monkeypatch: pytest.MonkeyPatch, seen: dict[str, Any]) -> list[bool]:
     issuer = TestIdentityIssuer(world.clock)
     seen["world"] = world
 
-    def resolve(args: Any, env: Any, clock: Any, ids: Any, *, tracer: Any = None) -> Any:
-        seen["tracer"] = tracer
+    def resolve(args: Any, env: Any, clock: Any, ids: Any) -> Any:
         return make_ports(world, issuer)
 
     monkeypatch.setattr(serve_module, "resolve_ports", resolve)
@@ -200,7 +199,7 @@ def test_run_serve_wires_observability_and_shuts_it_down(
     world = seen["world"]
     code = serve_module.run_serve(argparse.Namespace(host="h", port=1), clock=world.clock, ids=world.ids,
                                   env={}, serve=lambda app, **kw: started.update(kw))
-    assert code == 0 and shut == [True] and seen["tracer"] is not None
+    assert code == 0 and shut == [True]
     assert started["log_config"] is None and started["access_log"] is False
     assert _handlers() == []
 

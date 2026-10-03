@@ -29,6 +29,9 @@ from agent_telemetry import correlation as telemetry_correlation
 
 _LOG = logging.getLogger("agent_core.adapters.llm")
 
+LLM_GATEWAY_URL_ENV = "AGENTCORE_LLM_GATEWAY_URL"
+LLM_GATEWAY_TOKEN_ENV = "AGENTCORE_LLM_GATEWAY_TOKEN"
+
 # The service enforces `profile.timeout_s`; the HTTP client waits a little longer so the service's own typed
 # `timeout` answer arrives instead of a client-side timeout.
 CLIENT_MARGIN_S = 5.0
@@ -163,3 +166,21 @@ def _is_int(value: object) -> bool:
 def _safe(value: object) -> str:
     """A short, printable form of an untrusted kind name for the log."""
     return value[:40] if isinstance(value, str) and value.isidentifier() else "?"
+
+
+class UnconfiguredLLMGateway:
+    """Stands in when no llm-gateway is configured: every generation fails as `unavailable`, so M8 falls
+    back to its templates exactly as it does when the provider is down."""
+
+    def generate(self, prompt: EntityRef, inputs_model_view: dict[str, JsonValue], locale: Locale,
+                 schema: dict[str, JsonValue] | None = None) -> GenerationResult:
+        _LOG.warning("llm-gateway not configured (AGENTCORE_LLM_GATEWAY_URL is unset)")
+        raise GatewayError(GatewayErrorKind.unavailable)
+
+
+def gateway_is_up(base_url: str, *, timeout_s: float = 3.0) -> bool:
+    """Whether the service answers `GET /healthz` (public, no token). Never raises."""
+    try:
+        return httpx.get(base_url.rstrip("/") + "/healthz", timeout=timeout_s).status_code == 200
+    except Exception:
+        return False

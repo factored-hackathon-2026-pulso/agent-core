@@ -5,7 +5,9 @@ import base64
 
 import pytest
 
+from agent_core.adapters.llm import HttpLLMGateway
 from agent_core.composition.serve_ports import ServeConfigError, ServePorts, add_serve_parser, resolve_ports
+from agent_core.domain import EntityRef, GatewayError, GatewayErrorKind
 from testing.fakes.clock import FakeClock
 from testing.fakes.ids import FakeIds
 
@@ -150,10 +152,20 @@ def counting_piece(ctx: object) -> _Piece:
     return _Piece()
 
 
-def test_invalid_llm_endpoints_is_a_config_problem_not_a_schema_error() -> None:
+def test_an_invalid_llm_gateway_url_is_a_config_problem_not_a_schema_error() -> None:
     with pytest.raises(ServeConfigError) as info:
-        _resolve(AGENTCORE_ALLOW_DEMO="1", LLM_ENDPOINTS="{no es json")
-    assert "LLM_ENDPOINTS" in " ".join(info.value.problems)
+        _resolve(AGENTCORE_ALLOW_DEMO="1", AGENTCORE_LLM_GATEWAY_URL="no es una url",
+                 AGENTCORE_LLM_GATEWAY_TOKEN="t")
+    assert "AGENTCORE_LLM_GATEWAY_URL" in " ".join(info.value.problems)
+
+
+@pytest.mark.parametrize("env", [{"AGENTCORE_LLM_GATEWAY_URL": "https://gw.test"},
+                                 {"AGENTCORE_LLM_GATEWAY_TOKEN": "t"}])
+def test_a_half_configured_llm_gateway_is_a_config_problem(env: dict[str, str]) -> None:
+    with pytest.raises(ServeConfigError) as info:
+        _resolve(AGENTCORE_ALLOW_DEMO="1", **env)
+    text = " ".join(info.value.problems)
+    assert "AGENTCORE_LLM_GATEWAY_URL" in text and "AGENTCORE_LLM_GATEWAY_TOKEN" in text
 
 
 def test_static_config_problems_are_reported_together_before_any_factory_runs(tmp_path: object) -> None:
@@ -165,9 +177,10 @@ def test_static_config_problems_are_reported_together_before_any_factory_runs(tm
     with pytest.raises(ServeConfigError) as info:
         _resolve("--identity-keys", str(bad_keys), "--tools",
                  "tests.composition.test_serve_ports:counting_piece",
-                 AGENTCORE_ALLOW_DEMO="1", LLM_ENDPOINTS="{no es json")
+                 AGENTCORE_ALLOW_DEMO="1", AGENTCORE_LLM_GATEWAY_URL="no es una url",
+                 AGENTCORE_LLM_GATEWAY_TOKEN="t")
     text = " ".join(info.value.problems)
-    assert "principal_keys" in text and "LLM_ENDPOINTS" in text
+    assert "principal_keys" in text and "AGENTCORE_LLM_GATEWAY_URL" in text
     assert CALLS == []  # las fábricas no corrieron con la configuración estática rota
 
 
@@ -177,7 +190,8 @@ def test_the_dsn_never_reaches_stderr(capsys: pytest.CaptureFixture[str],
     from agent_core.cli import main
 
     monkeypatch.delenv("AGENTCORE_ALLOW_DEMO", raising=False)
-    monkeypatch.setenv("LLM_ENDPOINTS", "{no es json")
+    monkeypatch.setenv("AGENTCORE_LLM_GATEWAY_URL", "no es una url")
+    monkeypatch.setenv("AGENTCORE_LLM_GATEWAY_TOKEN", "t")
     code = main(["serve", "--dsn", "postgresql://user:S3CRETPW@host/db"])
     assert code == 2
     assert "S3CRETPW" not in capsys.readouterr().err
@@ -195,16 +209,18 @@ def test_dsn_help_recommends_the_env_var_over_argv(capsys: pytest.CaptureFixture
 # --- observabilidad (refactor del plano operativo, tarea 2) --------------------------------------------
 
 
-def test_resolve_ports_injects_the_given_tracer_in_the_gateway() -> None:
-    marker = object()
-    ports = resolve_ports(_args(), _env(AGENTCORE_ALLOW_DEMO="1"), FakeClock(), FakeIds(),
-                          tracer=marker)  # type: ignore[arg-type]
-    assert ports.gateway._tracer is marker  # type: ignore[attr-defined]
+def test_a_configured_llm_gateway_is_the_http_client() -> None:
+    ports = _resolve(AGENTCORE_ALLOW_DEMO="1", AGENTCORE_LLM_GATEWAY_URL="https://gw.test/",
+                     AGENTCORE_LLM_GATEWAY_TOKEN="t")
+    assert isinstance(ports.gateway, HttpLLMGateway) and ports.llm_gateway_url == "https://gw.test/"
 
 
-def test_without_a_tracer_the_gateway_resolves_agent_telemetry_per_call() -> None:
+def test_without_a_gateway_every_generation_fails_as_unavailable_and_startup_is_not_blocked() -> None:
     ports = _resolve(AGENTCORE_ALLOW_DEMO="1")
-    assert ports.gateway._tracer is None  # type: ignore[attr-defined]
+    assert ports.llm_gateway_url is None
+    with pytest.raises(GatewayError) as caught:
+        ports.gateway.generate(EntityRef.parse("p@1.0.0"), {}, "es")
+    assert caught.value.kind is GatewayErrorKind.unavailable
 
 
 def boom_factory(ctx: object) -> object:
