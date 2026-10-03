@@ -19,3 +19,9 @@ Hallazgo previo (no es de esta tarea): `tests/composition/test_transfer_spans.py
 | D-06 | N-06: la superficie estable es la listada en el ADR 0022, fijada por firmas en una prueba; compatibilidad dentro de la misma versión mayor de `SCHEMA_VERSION`. | Declararla solo en prosa. | `tests/test_stable_surface.py` |
 | D-07 | N-05: se confirma que `{id, spec}` e `"id@spec"` son equivalentes y que el hash va sobre el modelo normalizado; se recomienda la forma de objeto. | Rechazar una de las dos formas. | ADR 0022 §2 |
 | D-08 | N-11: la garantía es una política expand-only más una prueba estática de los `.sql`; las limpiezas (*contract*) necesitan dos versiones y un ADR. No hay migraciones versionadas ni se construyó una prueba con Postgres contra el binario anterior. | Un runner de migraciones versionadas con `down`. | ADR 0022 §3 |
+
+## Scope C
+
+| # | Decisión | Alternativa descartada | Dónde |
+|---|---|---|---|
+| D-09 | N-09: recarga perezosa al verificar (a lo sumo cada `--keys-reload-seconds`, 5 s por defecto, 0 la apaga), sin hilo de fondo ni señal. Compara el contenido del archivo, no el mtime. Una recarga rota conserva las últimas claves buenas (`last_reload_error` guarda solo el tipo). El arranque sigue fallando cerrado. Aplica a `--identity-keys` y `--staff-keys`. | Recargar con SIGHUP (no existe en Windows) o con un hilo de vigilancia. Fallar cerrado ante una recarga rota (un archivo a medio escribir tumbaría todo el servicio). | `adapters/identity_keys.py` |
