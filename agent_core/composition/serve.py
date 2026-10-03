@@ -3,6 +3,7 @@
 import argparse
 import sys
 from collections.abc import Callable, Iterable, Mapping
+from dataclasses import replace
 from datetime import timedelta
 from decimal import Decimal
 
@@ -12,7 +13,8 @@ from agent_core.api.app import ApiDeps, ApiExtension, create_app
 from agent_core.api.limits import RateLimitConfig
 from agent_core.api.security_log import OtelSecurityLog
 from agent_core.audit import AuditLog
-from agent_core.composition.engine import EngineDeps, build_engine
+from agent_core.composition.builder_tools import BuilderToolExecutor, RoutedTools
+from agent_core.composition.engine import EngineConfig, EngineDeps, build_engine
 from agent_core.composition.export_http import export_extension
 from agent_core.composition.observability import ObservabilityConfigError, setup_observability
 from agent_core.composition.serve_ports import ServeConfigError, ServePorts, resolve_ports
@@ -70,7 +72,8 @@ def build_api_deps(ports: ServePorts, *, registry_service: RegistryService | Non
         clock=ports.clock, ids=ports.ids, keys=ports.keys, uow_factory=ports.uow_factory, audit=ports.audit,
         registry=ports.registry, releases=ports.releases, tools=ports.tools, gateway=ports.gateway,
         providers=ports.providers, calibrations=ports.calibrations, transcript=ports.transcript,
-        authz=ports.authz, classifier=ports.classifier, directory=ports.directory, telemetry=telemetry))
+        authz=ports.authz, classifier=ports.classifier, directory=ports.directory, telemetry=telemetry,
+        config=EngineConfig(lang_thresholds=ports.lang_thresholds)))
     return ApiDeps(
         verifier=ports.verifier, authz=ports.authz, registry=ports.registry, uow_factory=ports.uow_factory,
         counters=ports.counters, clock=ports.clock, ids=ports.ids, turns=built.turns,
@@ -78,6 +81,13 @@ def build_api_deps(ports: ServePorts, *, registry_service: RegistryService | Non
         denials=AuditLog(ports.audit, ports.uow_factory), security=OtelSecurityLog(),
         readiness=ports.readiness, build_sha=build_sha, limits=limits or RateLimitConfig(),
         extensions=_extensions(ports, registry_service))
+
+
+def constructor_bot(clock: Clock) -> Principal:
+    """Identidad de servicio del constructor: `builder` con solo el rol `constructor`, sin `actor` humano."""
+    now = clock.now()
+    return Principal(type=PrincipalType.builder, id="constructor-bot", roles=["constructor"], attrs={},
+                     auth=AuthInfo(level=AuthLevel.session, at=now), exp=now + timedelta(days=3650))
 
 
 def release_warnings(registry: RegistryPort, agents: Iterable[str], clock: Clock) -> list[str]:
@@ -140,6 +150,9 @@ def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Map
         registry_service = build_registry_service_for_serve(ports) if ports.registry_api is not None else None
         # Always the real turn telemetry: without an exporter its spans are no-ops, but `bind` still
         # correlates the turn's logs (m04 §3.9).
+        if registry_service is not None:  # ADR 0019 §4: el constructor escribe con su credencial de servicio
+            ports = replace(ports, tools=RoutedTools(
+                BuilderToolExecutor(registry_service, constructor_bot(ports.clock), ports.ids), ports.tools))
         app = create_app(
             build_api_deps(ports, registry_service=registry_service, telemetry=OtelTurnTelemetry(),
                            build_sha=env.get("AGENTCORE_GIT_SHA") or None, limits=limits))

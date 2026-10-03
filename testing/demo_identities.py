@@ -34,16 +34,23 @@ def main(argv: Sequence[str] | None = None, *, clock: Clock | None = None) -> in
     parser.add_argument("--anon-session", default="anon-1")
     parser.add_argument("--public-keys", type=Path, default=None,
                         help="escribe las claves públicas del emisor para `agentcore serve --identity-keys`")
+    parser.add_argument("--staff-keys", type=Path, default=None,
+                        help="escribe las claves públicas del emisor del staff para `serve --staff-keys`")
     args = parser.parse_args(argv)
     clock = clock or SystemClock()
     issuer = TestIdentityIssuer(clock)
     staff = TestStaffIssuer(clock)
     advisor, delegation = issuer.advisor(args.advisor, args.customer)
     if args.public_keys is not None:
+        # También la clave del staff: así un supervisor puede hablar con el agente constructor por /v1/runs.
         args.public_keys.write_text(json.dumps({
-            "principal_keys": {issuer.principal_kid: _public(issuer.principal_key)},
+            "principal_keys": {issuer.principal_kid: _public(issuer.principal_key),
+                               staff.principal_kid: _public(staff.principal_key)},
             "delegation_keys": {issuer.delegation_kid: _public(issuer.delegation_key)},
         }, indent=2), encoding="utf-8")
+    if args.staff_keys is not None:
+        staff_public = {"principal_keys": {staff.principal_kid: _public(staff.principal_key)}}
+        args.staff_keys.write_text(json.dumps(staff_public, indent=2), encoding="utf-8")
     tokens = {
         "_note": NOTE,
         "customer": issuer.customer(args.customer),

@@ -21,7 +21,8 @@ from agent_core.adapters.postgres_uow import PostgresStore
 from agent_core.composition.blobs import blob_factory_from_env
 from agent_core.decision import DecisionConfigError, DecisionProvider, HttpJevTransport, JevProvider
 from agent_core.decision.calibration.artifact import CalibrationSource
-from agent_core.domain import Release, SchemaError
+from agent_core.domain import Release, SchemaError, loads
+from agent_core.guards import LangThresholds
 from agent_core.ports import (
     AgentDirectory,
     AuditSink,
@@ -46,6 +47,7 @@ JEV_KEY_ENV = "AGENTCORE_JEV_API_KEY"
 DSN_ENV = "AGENTCORE_REGISTRY_DSN"
 EVAL_DSN_ENV = "AGENTCORE_EVAL_DSN"
 AGENTS_ENV = "AGENTCORE_SERVE_AGENTS"
+LANG_THRESHOLDS_ENV = "AGENTCORE_LANG_THRESHOLDS"  # archivo JSON con los umbrales de idioma (M6 §3.1.7)
 POOL_MAX_ENV = "AGENTCORE_DB_POOL_MAX"  # conexiones máximas por proceso; 0 o ausente = una por operación
 DEMO_VERIFIER = "testing.registry_demo:demo_verifier"
 _KEY_VARS = ("AGENTCORE_KEYS_FINGERPRINT", "AGENTCORE_KEYS_TOKEN_MAP")
@@ -114,6 +116,7 @@ class ServePorts:
     directory: AgentDirectory | None = None  # ADR 0021: directorio de especialistas (sobre el registry)
     readiness: tuple[tuple[str, Callable[[], bool]], ...] = ()  # comprobaciones de `/readyz`
     run_export: RunExport | None = None  # N-08: lectura paginada de runs y eventos (con --registry-api)
+    lang_thresholds: Mapping[str, LangThresholds] = field(default_factory=dict)  # por `thresholds_from`
 
 
 def _flag(attr: str) -> str:
@@ -137,6 +140,10 @@ def add_serve_parser(sub: Any) -> None:
                        help=f"agentes separados por coma (o {AGENTS_ENV}): al arrancar avisa de los perfiles "
                             "de "
                             "su release `prod` cuyo alias de LLM no esté configurado")
+    serve.add_argument("--lang-thresholds", type=Path, default=None,
+                       help=f"archivo JSON {{thresholds_from: {{switch_threshold, unsupported_threshold, "
+                            f"min_distance}}}} (o {LANG_THRESHOLDS_ENV}). Sin él el idioma del run nunca "
+                            "cambia por detección (umbral 1.0 = desactivado, M6 §3.1.7)")
     serve.add_argument("--registry-api", action="store_true",
                        help="monta la API HTTP del registry (/v1/registry); exige --eval-dsn y --staff-keys")
     serve.add_argument("--eval-dsn", default=None,
@@ -205,6 +212,23 @@ def _llm_gateway_config(env: Mapping[str, str], problems: list[str]) -> tuple[st
     return url, token
 
 
+def _lang_thresholds(args: argparse.Namespace, env: Mapping[str, str],
+                     problems: list[str]) -> dict[str, LangThresholds]:
+    """Umbrales de idioma por `thresholds_from`, de un archivo JSON. Un archivo roto es un problema de
+    configuración: callar dejaría el cambio de idioma apagado sin que nadie lo note."""
+    raw = args.lang_thresholds or (Path(env[LANG_THRESHOLDS_ENV]) if env.get(LANG_THRESHOLDS_ENV) else None)
+    if raw is None:
+        return {}
+    try:
+        data = loads(Path(raw).read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError("debe ser un objeto {thresholds_from: umbrales}")
+        return {str(name): LangThresholds.model_validate(value) for name, value in data.items()}
+    except (OSError, ValueError) as exc:  # ValidationError es un ValueError; sin el texto del archivo
+        problems.append(f"--lang-thresholds: {type(exc).__name__}: archivo ilegible o umbrales inválidos")
+        return {}
+
+
 def _agents(args: argparse.Namespace, env: Mapping[str, str]) -> tuple[str, ...]:
     raw = args.agents or env.get(AGENTS_ENV) or ""
     return tuple(a for a in (part.strip() for part in raw.split(",")) if a)
@@ -263,6 +287,7 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         except SchemaError as exc:
             problems.append(str(exc))
     llm_url, llm_token = _llm_gateway_config(env, problems)
+    lang_thresholds = _lang_thresholds(args, env, problems)
     eval_dsn: str | None = None
     staff_verifier: IdentityVerifier | None = None
     if args.registry_api:
@@ -331,4 +356,4 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         doubles=tuple(doubles), agents=_agents(args, env), llm_gateway_url=llm_url,
         registry_api=registry_api,
         directory=RegistryDirectory(registry_store, pg_registry, pg_registry.release),
-        readiness=(("postgres", store.ping),), run_export=store.run_export())
+        readiness=(("postgres", store.ping),), run_export=store.run_export(), lang_thresholds=lang_thresholds)

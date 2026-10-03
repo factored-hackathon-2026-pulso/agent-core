@@ -203,3 +203,26 @@ class BuilderToolExecutor:
     def _get_write(self, args: Args, key: str | None, audit: AuditContext | None) -> JsonValue:
         record = self._service.get_write(_text(args, "idempotency_key"))
         return None if record is None else record.model_dump(mode="json")
+
+
+class RoutedTools:
+    """Una sola vía de tools para el motor: las `registry/*` van al `BuilderToolExecutor` y el resto al
+    ejecutor del despliegue. El constructor actúa con su identidad de servicio, no con la del run
+    (ADR 0019 §4)."""
+
+    PREFIX = "registry/"
+
+    def __init__(self, builder: BuilderToolExecutor, other: Any) -> None:
+        self._builder, self._other = builder, other
+
+    def _route(self, tool: EntityRef) -> Any:
+        return self._builder if tool.id.startswith(self.PREFIX) else self._other
+
+    def definition(self, tool: EntityRef) -> ToolDef:
+        result: ToolDef = self._route(tool).definition(tool)
+        return result
+
+    def execute(self, tool: EntityRef, args: dict[str, JsonValue], bound_params: dict[str, str],
+                ctx: ToolCallContext, idempotency_key: str | None = None) -> ToolResult:
+        result: ToolResult = self._route(tool).execute(tool, args, bound_params, ctx, idempotency_key)
+        return result

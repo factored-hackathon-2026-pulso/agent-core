@@ -1,0 +1,16 @@
+id: registry/reopen
+version: 1.0.0
+risk_class: write_draft
+min_auth_level: session
+idempotent: true
+readback_by: idempotency_key
+confirmation_ttl: PT5M
+description: Reabre una propuesta congelada para seguir editando.
+args_schema:
+  type: object
+  additionalProperties: false
+  required:
+  - proposal_id
+  properties:
+    proposal_id:
+      type: string

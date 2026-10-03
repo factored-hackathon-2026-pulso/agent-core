@@ -1,0 +1,8 @@
+id: constructor-demo
+agents:
+  - {agent: "constructor-chat@^1", aliases: [prod]}
+flows: ["construir@^1"]
+interrupts:
+  - {id: emergencia, priority: 100, action: {type: escalate, target_queue: plataforma, priority: critical}}
+language_detection: "lang-es-pt@1"
+injection_ruleset: "injection-rules@1"

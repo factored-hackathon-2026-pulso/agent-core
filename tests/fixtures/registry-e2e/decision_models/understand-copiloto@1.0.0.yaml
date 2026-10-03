@@ -1,0 +1,37 @@
+id: understand-copiloto
+version: 1.0.0
+output_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    command: {type: string}
+calibrated_fields: [command, flow, interrupt]
+providers:
+  - provider: jev
+    config:
+      model: jev-1.13.0
+      timeout_ms: 10000
+      questions:
+        command:
+          instructions: >-
+            Quien escribe es un asesor humano que atiende a un cliente. ¿Qué quiere hacer con su último mensaje?
+            Usa el contexto (turnos recientes y nodo actual).
+          criteria:
+            start_flow: No hay nodo actual y el asesor pide algo sobre el cliente que atiende.
+            continue: Hay un nodo actual esperando el pedido y el asesor lo da, o pregunta algo sobre el cliente (movimientos, saldo, productos, PQR, traspaso, qué ofrecerle).
+            affirm: Responde que sí o acepta.
+            deny: Responde que no o rechaza.
+            clarify: El mensaje es ambiguo o incompleto y no se entiende qué pide.
+            cancel: Quiere dejar de preguntar o terminar la asistencia.
+            handoff: Pide hablar con otra persona.
+            out_of_scope: Pide algo sin relación con atender a su cliente (charla, temas ajenos).
+            interrupt: Reporta una emergencia que interrumpe la asistencia.
+        flow:
+          instructions: Si el asesor pide algo sobre el cliente, ¿cuál es el flujo? Elige el más cercano.
+        interrupt:
+          instructions: >-
+            El asesor reporta una emergencia (cliente en riesgo, fraude en curso o amenaza).
+          criteria:
+            emergencia: Reporta que el cliente está en riesgo, que hay un fraude en curso o una amenaza.
+calibration: {method: none}
+thresholds_from: cal-transfer-demo
