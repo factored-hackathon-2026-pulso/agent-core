@@ -24,7 +24,7 @@ default_target_queue: general
 routing:
   directory: atencion-cliente
   summary: "Disputa un cargo de la tarjeta que la persona no reconoce."
-  examples: ["no reconozco un cargo", "me cobraron algo que no compré"]
+  examples: ["no reconozco un cargo", "me cobraron algo que no compré", "não reconheço uma cobrança", "cobrança indevida no meu cartão"]
 accepts:
   slots:
     problema: {type: string, required: true}

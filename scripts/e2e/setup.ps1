@@ -48,7 +48,12 @@ $tokens = uv run python -m testing.demo_identities --public-keys "$StateDir\iden
 if ($LASTEXITCODE -ne 0) { throw "No pude emitir las credenciales de prueba" }
 Set-Content "$StateDir\tokens.json" -Value $tokens -Encoding utf8
 $env:AGENTCORE_CREDENTIAL = (($tokens -join "`n") | ConvertFrom-Json).admin
-Invoke-Checked { uv run agentcore registry --verifier testing.registry_demo:demo_verifier import tests/fixtures/registry-e2e }
+$import = uv run agentcore registry --verifier testing.registry_demo:demo_verifier import tests/fixtures/registry-e2e 2>&1 | ForEach-Object { "$_" }
+if ($LASTEXITCODE -ne 0) {
+    if (($import -join "`n") -match "ya tiene releases") {
+        Write-Host "El registry ya estaba importado: se conserva (usa -ResetDb si cambiaste alguna entidad)."
+    } else { $import; throw "Falló la importación del registry" }
+}
 Remove-Item Env:AGENTCORE_CREDENTIAL
 
 # 4. llm-gateway (contenedor); sin key del proveedor se omite y la generación cae a plantillas
@@ -56,14 +61,15 @@ if ($env:OPENROUTER_API_KEY) {
     $gw = (Resolve-Path (Join-Path $Root "..\llm-gateway") -ErrorAction Stop).Path
     Invoke-Checked { docker build -q -t llm-gateway-e2e $gw }
     docker rm -f llm-gateway-e2e *> $null
-    $consumers = '{"agent-core":{"token_env":"GATEWAY_TOKEN_AGENT_CORE"}}'
-    $endpoints = '{"openrouter":{"base_url":"https://openrouter.ai/api/v1","api_key_env":"OPENROUTER_API_KEY"}}'
-    Invoke-Checked {
-        docker run -d --name llm-gateway-e2e -p 8080:8080 `
-            -e "GATEWAY_CONSUMERS=$consumers" -e "LLM_ENDPOINTS=$endpoints" `
-            -e "GATEWAY_TOKEN_AGENT_CORE=$env:GATEWAY_TOKEN_AGENT_CORE" `
-            -e "OPENROUTER_API_KEY=$env:OPENROUTER_API_KEY" llm-gateway-e2e
-    }
+    # Archivo de entorno en vez de -e: PowerShell 5.1 se come las comillas del JSON al pasarlas a docker.
+    $gwEnv = Join-Path $StateDir "gateway.env"
+    @(
+        'GATEWAY_CONSUMERS={"agent-core":{"token_env":"GATEWAY_TOKEN_AGENT_CORE"}}',
+        'LLM_ENDPOINTS={"openrouter":{"base_url":"https://openrouter.ai/api/v1","api_key_env":"OPENROUTER_API_KEY"}}',
+        "GATEWAY_TOKEN_AGENT_CORE=$env:GATEWAY_TOKEN_AGENT_CORE",
+        "OPENROUTER_API_KEY=$env:OPENROUTER_API_KEY"
+    ) | Set-Content -Path $gwEnv -Encoding ascii
+    Invoke-Checked { docker run -d --name llm-gateway-e2e -p 8080:8080 --env-file $gwEnv llm-gateway-e2e }
     Write-Host "llm-gateway arriba en http://127.0.0.1:8080"
 } else {
     Write-Host "OPENROUTER_API_KEY vacía: llm-gateway NO se levantó (toda generación cae a plantilla)." -ForegroundColor Yellow

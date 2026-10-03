@@ -17,8 +17,8 @@ providers:
             ¿Qué quiere hacer la persona con su último mensaje? Usa el contexto de la conversación
             (turnos recientes, nodo actual, si hay una confirmación pendiente).
           criteria:
-            start_flow: No hay nodo actual (current_node vacío) y la persona describe el trámite que quiere hacer (por ejemplo, que no reconoce un cargo), o pide un trámite nuevo distinto del que está en curso.
-            continue: Hay un nodo actual esperando un dato y la persona lo responde o lo aporta, aunque al hacerlo mencione un trámite (por ejemplo, al preguntarle en qué se le puede ayudar, cuenta que no reconoce un cargo), o sigue con el trámite en curso.
+            start_flow: SOLO si current_node está vacío (no hay nodo actual) y la persona describe un trámite. Si current_node tiene un valor, nunca elijas start_flow.
+            continue: Si current_node tiene un valor (por ejemplo entender), la persona está respondiendo la pregunta que se le hizo; elige continue sin importar de qué trate su respuesta (un cargo que no reconoce, el estado de un reclamo, un cobro indebido, en cualquier idioma), salvo que pida cancelar, hablar con una persona o reporte un fraude.
             affirm: Responde que sí o acepta lo que se le preguntó.
             deny: Responde que no o rechaza lo que se le preguntó.
             clarify: El mensaje es ambiguo o incompleto, no se entiende qué quiere.

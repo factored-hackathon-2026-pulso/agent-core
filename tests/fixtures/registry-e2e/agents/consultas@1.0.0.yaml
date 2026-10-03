@@ -24,7 +24,7 @@ default_target_queue: general
 routing:
   directory: atencion-cliente
   summary: "Consulta el estado de una PQR ya radicada."
-  examples: ["¿cómo va mi reclamo?", "quiero saber el estado de mi PQR"]
+  examples: ["¿cómo va mi reclamo?", "quiero saber el estado de mi PQR", "como está minha reclamação", "quero saber o estado da minha solicitação"]
 accepts:
   slots:
     problema: {type: string, required: true}
