@@ -54,6 +54,11 @@
           "title": "Id",
           "type": "string"
         },
+        "locked": {
+          "default": false,
+          "title": "Locked",
+          "type": "boolean"
+        },
         "priority": {
           "title": "Priority",
           "type": "integer"
@@ -174,6 +179,7 @@
       "anyOf": [
         {
           "exclusiveMinimum": 0,
+          "maximum": 100000,
           "type": "integer"
         },
         {

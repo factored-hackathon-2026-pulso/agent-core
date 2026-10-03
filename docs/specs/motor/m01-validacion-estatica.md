@@ -87,7 +87,7 @@ def release_view(port: RegistryPort, release: Release) -> RegistryView          
 
 # --- Validación
 def validate_flow(flow: Flow, reg: RegistryView) -> list[Violation]                        # G0-01…G0-11, G0-13…G0-16
-def validate_flow_for_agent(flow: Flow, agent: Agent, reg: RegistryView) -> list[Violation]  # G0-12, AG-01 y AG-03
+def validate_flow_for_agent(flow: Flow, agent: Agent, reg: RegistryView) -> list[Violation]  # G0-12, AG-01 y AG-03, AG-04 (el flow lee `slots.X` y nadie lo puede dejar `validated`: ni un `collect`, ni el `input_schema` del agente task, ni su `accepts`)
 def validate_flow_for_release(flow: Flow, snapshot: KnowledgeSnapshot | None, reg: RegistryView) -> list[Violation]  # G0-17, G0-19, G0-20
 def validate_agent(agent: Agent, reg: RegistryView) -> list[Violation]                     # G0-02, G0-12 y AG-03 sobre el agente
 def derive_claims(flow: Flow, reg: RegistryView) -> Mapping[str, frozenset[str]]           # lector → ids de confirm

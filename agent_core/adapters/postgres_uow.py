@@ -18,17 +18,21 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from importlib import resources
 from types import TracebackType
-from typing import Any, Self
+from typing import Any, Self, get_args
 
 import psycopg
 from psycopg_pool import ConnectionPool
+from pydantic import ValidationError
 
 from agent_core.adapters.postgres_audit import PgAuditEvents, apply_audit_schema
 from agent_core.domain import (
+    DomainError,
+    EngineError,
     EngineEvent,
     JsonValue,
     OutboxMessage,
     PrincipalKey,
+    ProblemCode,
     RunResult,
     RunState,
     TurnInProgress,
@@ -255,7 +259,7 @@ class PostgresUoW:
             return local[0], local[1].model_copy(deep=True)
         row = self._conn.execute(
             "SELECT body_hash, result_json FROM run_idempotency "
-            "WHERE principal_type = %s AND principal_id = %s AND idem_key = %s",
+            "WHERE principal_type = %s AND principal_id = %s AND idem_key = %s AND result_json IS NOT NULL",
             (principal.type.value, principal.id, key)).fetchone()
         return (row[0], RunResult.model_validate(loads(row[1]))) if row else None
 
@@ -263,6 +267,30 @@ class PostgresUoW:
                             result: RunResult) -> None:
         self._check_open()
         self._idempotency[(principal, key)] = (body_hash, result.model_copy(deep=True))
+
+    def reserve_run_idempotency(self, principal: PrincipalKey, key: str, body_hash: str, now: datetime,
+                                ttl: timedelta) -> tuple[str, RunResult] | None:
+        self._check_open()
+        ident = (principal.type.value, principal.id, key)
+        # Una sola sentencia atómica: gana quien inserta o quien toma una reserva vencida sin resultado.
+        taken = self._conn.execute(
+            "INSERT INTO run_idempotency (principal_type, principal_id, idem_key, body_hash, result_json, "
+            "reserved_until) VALUES (%s, %s, %s, %s, NULL, %s) ON CONFLICT (principal_type, principal_id, "
+            "idem_key) DO UPDATE SET body_hash = EXCLUDED.body_hash, "
+            "reserved_until = EXCLUDED.reserved_until "
+            "WHERE run_idempotency.result_json IS NULL AND run_idempotency.reserved_until <= %s RETURNING 1",
+            (*ident, body_hash, now + ttl, now)).fetchone()
+        if taken is not None:
+            return None
+        prior = self.get_run_idempotency(principal, key)
+        if prior is not None:
+            return prior
+        raise EngineError(ProblemCode.idempotency_conflict, "otra petición con esta clave sigue en curso")
+
+    def release_run_idempotency(self, principal: PrincipalKey, key: str) -> None:
+        self._conn.execute(
+            "DELETE FROM run_idempotency WHERE principal_type = %s AND principal_id = %s AND idem_key = %s "
+            "AND result_json IS NULL", (principal.type.value, principal.id, key))
 
     def put_handoff(self, handoff_ref: str, packet: dict[str, JsonValue]) -> None:
         self._check_open()
@@ -340,7 +368,8 @@ class PostgresUoW:
             else:
                 cur = conn.execute(
                     "UPDATE runs SET session_id = %s, state_version = %s, status = %s, inactive_after = %s, "
-                    "state_json = %s WHERE run_id = %s AND state_version = %s", (*values, run_id, base))
+                    "state_json = %s, change_xid = pg_current_xact_id()::text::bigint "
+                    "WHERE run_id = %s AND state_version = %s", (*values, run_id, base))
             if cur.rowcount == 0:
                 raise VersionConflict(f"{run_id}: otra transacción commiteó primero (base {base})")
         for (run_id, client_turn_id), result in self._turn_results.items():
@@ -349,9 +378,11 @@ class PostgresUoW:
                 "ON CONFLICT (run_id, client_turn_id) DO UPDATE SET result_json = EXCLUDED.result_json",
                 (run_id, client_turn_id, dumps(result)))
         for (principal, key), (body_hash, run_result) in self._idempotency.items():
-            conn.execute(  # el primer registro gana: un replay no lo pisa
+            conn.execute(  # el primer registro gana: completa la reserva propia, nunca pisa un resultado
                 "INSERT INTO run_idempotency (principal_type, principal_id, idem_key, body_hash, "
-                "result_json) VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
+                "result_json) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (principal_type, principal_id, "
+                "idem_key) DO UPDATE SET result_json = EXCLUDED.result_json, reserved_until = NULL "
+                "WHERE run_idempotency.result_json IS NULL",
                 (principal.type.value, principal.id, key, body_hash, dumps(run_result)))
         for handoff_ref, packet in self._handoffs.items():
             conn.execute(
@@ -401,15 +432,26 @@ class PostgresRunExport:
     def __init__(self, store: PostgresStore) -> None:
         self._store = store
 
-    def list_runs(self, after_seq: int, limit: int) -> list[RunSummary]:
+    def list_runs(self, after_cursor: int, limit: int) -> list[RunSummary]:
+        """Por commit: solo transacciones anteriores a la más vieja aún abierta (`xmin` del snapshot), así una
+        que confirma tarde nunca queda detrás del cursor. Los runs de un mismo commit van juntos."""
+        if limit <= 0:
+            return []
         with self._store.reading() as conn:
-            rows = conn.execute("SELECT run_seq, state_json FROM runs WHERE run_seq > %s ORDER BY run_seq "
-                                "LIMIT %s", (after_seq, max(limit, 0))).fetchall()
-        return [RunSummary.of(int(r[0]), RunState.model_validate(loads(r[1]))) for r in rows]
+            rows = conn.execute(
+                "SELECT run_seq, change_xid, state_json FROM runs WHERE change_xid IN ("
+                "  SELECT DISTINCT change_xid FROM runs WHERE change_xid > %s "
+                "  AND change_xid < pg_snapshot_xmin(pg_current_snapshot())::text::bigint "
+                "  ORDER BY change_xid LIMIT %s) ORDER BY change_xid, run_seq",
+                (after_cursor, limit)).fetchall()
+        return [RunSummary.of(int(r[0]), RunState.model_validate(loads(r[2])), int(r[1])) for r in rows]
 
     def events_after(self, run_id: str, after_seq: int, limit: int) -> list[EngineEvent]:
         with self._store.reading() as conn:
             return PgAuditEvents(conn).read_after(run_id, after_seq, limit)
+
+
+_KNOWN_OUTBOX_TYPES = get_args(OutboxMessage.model_fields["type"].annotation)
 
 
 class PostgresOutbox:
@@ -419,12 +461,21 @@ class PostgresOutbox:
         self._store = store
 
     def pending(self, limit: int) -> list[OutboxMessage]:
+        """Solo los tipos que esta versión conoce: una fila de otra versión del motor no tumba al relay ni
+        ocupa el frente del lote; queda pendiente para quien sí la entienda. Una fila corrupta se salta."""
         if limit <= 0:
             return []
         with self._store.reading() as conn:
             rows = conn.execute("SELECT message_json FROM outbox WHERE delivered_at IS NULL "
-                                "ORDER BY seq LIMIT %s", (limit,)).fetchall()
-        return [OutboxMessage.model_validate(loads(r[0])) for r in rows]
+                                "AND message_json::jsonb ->> 'type' = ANY(%s) ORDER BY seq LIMIT %s",
+                                (list(_KNOWN_OUTBOX_TYPES), limit)).fetchall()
+        messages: list[OutboxMessage] = []
+        for (raw,) in rows:
+            try:
+                messages.append(OutboxMessage.model_validate(loads(raw)))
+            except (ValidationError, DomainError):
+                continue
+        return messages
 
     def mark_delivered(self, message_id: str) -> None:
         with self._store.reading() as conn:

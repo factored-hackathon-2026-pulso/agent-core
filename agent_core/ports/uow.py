@@ -54,6 +54,18 @@ class UnitOfWork(Protocol):
     def put_run_idempotency(self, principal: PrincipalKey, key: str, body_hash: str,
                             result: RunResult) -> None: ...
 
+    def reserve_run_idempotency(self, principal: PrincipalKey, key: str, body_hash: str, now: UtcDatetime,
+                                ttl: timedelta) -> tuple[str, RunResult] | None:
+        """Toma la clave antes de ejecutar nada, de inmediato y fuera de la transacción (como el lease).
+        Devuelve el registro ya commiteado si lo hay; `None` si la clave quedó reservada para quien llama.
+        Si otra petición la tiene reservada y vigente lanza `EngineError(idempotency_conflict)`: así dos
+        peticiones concurrentes no ejecutan dos veces los efectos de un run."""
+        ...
+
+    def release_run_idempotency(self, principal: PrincipalKey, key: str) -> None:
+        """Suelta una reserva propia que no llegó a commitear. No toca un registro ya commiteado."""
+        ...
+
     def put_handoff(self, handoff_ref: str, packet: dict[str, JsonValue]) -> None: ...
 
     def get_handoff(self, handoff_ref: str) -> dict[str, JsonValue] | None: ...

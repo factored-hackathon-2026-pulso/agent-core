@@ -120,3 +120,67 @@ def test_config_defaults_are_demo_values() -> None:
         30,
         Decimal("5.00"),
     )
+
+
+# --- ráfagas, reservas en vuelo, Retry-After y servicios --------------------------------------------------
+
+
+def test_in_flight_requests_count_against_the_window() -> None:
+    w = World()
+    who = principal()
+    with w.guard.slot(who), w.guard.slot(who), w.guard.slot(who):
+        with pytest.raises(EngineError) as info:
+            with w.guard.slot(who):
+                pass
+        assert info.value.code is ProblemCode.rate_limited
+    with w.guard.slot(who):  # al terminar, los lugares se liberan
+        pass
+
+
+def test_a_concurrent_burst_admits_at_most_the_maximum() -> None:
+    import threading
+
+    w = World()
+    who = principal()
+    barrier, admitted, gate = threading.Barrier(12), [], threading.Event()
+
+    def call() -> None:
+        barrier.wait()
+        try:
+            with w.guard.slot(who):
+                admitted.append(1)
+                gate.wait(5)  # la petición sigue en vuelo mientras llegan las demás
+        except EngineError:
+            pass
+
+    threads = [threading.Thread(target=call) for _ in range(12)]
+    [t.start() for t in threads]
+    barrier_done = threading.Timer(0.5, gate.set)
+    barrier_done.start()
+    [t.join() for t in threads]
+    assert len(admitted) == CONFIG.max_hits
+
+
+def test_rate_limited_carries_retry_after_for_the_window() -> None:
+    w = World()
+    w.spend(times=3)
+    with pytest.raises(EngineError) as info:
+        w.guard.check(principal())
+    assert info.value.retry_after == 60
+
+
+def test_budget_exceeded_carries_retry_after_until_midnight_utc() -> None:
+    w = World()
+    w.spend(cost="1.00")
+    with pytest.raises(EngineError) as info:
+        w.guard.check(principal())
+    assert info.value.retry_after == 12 * 3600  # el reloj de prueba marca las 12:00 UTC
+
+
+def test_a_service_principal_has_a_higher_ceiling() -> None:
+    w = World()
+    service_key = PrincipalKey(type="service", id="svc-1")
+    w.spend(key=service_key, times=3)
+    assert w.code(principal(type="service", id="svc-1")) is None
+    w.spend(key=service_key, times=27)
+    assert w.code(principal(type="service", id="svc-1")) is ProblemCode.rate_limited

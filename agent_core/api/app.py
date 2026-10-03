@@ -1,6 +1,7 @@
 """`create_app`: la puerta HTTP del motor (M9 §2). Sin lógica de conversación: valida, autoriza y delega."""
 
 from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
@@ -181,7 +182,8 @@ def create_app(deps: ApiDeps) -> FastAPI:
         on_behalf_of: str | None,
         session_id: str | None = None,
     ) -> Admitted:
-        """Chequeos 1 a 5: firma, vigencia, delegación, coincidencia de principal y límites."""
+        """Chequeos 1 a 4: firma, vigencia, delegación y coincidencia de principal. Los límites (5) los toma
+        solo quien gasta: `spend` en crear run y en procesar turno, no las lecturas."""
         trace_id = request_trace_id(request)
 
         def load_run() -> RunState | None:
@@ -190,9 +192,11 @@ def create_app(deps: ApiDeps) -> FastAPI:
             with deps.uow_factory() as uow:
                 return uow.find_run_by_session(session_id)
 
-        admitted = gate.admit(authorization, on_behalf_of, load_run, trace_id=trace_id)
-        guard.check(admitted.principal)
-        return admitted
+        return gate.admit(authorization, on_behalf_of, load_run, trace_id=trace_id)
+
+    def spend(principal: Principal, *, replay: bool) -> AbstractContextManager[None]:
+        """Reserva un lugar en el límite del principal; una repetición idempotente no consume ni bloquea."""
+        return nullcontext() if replay else guard.slot(principal)
 
     def readable_run(
         request: Request, run_id: str, authorization: str | None, on_behalf_of: str | None
@@ -224,7 +228,10 @@ def create_app(deps: ApiDeps) -> FastAPI:
             idempotency_key=_idempotency_key(idempotency_key, admitted.principal),
         )
         run_input = authorizer.authorize_new_run(admitted, run_input, trace_id=request_trace_id(request))
-        result = deps.turns.start_run(admitted.principal, admitted.on_behalf_of, run_input)
+        with deps.uow_factory() as uow:
+            replay = uow.get_run_idempotency(admitted.principal.key, run_input.idempotency_key) is not None
+        with spend(admitted.principal, replay=replay):
+            result = deps.turns.start_run(admitted.principal, admitted.on_behalf_of, run_input)
         return JsonResponse(publish_run(result, step_up_simulated=deps.step_up_simulated), 201)
 
     @router.post("/sessions/{session_id}/turns", summary="Procesa un turno", operation_id="post_turn")
@@ -247,7 +254,10 @@ def create_app(deps: ApiDeps) -> FastAPI:
             client_turn_id=body.client_turn_id,
             confirm=body.confirm,
         )
-        result = deps.turns.handle_turn(admitted.principal, admitted.on_behalf_of, turn)
+        with deps.uow_factory() as uow:
+            replay = uow.get_turn_result(admitted.run.run_id, body.client_turn_id) is not None
+        with spend(admitted.principal, replay=replay):
+            result = deps.turns.handle_turn(admitted.principal, admitted.on_behalf_of, turn)
         return JsonResponse(publish_turn(result, step_up_simulated=deps.step_up_simulated))
 
     @router.get("/runs/{run_id}", summary="Estado resumido de un run", operation_id="get_run")

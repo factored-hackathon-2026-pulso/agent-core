@@ -7,7 +7,7 @@ from agent_core.domain import PLATFORM_METRIC_PREFIX, Agent, Flow, canonical_byt
 from agent_core.flows import AuthoringRegistry, Violation, validate_registry
 from agent_core.registry.candidate import Candidate, parse_semver
 from agent_core.registry.entities import encode_entity, version_ref
-from agent_core.registry.models import EntityDraft
+from agent_core.registry.models import RELEASE_SETTINGS, EntityDraft
 from agent_core.registry.suite import EvalSuite, SuiteProblem, suite_problems
 
 
@@ -35,6 +35,12 @@ def check_draft_limits(drafts: Sequence[EntityDraft], limits: Limits) -> list[Vi
                                  message=f"{where} ocupa {size} bytes; "
                                          f"el máximo es {limits.max_entity_bytes}"))
     return out
+
+
+def changes_interrupts(drafts: Sequence[EntityDraft]) -> bool:
+    """`True` si algún borrador `release_settings` reemplaza las interrupciones (quitar un escalamiento de
+    seguridad es el cambio más delicado de la release; N-07)."""
+    return any(d.kind == RELEASE_SETTINGS and d.content.get("interrupts") is not None for d in drafts)
 
 
 def platform_edits(drafts: Sequence[EntityDraft]) -> list[str]:

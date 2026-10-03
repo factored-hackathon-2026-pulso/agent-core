@@ -91,6 +91,7 @@ SPEC_METHODS: dict[str, set[str]] = {
     "UnitOfWork": {"acquire_turn", "release_turn", "load_run", "find_run_by_session", "list_runs_by_session",
                    "save_run",
                    "get_turn_result", "put_turn_result", "get_run_idempotency", "put_run_idempotency",
+                   "reserve_run_idempotency", "release_run_idempotency",
                    "put_handoff", "get_handoff", "append_events", "last_event", "enqueue_outbox", "add_usage",
                    "list_inactive", "commit", "__enter__", "__exit__"},
     "AuditSink": {"read", "append_outside_turn"},

@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from agent_core.domain import (
     Agent,
@@ -41,6 +41,7 @@ from agent_core.registry.evaluation.ports import EvalPort, EvalRequest, EvalTarg
 from agent_core.registry.evaluation.report import EvalReport, GateItem
 from agent_core.registry.evaluation.yardstick import Yardstick, YardstickChange, classify_yardstick_change
 from agent_core.registry.models import (
+    RELEASE_SETTINGS,
     AliasChange,
     AliasState,
     Approval,
@@ -58,6 +59,7 @@ from agent_core.registry.models import (
     RegistryEvent,
     ReleaseDetail,
     ReleaseDiff,
+    ReleaseSettings,
     RunLineage,
     StoredRelease,
     StoredVersion,
@@ -67,13 +69,14 @@ from agent_core.registry.models import (
     WriteRecord,
 )
 from agent_core.registry.quotas import DEFAULT_QUOTAS, Quotas
-from agent_core.registry.roles import actor_id, require_admin, require_approver, require_constructor
+from agent_core.registry.roles import ADMIN, actor_id, require_admin, require_approver, require_constructor
 from agent_core.registry.snapshot import SnapshotRegistry
 from agent_core.registry.store import RegistryStore, RegistryTx
 from agent_core.registry.suite import EvalSuite, suite_problems
 from agent_core.registry.validation import (
     DEFAULT_LIMITS,
     Limits,
+    changes_interrupts,
     check_draft_limits,
     platform_edits,
     suite_violations,
@@ -104,12 +107,22 @@ class CandidateView(_V):
     auto_bumped: list[VersionRef]
 
 
+class ReleaseSettingChange(_V):
+    """Un campo de nivel release que la propuesta cambia, contra la release base (N-07): el aprobador ve el
+    antes y el después en vez de solo el borrador."""
+
+    field: str
+    before: JsonValue
+    after: JsonValue
+
+
 class ApprovalReview(_V):
     """What the approver sees, as three separate elements (evaluation spec §8.5, T-EVAL-17): the functional
     change, the suite the candidate was measured with (and its draft, if it changed) together with each gate
     item, and what the proposal loosens in the yardstick."""
 
     functional_changes: list[EntityDraft]
+    release_changes: list[ReleaseSettingChange] = Field(default_factory=list)
     suite: VersionRef
     suite_changes: list[EntityDraft]
     gate: list[GateItem]
@@ -313,6 +326,9 @@ class RegistryService:
             raise RegistryError(RegistryErrorCode.forbidden_role,
                                 "los guardarraíles de plataforma no se editan desde una propuesta",
                                 payload=edits)  # type: ignore[arg-type]
+        if changes_interrupts(changes) and ADMIN not in actor.roles:
+            raise RegistryError(RegistryErrorCode.forbidden_role,
+                                "cambiar las interrupciones de la release exige el rol admin")
         request = _request_hash("put_draft", {"proposal_id": proposal_id, "expected_rev": expected_rev,
                                               "changes": [c.model_dump(mode="json") for c in changes]})
         with self._store.transaction() as tx:
@@ -391,10 +407,35 @@ class RegistryService:
             last = tx.latest_eval_run(p.proposal_id, p.candidate_hash) if p.candidate_hash else None
             changes = tx.get_changes(proposal_id)
             review = None if last is None else ApprovalReview(
-                functional_changes=[d for d in changes if d.kind != SUITE_KIND], suite=last.suite,
+                functional_changes=[d for d in changes if d.kind != SUITE_KIND],
+                release_changes=self._release_changes(tx, p, changes), suite=last.suite,
                 suite_changes=[d for d in changes if d.kind == SUITE_KIND], gate=list(last.report.items),
                 yardstick_loosened=list(last.report.yardstick_changes))
             return ProposalDetail(proposal=p, changes=changes, last_eval=last, review=review)
+
+    def _release_changes(self, tx: RegistryTx, p: Proposal, changes: Sequence[EntityDraft]
+                         ) -> list[ReleaseSettingChange]:
+        """Lo que `release_settings` cambia contra la base. Sin base, contra los valores por defecto."""
+        draft = next((d for d in changes if d.kind == RELEASE_SETTINGS), None)
+        if draft is None:
+            return []
+        try:
+            settings = ReleaseSettings.model_validate(draft.content)
+        except ValueError:
+            return []  # un borrador inválido no llega a evaluación
+        base = self._detail(tx, p.base_release_id) if p.base_release_id is not None else None
+        current: dict[str, JsonValue] = {
+            "interrupts": [i.model_dump(mode="json") for i in base.interrupts] if base else [],
+            "language_detection": base.language_detection.id if base else None,
+            "injection_ruleset": base.injection_ruleset.id if base and base.injection_ruleset else None,
+            "max_input_chars": base.max_input_chars if base else 4000}
+        wanted: dict[str, JsonValue] = {
+            "interrupts": None if settings.interrupts is None else
+            [i.model_dump(mode="json") for i in settings.interrupts],
+            "language_detection": settings.language_detection,
+            "injection_ruleset": settings.injection_ruleset, "max_input_chars": settings.max_input_chars}
+        return [ReleaseSettingChange(field=f, before=current[f], after=after)
+                for f, after in wanted.items() if after is not None and after != current[f]]
 
     def get_write(self, idempotency_key: str) -> WriteRecord | None:
         """Readback de las escrituras del constructor (`readback_by: idempotency_key`, ADR 0007 §5)."""

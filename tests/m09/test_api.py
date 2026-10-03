@@ -512,6 +512,24 @@ def test_rate_and_cost_excess_are_429_and_never_reach_the_engine() -> None:  # T
     assert w2.turns.calls == []
 
 
+def test_reads_are_not_blocked_by_the_rate_limit_and_the_429_says_when_to_retry() -> None:
+    w = World(limits=RateLimitConfig(max_hits=2, daily_budget_usd=Decimal("1.00")))
+    w.seed_run()
+    w.spend(2)
+    assert w.call("GET", "/v1/runs/run-0001").status_code == 200
+    assert w.call("GET", "/v1/runs/run-0001/transcript").status_code == 200
+    blocked = w.turn()
+    problem(blocked, 429, "rate_limited")
+    assert blocked.headers["Retry-After"] == "60"
+
+
+def test_cost_budget_429_retries_after_midnight_utc() -> None:
+    w = World(limits=RateLimitConfig(max_hits=99, daily_budget_usd=Decimal("1.00")))
+    w.seed_run()
+    w.spend(1, cost="1.00")
+    assert w.turn().headers["Retry-After"] == str(12 * 3600)
+
+
 # --- T-M9-13: trace_id y problem+json ------------------------------------------------------------------
 
 

@@ -55,11 +55,11 @@ def export_extension(runs: RunExport, registry: RegistryService | None, verifier
         @router.get("/runs")
         def list_runs(request: Request, after: After = 0, limit: Limit = 100,
                       authorization: Auth = None) -> Response:
-            """Runs por orden de creación; `after` es el `run_seq` del último ya leído."""
+            """Runs por orden de commit de su último cambio; `after` es el `cursor` de la última página."""
             if (refused := deny(request, authorization)) is not None:
                 return refused
             found = runs.list_runs(after, limit)
-            return _page([to_jsonable(r) for r in found], [r.run_seq for r in found], after)
+            return _page([to_jsonable(r) for r in found], [r.cursor for r in found], after)
 
         @router.get("/runs/{run_id}/events")
         def run_events(request: Request, run_id: str, after: Annotated[int, Query(ge=-1)] = -1,

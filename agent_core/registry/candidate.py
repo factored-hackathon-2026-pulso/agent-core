@@ -225,6 +225,31 @@ def _retarget_ref(ref: RefSpec, kind: EntityKind, merged: Mapping[Key, RegistryE
     return RefSpec(id=ref.id, spec=target.version)
 
 
+def _same_action(a: Interrupt, b: Interrupt) -> bool:
+    if isinstance(a.action, StartFlowAction) and isinstance(b.action, StartFlowAction):
+        return a.action.flow.id == b.action.flow.id
+    return a.action == b.action
+
+
+def locked_interrupt_violations(base: Release | None, wanted: Sequence[Interrupt] | None) -> list[Violation]:
+    """REG-LOCKED: `wanted` reemplaza las interrupciones de la base, pero las `locked` de la base tienen que
+    seguir, con la misma acción, al menos la misma prioridad y `locked`. `wanted = None` hereda la base."""
+    if base is None or wanted is None:
+        return []
+    kept = {i.id: i for i in wanted}
+    found: list[Violation] = []
+    for locked in (i for i in base.interrupts if i.locked):
+        now = kept.get(locked.id)
+        if now is None:
+            found.append(_v("REG-LOCKED", f"la interrupción {locked.id[:80]} es de plataforma: no se quita",
+                            RELEASE_SETTINGS))
+        elif not now.locked or now.priority < locked.priority or not _same_action(now, locked):
+            found.append(_v("REG-LOCKED", f"la interrupción {locked.id[:80]} es de plataforma: no se le baja "
+                            "la prioridad, no se le cambia la acción ni se le quita el bloqueo",
+                            RELEASE_SETTINGS))
+    return found
+
+
 def _interrupts(interrupts: Sequence[Interrupt], merged: Mapping[Key, RegistryEntity]) -> list[Interrupt]:
     """Interrupciones (las de la base o las de `release_settings`) apuntando a las versiones de flows y
     policies de la candidata."""
@@ -287,6 +312,7 @@ def build_candidate(*, agent_id: str, base: Release | None, base_entities: Seque
     settings, settings_problems = _parse_settings(drafts)
     drafted, suites, draft_docs, problems = _parse_drafts([d for d in drafts if d.kind != RELEASE_SETTINGS])
     problems.extend(settings_problems)
+    problems.extend(locked_interrupt_violations(base, settings.interrupts))
     if problems:
         raise CandidateError(problems)
 

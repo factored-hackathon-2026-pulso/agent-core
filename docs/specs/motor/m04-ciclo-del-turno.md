@@ -48,7 +48,7 @@ Dependencias por constructor (solo por nombre): `uow_factory`, `registry`, `cloc
 
 `start_run` hace: crear `RunState` (release fijada, principal sin secretos, `locale` inicial = `lang` del request si es soportado, si no `default_locale`), emitir `run_started` con `reportable_attrs`, arrancar `entry_flow` y, en modo task, avanzar hasta un terminal (M1 G0-16 garantiza que un flow task no tiene nodos que esperan; si aun así M2 devuelve una espera, es un bug y el run escala con `validation_failed`).
 
-`start_run` es **idempotente por `(principal.key, idempotency_key)`** (cambio pedido por M9, 2026-09-29): antes de crear nada busca el registro; con el mismo body (hash JCS del `RunInput` sin la clave) devuelve el `RunResult` guardado y con otro body lanza `409 idempotency_conflict`. El registro se escribe en la misma transacción que el run (`put_run_idempotency` antes del `commit`), así que no hay un run sin su clave ni una clave sin su run. Límite conocido: dos requests concurrentes con la misma clave pueden crear dos runs antes de que exista el registro (gana el primero en commitear; el otro run queda huérfano); cerrarlo exige un candado por clave en el adaptador. El resultado guardado incluye un `confirmation.token` en claro si el primer turno pide confirmación.
+`start_run` es **idempotente por `(principal.key, idempotency_key)`** (cambio pedido por M9, 2026-09-29): antes de crear nada busca el registro; con el mismo body (hash JCS del `RunInput` sin la clave) devuelve el `RunResult` guardado y con otro body lanza `409 idempotency_conflict`. El registro se escribe en la misma transacción que el run (`put_run_idempotency` antes del `commit`), así que no hay un run sin su clave ni una clave sin su run. Concurrencia: antes de ejecutar nada, `start_run` **reserva** la clave con `UnitOfWork.reserve_run_idempotency` (inmediata y fuera de la transacción, como el lease; TTL = `lease_ttl`). Una segunda petición con la clave reservada y vigente recibe `409 idempotency_conflict` sin ejecutar efectos; si el run no llega a commitear, la reserva se suelta (`release_run_idempotency`) y, si el proceso muere, vence sola. El `commit` completa la reserva con el resultado. El resultado guardado incluye un `confirmation.token` en claro si el primer turno pide confirmación.
 
 ### 3.2 Manejadores globales
 
@@ -279,7 +279,7 @@ Aprobadas por el usuario: C1 (`RuntimeFactory`/`TurnRuntime` sobre M7), C2 (plan
 Detalles de implementación que el spec no fijaba (revisar):
 
 - `turn_count` se incrementa al empezar el turno (no al persistir): así `Slot.source_turn` y `degraded_turns` usan el número del turno en curso.
-- `input` de un run task entra como slots `claimed`.
+- `input` de un run task entra como slots `claimed`, salvo que el agente declare `input_schema`: entonces `start_run` lo valida contra el contrato (`packet_problem`; si falla, `422 invalid_request` y la clave de idempotencia se libera) y los slots entran `validated`.
 - Tras `cancel`, si quedan intenciones pendientes se ofrece la primera.
 - `clarify` agotado con `on_clarify_exhausted = "end"` cierra `clarify_exhausted` sin mensaje (no hay plantilla del motor para eso; la app usa `outcome`).
 - P1: el contador de la oferta repetida vive en `node_attempts["offer:<flow>"]`; al descartar la última oferta se responde con la plantilla `clarify` sin contarla como aclaración.

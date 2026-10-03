@@ -3,6 +3,6 @@ agents:
   - {agent: "consultas@^1", aliases: [prod]}
 flows: ["consulta-pqr@^1"]
 interrupts:
-  - {id: fraude, priority: 100, action: {type: escalate, target_queue: fraude, priority: critical}}
+  - {id: fraude, priority: 100, locked: true, action: {type: escalate, target_queue: fraude, priority: critical}}
 language_detection: "lang-es-pt@1"
 injection_ruleset: "injection-rules@1"

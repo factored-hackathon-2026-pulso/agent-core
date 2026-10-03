@@ -65,3 +65,34 @@ def test_without_a_local_directory_the_registry_is_the_postgres_one() -> None:
     sweeper = build_sweeper("postgresql://u:p@localhost:1/none")  # compone sin conectar
 
     assert isinstance(sweeper._registry, PostgresRegistry)
+
+
+def test_the_sweeper_registry_uses_s3_blobs_when_the_bucket_is_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGENTCORE_BLOB_BUCKET", "bucket-de-prueba")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+
+    sweeper = build_sweeper("postgresql://u:p@localhost:1/none")
+
+    assert sweeper._registry._store._blobs is not None  # type: ignore[attr-defined]
+
+
+def test_the_sweeper_registry_keeps_pg_blobs_without_a_bucket(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("AGENTCORE_BLOB_BUCKET", raising=False)
+
+    sweeper = build_sweeper("postgresql://u:p@localhost:1/none")
+
+    assert sweeper._registry._store._blobs is None  # type: ignore[attr-defined]
+
+
+def test_the_cli_forces_utf8_on_its_streams(monkeypatch: pytest.MonkeyPatch) -> None:
+    import io
+
+    raw = io.BytesIO()
+    stream = io.TextIOWrapper(raw, encoding="cp1252", errors="strict")
+    monkeypatch.setattr("sys.stdout", stream)
+
+    assert main(["sweep", "--once"], sweeper=FakeSweeper()) == 0
+    print("→ ✓")  # cp1252 no puede codificarlo
+    stream.flush()
+
+    assert "→ ✓".encode() in raw.getvalue()
