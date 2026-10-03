@@ -1,14 +1,14 @@
-"""Nodo `agent` de M2 con `LLMAgentPort` sobre `OpenAICompatGateway` (spec §3.8; T-U5-16)."""
+"""Nodo `agent` de M2 with `LLMAgentPort` over `HttpLLMGateway` (spec §3.8; T-U5-16)."""
 
 from decimal import Decimal
 
 import httpx
 from respx import MockRouter
 
-from agent_core.adapters.llm import LLMAgentPort
+from agent_core.adapters.llm import HttpLLMGateway, LLMAgentPort
 from agent_core.domain import Prompt, ToolDef
+from tests.gateway_http.helpers import BASE_URL, GENERATE, TOKEN, install_llm_entities, success
 from tests.m02.harness import World, flow
-from tests.u05.helpers import CHAT, build_gateway, completion, install_llm_entities
 
 SCHEMA = {"type": "object", "properties": {"resumen": {"type": "string"}}, "required": ["resumen"],
           "additionalProperties": False}
@@ -29,14 +29,15 @@ def _world() -> tuple[World, LLMAgentPort]:
     install_llm_entities(w.registry)
     w.registry.add(Prompt.model_validate(
         {"id": "p/x", "version": "1.0.0", "locales": {"es": "bucle"}, "model_profile": "perfil@1.0.0"}))
-    port = LLMAgentPort(build_gateway(w.registry), w.registry, lambda kind, ref: ref.require_exact())
+    gateway = HttpLLMGateway(w.registry, BASE_URL, TOKEN)
+    port = LLMAgentPort(gateway, w.registry, lambda kind, ref: ref.require_exact())
     return w, port
 
 
 def test_t_u5_16_el_bucle_llega_a_answered_y_acumula_el_costo(respx_mock: MockRouter) -> None:
-    respx_mock.post(CHAT).mock(side_effect=[
-        httpx.Response(200, json=completion('{"kind": "tool_call", "tool": "buscar@1.0.0", "args": {}}')),
-        httpx.Response(200, json=completion('{"kind": "final", "output": {"resumen": "ok"}}'))])
+    respx_mock.post(GENERATE).mock(side_effect=[
+        httpx.Response(200, text=success({"kind": "tool_call", "tool": "buscar@1.0.0", "args": {}})),
+        httpx.Response(200, text=success({"kind": "final", "output": {"resumen": "ok"}}))])
     w, port = _world()
     out = w.step(w.state(flow(AGENT, *TAIL)), agents=port)
     assert out.state.active_flow.node_id == "fin"

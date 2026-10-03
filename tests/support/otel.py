@@ -18,7 +18,7 @@ import agent_telemetry as tel
 from agent_telemetry import setup as tel_setup
 from agent_telemetry import spans as tel_spans
 
-_SDK_LOGGERS = ("openai", "httpx", "httpcore")
+_SDK_LOGGERS = ("httpx", "httpcore")
 
 
 @pytest.fixture

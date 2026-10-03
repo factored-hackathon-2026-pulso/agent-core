@@ -114,7 +114,6 @@ def test_setup_installs_json_logs_on_root_and_quiets_the_sdk_loggers(root_loggin
         assert logging.getLogger().level == logging.INFO and len(_handlers()) == 1
         logging.getLogger("agentcore.api").warning("hola")
         assert json.loads(stream.getvalue().splitlines()[-1])["message"] == "hola"
-        assert logging.getLogger("openai").level == logging.WARNING
         assert logging.getLogger("httpx").level == logging.WARNING
         assert logging.getLogger("httpcore").level == logging.WARNING
     finally:
@@ -319,7 +318,7 @@ def test_a_foreign_root_handler_never_prints_an_exception_while_serving(root_log
 
 @pytest.mark.parametrize("order", ["first-then-second", "second-then-first"])
 def test_two_setups_restore_the_original_logging_in_either_shutdown_order(order: str) -> None:  # M2
-    root, sdk = logging.getLogger(), [logging.getLogger(n) for n in ("openai", "httpx", "httpcore")]
+    root, sdk = logging.getLogger(), [logging.getLogger(n) for n in ("httpx", "httpcore")]
     before = (list(root.handlers), root.level, [lg.level for lg in sdk])
     first = setup_observability({}, version="1", stream=io.StringIO())
     second = setup_observability({}, version="1", stream=io.StringIO())

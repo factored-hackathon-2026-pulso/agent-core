@@ -1,4 +1,4 @@
-"""Contrato de `LLMGateway` (M0 §2.9) contra `ScriptedGateway`, `OpenAICompatGateway` y `HttpLLMGateway`.
+"""Contrato de `LLMGateway` (M0 §2.9) contra `ScriptedGateway` y `HttpLLMGateway`.
 
 Incluye además sanidad negativa y pruebas propias del doble.
 """
@@ -13,7 +13,6 @@ from agent_core.ports import GenerationResult, LLMGateway
 from testing.capture import RequestCapture
 from testing.fakes.gateway import ScriptedGateway, gen
 from tests.gateway_http.helpers import GENERATE, failure, make_gateway, success
-from tests.u05.helpers import CHAT, completion, make_world
 
 PROMPT = EntityRef.parse("resumen@1.0.0")
 INPUTS = {"cliente": {"nombre": "⟦name:1⟧"}, "monto": "1.234,56"}
@@ -39,26 +38,20 @@ def check_does_not_mutate_inputs(gateway: LLMGateway) -> None:
     assert before == {"cliente": {"nombre": "⟦name:1⟧"}, "monto": "1.234,56"}
 
 
-@pytest.fixture(params=["scripted", "openai", "http"])
+@pytest.fixture(params=["scripted", "http"])
 def ok_gateway(request: pytest.FixtureRequest, respx_mock: MockRouter) -> LLMGateway:
     if request.param == "scripted":
         return ScriptedGateway([gen("hola", []), gen("hola", []), gen("hola", [])])
-    if request.param == "http":
-        respx_mock.post(GENERATE).respond(200, text=success({"ok": True}))
-        return make_gateway()
-    respx_mock.post(CHAT).respond(200, json=completion('{"ok": true}'))
-    return make_world().gateway
+    respx_mock.post(GENERATE).respond(200, text=success({"ok": True}))
+    return make_gateway()
 
 
-@pytest.fixture(params=["scripted", "openai", "http"])
+@pytest.fixture(params=["scripted", "http"])
 def failing_gateway(request: pytest.FixtureRequest, respx_mock: MockRouter) -> LLMGateway:
     if request.param == "scripted":
         return ScriptedGateway([GatewayError(GatewayErrorKind.unavailable, model="scripted-1")])
-    if request.param == "http":
-        respx_mock.post(GENERATE).respond(502, json=failure("unavailable"))
-        return make_gateway()
-    respx_mock.post(CHAT).respond(503, json={"error": {"message": "x"}})
-    return make_world().gateway
+    respx_mock.post(GENERATE).respond(502, json=failure("unavailable"))
+    return make_gateway()
 
 
 def test_returns_generation_result(ok_gateway: LLMGateway) -> None:
