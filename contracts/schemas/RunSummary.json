@@ -25,6 +25,7 @@
     }
   },
   "additionalProperties": false,
+  "description": "Resumen de un run para la ingesta: identificadores y estado, sin datos del cliente.",
   "properties": {
     "agent": {
       "$ref": "#/$defs/EntityRef"

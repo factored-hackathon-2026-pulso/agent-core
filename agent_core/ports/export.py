@@ -5,7 +5,7 @@ idioma y estado; nunca slots, hechos ni el id del principal. Los eventos son los
 regla 6). `run_seq` es el orden de creación; el `seq` de cada evento es continuo dentro de su run (la cadena
 de hashes detecta huecos), así que un consumidor se pone al día con dos cursores sin perder nada."""
 
-from typing import Protocol, runtime_checkable
+from typing import Protocol
 
 from agent_core.domain import EngineEvent, RunState
 from agent_core.domain.base import Model, UtcDatetime
@@ -13,6 +13,8 @@ from agent_core.domain.refs import EntityRef
 
 
 class RunSummary(Model):
+    """Resumen de un run para la ingesta: identificadores y estado, sin datos del cliente."""
+
     run_seq: int
     run_id: str
     session_id: str | None
@@ -35,8 +37,9 @@ class RunSummary(Model):
                    created_at=state.created_at, closed_at=state.closed_at)
 
 
-@runtime_checkable
 class RunExport(Protocol):
+    """Lectura paginada de runs y de sus eventos de auditoría (solo lectura)."""
+
     def list_runs(self, after_seq: int, limit: int) -> list[RunSummary]:
         """Runs con `run_seq > after_seq`, por `run_seq` ascendente, hasta `limit`."""
         ...

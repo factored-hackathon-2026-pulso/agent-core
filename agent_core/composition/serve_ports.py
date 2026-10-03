@@ -29,6 +29,7 @@ from agent_core.ports import (
     KeyProvider,
     LLMGateway,
     RegistryPort,
+    RunExport,
     ToolExecutor,
     TranscriptStore,
     UnitOfWorkFactory,
@@ -106,6 +107,7 @@ class ServePorts:
     registry_api: RegistryApiPorts | None = None  # solo con --registry-api
     directory: AgentDirectory | None = None  # ADR 0021: directorio de especialistas (sobre el registry)
     readiness: tuple[tuple[str, Callable[[], bool]], ...] = ()  # comprobaciones de `/readyz`
+    run_export: RunExport | None = None  # N-08: lectura paginada de runs y eventos (con --registry-api)
 
 
 def _flag(attr: str) -> str:
@@ -283,4 +285,4 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         doubles=tuple(doubles), agents=_agents(args, env), endpoints=endpoints,
         registry_api=registry_api,
         directory=RegistryDirectory(registry_store, pg_registry, pg_registry.release),
-        readiness=(("postgres", store.ping),))
+        readiness=(("postgres", store.ping),), run_export=store.run_export())

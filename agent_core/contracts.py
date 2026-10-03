@@ -54,7 +54,7 @@ def _registry_types() -> tuple[dict[str, Any], dict[str, Any]]:
     outputs: dict[str, Any] = {}
     for name, obj in vars(registry_models).items():
         if _is_schema_type(obj) and obj.__module__ == registry_models.__name__ and name != "RegModel":
-            (inputs if name in {"EntityDraft", "VersionDocs"} else outputs)[name] = obj
+            (inputs if name in {"EntityDraft", "VersionDocs", "ReleaseSettings"} else outputs)[name] = obj
     return dict(sorted(inputs.items())), dict(sorted(outputs.items()))
 
 

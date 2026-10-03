@@ -76,6 +76,9 @@ class PostgresStore:
     def audit(self) -> "PostgresAuditSink":
         return PostgresAuditSink(self)
 
+    def run_export(self) -> "PostgresRunExport":
+        return PostgresRunExport(self)
+
     def outbox(self) -> "PostgresOutbox":
         return PostgresOutbox(self)
 
@@ -353,7 +356,14 @@ class PostgresAuditSink:
         with self._store.reading() as conn, conn.transaction():
             PgAuditEvents(conn).append_events(run_id, events)
 
-    # `RunExport` (N-08): lectura paginada para quien ingiere
+
+class PostgresRunExport:
+    """`RunExport` (N-08): lectura paginada para quien ingiere. Clase aparte: el `AuditSink` no lee más que
+    una cadena por run."""
+
+    def __init__(self, store: PostgresStore) -> None:
+        self._store = store
+
     def list_runs(self, after_seq: int, limit: int) -> list[RunSummary]:
         with self._store.reading() as conn:
             rows = conn.execute("SELECT run_seq, state_json FROM runs WHERE run_seq > %s ORDER BY run_seq "

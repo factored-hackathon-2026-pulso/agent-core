@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PositiveInt, model_validator
 
 from agent_core.domain import EntityId, EntityRef, Interrupt, JsonValue, Release
 from agent_core.registry.evaluation.report import EvalReport, Verdict
@@ -45,6 +45,20 @@ class ProposalState(StrEnum):
     published = "published"
 
 
+# Borrador reservado: campos de la release que no son una entidad (N-07).
+RELEASE_SETTINGS = "release_settings"
+
+
+class ReleaseSettings(RegModel):
+    """Contenido del borrador `release_settings`. Un campo omitido conserva el valor de la base; no hay forma
+    de quitar el `injection_ruleset` ni la detección de idioma, solo de cambiarlos por otros del registry."""
+
+    interrupts: list[Interrupt] | None = None  # reemplaza la lista completa; `[]` la vacía
+    language_detection: str | None = None  # id de una entidad `language_detection` (se fija a su versión)
+    injection_ruleset: str | None = None  # id de una entidad `injection_ruleset`
+    max_input_chars: PositiveInt | None = None
+
+
 class EntityDraft(RegModel):
     kind: str
     content: dict[str, JsonValue]
@@ -52,17 +66,19 @@ class EntityDraft(RegModel):
 
     @model_validator(mode="after")
     def _has_identity(self) -> "EntityDraft":
+        if self.kind == RELEASE_SETTINGS:  # no es una entidad versionada: sin `id` ni `version`
+            return self
         if not isinstance(self.content.get("id"), str) or not isinstance(self.content.get("version"), str):
             raise ValueError("el contenido necesita `id` y `version` como texto")
         return self
 
     @property
     def id(self) -> str:
-        return str(self.content["id"])
+        return str(self.content.get("id", self.kind))
 
     @property
     def version(self) -> str:
-        return str(self.content["version"])
+        return str(self.content.get("version", ""))
 
 
 class Proposal(RegModel):

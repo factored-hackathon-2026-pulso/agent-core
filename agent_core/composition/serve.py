@@ -25,7 +25,7 @@ from agent_core.domain import (
     Principal,
     PrincipalType,
 )
-from agent_core.ports import Clock, IdSource, RegistryPort, RunExport
+from agent_core.ports import Clock, IdSource, RegistryPort
 from agent_core.registry import RegistryService
 from agent_core.registry.http import registry_extension
 from agent_core.turn import TurnTelemetry
@@ -39,8 +39,8 @@ def _extensions(ports: ServePorts, registry_service: RegistryService | None) -> 
         return ()
     staff = None if ports.registry_api is None else ports.registry_api.staff_verifier
     found: list[ApiExtension] = [registry_extension(registry_service, staff, ports.clock)]
-    if staff is not None and isinstance(ports.audit, RunExport):
-        found.append(export_extension(ports.audit, registry_service, staff, ports.clock))
+    if staff is not None and ports.run_export is not None:
+        found.append(export_extension(ports.run_export, registry_service, staff, ports.clock))
     return tuple(found)
 
 

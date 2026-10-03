@@ -10,7 +10,7 @@ from agent_core.composition.serve_registry import RegistryApiPorts, build_regist
 from agent_core.registry.memory import InMemoryRegistryStore
 from testing.engine_world import EngineWorld
 from testing.fakes.identity import TestIdentityIssuer, TestStaffIssuer
-from testing.fakes.storage import InMemoryAuditSink
+from testing.fakes.storage import InMemoryAuditSink, InMemoryRunExport
 from tests.composition.test_serve_app import make_ports
 from tests.registry.helpers import AGENT
 
@@ -23,7 +23,7 @@ def _setup() -> tuple[TestClient, TestIdentityIssuer, TestStaffIssuer, EngineWor
     staff = TestStaffIssuer(world.clock)
     api = RegistryApiPorts(store=InMemoryRegistryStore(), staff_verifier=staff.verifier(),
                            eval_uow_factory=world.store.uow, eval_audit=InMemoryAuditSink(world.store))
-    ports = replace(make_ports(world, issuer), audit=InMemoryAuditSink(world.store), registry_api=api)
+    ports = replace(make_ports(world, issuer), run_export=InMemoryRunExport(world.store), registry_api=api)
     service = build_registry_service_for_serve(ports)
     app = create_app(build_api_deps(ports, registry_service=service))
     return TestClient(app, raise_server_exceptions=False), issuer, staff, world

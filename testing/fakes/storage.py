@@ -313,7 +313,13 @@ class InMemoryAuditSink:
         with self._store.lock:
             self._store.events.setdefault(run_id, []).extend(deepcopy(events))
 
-    # `RunExport` (N-08)
+
+class InMemoryRunExport:
+    """`RunExport` (N-08), aparte del sink: el sink de auditoría no lee más que una cadena por run."""
+
+    def __init__(self, store: InMemoryStore) -> None:
+        self._store = store
+
     def list_runs(self, after_seq: int, limit: int) -> list[RunSummary]:
         with self._store.lock:  # el orden de inserción del diccionario es el orden de creación
             rows = [(i, s) for i, s in enumerate(self._store.runs.values(), start=1) if i > after_seq]
