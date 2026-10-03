@@ -11,7 +11,8 @@ dependencies = [
     "opentelemetry-api>=1.27",
     "opentelemetry-exporter-otlp-proto-http>=1.27",
     "opentelemetry-sdk>=1.27",
-    "psycopg[binary]>=3.2",
+    "boto3>=1.35",
+    "psycopg[binary,pool]>=3.2",
     "pydantic>=2.9,<3",
     "pyyaml>=6.0.2,<7",
     "rfc8785>=0.1.4",
@@ -30,6 +31,8 @@ dev = [
     "import-linter>=2.1",
     "types-pyyaml>=6.0.12",
     "respx>=0.23.1",
+    "moto[s3,sns]>=5.0",
+    "boto3-stubs[s3,sns]>=1.35",
 ]
 
 [build-system]

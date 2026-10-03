@@ -11,12 +11,14 @@ from urllib.parse import urlsplit
 
 import psycopg
 from opentelemetry.trace import Tracer
+from psycopg_pool import ConnectionPool
 
 from agent_core.adapters.env_keys import EnvKeyProvider, KeyConfigError
 from agent_core.adapters.identity_keys import ReloadingIdentityVerifier
 from agent_core.adapters.llm import HttpLLMGateway, UnconfiguredLLMGateway
 from agent_core.adapters.llm.http_gateway import LLM_GATEWAY_TOKEN_ENV, LLM_GATEWAY_URL_ENV
 from agent_core.adapters.postgres_uow import PostgresStore
+from agent_core.composition.blobs import blob_factory_from_env
 from agent_core.decision import DecisionConfigError, DecisionProvider, HttpJevTransport, JevProvider
 from agent_core.decision.calibration.artifact import CalibrationSource
 from agent_core.domain import Release, SchemaError
@@ -44,6 +46,7 @@ JEV_KEY_ENV = "AGENTCORE_JEV_API_KEY"
 DSN_ENV = "AGENTCORE_REGISTRY_DSN"
 EVAL_DSN_ENV = "AGENTCORE_EVAL_DSN"
 AGENTS_ENV = "AGENTCORE_SERVE_AGENTS"
+POOL_MAX_ENV = "AGENTCORE_DB_POOL_MAX"  # conexiones máximas por proceso; 0 o ausente = una por operación
 DEMO_VERIFIER = "testing.registry_demo:demo_verifier"
 _KEY_VARS = ("AGENTCORE_KEYS_FINGERPRINT", "AGENTCORE_KEYS_TOKEN_MAP")
 
@@ -168,6 +171,23 @@ def _jev_key(env: Mapping[str, str]) -> str:
     return key
 
 
+def _registry_connect(dsn: str, pool_max: int) -> Callable[[], Any]:
+    """Conexión transaccional del registry: del pool propio (autocommit apagado) o una por transacción."""
+    if pool_max <= 0:
+        return lambda: psycopg.connect(dsn, autocommit=False)
+    pool: ConnectionPool[Any] = ConnectionPool(dsn, min_size=1, max_size=pool_max, open=False,
+                                               check=ConnectionPool.check_connection)
+    opened: list[bool] = []
+
+    def connection() -> Any:
+        if not opened:
+            pool.open()
+            opened.append(True)
+        return pool.connection()  # contexto: commit al salir sin error, rollback con excepción, y devuelve
+
+    return connection
+
+
 def _llm_gateway_config(env: Mapping[str, str], problems: list[str]) -> tuple[str | None, str | None]:
     """The llm-gateway URL and token, both or neither. Neither is allowed (generation falls back to templates)
     and announced at startup; half of the pair or an invalid URL is a configuration problem."""
@@ -200,6 +220,13 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
     dsn = args.dsn or env.get(DSN_ENV)
     if not dsn:
         problems.append(f"falta --dsn (o {DSN_ENV})")
+    pool_max = 0
+    try:
+        pool_max = int(env.get(POOL_MAX_ENV) or 0)
+        if pool_max < 0:
+            raise ValueError
+    except ValueError:
+        problems.append(f"{POOL_MAX_ENV} debe ser un entero >= 0")
     keys: KeyProvider | None
     try:
         keys = EnvKeyProvider({k: env[k] for k in _KEY_VARS if env.get(k)})
@@ -257,8 +284,8 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
     if problems or not dsn or keys is None:
         raise ServeConfigError(problems)
 
-    store = PostgresStore(dsn)
-    registry_store = PgRegistryStore(lambda: psycopg.connect(dsn, autocommit=False))
+    store = PostgresStore(dsn, pool_max=pool_max)
+    registry_store = PgRegistryStore(_registry_connect(dsn, pool_max), blob_factory_from_env(env))
     pg_registry = PostgresRegistry(registry_store, clock)
     ctx = DemoContext(clock=clock, ids=ids, registry=pg_registry)
     built: dict[str, Any] = {}
@@ -288,7 +315,7 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         if staff_verifier is None:  # solo en demo (arriba se exigió --staff-keys fuera de demo)
             staff_verifier = _load(DEMO_VERIFIER)()
             doubles.append("staff-identity")
-        eval_store = PostgresStore(eval_dsn)
+        eval_store = PostgresStore(eval_dsn, pool_max=pool_max)
         registry_api = RegistryApiPorts(store=registry_store, staff_verifier=staff_verifier,
                                         eval_uow_factory=eval_store.uow, eval_audit=eval_store.audit())
 

@@ -12,7 +12,7 @@ Núcleo de agentes: motor de decisión que ejecuta agentes descritos como datos 
 
 ## Stack (ADR 0001)
 
-Python 3.12, FastAPI, Pydantic v2, Postgres 16, `uv`, `docker-compose`. Sin colas, Redis ni vector DB.
+Python 3.12, FastAPI, Pydantic v2, Postgres 16, `uv`, `docker-compose`. Sin Redis ni vector DB. S3 (blobs del registry) y SNS (relay del outbox) son opt-in por ADR 0023.
 
 ## Comandos
 

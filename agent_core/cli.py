@@ -58,14 +58,16 @@ from agent_core.domain import (
 from agent_core.flows import AuthoringRegistry, load_registry
 from agent_core.flows.cli_validate import run_validate
 from agent_core.interpreter import AgentRequest
-from agent_core.ports import Clock
+from agent_core.ports import Clock, RegistryPort
+from agent_core.registry import PgRegistryStore, PostgresRegistry
 from agent_core.turn import Sweeper, SweepReport
 
 ENGINE_UNAVAILABLE_MESSAGE = "motor no disponible: el replay necesita el motor integrado y --registry"
 RECORD_UNAVAILABLE_MESSAGE = "motor no disponible: record necesita el motor integrado y --registry"
 # El motor del replay y `record` son herramientas de desarrollo (`testing/`, no van al wheel).
 _ENGINE_MODULE = "testing.replay"
-DSN_ENV = "AGENTCORE_DATABASE_URL"
+DSN_ENV = "AGENTCORE_REGISTRY_DSN"  # la misma que lee `serve` y `migrate` (ADR infra 0003)
+LEGACY_DSN_ENV = "AGENTCORE_DATABASE_URL"  # nombre anterior de `sweep`; sigue aceptándose
 
 
 class EngineUnavailable(RuntimeError):
@@ -176,14 +178,21 @@ class _AuthoringAgents:
         raise NotImplementedError("el barrido no consulta el estado de las releases")
 
 
-def build_sweeper(dsn: str, registry_root: Path) -> Sweeper:
-    registry, violations = load_registry(registry_root)
-    if violations:
-        raise SchemaError(f"registro inválido: {len(violations)} violaciones (agentcore validate)")
+def build_sweeper(dsn: str, registry_root: Path | None = None) -> Sweeper:
+    """Sin `registry_root` el `Agent` de cada run sale del registry en Postgres (el mismo que lee `serve`);
+    con él, del directorio de autoría (versión exacta)."""
     store = PostgresStore(dsn)
     clock, ids = SystemClock(), SystemIds()
+    if registry_root is None:
+        pg_store = PgRegistryStore(lambda: psycopg.connect(dsn, autocommit=False))
+        registry: RegistryPort = PostgresRegistry(pg_store, clock)
+    else:
+        authoring, violations = load_registry(registry_root)
+        if violations:
+            raise SchemaError(f"registro inválido: {len(violations)} violaciones (agentcore validate)")
+        registry = _AuthoringAgents(authoring)  # type: ignore[assignment]
     return Sweeper(
-        uow_factory=store.uow, registry=_AuthoringAgents(registry), clock=clock, ids=ids,  # type: ignore[arg-type]
+        uow_factory=store.uow, registry=registry, clock=clock, ids=ids,
         actions=ActionManager(ids, clock), chain=AuditLog(store.audit(), store.uow))
 
 
@@ -192,10 +201,10 @@ class SweeperLike(Protocol):
 
 
 def _run_sweep(args: argparse.Namespace, sweeper: SweeperLike | None, clock: Clock | None) -> int:
-    dsn = args.dsn or os.environ.get(DSN_ENV)
+    dsn = args.dsn or os.environ.get(DSN_ENV) or os.environ.get(LEGACY_DSN_ENV)
     if sweeper is None:
-        if not dsn or args.registry is None:
-            print(f"agentcore sweep necesita --dsn (o {DSN_ENV}) y --registry", file=sys.stderr)
+        if not dsn:
+            print(f"agentcore sweep necesita --dsn (o {DSN_ENV})", file=sys.stderr)
             return 2
         try:
             sweeper = build_sweeper(dsn, args.registry)
@@ -284,7 +293,8 @@ def main(
     validate.add_argument("root", type=Path)
     validate.add_argument("--json", action="store_true", help="salida JSON estable")
     sweep = sub.add_parser("sweep", help="cierra como abandoned los runs vencidos (M4)")
-    sweep.add_argument("--registry", type=Path, default=None, help="directorio del registro de autoría")
+    sweep.add_argument("--registry", type=Path, default=None,
+                       help="directorio del registro de autoría; sin él se usa el registry de Postgres")
     sweep.add_argument("--dsn", default=None,
                        help=f"DSN de Postgres (o la variable {DSN_ENV}); no se imprime nunca")
     sweep.add_argument("--once", action="store_true", help="una sola pasada (por ahora es la única)")
@@ -315,6 +325,12 @@ def main(
     from agent_core.composition.migrate import add_migrate_parser, run_migrate
 
     add_migrate_parser(sub)
+    from agent_core.composition.blobs import add_blobs_backfill_parser, run_blobs_backfill
+
+    add_blobs_backfill_parser(sub)
+    from agent_core.composition.relay import add_relay_parser, run_relay
+
+    add_relay_parser(sub)
     args = parser.parse_args(argv)
     if args.command == "llm-smoke":
         return _run_llm_smoke(args)
@@ -324,6 +340,10 @@ def main(
         return run_serve(args, clock=SystemClock(), ids=SystemIds(), env=os.environ)
     if args.command == "migrate":
         return run_migrate(args, os.environ)
+    if args.command == "relay":
+        return run_relay(args, os.environ)
+    if args.command == "blobs-backfill":
+        return run_blobs_backfill(args, os.environ)
     if args.command == "sweep":
         return _run_sweep(args, sweeper, clock)
     if args.command == "contracts":

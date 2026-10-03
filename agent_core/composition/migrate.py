@@ -13,8 +13,10 @@ from typing import Any
 import psycopg
 
 from agent_core.adapters.postgres_uow import apply_schema
+from agent_core.composition.blobs import BUCKET_ENV
 from agent_core.composition.serve_ports import DSN_ENV, EVAL_DSN_ENV
 from agent_core.registry import apply_registry_schema
+from agent_core.registry.postgres.store import detach_blob_foreign_key
 
 Connect = Callable[[str], AbstractContextManager["psycopg.Connection[Any]"]]
 
@@ -45,6 +47,8 @@ def run_migrate(args: argparse.Namespace, env: Mapping[str, str], *, connect: Co
         with connect(dsn) as conn:
             apply_schema(conn, args.app_role)
             apply_registry_schema(conn, args.app_role)
+            if env.get(BUCKET_ENV, "").strip():  # blobs en S3: la FK a `reg_blobs` ya no puede cumplirse
+                detach_blob_foreign_key(conn)
         print("ok: motor, auditoría y registry")
         if eval_dsn:
             with connect(eval_dsn) as conn:

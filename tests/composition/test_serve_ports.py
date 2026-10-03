@@ -256,3 +256,16 @@ def test_serve_registers_a_postgres_readiness_check_that_fails_closed_when_unrea
 
     assert name == "postgres"
     assert check() is False  # nada escucha en el puerto 1: falla cerrado, sin lanzar
+
+
+@pytest.mark.parametrize("value", ["-1", "diez", "1.5"])
+def test_an_invalid_pool_size_is_a_named_problem(value: str) -> None:
+    with pytest.raises(ServeConfigError) as info:
+        _resolve(AGENTCORE_ALLOW_DEMO="1", AGENTCORE_DB_POOL_MAX=value)
+    assert "AGENTCORE_DB_POOL_MAX" in " ".join(info.value.problems)
+
+
+def test_a_valid_pool_size_composes_without_connecting() -> None:
+    ports = _resolve(AGENTCORE_ALLOW_DEMO="1", AGENTCORE_DB_POOL_MAX="4")  # el pool se abre al primer uso
+
+    assert ports.uow_factory is not None

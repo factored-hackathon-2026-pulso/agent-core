@@ -86,14 +86,17 @@ Qué tener en cuenta:
 | `uv run agentcore validate <registro>` | Valida un registro de autoría |
 | `uv run agentcore replay <fixture> --mode fixture\|audit` | Reproduce un run grabado |
 | `uv run agentcore record <camino> --out <archivo> --registry <dir>` | Graba un camino (`transferencia` con `--registry tests/fixtures/registry-transfer-demo`) |
-| `uv run agentcore sweep --registry <dir> --once` | Cierra como `abandoned` los runs inactivos (necesita Postgres: `--dsn` o `AGENTCORE_DATABASE_URL`) |
+| `uv run agentcore sweep --once` | Cierra como `abandoned` los runs inactivos (necesita Postgres: `--dsn` o `AGENTCORE_REGISTRY_DSN`; lee el registry de Postgres, o `--registry <dir>` para el de autoría) |
+| `uv run agentcore relay [--once]` | Publica el outbox en SNS (`AGENTCORE_EVENTS_TOPIC_ARN`); sin `--once` corre como servicio con un solo líder (ADR 0023) |
+| `uv run agentcore blobs-backfill` | Copia a S3 (`AGENTCORE_BLOB_BUCKET`) los blobs que quedaron en `reg_blobs`; idempotente (ADR 0023) |
 | `uv run agentcore migrate` | Aplica los esquemas de Postgres (idempotente): motor, auditoría y registry en `--dsn`/`AGENTCORE_REGISTRY_DSN`; evaluaciones en `--eval-dsn`/`AGENTCORE_EVAL_DSN`; `--app-role` da permisos mínimos |
 
 Lo mismo corre el CI en `.github/workflows/ci.yml`.
 
 ## Imagen y operación
 
-- **Imagen:** `docker build --build-arg GIT_SHA=$(git rev-parse HEAD) -t agent-core .`. Arranca `agentcore serve` en `0.0.0.0:8000` como usuario sin privilegios y sin secretos; DSN, claves y `LLM_ENDPOINTS` llegan por variables de entorno. Con otro comando sirve para `agentcore migrate` y `agentcore sweep --once`.
+- **Imagen:** `docker build --build-arg GIT_SHA=$(git rev-parse HEAD) -t agent-core .`. Arranca `agentcore serve` en `0.0.0.0:8000` como usuario sin privilegios y sin secretos; DSN, claves y `LLM_ENDPOINTS` llegan por variables de entorno. Con otro comando sirve para `agentcore migrate`, `agentcore sweep --once` y `agentcore relay`.
+- **Escala en AWS (ADR 0023, todo opt-in):** `AGENTCORE_DB_POOL_MAX` activa el pool de conexiones; `AGENTCORE_BLOB_BUCKET` (+ `AGENTCORE_BLOB_PREFIX`, `AGENTCORE_BLOB_KMS_KEY_ARN`) manda los blobs del registry a S3 (`migrate` quita entonces la FK a `reg_blobs`; `blobs-backfill` migra lo anterior).
 - **Sondas y versión** (sin credencial, fuera de `/v1`): `GET /healthz`, `GET /readyz` y `GET /version` (`{package, contract, sha}`; el SHA viene de `AGENTCORE_GIT_SHA`).
 - **Rotación de claves sin reiniciar:** `--identity-keys` y `--staff-keys` se vuelven a leer cada `--keys-reload-seconds` (5 por defecto, 0 lo apaga). Publica la clave nueva con su `kid` junto a la vieja y retira la vieja después; un archivo roto conserva las últimas claves buenas.
 - **Exportación para la ingesta** (con `--registry-api`; credencial del staff con rol `exporter`): `GET /v1/export/runs?after=<run_seq>`, `GET /v1/export/runs/{run_id}/events?after=<seq>` y `GET /v1/export/registry-events?after=<n>`, paginadas con `limit` (máx. 500) y `next_after`.

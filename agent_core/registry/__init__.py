@@ -38,6 +38,7 @@ from agent_core.registry.models import (
 from agent_core.registry.postgres.runtime import PostgresRegistry
 from agent_core.registry.postgres.store import PgRegistryStore, apply_registry_schema
 from agent_core.registry.quotas import DEFAULT_QUOTAS, Quotas
+from agent_core.registry.s3_blobs import ReadThroughBlobStore, S3BlobStore
 from agent_core.registry.service import RegistryService, RunReleaseReader
 from agent_core.registry.snapshot import SnapshotRegistry
 from agent_core.registry.store import RegistryStore
@@ -83,12 +84,14 @@ __all__ = [
     "Proposal",
     "ProposalState",
     "Quotas",
+    "ReadThroughBlobStore",
     "RegistryDirectory",
     "RegistryError",
     "RegistryErrorCode",
     "RegistryService",
     "RegistryStore",
     "RunReleaseReader",
+    "S3BlobStore",
     "SandboxHandle",
     "SandboxPort",
     "SandboxSeed",
