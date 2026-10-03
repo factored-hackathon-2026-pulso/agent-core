@@ -44,4 +44,4 @@ jobs:
       - name: la imagen arranca sin root y sin secretos
         run: |
           test "$(docker run --rm --entrypoint id agent-core:ci -u)" = "10001"
-          if docker run --rm --entrypoint env agent-core:ci | grep -E 'DSN|KEY|TOKEN'; then exit 1; fi
+          if docker run --rm --entrypoint env agent-core:ci | grep -E 'DSN|TOKEN|API_KEY|PASSWORD|SECRET'; then exit 1; fi
