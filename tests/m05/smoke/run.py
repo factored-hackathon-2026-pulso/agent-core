@@ -22,7 +22,7 @@ from decimal import Decimal
 from agent_core.decision import (
     DecisionConfigError,
     DecisionProvider,
-    HttpJevTransport,
+    GatewayJevTransport,
     JevProvider,
     ProviderError,
     ProviderTimeout,
@@ -390,13 +390,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     if os.environ.get("AGENT_CORE_JEV_SMOKE") != "1":
         print("La prueba de humo llama a JEV por red: actívala con AGENT_CORE_JEV_SMOKE=1.", file=sys.stderr)
         return 2
-    if not os.environ.get("JEV_API_KEY", "").strip():
-        print("Falta JEV_API_KEY en el entorno (no se imprime ni se guarda).", file=sys.stderr)
+    url = os.environ.get("AGENTCORE_LLM_GATEWAY_URL", "").strip()
+    token = os.environ.get("AGENTCORE_LLM_GATEWAY_TOKEN", "").strip()
+    if not url or not token:
+        print("Faltan AGENTCORE_LLM_GATEWAY_URL y AGENTCORE_LLM_GATEWAY_TOKEN (el gateway guarda la key).",
+              file=sys.stderr)
         return 2
     from agent_core.adapters.system_clock import SystemClock  # composición: el reloj real
 
     clock = SystemClock()
-    transport = HttpJevTransport(lambda: os.environ.get("JEV_API_KEY", ""), clock)
+    transport = GatewayJevTransport(url, token)
     cases = all_cases()[: args.limit]
     try:
         rows = evaluate(JevProvider(transport), make_specs(args.model, args.timeout_ms), clock, cases,

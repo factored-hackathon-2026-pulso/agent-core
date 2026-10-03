@@ -78,7 +78,7 @@ Pendiente de construcción: las vistas SQL (la conexión a Phoenix queda documen
 
 ## 13. Servidor arrancable — resuelto salvo las piezas reales
 **Decidido el 2026-09-30:** la demo corre con un modelo real y el resto como dobles etiquetados. Spec: `docs/superpowers/specs/2026-09-30-servidor-arrancable-design.md`; plan: `docs/superpowers/plans/2026-09-30-servidor-arrancable.md`.
-- **Construido:** `agentcore serve` (`agent_core/composition/serve.py`, `serve_ports.py`, `build_engine` en `engine.py`). Reales: Postgres, gateway de LLM, JEV por HTTP (`AGENTCORE_JEV_API_KEY`), claves HMAC/cifrado (`EnvKeyProvider`) y claves públicas de identidad (`--identity-keys`, `agent_core/adapters/identity_keys.py`). `uvicorn` declarado en `pyproject.toml`.
+- **Construido:** `agentcore serve` (`agent_core/composition/serve.py`, `serve_ports.py`, `build_engine` en `engine.py`). Reales: Postgres, gateway de LLM, JEV a través del llm-gateway (`POST /v1/jev`, ADR 0024; la key de JEV vive en el servicio), claves HMAC/cifrado (`EnvKeyProvider`) y claves públicas de identidad (`--identity-keys`, `agent_core/adapters/identity_keys.py`). `uvicorn` declarado en `pyproject.toml`.
 - **Dobles, solo con `AGENTCORE_ALLOW_DEMO=1`** (`testing/serve_demo.py`; `serve` los lista al arrancar): tools, `AuthzPort`, transcript en memoria, calibración, proveedor `classifier`, `FieldClassifier`, `grant_active` y, sin `--identity-keys`, el verificador de demo. Sin la variable, `serve` sale con código 2 y nombra cada pieza faltante.
 - **Sigue pendiente, con su punto de enchufe y su dueño:**
 

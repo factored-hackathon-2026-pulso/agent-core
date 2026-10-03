@@ -16,6 +16,11 @@
 5. **Observabilidad:** el span `chat {modelo}` lo emite el servicio; `HttpLLMGateway` propaga `traceparent` y envía la correlación del turno (`run_id`, `turn_id`, `session_id`, `release`, `agent`) como `labels`. Las pruebas de atributos cerrados del span viven en el servicio.
 6. **Lo que no cambia:** `LLMAgentPort`, `check_output` en `domain`, `agentcore llm-smoke` (ahora contra el servicio), el puerto y todo M8/M2/M5.
 
+## JEV a través del mismo servicio (ampliación del 2026-10-03)
+- El servicio expone `POST /v1/jev`, un transporte opaco hacia `POST /v1/systemone` de JEV: pone la key (`JEV_API_KEY` en el servicio), aplica un plazo total, reintenta solo 429/529 (`Retry-After`, backoff, nunca más allá del plazo), no sigue redirects y acota la respuesta.
+- `GatewayJevTransport` (`agent_core.decision.providers.jev_gateway`) implementa `JevTransport` sobre ese endpoint y reemplaza a `HttpJevTransport`, que se eliminó junto con `AGENTCORE_JEV_API_KEY`. `JevProvider` (preguntas, respuestas, calibración) no cambia: la lógica de dominio de JEV sigue en este repo.
+- Sin gateway configurado, llamar a JEV es un `DecisionConfigError` (como antes con la key vacía). Los 429/529 que el servicio reintentó vuelven en `retried` para la métrica de límite.
+
 ## Consecuencias
 - Un salto de red más por generación; el timeout del cliente es `timeout_s` del perfil más 5 s de margen para que llegue la respuesta tipada `timeout` del servicio.
 - Los avisos de arranque por alias de modelo sin endpoint (`LLM_ENDPOINTS`) desaparecen: los alias son del servicio. Se conserva el aviso de agentes sin release `prod`.
