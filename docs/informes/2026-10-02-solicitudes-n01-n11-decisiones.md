@@ -45,3 +45,12 @@ Hallazgo previo (no es de esta tarea): `tests/composition/test_transfer_spans.py
 | D-17 | **Sin cambios de permisos:** quitar o bajar la prioridad de una interrupción de escalamiento (p. ej. `fraude`) pasa solo por el gate de evaluación y la aprobación humana, igual que cualquier cambio. Conviene decidir si las interrupciones de seguridad deben ser guardarraíles de plataforma (como `platform_edits`). | Prohibirlo ya. | — |
 | D-18 | `EntityDraft` ya no exige `id`/`version` cuando `kind == "release_settings"`; `EntityDraft.id` devuelve el `kind` si no hay `id`. | Poner un `id`/`version` falsos. | `registry/models.py` |
 | D-19 | N-08: la exportación vive en `PostgresRunExport` / `InMemoryRunExport`, no en el `AuditSink`, porque un test de contrato fija que el sink solo tiene `read` y `append_outside_turn`. `ServePorts.run_export` (campo nuevo con valor por defecto, compatible con ADR 0022). | Ampliar el `AuditSink`. | `adapters/postgres_uow.py`, `testing/fakes/storage.py` |
+
+## Estado y pendientes
+
+- Las once solicitudes están implementadas en la rama `feat/solicitudes-n01-n11` (sin push, sin PR). `ruff`, `mypy`, `lint-imports`, `contracts --check` y `pytest` (4055 pasan, 110 se omiten por falta de Postgres) en verde.
+- **No verificado aquí:** la imagen Docker (no hay daemon; el job `image` de `.github/workflows/ci.yml` la construye en CI) y las consultas de Postgres del export (hay tests de integración, que corren en CI con Postgres).
+- **Pendiente de tu decisión:** D-11 (el emisor del staff debe acuñar el rol `exporter`), D-13 (outbox sin exportar), D-17 (¿interrupciones de seguridad como guardarraíl de plataforma?) y D-08 (sin prueba con el binario anterior; es del repo de infra, CAP-57).
+- `contracts/` cambió: `registry/` (nuevo), `schemas/RunSummary.json` (nuevo, por el puerto de exportación) y `openapi.json` (`info.version` = `SCHEMA_VERSION`). Aviso de cambio de interfaz (CLAUDE.md, regla 7).
+- Entorno: se instaló `uv` con `winget` y se usó `UV_PYTHON_INSTALL_DIR=C:\Users\JUAN\uv-python` y `UV_CACHE_DIR=C:\Users\JUAN\uv-cache` solo en la sesión (la app virtualiza `AppData\Roaming` y rompía los enlaces de Python). `.venv/` está ignorado por git.
+- Pruebas intermitentes ya conocidas: `tests/composition/test_transfer_spans.py` y `test_turn_telemetry.py` (también fallan en `main`); en la última corrida completa pasaron.
