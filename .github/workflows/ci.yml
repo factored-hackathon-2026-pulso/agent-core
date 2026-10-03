@@ -35,3 +35,13 @@ jobs:
               --catalog tests/fixtures/catalogo-datos-prueba.yaml || exit 1
           done
       - run: uv run pytest
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0 (verificado con git ls-remote)
+      - run: docker build --build-arg GIT_SHA="$GITHUB_SHA" -t agent-core:ci .
+      - run: docker run --rm agent-core:ci --help
+      - name: la imagen arranca sin root y sin secretos
+        run: |
+          test "$(docker run --rm --entrypoint id agent-core:ci -u)" = "10001"
+          if docker run --rm --entrypoint env agent-core:ci | grep -E 'DSN|KEY|TOKEN'; then exit 1; fi
