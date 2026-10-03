@@ -3,16 +3,17 @@
 import argparse
 import importlib
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 import psycopg
+from opentelemetry.trace import Tracer
 
 from agent_core.adapters.env_keys import EnvKeyProvider, KeyConfigError
-from agent_core.adapters.identity_keys import load_identity_verifier
+from agent_core.adapters.identity_keys import ReloadingIdentityVerifier
 from agent_core.adapters.llm import HttpLLMGateway, UnconfiguredLLMGateway
 from agent_core.adapters.llm.http_gateway import LLM_GATEWAY_TOKEN_ENV, LLM_GATEWAY_URL_ENV
 from agent_core.adapters.postgres_uow import PostgresStore
@@ -30,6 +31,7 @@ from agent_core.ports import (
     KeyProvider,
     LLMGateway,
     RegistryPort,
+    RunExport,
     ToolExecutor,
     TranscriptStore,
     UnitOfWorkFactory,
@@ -104,9 +106,11 @@ class ServePorts:
     doubles: tuple[str, ...]  # piezas que son dobles de demo (vacío = todo real)
     agents: tuple[str, ...] = ()  # agentes cuya release `prod` se revisa al arrancar (aviso)
     llm_gateway_url: str | None = None  # None: sin llm-gateway configurado (toda generación cae a plantilla)
+    endpoints: Mapping[str, Any] = field(default_factory=dict)  # deprecated, always empty (ADR 0022)
     registry_api: RegistryApiPorts | None = None  # solo con --registry-api
     directory: AgentDirectory | None = None  # ADR 0021: directorio de especialistas (sobre el registry)
     readiness: tuple[tuple[str, Callable[[], bool]], ...] = ()  # comprobaciones de `/readyz`
+    run_export: RunExport | None = None  # N-08: lectura paginada de runs y eventos (con --registry-api)
 
 
 def _flag(attr: str) -> str:
@@ -122,6 +126,10 @@ def add_serve_parser(sub: Any) -> None:
                             "en la lista de procesos. No se imprime nunca")
     serve.add_argument("--identity-keys", type=Path, default=None,
                        help="archivo con las claves públicas de identidad (principal y delegación)")
+    serve.add_argument("--keys-reload-seconds", type=float, default=5.0,
+                       help="cada cuántos segundos, a lo sumo, se vuelve a leer --identity-keys y "
+                            "--staff-keys (rotar sin reiniciar; una lectura rota conserva las últimas "
+                            "claves buenas); 0 lo apaga")
     serve.add_argument("--agents", default=None,
                        help=f"agentes separados por coma (o {AGENTS_ENV}): al arrancar avisa de los perfiles "
                             "de "
@@ -183,7 +191,9 @@ def _agents(args: argparse.Namespace, env: Mapping[str, str]) -> tuple[str, ...]
 
 
 def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
-                  clock: Clock, ids: IdSource) -> ServePorts:
+                  clock: Clock, ids: IdSource, *, tracer: Tracer | None = None) -> ServePorts:
+    """`tracer` is kept for the stable composition surface (ADR 0022) and is unused: the `chat` span is
+    emitted by the llm-gateway service (ADR 0024)."""
     problems: list[str] = []
     demo = env.get(DEMO_ENV) == "1"
 
@@ -213,11 +223,16 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         problems.append("falta --identity-keys (archivo de claves públicas de identidad)")
 
     # Configuración estática: se valida entera antes de ejecutar cualquier fábrica de pieza.
+    reload_seconds = getattr(args, "keys_reload_seconds", 5.0)
+    if reload_seconds < 0:
+        problems.append("--keys-reload-seconds no puede ser negativo")
+    reload_every = timedelta(seconds=max(reload_seconds, 0.0))
     grant_active: list[Callable[[str, datetime], bool]] = []  # lo llena la fábrica de `grant-active`
     verifier: IdentityVerifier | None = None
     if args.identity_keys is not None:
         try:
-            verifier = load_identity_verifier(args.identity_keys, lambda ref, now: grant_active[0](ref, now))
+            verifier = ReloadingIdentityVerifier(
+                args.identity_keys, lambda ref, now: grant_active[0](ref, now), clock, reload_every)
         except SchemaError as exc:
             problems.append(str(exc))
     llm_url, llm_token = _llm_gateway_config(env, problems)
@@ -233,8 +248,8 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
                             "escribir en la base de producción")
         if args.staff_keys is not None:
             try:
-                staff_verifier = load_identity_verifier(args.staff_keys, lambda ref, now: False,
-                                                        delegation=False)
+                staff_verifier = ReloadingIdentityVerifier(
+                    args.staff_keys, lambda ref, now: False, clock, reload_every, delegation=False)
             except SchemaError as exc:
                 problems.append(f"--staff-keys: {exc}")
         elif not demo:
@@ -289,4 +304,4 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         doubles=tuple(doubles), agents=_agents(args, env), llm_gateway_url=llm_url,
         registry_api=registry_api,
         directory=RegistryDirectory(registry_store, pg_registry, pg_registry.release),
-        readiness=(("postgres", store.ping),))
+        readiness=(("postgres", store.ping),), run_export=store.run_export())

@@ -31,7 +31,13 @@ from agent_core.flows import (
 )
 from agent_core.registry.entities import content_hash, model_for, version_ref
 from agent_core.registry.errors import RegistryError
-from agent_core.registry.models import EntityDraft, VersionDocs, VersionRef
+from agent_core.registry.models import (
+    RELEASE_SETTINGS,
+    EntityDraft,
+    ReleaseSettings,
+    VersionDocs,
+    VersionRef,
+)
 from agent_core.registry.suite import EvalSuite
 
 CANDIDATE_RELEASE_ID = "candidate"
@@ -134,6 +140,20 @@ def _parse_drafts(drafts: Sequence[EntityDraft]) -> tuple[dict[Key, RegistryEnti
     return entities, suites, docs, problems
 
 
+def _parse_settings(drafts: Sequence[EntityDraft]) -> tuple[ReleaseSettings, list[Violation]]:
+    """El borrador reservado `release_settings` (N-07): a lo sumo uno; sin él, todo se hereda de la base."""
+    found = [d for d in drafts if d.kind == RELEASE_SETTINGS]
+    if not found:
+        return ReleaseSettings(), []
+    if len(found) > 1:
+        return ReleaseSettings(), [_v("REG-DUPLICATE", "release_settings aparece dos veces en el borrador",
+                                      RELEASE_SETTINGS)]
+    try:
+        return ReleaseSettings.model_validate(found[0].content), []
+    except ValidationError as exc:
+        return ReleaseSettings(), [_v("REG-SCHEMA", _schema_message(exc), RELEASE_SETTINGS)]
+
+
 def _set(doc: Any, pointer: tuple[str | int, ...], value: str) -> None:
     for part in pointer[:-1]:
         doc = doc[part]
@@ -205,10 +225,11 @@ def _retarget_ref(ref: RefSpec, kind: EntityKind, merged: Mapping[Key, RegistryE
     return RefSpec(id=ref.id, spec=target.version)
 
 
-def _interrupts(base: Release, merged: Mapping[Key, RegistryEntity]) -> list[Interrupt]:
-    """Interrupciones de la base apuntando a las versiones de flows y policies de la candidata."""
+def _interrupts(interrupts: Sequence[Interrupt], merged: Mapping[Key, RegistryEntity]) -> list[Interrupt]:
+    """Interrupciones (las de la base o las de `release_settings`) apuntando a las versiones de flows y
+    policies de la candidata."""
     result: list[Interrupt] = []
-    for interrupt in base.interrupts:
+    for interrupt in interrupts:
         update: dict[str, Any] = {}
         if isinstance(interrupt.action, StartFlowAction):
             flow = _retarget_ref(interrupt.action.flow, EntityKind.flow, merged)
@@ -219,7 +240,8 @@ def _interrupts(base: Release, merged: Mapping[Key, RegistryEntity]) -> list[Int
     return result
 
 
-def _decl(agent_id: str, base: Release | None, merged: Mapping[Key, RegistryEntity]) -> ReleaseDecl:
+def _decl(agent_id: str, base: Release | None, merged: Mapping[Key, RegistryEntity],
+          settings: ReleaseSettings) -> ReleaseDecl:
     """Release declarada de la candidata: los agentes de la base más `agent_id`, limitados a los que hay en
     `merged`, y todos los flows de `merged`. Lanza `CandidateError` si falta el agente."""
     def ref(kind: EntityKind, ident: str, fallback: str | None = None) -> str:
@@ -234,19 +256,25 @@ def _decl(agent_id: str, base: Release | None, merged: Mapping[Key, RegistryEnti
     agents = sorted((wanted | {agent_id}) & present)
     flows = sorted(i for (k, i) in merged if k is EntityKind.flow)
     langs = sorted(i for (k, i) in merged if k is EntityKind.language_detection)
-    if base is not None:
+    if settings.language_detection is not None:  # sin destino en `merged`, `pin_release` lo reporta (REG-PIN)
+        lang = ref(EntityKind.language_detection, settings.language_detection)
+    elif base is not None:
         lang = ref(EntityKind.language_detection, base.language_detection.id, str(base.language_detection))
     else:  # sin base, la del borrador; si no trae ninguna, `pin_release` lo reporta como REG-PIN
         lang = ref(EntityKind.language_detection, langs[0]) if langs else "sin-deteccion@1.0.0"
+    wanted_interrupts = settings.interrupts if settings.interrupts is not None else (
+        base.interrupts if base is not None else [])
     data: dict[str, Any] = {
         "id": CANDIDATE_RELEASE_ID,
         "agents": [{"agent": ref(EntityKind.agent, a), "aliases": [CANDIDATE_ALIAS]} for a in agents],
         "flows": [ref(EntityKind.flow, f) for f in flows],
-        "interrupts": _interrupts(base, merged) if base is not None else [],
+        "interrupts": _interrupts(wanted_interrupts, merged),
         "language_detection": lang,
-        "max_input_chars": base.max_input_chars if base is not None else 4000,
+        "max_input_chars": settings.max_input_chars or (base.max_input_chars if base is not None else 4000),
     }
-    if base is not None and base.injection_ruleset is not None:
+    if settings.injection_ruleset is not None:
+        data["injection_ruleset"] = ref(EntityKind.injection_ruleset, settings.injection_ruleset)
+    elif base is not None and base.injection_ruleset is not None:
         data["injection_ruleset"] = ref(EntityKind.injection_ruleset, base.injection_ruleset.id,
                                         str(base.injection_ruleset))
     if base is not None and base.knowledge_snapshot is not None:
@@ -256,7 +284,9 @@ def _decl(agent_id: str, base: Release | None, merged: Mapping[Key, RegistryEnti
 
 def build_candidate(*, agent_id: str, base: Release | None, base_entities: Sequence[RegistryEntity],
                     drafts: Sequence[EntityDraft], published_hash: Published) -> Candidate:
-    drafted, suites, draft_docs, problems = _parse_drafts(drafts)
+    settings, settings_problems = _parse_settings(drafts)
+    drafted, suites, draft_docs, problems = _parse_drafts([d for d in drafts if d.kind != RELEASE_SETTINGS])
+    problems.extend(settings_problems)
     if problems:
         raise CandidateError(problems)
 
@@ -264,7 +294,7 @@ def build_candidate(*, agent_id: str, base: Release | None, base_entities: Seque
     merged.update(drafted)
     auto, notes = _cascade(drafted, merged, published_hash)
 
-    decl = _decl(agent_id, base, merged)
+    decl = _decl(agent_id, base, merged, settings)
     try:
         pinned = pin_release(AuthoringRegistry.from_entities(merged.values(), [decl]), CANDIDATE_RELEASE_ID)
     except SchemaError as exc:

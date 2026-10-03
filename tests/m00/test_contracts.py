@@ -49,7 +49,7 @@ def test_output_is_canonical_lf_sorted_with_generated_header() -> None:
 
 def test_names_are_safe_file_names() -> None:
     for rel in render_contracts():
-        assert re.fullmatch(r"VERSION|(schemas|events)/[A-Za-z][A-Za-z0-9]*\.json", rel)
+        assert re.fullmatch(r"VERSION|(schemas|events|registry)/[A-Za-z][A-Za-z0-9]*\.json", rel)
 
 
 def test_schema_uses_wire_aliases() -> None:

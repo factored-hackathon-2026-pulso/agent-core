@@ -154,3 +154,7 @@ class TestStaffIssuer(TestIdentityIssuer):
     def constructor_bot(self, pid: str = "constructor-bot") -> str:
         return self._staff(pid, ["constructor"], False, "session")
 
+    def exporter_bot(self, pid: str = "ingest-bot") -> str:
+        """Servicio de ingesta: solo lee las exportaciones (N-08)."""
+        return self._staff(pid, ["exporter"], False, "session")
+

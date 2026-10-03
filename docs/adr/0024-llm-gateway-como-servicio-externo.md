@@ -1,4 +1,4 @@
-# ADR 0022 — El LLM gateway es un servicio externo; agent-core es un consumidor
+# ADR 0024 — El LLM gateway es un servicio externo; agent-core es un consumidor
 
 - Estado: aceptado (2026-10-03)
 - Reemplaza en parte: ADR 0016 (gateway propio compatible con OpenAI). Lo que 0016 decidió sobre el **comportamiento** sigue vigente y vive ahora en el servicio; cambia **dónde vive y cómo se construye**.

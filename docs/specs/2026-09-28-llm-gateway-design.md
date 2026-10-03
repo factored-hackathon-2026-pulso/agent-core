@@ -1,6 +1,6 @@
 # Spec — LLM gateway (unidad 5)
 
-- Estado: **sustituido en parte por el ADR 0022 (2026-10-03)**: el comportamiento descrito aquí lo implementa ahora el servicio `llm-gateway`; `agent_core.adapters.llm` conserva `HttpLLMGateway` y `LLMAgentPort`. Estado histórico: rev. 2, implementada e integrada en `origin/main` (PR del registry, 2026-09-30; falta la prueba de humo manual contra OpenRouter); M8 lo necesita para la demo antes del congelamiento (02/10)
+- Estado: **sustituido en parte por el ADR 0024 (2026-10-03)**: el comportamiento descrito aquí lo implementa ahora el servicio `llm-gateway`; `agent_core.adapters.llm` conserva `HttpLLMGateway` y `LLMAgentPort`. Estado histórico: rev. 2, implementada e integrada en `origin/main` (PR del registry, 2026-09-30; falta la prueba de humo manual contra OpenRouter); M8 lo necesita para la demo antes del congelamiento (02/10)
 - Fecha: 2026-09-28 (rev. 2: 2026-09-30)
 - Repo: `agent-core` · rama `feat/llm-gateway` (ya integrada en `main`)
 - Paquete: `agent_core.adapters.llm`
