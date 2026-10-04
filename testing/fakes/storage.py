@@ -212,7 +212,7 @@ class InMemoryUoW:
                 return deepcopy(found)
             until = self._store.idempotency_reserved.get(scoped)
             if until is not None and until > now:
-                raise EngineError(ProblemCode.idempotency_conflict, "la clave sigue en curso")
+                raise EngineError(ProblemCode.idempotency_in_progress, "la clave sigue en curso")
             self._store.idempotency_reserved[scoped] = now + ttl
             return None
 

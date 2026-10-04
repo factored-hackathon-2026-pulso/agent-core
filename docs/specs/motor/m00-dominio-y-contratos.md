@@ -600,6 +600,7 @@ class ProblemCode(StrEnum):
     delegation_mismatch, principal_mismatch,                                          # 403
     not_found,                                                                        # 404
     turn_in_progress, handoff_already_resolved, idempotency_conflict,                 # 409
+    idempotency_in_progress,                                                          # 409
     run_closed,                                                                       # 410
     invalid_request,                                                                  # 422
     rate_limited, cost_budget_exceeded,                                               # 429
@@ -611,6 +612,7 @@ class EngineError(Exception): code: ProblemCode; detail: str
 - M9 traduce `EngineError` a `application/problem+json` y convierte `TurnInProgress` en `409` y `CredentialsInvalid` en `401`.
 - Cualquier otro `DomainError` que llegue a M9 es un `500 internal_error` con `trace_id`, sin detalle interno.
 - `idempotency_conflict`: la misma `Idempotency-Key` y el mismo principal con otro body.
+- `idempotency_in_progress`: la misma `Idempotency-Key` y el mismo principal mientras otra petición con esa clave sigue en curso (reserva vigente sin resultado). Es reintentable; el cliente distingue por `code`, no por el texto del detalle.
 - `agent_forbidden`: falla `authorize_agent` (tipo de principal, `subject_kind` o nivel de autenticación).
 
 ### 2.12 Conocimiento (`domain/knowledge.py`)

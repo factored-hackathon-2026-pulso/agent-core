@@ -14,6 +14,7 @@
     "turn_in_progress",
     "handoff_already_resolved",
     "idempotency_conflict",
+    "idempotency_in_progress",
     "run_closed",
     "invalid_request",
     "rate_limited",
