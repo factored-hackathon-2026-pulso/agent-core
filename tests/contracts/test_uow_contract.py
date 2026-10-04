@@ -401,7 +401,7 @@ def check_a_reserved_key_blocks_the_second_caller_until_released_or_expired(b: B
     with b.factory() as uow:
         with pytest.raises(EngineError) as info:
             uow.reserve_run_idempotency(CUSTOMER, "idem-r", "hash-1", NOW + timedelta(seconds=30), ttl)
-        assert info.value.code is ProblemCode.idempotency_conflict
+        assert info.value.code is ProblemCode.idempotency_in_progress and info.value.status == 409
         assert uow.get_run_idempotency(CUSTOMER, "idem-r") is None  # reservada no es resultado
         assert uow.reserve_run_idempotency(OTHER, "idem-r", "hash-1", NOW, ttl) is None  # otro principal
         assert uow.reserve_run_idempotency(CUSTOMER, "idem-r", "hash-1", NOW + ttl, ttl) is None  # vencida

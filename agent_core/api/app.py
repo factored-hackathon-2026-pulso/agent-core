@@ -66,7 +66,7 @@ _PROBLEMS = {
         403: "subject_forbidden | agent_forbidden | version_pin_forbidden | delegation_expired | "
         "delegation_mismatch | principal_mismatch",
         404: "not_found",
-        409: "turn_in_progress | handoff_already_resolved | idempotency_conflict",
+        409: "turn_in_progress | handoff_already_resolved | idempotency_conflict | idempotency_in_progress",
         410: "run_closed",
         422: "invalid_request",
         429: "rate_limited | cost_budget_exceeded",

@@ -88,7 +88,7 @@ def test_a_request_with_the_key_in_flight_is_rejected_without_creating_a_run() -
                                            timedelta(seconds=60)) is None
     with pytest.raises(EngineError) as info:
         w.engine.start_run(w.principal, None, run_input())
-    assert info.value.code is ProblemCode.idempotency_conflict
+    assert info.value.code is ProblemCode.idempotency_in_progress and info.value.status == 409
     assert w.store.runs == {}
 
 
@@ -117,7 +117,7 @@ def test_concurrent_requests_with_the_same_key_create_one_run() -> None:
     [t.start() for t in threads]
     [t.join() for t in threads]
     assert len(w.store.runs) == 1
-    assert all((isinstance(o, EngineError) and o.code is ProblemCode.idempotency_conflict)
+    assert all((isinstance(o, EngineError) and o.code is ProblemCode.idempotency_in_progress)
                or getattr(o, "run_id", None) in w.store.runs for o in outcomes)
 
 

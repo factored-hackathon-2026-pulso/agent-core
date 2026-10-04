@@ -84,6 +84,7 @@ class ProblemCode(StrEnum):
     turn_in_progress = "turn_in_progress"
     handoff_already_resolved = "handoff_already_resolved"
     idempotency_conflict = "idempotency_conflict"
+    idempotency_in_progress = "idempotency_in_progress"
     run_closed = "run_closed"
     invalid_request = "invalid_request"
     rate_limited = "rate_limited"
@@ -105,6 +106,7 @@ PROBLEM_STATUS: Mapping[ProblemCode, int] = MappingProxyType(
         ProblemCode.turn_in_progress: 409,
         ProblemCode.handoff_already_resolved: 409,
         ProblemCode.idempotency_conflict: 409,
+        ProblemCode.idempotency_in_progress: 409,
         ProblemCode.run_closed: 410,
         ProblemCode.invalid_request: 422,
         ProblemCode.rate_limited: 429,
