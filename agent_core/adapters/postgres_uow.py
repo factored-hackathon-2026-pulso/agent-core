@@ -285,7 +285,7 @@ class PostgresUoW:
         prior = self.get_run_idempotency(principal, key)
         if prior is not None:
             return prior
-        raise EngineError(ProblemCode.idempotency_conflict, "otra petición con esta clave sigue en curso")
+        raise EngineError(ProblemCode.idempotency_in_progress, "otra petición con esta clave sigue en curso")
 
     def release_run_idempotency(self, principal: PrincipalKey, key: str) -> None:
         self._conn.execute(

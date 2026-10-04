@@ -30,6 +30,7 @@ PROBLEM_TITLES: dict[ProblemCode, str] = {
     ProblemCode.turn_in_progress: "Turno en curso",
     ProblemCode.handoff_already_resolved: "Traspaso ya resuelto",
     ProblemCode.idempotency_conflict: "Conflicto de idempotencia",
+    ProblemCode.idempotency_in_progress: "Petición con esta clave en curso",
     ProblemCode.run_closed: "Run cerrado",
     ProblemCode.invalid_request: "Solicitud inválida",
     ProblemCode.rate_limited: "Límite de tasa excedido",

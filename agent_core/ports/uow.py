@@ -58,7 +58,7 @@ class UnitOfWork(Protocol):
                                 ttl: timedelta) -> tuple[str, RunResult] | None:
         """Toma la clave antes de ejecutar nada, de inmediato y fuera de la transacción (como el lease).
         Devuelve el registro ya commiteado si lo hay; `None` si la clave quedó reservada para quien llama.
-        Si otra petición la tiene reservada y vigente lanza `EngineError(idempotency_conflict)`: así dos
+        Si otra petición la tiene reservada y vigente lanza `EngineError(idempotency_in_progress)`: así dos
         peticiones concurrentes no ejecutan dos veces los efectos de un run."""
         ...
 

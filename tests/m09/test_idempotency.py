@@ -71,6 +71,16 @@ def test_same_key_with_another_body_is_409_idempotency_conflict() -> None:
     assert len(r.engine.store.runs) == 1
 
 
+def test_a_key_still_in_flight_is_409_idempotency_in_progress_not_conflict() -> None:
+    """El cliente distingue por `code`, no por el texto: reintentar luego sirve, cambiar el body no."""
+    r = Real()
+    with r.engine.store.uow() as uow:  # otra petición con esta clave sigue trabajando
+        assert uow.reserve_run_idempotency(r.engine.principal.key, "key-1", "otro", r.engine.clock.now(),
+                                           timedelta(seconds=60)) is None
+    problem(r.create(lang="es"), 409, "idempotency_in_progress")
+    assert r.engine.store.runs == {}
+
+
 def test_the_key_is_scoped_per_principal() -> None:
     r = Real()
     mine = r.create("tok-c")

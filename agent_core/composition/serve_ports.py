@@ -216,7 +216,8 @@ def _lang_thresholds(args: argparse.Namespace, env: Mapping[str, str],
                      problems: list[str]) -> dict[str, LangThresholds]:
     """Umbrales de idioma por `thresholds_from`, de un archivo JSON. Un archivo roto es un problema de
     configuración: callar dejaría el cambio de idioma apagado sin que nadie lo note."""
-    raw = args.lang_thresholds or (Path(env[LANG_THRESHOLDS_ENV]) if env.get(LANG_THRESHOLDS_ENV) else None)
+    raw = getattr(args, "lang_thresholds", None) or (
+        Path(env[LANG_THRESHOLDS_ENV]) if env.get(LANG_THRESHOLDS_ENV) else None)
     if raw is None:
         return {}
     try:
@@ -230,14 +231,19 @@ def _lang_thresholds(args: argparse.Namespace, env: Mapping[str, str],
 
 
 def _agents(args: argparse.Namespace, env: Mapping[str, str]) -> tuple[str, ...]:
-    raw = args.agents or env.get(AGENTS_ENV) or ""
+    raw = getattr(args, "agents", None) or env.get(AGENTS_ENV) or ""
     return tuple(a for a in (part.strip() for part in raw.split(",")) if a)
 
 
 def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
                   clock: Clock, ids: IdSource, *, tracer: Tracer | None = None) -> ServePorts:
     """`tracer` is kept for the stable composition surface (ADR 0022) and is unused: the `chat` span is
-    emitted by the llm-gateway service (ADR 0024)."""
+    emitted by the llm-gateway service (ADR 0024).
+
+    Contrato de `args` para quien arma el `Namespace` a mano (sin `add_serve_parser`): `lang_thresholds`,
+    `agents` y `keys_reload_seconds` son opcionales (ausentes = por defecto); el resto de los atributos de
+    `add_serve_parser` (`dsn`, `identity_keys`, `registry_api`, `eval_dsn`, `staff_keys` y un atributo por
+    pieza en `_DOUBLES`) debe existir, aunque sea con `None`/`False`."""
     problems: list[str] = []
     demo = env.get(DEMO_ENV) == "1"
 
