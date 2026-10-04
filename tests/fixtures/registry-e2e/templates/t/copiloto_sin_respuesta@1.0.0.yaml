@@ -1,0 +1,5 @@
+id: t/copiloto_sin_respuesta
+version: 1.0.0
+locales:
+  es: "No pude resolver ese pedido con las lecturas disponibles (saldo y productos, movimientos, casos y traspaso del cliente que atiendes). ¿Puedes darme más detalle?"
+  pt: "Não consegui resolver esse pedido com as leituras disponíveis (saldo e produtos, movimentos, casos e repasse do cliente atendido). Pode dar mais detalhes?"

@@ -1,0 +1,5 @@
+id: t/pedir_pedido
+version: 1.0.0
+locales:
+  es: "¿Qué necesitas saber o hacer con este cliente?"
+  pt: "¿Qué necesitas saber o hacer con este cliente?"

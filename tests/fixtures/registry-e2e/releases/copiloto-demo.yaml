@@ -1,0 +1,8 @@
+id: copiloto-demo
+agents:
+  - {agent: "copiloto-asesor@^1", aliases: [prod]}
+flows: ["asistir@^1"]
+interrupts:
+  - {id: emergencia, priority: 100, action: {type: escalate, target_queue: supervision, priority: critical}}
+language_detection: "lang-es-pt@1"
+injection_ruleset: "injection-rules@1"

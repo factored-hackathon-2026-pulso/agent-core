@@ -144,3 +144,29 @@ def test_the_builder_cannot_choose_an_origin_that_escapes_the_autonomous_quotas(
     properties = enum["properties"]
     assert isinstance(properties, dict) and properties["origin"] == {
         "type": "string", "enum": ["builder_chat", "auto_detect"]}
+
+
+def test_routed_tools_split_registry_tools_from_the_rest() -> None:
+    from agent_core.composition.builder_tools import RoutedTools
+
+    class Other:
+        def __init__(self) -> None:
+            self.seen: list[str] = []
+
+        def definition(self, tool: EntityRef) -> Any:
+            return BUILDER_TOOL_DEFS["registry/validate"].model_copy(update={"id": tool.id})
+
+        def execute(self, tool: EntityRef, *args: Any, **kwargs: Any) -> ToolResult:
+            self.seen.append(tool.id)
+            return ToolResult(status=ToolStatus.ok, result_full={"from": "other"}, call_id="c-1")
+
+    other = Other()
+    routed = RoutedTools(_executor(World()), other)
+
+    assert routed.definition(_ref("create_proposal")).risk_class.value == "write_draft"
+    assert routed.definition(EntityRef(id="leer_productos", version="1.0.0")).id == "leer_productos"
+    result = routed.execute(EntityRef(id="leer_productos", version="1.0.0"), {}, {}, _ctx())
+    assert (other.seen, _value(result)) == (["leer_productos"], {"from": "other"})
+    args: dict[str, Any] = {"agent_id": AGENT, "origin": "builder_chat", "title": "t"}
+    created = routed.execute(_ref("create_proposal"), args, {}, _ctx(), "k9")
+    assert created.status is ToolStatus.ok and other.seen == ["leer_productos"]  # no pasó por `other`

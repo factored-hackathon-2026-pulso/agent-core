@@ -242,7 +242,8 @@ class EngineWorld:
                  knowledge: KnowledgeSource | None = None, releases: tuple[str, ...] = (RELEASE_ID,),
                  agent: str = "atencion", directory: bool = False,
                  calibrations: Mapping[str, CalibrationArtifact] | None = None,
-                 telemetry: TurnTelemetry | None = None) -> None:
+                 telemetry: TurnTelemetry | None = None,
+                 field_classifier: FieldClassifier | None = None) -> None:
         self.clock = clock or FakeClock()
         self.ids = ids or FakeIds()
         self.registry = registry_from_releases(registry_root, releases)
@@ -274,7 +275,8 @@ class EngineWorld:
             tools=self.recording_tools or inner, gateway=self.recording_llm or self.gateway,
             providers={"jev": self.jev, "classifier": self.classifier},
             calibrations=InMemoryCalibrationSource(calibrations or {"cal-demo": demo_calibration()}),
-            transcript=self.transcript, authz=self.authz, classifier=FieldClassifier(CATALOG),
+            transcript=self.transcript, authz=self.authz,
+            classifier=field_classifier or FieldClassifier(CATALOG),
             config=config or EngineConfig(), knowledge=knowledge,
             directory=None if record else self.directory, telemetry=telemetry)
         self.engine: TurnEngine = build_turn_engine(self.deps)

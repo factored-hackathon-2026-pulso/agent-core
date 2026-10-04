@@ -1,0 +1,172 @@
+id: construir
+version: 1.0.0
+priority: 50
+nodes:
+- id: pedir_agente
+  type: collect
+  config:
+    slot: agente
+    prompt_ref: t/pedir_agente
+    max_attempts: 3
+  next:
+    ok: pedir_objetivo
+    max_attempts: fin_sin_datos
+- id: pedir_objetivo
+  type: collect
+  config:
+    slot: objetivo
+    prompt_ref: t/pedir_objetivo
+    max_attempts: 3
+  next:
+    ok: redactar
+    max_attempts: fin_sin_datos
+- id: redactar
+  type: agent
+  config:
+    tools_allowed:
+    - registry/get_entity@1
+    - registry/list_versions@1
+    max_steps: 6
+    prompt_ref: p/constructor@1
+    goal: Producir el borrador de cambios del registry que cumple el objetivo del supervisor sobre el agente indicado, cambiando lo mínimo.
+    save_as: borrador
+    input_view:
+    - slots.agente
+    - slots.objetivo
+    output_schema:
+      type: object
+      additionalProperties: false
+      required:
+      - changes
+      properties:
+        changes:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - kind
+            - content
+            - docs
+            properties:
+              kind:
+                type: string
+              content:
+                type: object
+              docs:
+                type: object
+                additionalProperties: false
+                required:
+                - description
+                - rationale
+                - changelog
+                properties:
+                  description:
+                    type: string
+                  rationale:
+                    type: string
+                  changelog:
+                    type: string
+  next:
+    answered: crear
+    gave_up: no_pude
+- id: crear
+  type: tool
+  config:
+    draft: true
+    tool: registry/create_proposal@1
+    args:
+      agent_id: slots.agente
+      origin: builder_chat
+      title: slots.objetivo
+    save_as: propuesta
+  next:
+    ok: verificar_crear
+    uncertain: verificar_crear
+    denied: esc
+- id: verificar_crear
+  type: verify
+  config:
+    readback: registry/get_write@1
+    by: idempotency_key
+    predicate:
+      ==:
+      - var: readback.op
+      - create_proposal
+    save_as: crear_ok
+  next:
+    verified: guardar
+    failed: esc
+- id: guardar
+  type: tool
+  config:
+    draft: true
+    tool: registry/put_draft@1
+    args:
+      proposal_id: facts.propuesta.value.proposal_id
+      expected_rev: facts.propuesta.value.rev
+      changes: facts.borrador.value.changes
+    save_as: guardado
+  next:
+    ok: verificar_guardar
+    uncertain: verificar_guardar
+    denied: esc
+- id: verificar_guardar
+  type: verify
+  config:
+    readback: registry/get_write@1
+    by: idempotency_key
+    predicate:
+      ==:
+      - var: readback.op
+      - put_draft
+    save_as: guardar_ok
+  next:
+    verified: validar
+    failed: esc
+- id: validar
+  type: tool
+  config:
+    tool: registry/validate@1
+    args:
+      proposal_id: facts.propuesta.value.proposal_id
+    save_as: validacion
+  next:
+    ok: responder
+    error: esc
+    timeout: esc
+    denied: esc
+- id: responder
+  type: respond
+  config:
+    generate:
+      prompt_ref: p/resumen_construccion@1
+      allowed_facts:
+      - facts.propuesta
+      - facts.validacion
+      purpose: agent_guidance
+      fallback_template_ref: t/propuesta_lista@1
+  next:
+    next: fin
+- id: fin
+  type: end
+  config:
+    outcome: resolved
+- id: no_pude
+  type: respond
+  config:
+    template_ref: t/constructor_sin_borrador
+  next:
+    next: fin_abstenido
+- id: fin_abstenido
+  type: end
+  config:
+    outcome: abstained
+- id: fin_sin_datos
+  type: end
+  config:
+    outcome: abstained
+- id: esc
+  type: escalate
+  config:
+    reason_code: tool_failure
