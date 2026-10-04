@@ -103,3 +103,20 @@ Cómo leer los síntomas:
 - **Cambio de idioma es↔pt**: el motor solo cambia de idioma si recibe umbrales (M6 §3.1.7) y `serve` no los recibía. Ahora `serve --lang-thresholds <archivo.json>` (o `AGENTCORE_LANG_THRESHOLDS`) los pasa; `serve.ps1` usa `scripts/e2e/lang-thresholds.json` (switch 0.9) y la `language_detection` de `registry-e2e` apunta a él con `thresholds_from: lang-cal-demo`. Los umbrales de JEV/classifier de la calibración de la demo también tienen entradas `pt`. Son valores de demo, no una calibración real (unidad 6). Sin el archivo, el idioma nunca cambia. El saludo inicial siempre sale en el idioma del agente (es), porque aún no hay mensaje que detectar. La política del banco dice que el portugués lo atiende una persona: eso no está implementado.
 - **Lo que sigue siendo doble** (la lista de `serve` al arrancar): tools, authz, transcript (en memoria: se pierde al reiniciar), calibración, clasificador y catálogo de campos. No es producción.
 - **Windows PowerShell 5.1**: los `.ps1` están en UTF-8 con BOM y no tratan el stderr de docker como error; no los guardes sin BOM.
+
+## 8. Con tools reales (tool-service) en vez de dobles
+
+`scripts\e2e\serve-tools.ps1` arranca `serve` con las tools del servicio `tool-service` (repo `pulso-factored/tool-service`, sobre
+`gold_restricted`) y con el catálogo de clasificación que publica data-pipeline; authz, transcript y calibración siguen siendo dobles.
+Los ids de las tools de `registry-e2e` coinciden con los del servicio, así que no hay que cambiar el registry de la demo: el
+resultado trae su propio `source` (nombre de la tabla), que es la clave del catálogo.
+
+1. En el repo `tool-service`: `$env:TOOL_DATA_DIR = "<data-pipeline>\data"; $env:TOOL_SERVICE_TOKENS = "agent-core:<token>"; $env:PORT = 8095; uv run tool-service`.
+2. `$env:AGENTCORE_TOOL_SERVICE_TOKEN = "<token>"` (o en `scripts\e2e\.env.e2e`) y `.\scripts\e2e\serve-tools.ps1`.
+3. Chat como asesor con un id de cliente **del dataset** (p. ej. uno de `customer_products`), no `cust-001`.
+
+El catálogo sale de `field_classification.json` de la última corrida publicada más `scripts\e2e\field-overlay.json`
+(campos del motor y de lo que escriben los agentes: `valor`, `resumen`, `directory.*`…). Lo que ningún archivo clasifique queda
+como `pii_direct`. Verificado con el modelo real: el copiloto responde saldos, último movimiento y casos del cliente con las
+cifras del dataset. Sigue pendiente el `AuthzPort` real (`bind_params` con `customer_id`): el servicio deriva el cliente de la
+delegación del asesor y rechaza (`denied`) si no coincide con `bound_params`.
