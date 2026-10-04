@@ -118,5 +118,4 @@ resultado trae su propio `source` (nombre de la tabla), que es la clave del cat�
 El catálogo sale de `field_classification.json` de la última corrida publicada más `scripts\e2e\field-overlay.json`
 (campos del motor y de lo que escriben los agentes: `valor`, `resumen`, `directory.*`…). Lo que ningún archivo clasifique queda
 como `pii_direct`. Verificado con el modelo real: el copiloto responde saldos, último movimiento y casos del cliente con las
-cifras del dataset. Sigue pendiente el `AuthzPort` real (`bind_params` con `customer_id`): el servicio deriva el cliente de la
-delegación del asesor y rechaza (`denied`) si no coincide con `bound_params`.
+cifras del dataset. El script usa el `AuthzPort` real (`PolicyAuthz`, `agent_core.adapters.policy_authz`): `AGENTCORE_AUTHZ_BIND_KEYS=subject_ref,customer_id` nombra los parámetros vinculados que llevan al cliente; `AGENTCORE_AUTHZ_FIELD_GRANTS_FILE` (lista de pares `[campo, purpose]` que gobierno de datos permite leer) es opcional y, sin él, nadie lee campos (falla cerrado). El servicio rechaza (`denied`) si el cliente de la delegación, el de `bound_params` o el del principal no coinciden.
