@@ -1,0 +1,476 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Tool provider contract",
+    "version": "1.0.0",
+    "description": "What a service implements to expose tools to agent-core."
+  },
+  "paths": {
+    "/v1/tools/{tool_id}/execute": {
+      "post": {
+        "operationId": "executeTool",
+        "summary": "Run one tool",
+        "description": "Runs one tool for one caller.\n\n* `args` is written by the model and never carries the subject. The customer the data is about comes from\n  `bound_params` and the verified claims in `context` (a `customer` principal's own id; an `advisor`'s\n  delegation `on_behalf_of`). Every source present must agree, otherwise the answer is `denied`.\n* Reads answer `ok | error | timeout | denied | step_up_required`. Writes answer\n  `ok | denied | uncertain | step_up_required` and never `error`: a write either refused before any effect\n  (`denied`) or may have happened (`uncertain`). A consumer treats an unreachable provider on a write as\n  `uncertain`.\n* A write carries `idempotency_key` (the engine's action id): a replay returns the first result, and the\n  tool's read-back (`readback_by: idempotency_key` in its ToolDef) finds what was written.\n* `step_up_required` is answered before any effect when `context.principal.auth_level` is below the tool's\n  `min_auth_level` (declared in the registry's ToolDef).\n* Numbers keep their scale: amounts are JSON numbers (`1342.80`), never strings or floats rounded by the\n  provider.\n* HTTP statuses: `200` for every tool outcome (including `denied`), `401` for a missing or wrong consumer\n  token, `404` for an unknown tool, `422` for a body that is not an `ExecuteRequest`.\n",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tool_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecuteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A tool outcome, whatever its status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecuteResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong consumer token"
+          },
+          "404": {
+            "description": "Unknown tool",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecuteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The body is not an ExecuteRequest",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecuteResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tools": {
+      "get": {
+        "operationId": "listTools",
+        "summary": "The tools this provider implements, with their declarations",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The catalog",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong consumer token"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CallContext": {
+        "properties": {
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Run Id"
+          },
+          "call_id": {
+            "title": "Call Id",
+            "type": "string"
+          },
+          "release": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Release"
+          },
+          "turn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Turn Id"
+          },
+          "principal": {
+            "$ref": "#/components/schemas/PrincipalClaims"
+          },
+          "subject": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SubjectClaim"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "on_behalf_of": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DelegationClaims"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "call_id",
+          "principal"
+        ],
+        "title": "CallContext",
+        "type": "object"
+      },
+      "DelegationClaims": {
+        "properties": {
+          "subject": {
+            "$ref": "#/components/schemas/SubjectClaim"
+          },
+          "grant_ref": {
+            "title": "Grant Ref",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "subject",
+          "grant_ref"
+        ],
+        "title": "DelegationClaims",
+        "type": "object"
+      },
+      "ExecuteRequest": {
+        "properties": {
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tool"
+          },
+          "args": {
+            "additionalProperties": true,
+            "title": "Args",
+            "type": "object"
+          },
+          "bound_params": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Bound Params",
+            "type": "object"
+          },
+          "context": {
+            "$ref": "#/components/schemas/CallContext"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Idempotency Key"
+          }
+        },
+        "required": [
+          "context"
+        ],
+        "title": "ExecuteRequest",
+        "type": "object"
+      },
+      "ExecuteResponse": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/Status"
+          },
+          "result": {
+            "default": null,
+            "title": "Result"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Source"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolError"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "dataset_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Dataset Run Id"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ExecuteResponse",
+        "type": "object"
+      },
+      "PrincipalClaims": {
+        "properties": {
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Id"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "attrs": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Attrs",
+            "type": "object"
+          },
+          "auth_level": {
+            "default": "session",
+            "title": "Auth Level",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "PrincipalClaims",
+        "type": "object"
+      },
+      "Status": {
+        "type": "string",
+        "enum": [
+          "ok",
+          "error",
+          "timeout",
+          "denied",
+          "uncertain",
+          "step_up_required"
+        ]
+      },
+      "SubjectClaim": {
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "ref": {
+            "title": "Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "title": "SubjectClaim",
+        "type": "object"
+      },
+      "ToolError": {
+        "properties": {
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "message"
+        ],
+        "title": "ToolError",
+        "type": "object"
+      },
+      "ToolInfo": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          },
+          "risk_class": {
+            "title": "Risk Class",
+            "type": "string"
+          },
+          "min_auth_level": {
+            "title": "Min Auth Level",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "idempotent": {
+            "title": "Idempotent",
+            "type": "boolean"
+          },
+          "args_schema": {
+            "additionalProperties": true,
+            "title": "Args Schema",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "risk_class",
+          "min_auth_level",
+          "source",
+          "idempotent",
+          "args_schema"
+        ],
+        "title": "ToolInfo",
+        "type": "object"
+      },
+      "ToolList": {
+        "properties": {
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/ToolInfo"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tools"
+        ],
+        "title": "ToolList",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}
