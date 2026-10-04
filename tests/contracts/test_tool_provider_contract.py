@@ -110,7 +110,7 @@ def test_every_contract_answer_maps_to_the_same_engine_status(
                               "source": "customer_products"}
     if status not in ("ok", "step_up_required"):
         answer["error"] = {"kind": "k", "message": "m"}
-    assert not list(_validator("ExecuteResponse").iter_errors(answer))  # the sample is a valid contract answer
+    assert not list(_validator("ExecuteResponse").iter_errors(answer))  # a valid sample
     provider.answer = httpx.Response(200, json=answer)
 
     key = "action-1" if tool is WRITE else None
