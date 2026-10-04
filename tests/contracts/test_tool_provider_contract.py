@@ -120,8 +120,8 @@ def test_every_contract_answer_maps_to_the_same_engine_status(
     assert result.source == "customer_products"
 
 
-def test_the_contracts_http_statuses_are_handled_without_raising(executor: HttpToolExecutor,
-                                                                provider: Provider) -> None:
+def test_the_contracts_http_statuses_are_handled_without_raising(
+        executor: HttpToolExecutor, provider: Provider) -> None:
     unknown = {"status": "error", "error": {"kind": "unknown_tool", "message": "tool desconocida"}}
     broken = {"status": "error", "error": {"kind": "bad_request", "message": "cuerpo inválido"}}
     assert not list(_validator("ExecuteResponse").iter_errors(unknown))
