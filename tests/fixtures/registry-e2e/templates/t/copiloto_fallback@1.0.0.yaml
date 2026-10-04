@@ -1,5 +1,5 @@
 id: t/copiloto_fallback
 version: 1.0.0
 locales:
-  es: "No pude armar una respuesta verificada; revisa los datos del cliente directamente."
-  pt: "No pude armar una respuesta verificada; revisa los datos del cliente directamente."
+  es: "No pude armar una respuesta verificada con lo que leí. Reformula el pedido (por ejemplo: saldo, último movimiento o estado del caso) o revisa los datos del cliente directamente."
+  pt: "Não consegui montar uma resposta verificada com o que li. Reformule o pedido (por exemplo: saldo, último movimento ou estado do caso) ou consulte os dados do cliente diretamente."

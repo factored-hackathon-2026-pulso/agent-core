@@ -17,15 +17,17 @@ from testing.fakes.tools import FakeToolExecutor
 from testing.realflow_demo import _HANDLERS as _CLIENT_HANDLERS
 from testing.realflow_demo import classifier_provider  # noqa: F401  (se re-exporta como fábrica)
 
+# Más reciente primero: la tool dice «últimos movimientos». El servicio real debe devolverlos así (o con un
+# orden explícito), porque el copiloto no ordena por su cuenta de forma fiable.
 _MOVEMENTS: list[JsonValue] = [
-    {"movement_id": "mv-1", "merchant": "Tienda Aurora", "amount": Decimal("120.50"), "currency": "USD",
-     "posted_at": "2026-09-27", "status": "posted"},
     {"movement_id": "mv-2", "merchant": "Cafe Sol", "amount": Decimal("8.75"), "currency": "USD",
      "posted_at": "2026-09-28", "status": "posted"},
-    {"movement_id": "mv-3", "merchant": "Restaurante Mar", "amount": Decimal("64.20"), "currency": "USD",
-     "posted_at": "2026-08-14", "status": "posted"},
+    {"movement_id": "mv-1", "merchant": "Tienda Aurora", "amount": Decimal("120.50"), "currency": "USD",
+     "posted_at": "2026-09-27", "status": "posted"},
     {"movement_id": "mv-4", "merchant": "Restaurante Brasa", "amount": Decimal("41.00"), "currency": "USD",
      "posted_at": "2026-08-21", "status": "posted"},
+    {"movement_id": "mv-3", "merchant": "Restaurante Mar", "amount": Decimal("64.20"), "currency": "USD",
+     "posted_at": "2026-08-14", "status": "posted"},
 ]
 _PRODUCTS: list[JsonValue] = [
     {"product": "Tarjeta Oro", "balance_due": Decimal("1342.80"), "credit_limit": Decimal("5000.00"),
@@ -89,7 +91,17 @@ def field_classifier(ctx: DemoContext) -> FieldClassifier:
     extra = ("merchant", "posted_at", "transaction_id", "movement_id", "product", "balance_due",
              "credit_limit", "minimum_payment", "due_date", "case_id", "topic", "target_queue", "speaker")
     free_text = ("reason", "summary", "text")
-    return FieldClassifier({**CATALOG, **dict.fromkeys(extra, public), **dict.fromkeys(free_text, untrusted)})
+    # Salida del nodo `agent` del copiloto (flow asistir, `output_schema`). M7 tokeniza todo campo sin
+    # clasificar, y eso dejaba al `respond` sin datos («⟦pii:1⟧»). Las cifras (`valor`) y las fechas ISO
+    # (`fecha`) tienen que llegar tal cual: M8 §3.3 solo respalda una cifra con un valor numérico o una fecha
+    # ISO del hecho citado. `moneda` y `fuente` son enums del esquema. El texto que escribió el modelo
+    # (`resumen`, `concepto`, `detalle`) viaja envuelto como `untrusted_text`: se deriva de texto del
+    # cliente. Se clasifican por nombre porque M7 proyecta con la fuente `agent` y M8 (`find_clear_pii`)
+    # con el nombre del hecho.
+    agent_output = {"valor": FieldRule(field_class="financial"), "moneda": public, "fecha": public,
+                    "fuente": public, "resumen": untrusted, "concepto": untrusted, "detalle": untrusted}
+    return FieldClassifier({**CATALOG, **dict.fromkeys(extra, public), **dict.fromkeys(free_text, untrusted),
+                            **agent_output})
 
 
 def _with_portuguese(artifact: CalibrationArtifact) -> CalibrationArtifact:

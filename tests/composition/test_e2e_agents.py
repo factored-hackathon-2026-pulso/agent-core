@@ -1,5 +1,6 @@
 """Los agentes nuevos de `registry-e2e` (copiloto del asesor y constructor): motor real, LLM guionado."""
 
+import json
 import re
 from decimal import Decimal
 from pathlib import Path
@@ -7,14 +8,20 @@ from pathlib import Path
 import pytest
 
 from agent_core.composition import EngineConfig
+from agent_core.composition.serve_ports import DemoContext
 from agent_core.decision import ProviderError
 from agent_core.decision.providers.jev import JevProvider, JevTransportError
-from agent_core.domain import ActionState, DecisionModelDef, EntityRef, JsonValue, Message, Outcome
+from agent_core.domain import ActionState, DecisionModelDef, EntityRef, JsonValue, Message, Outcome, ToolDef
 from agent_core.guards import LangThresholds
 from agent_core.ports import GenerationResult
+from agent_core.views import FieldClassifier
+from testing import e2e_demo
 from testing.e2e_demo import _with_portuguese as _pt
-from testing.engine_world import EngineWorld, transfer_calibration
+from testing.engine_world import CATALOG, EngineWorld, transfer_calibration
+from testing.fakes.clock import FakeClock
 from testing.fakes.gateway import ScriptedGateway
+from testing.fakes.ids import FakeIds
+from testing.fakes.registry_dir import registry_from_releases
 
 E2E = Path(__file__).parents[1] / "fixtures" / "registry-e2e"
 
@@ -33,7 +40,7 @@ def test_the_copilot_loops_ask_read_answer_and_ask_again() -> None:
 
     for question in ("¿cuánto debe en la tarjeta?", "¿y cuál es su último movimiento?"):
         gateway.push(_gen({"kind": "tool_call", "tool": "leer_productos@1.0.0", "args": {}}))
-        gateway.push(_gen({"kind": "final", "output": {"resumen": "Tiene saldo pendiente."}}))
+        gateway.push(_gen({"kind": "final", "output": {"resumen": "Tiene saldo pendiente.", "datos": []}}))
         gateway.push(_gen({"text": "Tiene saldo pendiente.", "citations": []}))
         w.understands("continue")
         turn = w.turn(question)
@@ -43,6 +50,98 @@ def test_the_copilot_loops_ask_read_answer_and_ask_again() -> None:
         assert turn.status == "open" and len(turn.messages) == 2
     steps = [e.type for e in w.audit.read(turn.run_id)].count("agent_step")
     assert steps == 4  # dos pedidos, dos pasos cada uno
+
+
+class _CopilotGateway(ScriptedGateway):
+    """Guion del nodo `agent`; la redacción del `respond` cita el hecho que recibe (no conoce su id antes)."""
+
+    def __init__(self, draft: str) -> None:
+        super().__init__()
+        self._draft = draft
+
+    def generate(self, prompt: EntityRef, inputs_model_view: dict[str, JsonValue], locale: str,
+                 schema: dict[str, JsonValue] | None = None) -> GenerationResult:
+        facts = inputs_model_view.get("facts")
+        if isinstance(facts, dict):  # el `respond`: cita lo que M8 le entrega
+            cited = [entry["fact_id"] for entry in facts.values() if isinstance(entry, dict)]
+            self.push(_gen({"text": self._draft, "citations": cited}))
+        return super().generate(prompt, inputs_model_view, locale, schema)
+
+
+def _copilot_world(gateway: ScriptedGateway, classifier: FieldClassifier) -> EngineWorld:
+    w = EngineWorld(registry_root=E2E, releases=("copiloto-demo",), agent="copiloto-asesor", gateway=gateway,
+                    calibrations={"cal-transfer-demo": transfer_calibration()}, field_classifier=classifier)
+    for tool_id in ("leer_movimientos", "leer_productos", "leer_pqr_cliente", "obtener_handoff",
+                    "leer_transcript"):
+        definition = w.registry.get(EntityRef(id=tool_id, version="1.0.0"), ToolDef)
+        w.tools.register(definition, handler=e2e_demo._HANDLERS[tool_id])
+    return w
+
+
+def _ask_the_copilot(classifier: FieldClassifier) -> tuple[str, dict[str, JsonValue]]:
+    """El asesor pregunta el saldo; devuelve la respuesta y lo que vio el modelo que redacta."""
+    gateway = _CopilotGateway("El saldo adeudado de la Tarjeta Oro es de 1342.80 USD, según los productos.")
+    gateway.push(_gen({"kind": "tool_call", "tool": "leer_productos@1.0.0", "args": {}}))
+    gateway.push(_gen({"kind": "final", "output": {
+        "resumen": "El cliente tiene un saldo pendiente.",
+        "datos": [{"concepto": "saldo adeudado Tarjeta Oro", "fuente": "productos",
+                   "valor": Decimal("1342.80"), "moneda": "USD"}]}}))
+    w = _copilot_world(gateway, classifier)
+    w.start()
+    w.understands("continue")
+    turn = w.turn("¿cuánto debe en la tarjeta?")
+    drafting = gateway.calls[-1].inputs  # la última llamada es la redacción
+    assert "facts" in drafting
+    return turn.messages[0].text, drafting
+
+
+def test_the_copilot_answer_carries_the_figure_when_the_agent_output_fields_are_classified() -> None:
+    """Hallazgo del E2E: `resumen` sin clasificar se tokenizaba y el copiloto decía «contiene PII»."""
+    text, drafting = _ask_the_copilot(e2e_demo.field_classifier(_demo_context()))
+    assert "1342.80 USD" in text
+    shown = json.dumps(drafting, default=str, ensure_ascii=False)
+    assert "⟦" not in shown and "1342.8" in shown
+    # el texto que escribió el modelo viaja envuelto como dato no confiable; la cifra, tal cual
+    assert "<datos_no_confiables" in shown
+
+
+def test_the_copilot_falls_back_to_the_template_when_the_agent_output_fields_are_not_classified() -> None:
+    """Contrapeso: sin clasificar la salida del agente, M7 tokeniza todo y M8 no respalda la cifra."""
+    text, drafting = _ask_the_copilot(FieldClassifier(CATALOG))
+    assert "⟦pii:" in json.dumps(drafting, ensure_ascii=False)
+    assert "1342.80" not in text  # el borrador no pasó M8 (cifra sin fuente): respondió la plantilla
+
+
+def _schema_property_names(schema: dict[str, JsonValue]) -> set[str]:
+    names: set[str] = set()
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        for name, child in properties.items():
+            names.add(name)
+            if isinstance(child, dict):
+                names |= _schema_property_names(child)
+    items = schema.get("items")
+    if isinstance(items, dict):
+        names |= _schema_property_names(items)
+    return names
+
+
+def test_every_field_of_the_copilot_output_schema_has_an_explicit_class_in_the_demo_catalog() -> None:
+    import yaml
+
+    flow = yaml.safe_load((E2E / "flows" / "asistir@1.0.0.yaml").read_text("utf-8"))
+    agent = next(n for n in flow["nodes"] if n["type"] == "agent")
+    fields = _schema_property_names(agent["config"]["output_schema"])
+    classifier = e2e_demo.field_classifier(_demo_context())
+    assert fields >= {"resumen", "datos", "valor", "fecha", "fuente"}
+    unclassified = {f for f in fields if f != "datos" and classifier.lookup(f"agent.datos.{f}") is None
+                    and classifier.lookup(f"agent.{f}") is None}
+    assert unclassified == set()  # M7 trata lo no clasificado como pii_direct y lo tokeniza
+
+
+def _demo_context() -> DemoContext:
+    registry = registry_from_releases(E2E, ("copiloto-demo",))
+    return DemoContext(clock=FakeClock(), ids=FakeIds(), registry=registry)
 
 
 def test_the_constructor_flow_writes_a_draft_proposal_and_validates_it_without_approving() -> None:
@@ -135,7 +234,7 @@ def test_the_run_switches_between_spanish_and_portuguese_when_the_thresholds_are
         w.start()
         texts = ("Qual é o saldo devedor do cartão do cliente?", "¿Cuál es el último movimiento del cliente?")
         for text in texts:
-            gateway.push(_gen({"kind": "final", "output": {"resumen": "ok"}}))
+            gateway.push(_gen({"kind": "final", "output": {"resumen": "ok", "datos": []}}))
             gateway.push(_gen({"text": "ok", "citations": []}))
             w.understands("continue")
             turn = w.turn(text)

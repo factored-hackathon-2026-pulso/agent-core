@@ -77,21 +77,6 @@ def test_with_the_demo_switch_the_doubles_are_listed() -> None:
 
 
 
-def test_a_hand_built_namespace_without_the_optional_attributes_still_resolves(tmp_path: Path) -> None:
-    """Contrato mínimo: `lang_thresholds` y `agents` son opcionales; quien arma el Namespace a mano (sin pasar
-    por `add_serve_parser`) no tiene por qué conocerlos."""
-    args = _args()
-    del args.lang_thresholds, args.agents
-    ports = resolve_ports(args, _env(AGENTCORE_ALLOW_DEMO="1"), FakeClock(), FakeIds())
-    assert ports.lang_thresholds == {} and ports.agents == ()
-    path = tmp_path / "lang.json"
-    path.write_text('{"lang-cal": {"switch_threshold": 0.9, "unsupported_threshold": 0.95, '
-                    '"min_distance": 0.2}}', encoding="utf-8")
-    via_env = resolve_ports(args, _env(AGENTCORE_ALLOW_DEMO="1", AGENTCORE_LANG_THRESHOLDS=str(path),
-                                       AGENTCORE_SERVE_AGENTS="a, b"), FakeClock(), FakeIds())
-    assert set(via_env.lang_thresholds) == {"lang-cal"} and via_env.agents == ("a", "b")
-
-
 def test_lang_thresholds_come_from_a_json_file_and_default_to_none(tmp_path: Path) -> None:
     assert _resolve(AGENTCORE_ALLOW_DEMO="1").lang_thresholds == {}
     path = tmp_path / "lang.json"

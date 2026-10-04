@@ -29,7 +29,7 @@ def test_the_report_counts_turns_tools_agent_steps_and_cost_of_a_copilot_run() -
                     calibrations={"cal-transfer-demo": transfer_calibration()})
     w.start()
     gateway.push(_gen({"kind": "tool_call", "tool": "leer_productos@1.0.0", "args": {}}))
-    gateway.push(_gen({"kind": "final", "output": {"resumen": "Tiene saldo."}}))
+    gateway.push(_gen({"kind": "final", "output": {"resumen": "Tiene saldo.", "datos": []}}))
     gateway.push(_gen({"text": "Tiene saldo.", "citations": []}))
     w.understands("continue")
     turn = w.turn("¿cuánto debe?")

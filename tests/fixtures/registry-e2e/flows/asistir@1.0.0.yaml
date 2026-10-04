@@ -13,12 +13,28 @@ nodes:
       goal: "Responder al asesor el pedido sobre el cliente que atiende, usando solo lo que leas con las tools."
       save_as: hallazgo
       input_view: [slots.pedido]
+      # Las cifras y fechas van en `datos` como valores sueltos (M8 §3.3 solo respalda una cifra con un valor
+      # numérico o una fecha ISO del hecho citado, nunca con texto libre) y su clase se declara en el
+      # FieldClassifier (testing/e2e_demo.py): sin clasificar, M7 tokeniza todo campo de la salida del agente.
       output_schema:
         type: object
         additionalProperties: false
-        required: [resumen]
+        required: [resumen, datos]
         properties:
           resumen: {type: string}
+          datos:
+            type: array
+            items:
+              type: object
+              additionalProperties: false
+              required: [concepto, fuente]
+              properties:
+                concepto: {type: string}
+                valor: {type: number}
+                moneda: {type: string, enum: [USD, COP, MXN, ARS]}
+                fecha: {type: string}
+                detalle: {type: string}
+                fuente: {type: string, enum: [productos, movimientos, pqr, traspaso, conversacion]}
     next: {answered: responder, gave_up: no_pude}
   - {id: responder, type: respond,
      config: {generate: {prompt_ref: p/respuesta_asesor@1, allowed_facts: [facts.hallazgo], purpose: advisor_view, fallback_template_ref: t/copiloto_fallback@1}},
