@@ -115,3 +115,23 @@ programar quien despliega, con las mismas variables:
   `--app-role`).
 - `agentcore sweep --once`: cierra como `abandoned` los runs vencidos. Programarlo cada pocos minutos.
 - `agentcore relay`: publica el outbox en SNS (servicio, un líder por candado asesor).
+
+## 8. Credencial del motor de mejora (`builder`)
+
+El motor de mejora escribe en el registry con una credencial de servicio emitida por el emisor del staff
+(Terraform genera el par Ed25519; en `serve` solo entra la clave pública en `--staff-keys` /
+`AGENTCORE_STAFF_KEYS_FILE`, con su `kid`). Forma del principal: `type = builder`, `roles = ["constructor"]`,
+sin `attrs.actor` (nunca humano), `auth.level = session`. Lo que el servidor le permite o niega no depende de lo
+que el token reclame, sino de las reglas de `agent_core/registry/roles.py`:
+
+| Operación | Resultado |
+|---|---|
+| crear propuesta, escribir borrador, validar, congelar, reabrir, evaluar (`/v1/registry/proposals/*`) | permitido |
+| leer propuestas, alias, versiones, releases, entidades y linaje | permitido (el linaje exige `constructor`) |
+| aprobar, rechazar, publicar, promover alias, revocar, importar semilla | **403 `forbidden_role`** (exigen persona con `aprobador`/`admin` y `step_up`) |
+
+Probado en modo `serve` en `tests/composition/test_serve_engine_builder.py`. **Rotar la clave del motor no
+requiere reiniciar ningún servicio:** se añade la clave nueva (con su `kid`) al archivo de staff-keys, `serve` la
+lee en ≤ `AGENTCORE_KEYS_RELOAD_SECONDS` (5 s) sin reiniciar, se emiten los tokens con el `kid` nuevo y se retira el
+viejo después (`tests/m09/test_identity_keys_reload.py`, `tests/m09/test_jws_identity.py::test_rotation_by_kid`).
+La carga es idempotente y ningún error imprime material de clave (mensajes con el nombre del mapa y el `kid`).
