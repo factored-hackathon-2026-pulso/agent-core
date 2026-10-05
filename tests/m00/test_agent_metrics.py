@@ -40,7 +40,7 @@ def test_agent_caps_metric_count() -> None:
 
 
 def test_schema_version_bumped_and_contracts_publish_the_new_types() -> None:
-    assert SCHEMA_VERSION == "1.4.0"
+    assert SCHEMA_VERSION == "1.5.0"
     files = render_contracts()
     for name in ("MetricDef", "MetricExpr", "JudgeExpr", "Predicate", "AlertThreshold"):
         json.loads(files[f"schemas/{name}.json"])

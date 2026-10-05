@@ -193,6 +193,11 @@
       "additionalProperties": false,
       "description": "Configuración del nodo `collect` (M0 §2.5).",
       "properties": {
+        "capture_start": {
+          "default": false,
+          "title": "Capture Start",
+          "type": "boolean"
+        },
         "max_attempts": {
           "default": 2,
           "exclusiveMinimum": 0,
@@ -919,7 +924,8 @@
             "type",
             "regex",
             "enum",
-            "decide"
+            "decide",
+            "extract"
           ],
           "title": "Kind",
           "type": "string"

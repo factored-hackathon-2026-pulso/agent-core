@@ -12,6 +12,7 @@ from agent_core.actions import ActionManager
 from agent_core.domain import (
     Agent,
     Awaiting,
+    CollectNode,
     Command,
     EngineError,
     EngineEvent,
@@ -603,7 +604,12 @@ class TurnEngine:
             first = mentioned[0][0]
             frame.state = start_flow(frame.state, first)
             queued = queue_mentioned(self._registry, frame, outcome, skip=first.id)
-            frame.resume = NO_RESUME
+            entry = first.nodes[0]
+            captures = isinstance(entry, CollectNode) and entry.config.capture_start
+            turn = frame.turn
+            assert turn is not None
+            # M2 D16: el texto que arranca el flow responde al primer `collect` con `capture_start`
+            frame.resume = Resume("slot_answer", turn.text, carry=True) if captures else NO_RESUME
             self._advance_turn(frame)
         else:
             queued = queue_mentioned(self._registry, frame, outcome, skip=state.active_flow.flow.id)

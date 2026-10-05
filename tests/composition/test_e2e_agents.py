@@ -240,8 +240,9 @@ def test_the_agent_slot_takes_an_id_and_not_a_sentence() -> None:
     validator = SlotValidator.model_validate(config["validator"])
 
     assert validate_slot(validator, "cobros") == (True, "cobros")
-    sentence = "Agente: cobros. Objetivo: un agente nuevo que atienda los casos de tipo Cobro indebido"
-    assert validate_slot(validator, sentence) == (False, None)
+    assert validate_slot(validator, "Agente: cobros. Objetivo: un agente nuevo para cobro indebido") == (
+        True, "cobros")  # la frase con la que la plataforma abre el chat
+    assert validate_slot(validator, "quiero cambiar el agente de cobros por favor") == (False, None)
     assert validate_slot(validator, "Cobros") == (False, None)
 
 
@@ -315,4 +316,5 @@ def test_the_seeded_agents_that_serve_customers_have_an_eval_suite() -> None:
     for agent_id, suite in by_agent.items():
         allowed = {str(t).split("@")[0] for t in agents[agent_id].tools_allowed}
         for scenario in suite.scenarios:
-            assert set(scenario.seed.tools) <= allowed, (agent_id, scenario.id)  # el sandbox solo siembra sus tools
+            # el sandbox solo siembra las tools del agente
+            assert set(scenario.seed.tools) <= allowed, (agent_id, scenario.id)

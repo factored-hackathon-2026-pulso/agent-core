@@ -48,6 +48,7 @@ class Resume:
     kind: ResumeKind = "none"
     value: JsonValue = None
     token: str | None = None  # token de confirmación del botón (M3 `answer`)
+    carry: bool = False  # el texto que arrancó el flow: lo ofrecen los `collect` con `capture_start` (M2 D16)
 
 
 NO_RESUME = Resume()

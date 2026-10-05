@@ -81,7 +81,7 @@ Entrada: `UnderstandResult` con `command`, `p_cal` y la marca `below_threshold` 
 
 ### 3.3 Flow activo e intenciones pendientes
 
-- Sin flow activo y `command = start_flow` → `interpreter.start_flow(flow)`; `additional_flows` van a `pending_intents`.
+- Sin flow activo y `command = start_flow` → `interpreter.start_flow(flow)`; `additional_flows` van a `pending_intents`. Si el nodo de entrada es un `collect` con `capture_start`, el texto del turno se ofrece como `slot_answer` con `carry` (M2 D16); si no, `NO_RESUME`.
 - Con flow activo: `start_flow` y `additional_flows` van a `pending_intents`, ordenadas por `flow.priority` desc y, en empate, por `mention_order`; se agrega un acuse al mensaje.
 - Una intención pendiente no invalida una acción esperando confirmación.
 - Al terminar el flow activo con pendientes: se ofrece la primera (plantilla) y el run queda esperando; solo arranca con `affirm`. Con `deny` se descarta esa intención y se ofrece la siguiente; si era la última, no se ofrece nada y la conversación sigue en modo normal (plantilla del agente). Si la respuesta no es `affirm` ni `deny`, la oferta sigue vigente una vez más y luego se descarta; cada uno de esos turnos suma a `repair_turns_used`. El `deny` nunca escala: la escalada es solo el tope global `max_repair_turns_per_run` (decisión P1, 2026-09-29).

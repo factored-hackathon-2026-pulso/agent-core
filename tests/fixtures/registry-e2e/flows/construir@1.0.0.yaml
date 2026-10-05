@@ -7,9 +7,10 @@ nodes:
   config:
     slot: agente
     prompt_ref: t/pedir_agente
+    capture_start: true
     validator:
-      kind: regex
-      value: '[a-z0-9][a-z0-9_-]{0,63}'
+      kind: extract
+      value: '^\s*(?i:agente\s*:\s*)?([a-z0-9][a-z0-9_-]{0,63})\s*(?:[.;,\n]|$)'
     max_attempts: 3
   next:
     ok: pedir_objetivo
@@ -19,6 +20,10 @@ nodes:
   config:
     slot: objetivo
     prompt_ref: t/pedir_objetivo
+    capture_start: true
+    validator:
+      kind: extract
+      value: '^(?:.*?(?i:objetivo)\s*:\s*)?(?!(?i:agente)\s*:\s*[a-z0-9_-]+\s*[.;,]?\s*$)(\S.*)$'
     max_attempts: 3
   next:
     ok: redactar

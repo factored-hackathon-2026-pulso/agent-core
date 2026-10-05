@@ -39,6 +39,15 @@ def validate_slot(validator: SlotValidator | None, raw: JsonValue) -> tuple[bool
             except re.error:
                 ok = False
             return ok, text if ok else None
+        case "extract":
+            try:
+                found = re.search(str(validator.value), text, re.DOTALL)
+            except re.error:
+                return False, None
+            if found is None or found.lastindex is None:
+                return False, None
+            captured = found.group(1).strip()
+            return bool(captured), captured or None
         case "enum":
             allowed = validator.value if isinstance(validator.value, list) else []
             for option in allowed:
@@ -62,6 +71,8 @@ def handle_collect(node: CollectNode, state: RunState, ctx: StepContext, resume:
     if resume.kind != "slot_answer":
         return ask()
     ok, value = validate_slot(cfg.validator, resume.value)
+    if not ok and resume.carry:  # el texto de arranque no traía este dato: se pregunta, sin gastar intentos
+        return ask()
     if ok:
         slot = Slot(value=value, status="validated", source_turn=state.turn_count)
         state = clear_attempts(state, node.id).model_copy(update={"slots": {**state.slots, cfg.slot: slot}})

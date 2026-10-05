@@ -42,7 +42,7 @@ PositiveTimedelta = Annotated[timedelta, AfterValidator(_positive)]
 
 class SlotValidator(Model):
     """Validador de un slot recolectado (M0 §2.5)."""
-    kind: Literal["type", "regex", "enum", "decide"]
+    kind: Literal["type", "regex", "enum", "decide", "extract"]
     value: JsonValue
 
 
@@ -74,6 +74,7 @@ class CollectConfig(Model):
     prompt_ref: RefSpec
     validator: SlotValidator | None = None  # None: texto no vacío
     max_attempts: PositiveInt = 2
+    capture_start: bool = False  # el texto que arranca el flow también responde a este `collect` (M2 D16)
 
 
 class ToolConfig(Model):
