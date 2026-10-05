@@ -97,7 +97,7 @@ SPEC_METHODS: dict[str, set[str]] = {
     "AuditSink": {"read", "append_outside_turn"},
     "Outbox": {"pending", "mark_delivered"},
     "LLMGateway": {"generate"},
-    "TranscriptStore": {"append", "read", "recent_turns"},
+    "TranscriptStore": {"append", "write_turn", "read", "recent_turns"},
     "KnowledgeSource": {"capabilities", "index", "read"},
     "KeyProvider": {"current_kid", "key"},
     "CostCounters": {"spent_today", "hits"},

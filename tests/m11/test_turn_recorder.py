@@ -51,3 +51,13 @@ def test_fingerprints_are_computed_before_any_write() -> None:
     with pytest.raises(KeyError):
         recorder.record_turn("run-0001", "turn-0001", "hola", "ok", [])
     assert store.read("run-0001") == []
+
+
+def test_retrying_a_turn_after_a_store_failure_leaves_one_copy_of_each_entry() -> None:
+    store, _, recorder = make()
+    store.fail_next()
+    with pytest.raises(TranscriptWriteError):
+        recorder.record_turn("run-0001", "turn-0001", "hola", "respuesta", REJECTED)
+    recorder.record_turn("run-0001", "turn-0001", "hola", "respuesta", REJECTED)
+    recorder.record_turn("run-0001", "turn-0001", "hola", "respuesta", REJECTED)  # reintento tras éxito
+    assert [e.role for e in store.read("run-0001")] == ["user", "rejected_draft", "assistant"]

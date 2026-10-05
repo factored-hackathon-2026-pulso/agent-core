@@ -11,6 +11,10 @@ from tests.contracts.test_transcript_contract import (  # noqa: F401  (se corren
     test_append_returns_distinct_ids_and_read_keeps_order,
     test_read_is_scoped_by_run,
     test_recent_turns_returns_last_n_entries_oldest_first,
+    test_write_turn_does_not_touch_other_runs_or_turns,
+    test_write_turn_is_idempotent_and_the_last_attempt_wins,
+    test_write_turn_refuses_entries_of_another_run_or_turn_and_writes_nothing,
+    test_write_turn_stores_the_entries_in_order_and_returns_their_ids,
 )
 from tests.support.pg import ADMIN_DSN, postgres_store
 

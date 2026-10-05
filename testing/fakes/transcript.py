@@ -33,6 +33,22 @@ class InMemoryTranscript:
             self._entries.setdefault(entry.run_id, []).append((entry_id, deepcopy(entry)))
             return entry_id
 
+    def write_turn(self, run_id: str, turn_id: str, entries: list[TranscriptEntry]) -> list[str]:
+        if any(e.run_id != run_id or e.turn_id != turn_id for e in entries):
+            raise ValueError("todas las entradas deben ser del run y el turno indicados")
+        with self._lock:
+            if self._failures > 0:
+                self._failures -= 1
+                raise TranscriptUnavailable("store caído")
+            kept = [(i, e) for i, e in self._entries.get(run_id, []) if e.turn_id != turn_id]
+            ids: list[str] = []
+            for entry in entries:
+                self._count += 1
+                ids.append(f"entry-{self._count:04d}")
+                kept.append((ids[-1], deepcopy(entry)))
+            self._entries[run_id] = kept
+            return ids
+
     def read(self, run_id: str) -> list[TranscriptEntry]:
         with self._lock:
             return [deepcopy(e) for _, e in self._entries.get(run_id, [])]
