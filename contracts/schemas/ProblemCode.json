@@ -14,11 +14,14 @@
     "turn_in_progress",
     "handoff_already_resolved",
     "idempotency_conflict",
+    "idempotency_in_progress",
     "run_closed",
     "invalid_request",
     "rate_limited",
     "cost_budget_exceeded",
-    "internal_error"
+    "internal_error",
+    "identity_unavailable",
+    "payload_too_large"
   ],
   "title": "ProblemCode",
   "type": "string"

@@ -14,6 +14,7 @@ from agent_core.registry.errors import HTTP_STATUS, RegistryError, RegistryError
 from agent_core.registry.evaluation.report import EvalReport
 from agent_core.registry.models import (
     AliasChange,
+    AliasState,
     Approval,
     EntityDraft,
     EntityVersion,
@@ -23,6 +24,7 @@ from agent_core.registry.models import (
     ReleaseDetail,
     ReleaseDiff,
     RunLineage,
+    VersionSummary,
 )
 from agent_core.registry.roles import require_builder
 from agent_core.registry.service import ProposalDetail, ProposalPage, RegistryService, ValidationReport
@@ -96,6 +98,13 @@ class _Promote(BaseModel):
     reason: str = ""
 
 
+# Cuerpos de request con nombre público: `agentcore contracts` los publica en `contracts/registry/` (N-01).
+REQUEST_BODIES: dict[str, type[BaseModel]] = {
+    "CreateProposalBody": _Create, "PutDraftBody": _Draft, "EvaluateBody": _Evaluate,
+    "ApproveBody": _Approve, "ReasonBody": _Reason, "PromoteBody": _Promote,
+}
+
+
 class _Problem(Response):
     media_type = "application/problem+json"
 
@@ -125,6 +134,9 @@ def _problem(request: Request, exc: RegistryError) -> Response:
     elif exc.payload is not None:
         body["payload"] = exc.payload
     return _Problem(dumps(body), status_code=status)
+
+
+problem_response = _problem  # para extensiones hermanas (p. ej. la exportación, N-08)
 
 
 def _bearer(authorization: str | None) -> str:
@@ -248,6 +260,17 @@ def registry_extension(service: RegistryService, verifier: IdentityVerifier | No
         ) -> Response:
             actor = who(request, authorization)
             return _json(service.promote(actor, agent_id, alias, body.release_id, body.reason))
+
+        @router.get("/aliases/{agent_id}/{alias}", **_doc(AliasState, 200, 404))
+        def alias_state(request: Request, agent_id: str, alias: str, authorization: Auth = None) -> Response:
+            who(request, authorization)
+            return _json(service.get_alias(agent_id, alias))
+
+        @router.get("/versions/{kind}/{eid:path}", **_doc(list[VersionSummary], 200, 404))
+        def versions(request: Request, kind: str, eid: str, authorization: Auth = None) -> Response:
+            """Versiones de una entidad, de la más antigua a la más reciente (`eid` admite `/`)."""
+            who(request, authorization)
+            return _json(service.list_versions(kind, eid))
 
         @router.post("/releases/{rid}/revoke", **_doc(ReleaseDetail, 200, 404, 409))
         def revoke(request: Request, rid: str, body: _Reason, authorization: Auth = None) -> Response:

@@ -41,7 +41,7 @@ def test_output_is_canonical_lf_sorted_with_generated_header() -> None:
     for rel, content in render_contracts().items():
         assert "\r" not in content
         assert content.endswith("\n") and not content.endswith("\n\n")
-        if rel.startswith("schemas/"):
+        if rel.startswith(("schemas/", "events/")):
             parsed = json.loads(content)
             assert "no editar a mano" in parsed["$comment"]
             assert content == json.dumps(parsed, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
@@ -49,7 +49,7 @@ def test_output_is_canonical_lf_sorted_with_generated_header() -> None:
 
 def test_names_are_safe_file_names() -> None:
     for rel in render_contracts():
-        assert re.fullmatch(r"VERSION|schemas/[A-Za-z][A-Za-z0-9]*\.json", rel)
+        assert re.fullmatch(r"VERSION|(schemas|events|registry)/[A-Za-z][A-Za-z0-9]*\.json", rel)
 
 
 def test_schema_uses_wire_aliases() -> None:

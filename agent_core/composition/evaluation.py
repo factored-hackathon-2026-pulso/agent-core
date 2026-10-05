@@ -26,6 +26,7 @@ from agent_core.ports import (
     AuthzPort,
     Clock,
     GenerationResult,
+    IdKind,
     IdSource,
     KeyProvider,
     LLMGateway,
@@ -97,6 +98,9 @@ class EngineScenarioHarness:
     def run(self, target: EvalTarget, agent_id: str, scenario: Scenario,
             tools: ToolExecutor) -> list[EngineEvent]:
         storage = self._storage()
+        # La base de evaluación es persistente: una clave derivada solo del escenario devolvería los eventos
+        # del primer run sin ejecutar nada. Cada ejecución (etiqueta, escenario, repetición) lleva su id.
+        idempotency_key = f"eval-{self._ids.new_id(IdKind.eval_run)}-{target.label}-{scenario.id}"
         probe = _ProbingGateway(self._gateway)
         provider_failures: list[str] = []
         providers = {name: _ProbingProvider(p, provider_failures)
@@ -114,7 +118,7 @@ class EngineScenarioHarness:
             principal = self._principal(scenario, step.auth)
             if step.op == "start":
                 data: dict[str, Any] = {"agent": AgentSelector(id=agent_id, alias="prod"),
-                                        "idempotency_key": f"eval-{scenario.id}"}
+                                        "idempotency_key": idempotency_key}
                 if step.lang is not None:
                     data["lang"] = step.lang
                 result = engine.start_run(principal, None, RunInput.model_validate(data))

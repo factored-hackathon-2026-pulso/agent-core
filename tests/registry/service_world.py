@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 
-from agent_core.domain import EntityKind, MetricDef
+from agent_core.domain import EntityKind, MetricDef, Principal
 from agent_core.registry.candidate import release_hash
 from agent_core.registry.entities import content_hash, encode_entity, version_ref
 from agent_core.registry.evaluation.ports import EvalRequest
@@ -78,11 +78,11 @@ SUITE = suite_draft()
 ANA = human()
 
 
-def publish_cycle(w: World, drafts: list[EntityDraft], *, key: str = "k") -> str:
+def publish_cycle(w: World, drafts: list[EntityDraft], *, key: str = "k", actor: Principal = ANA) -> str:
     """One person's full cycle: create, draft, freeze, evaluate with `disputas-suite`, approve and publish.
     Returns the published release id."""
     p = w.service.create_proposal(ANA, AGENT, Origin.manual, "change")
-    w.service.put_draft(ANA, p.proposal_id, drafts, expected_rev=0)
+    w.service.put_draft(actor, p.proposal_id, drafts, expected_rev=0)
     w.service.freeze(ANA, p.proposal_id)
     w.service.evaluate(ANA, p.proposal_id, "disputas-suite")
     h = w.service.get_proposal(p.proposal_id).proposal.candidate_hash or ""

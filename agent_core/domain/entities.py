@@ -2,7 +2,7 @@
 
 import re
 from collections.abc import Mapping
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
 from types import MappingProxyType
@@ -12,7 +12,7 @@ from pydantic import Field, NonNegativeInt, PositiveInt, StringConstraints, mode
 
 from agent_core.domain.base import EntityId, ExactVersion, Locale, Model, Sha256Hex
 from agent_core.domain.errors import InvalidRuntimeRef
-from agent_core.domain.identity import AuthLevel, PrincipalType
+from agent_core.domain.identity import AuthInfo, AuthLevel, PrincipalType
 from agent_core.domain.json import JsonValue
 from agent_core.domain.knowledge import (
     MAX_PAGE_SOURCE_REFS,
@@ -26,7 +26,7 @@ from agent_core.domain.metrics import MetricDef
 from agent_core.domain.nodes import Node, PositiveTimedelta
 from agent_core.domain.outcomes import Mode
 from agent_core.domain.refs import EntityKind, EntityRef, RefSpec, require_exact_refs
-from agent_core.domain.transfer import RoutingCard, TransferContract
+from agent_core.domain.transfer import AcceptedSlot, RoutingCard, TransferContract
 
 # Dinero y tarifas: `Decimal` finito (nunca `float`; NaN e Infinity se rechazan).
 PositiveMoney = Annotated[Decimal, Field(gt=0, allow_inf_nan=False)]
@@ -81,11 +81,16 @@ class Agent(Model):
     metrics: list[MetricDef] = Field(default_factory=list, max_length=32)  # ADR 0020; the engine ignores them
     routing: RoutingCard | None = None  # without a card the agent is in no directory (ADR 0021)
     accepts: TransferContract | None = None  # without a contract the agent receives no transfers
+    # Contract of the `input` of a `task` run. With it, `start_run` validates the input and the slots enter
+    # as `validated` (the caller is an authenticated service, not a user's claim); without it: `claimed`.
+    input_schema: dict[str, AcceptedSlot] | None = None
 
     @model_validator(mode="after")
     def _default_locale_supported(self) -> "Agent":
         if self.default_locale not in self.supported_locales:
             raise ValueError("default_locale debe estar en supported_locales")
+        if self.input_schema is not None and self.mode != "task":
+            raise ValueError("input_schema solo aplica a agentes de modo task")
         return self
 
 
@@ -116,6 +121,9 @@ class Interrupt(Model):
     priority: int
     action: Annotated[EscalateAction | StartFlowAction, Field(discriminator="type")]
     signal_policy: RefSpec | None = None
+    # Guardarraíl de plataforma: ninguna propuesta puede quitarla, bajarle la prioridad ni cambiarle la acción
+    # (solo se fija al sembrar o con el rol admin). Una candidata que la pierda no pasa la validación.
+    locked: bool = False
 
 
 class LanguageDetection(Model):
@@ -307,6 +315,16 @@ class ToolDef(Model):
     @property
     def is_write(self) -> bool:
         return self.risk_class not in (RiskClass.read, RiskClass.compute)
+
+    def accepts(self, auth: AuthInfo, at: datetime | None) -> bool:
+        """Whether `auth` is enough for this tool at instant `at` (ADR 0010): the level and, when the tool
+        declares `max_auth_age`, how old the authentication is. Without an instant the age cannot be checked,
+        so a tool with `max_auth_age` is refused (fails closed)."""
+        if auth.level < self.min_auth_level:
+            return False
+        if self.max_auth_age is None:
+            return True
+        return at is not None and at - auth.at <= self.max_auth_age
 
     @model_validator(mode="after")
     def _write_needs_readback(self) -> "ToolDef":

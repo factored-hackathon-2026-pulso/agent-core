@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from agent_core.domain.base import Model
+from agent_core.domain.base import Model, UtcDatetime
 from agent_core.domain.entities import ToolDef
 from agent_core.domain.identity import AuthLevel, OnBehalfOf, Principal, SubjectRef
 from agent_core.domain.json import JsonValue
@@ -18,6 +18,8 @@ class ToolCallContext(Model):
     on_behalf_of: OnBehalfOf | None = None
     subject: SubjectRef | None = None
     turn_id: str | None = None
+    # Instante del turno (Clock), para `ToolDef.max_auth_age` (ADR 0010); None fuera de un turno.
+    at: UtcDatetime | None = None
 
 
 class ToolResult(Model):

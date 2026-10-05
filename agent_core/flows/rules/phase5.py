@@ -187,6 +187,17 @@ def _read_sites(ctx: Ctx, node: object) -> Iterator[_Site]:
             )
 
 
+def slot_reads(ctx: Ctx) -> dict[str, list[str]]:
+    """Slots que el flow lee (nombre -> ids de nodo que los leen)."""
+    found: dict[str, list[str]] = {}
+    for node in ctx.flow.nodes:
+        for site in _read_sites(ctx, node):
+            for path in site.paths:
+                if path.ns == "slots" and path.name is not None:
+                    found.setdefault(path.name, []).append(node.id)
+    return found
+
+
 def g0_10(ctx: Ctx) -> Iterator[Violation]:
     for node in ctx.flow.nodes:
         for site in _read_sites(ctx, node):

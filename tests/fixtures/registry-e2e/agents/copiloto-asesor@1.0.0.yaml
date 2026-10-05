@@ -1,0 +1,24 @@
+id: copiloto-asesor
+version: 1.0.0
+mode: conversational
+entry_flow: asistir@1
+invocable_by: [advisor]
+min_auth_level: session
+subject_kinds: [customer]
+supported_locales: [es, pt]
+default_locale: es
+understand: understand-copiloto@1
+tools_allowed: [leer_movimientos@1, leer_productos@1, leer_pqr_cliente@1, obtener_handoff@1, leer_transcript@1]
+budgets: {max_nodes_per_turn: 40, max_model_calls_per_turn: 8, max_tokens_per_run: 60000, max_cost_per_run: 1.00, max_wall_ms_per_turn: 60000}
+inactivity_ttl: PT2H
+templates:
+  clarify: t/aclarar
+  abstain: t/abstencion
+  handoff: t/traspaso
+  pending_ack: t/acuse
+  pending_offer: t/oferta
+  unsupported_language: t/idioma_no_soportado
+  input_too_large: t/mensaje_largo
+max_clarifications: 2
+on_clarify_exhausted: end
+default_target_queue: general

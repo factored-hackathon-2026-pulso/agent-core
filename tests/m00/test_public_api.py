@@ -15,7 +15,7 @@ def test_domain_exports() -> None:
                  "GatewayError", "GatewayErrorKind", "KnowledgePage", "KnowledgeSnapshot", "KnowledgeNode",
                  "KnowledgeView", "PageMeta", "PageView", "PageRecord", "Purpose", "KnowledgeRead"]:
         assert hasattr(domain, name), name
-    assert domain.SCHEMA_VERSION == "1.3.0"
+    assert domain.SCHEMA_VERSION == "1.4.0"
 
 
 def test_ports_exports() -> None:
@@ -91,6 +91,7 @@ SPEC_METHODS: dict[str, set[str]] = {
     "UnitOfWork": {"acquire_turn", "release_turn", "load_run", "find_run_by_session", "list_runs_by_session",
                    "save_run",
                    "get_turn_result", "put_turn_result", "get_run_idempotency", "put_run_idempotency",
+                   "reserve_run_idempotency", "release_run_idempotency",
                    "put_handoff", "get_handoff", "append_events", "last_event", "enqueue_outbox", "add_usage",
                    "list_inactive", "commit", "__enter__", "__exit__"},
     "AuditSink": {"read", "append_outside_turn"},
@@ -123,7 +124,7 @@ def test_tool_result_fields_match_spec() -> None:
     assert set(ports.ToolResult.model_fields) == {
         "status", "result_full", "source", "call_id", "error", "required_level"}
     assert set(ports.ToolCallContext.model_fields) == {
-        "run_id", "release", "principal", "on_behalf_of", "subject", "turn_id"}
+        "run_id", "release", "principal", "on_behalf_of", "subject", "turn_id", "at"}
 
 
 def test_id_kinds_match_spec() -> None:

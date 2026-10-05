@@ -109,15 +109,19 @@ def build_engine(deps: EngineDeps) -> BuiltEngine:
         knowledge=None if deps.knowledge is None else KnowledgeService(deps.knowledge, deps.authz),
         config=RuntimeConfig(number_format=cfg.number_format, max_regenerations=cfg.max_regenerations,
                              priority=cfg.priority, lang_thresholds=cfg.lang_thresholds))
+    audit_log = AuditLog(deps.audit)
+    # `record_resolution` escribe fuera de un turno: sus eventos deben encadenarse como los del motor (el
+    # recorder por defecto los agrega sin `seq`/`hash` y Postgres los rechaza con un 500).
     handoffs = HandoffService(uow_factory=deps.uow_factory, registry=deps.registry, views=views,
-                              authz=deps.authz, keys=deps.keys, clock=deps.clock, ids=deps.ids)
+                              authz=deps.authz, keys=deps.keys, clock=deps.clock, ids=deps.ids,
+                              record=audit_log.recorder())
     turns = TurnEngine(
         uow_factory=deps.uow_factory, registry=deps.registry, clock=deps.clock, ids=deps.ids,
         guards=GuardService(deps.registry, deps.clock, deps.ids, dict(cfg.lang_thresholds)),
         understand=DecisionUnderstand(UnderstandService(decisions), deps.transcript,
                                       recent_turns=cfg.recent_turns),
         actions=actions, handoff=handoffs,
-        recorder=TurnRecorder(deps.transcript, deps.keys), chain=AuditLog(deps.audit),
+        recorder=TurnRecorder(deps.transcript, deps.keys), chain=audit_log,
         audit=deps.audit, runtimes=runtimes, trace=deps.trace or RequestTraceIds(), config=cfg.turn,
         authz=deps.authz, telemetry=deps.telemetry)
     transcripts = TranscriptReader(deps.transcript, deps.uow_factory, views, deps.keys, deps.ids)

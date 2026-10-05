@@ -2,12 +2,14 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 
 from agent_core.api.denials import Denials
 from agent_core.api.protocols import DenialRecorder, SecurityLog
 from agent_core.domain import (
     CredentialsInvalid,
     EngineError,
+    GrantCheckUnavailable,
     OnBehalfOf,
     Principal,
     ProblemCode,
@@ -18,6 +20,7 @@ from agent_core.ports import Clock, IdentityVerifier, IdSource
 # Un principal anónimo no tiene `id`: su identidad de sesión viaja firmada en `attrs` (decisión de producto,
 # M9 §3.1 chequeo 4). Sin ella no hay forma de distinguir a un anónimo de otro, así que se rechaza.
 ANON_SESSION_ATTR = "anon_session"
+GRANT_RETRY_AFTER_S = 5  # `Retry-After` del 503 si el servicio de asignaciones no responde
 
 
 @dataclass(frozen=True)
@@ -79,13 +82,22 @@ class AccessGate:
         if principal.exp <= now:
             raise deny(ProblemCode.principal_expired)
         if obo is not None:
-            if obo.exp <= now or not self._verifier.grant_active(obo.grant_ref, now):
+            if obo.exp <= now or not self._grant_active(obo.grant_ref, now, trace_id):
                 raise deny(ProblemCode.delegation_expired)
             if obo.grantee != principal.key:
                 raise deny(ProblemCode.delegation_mismatch)
         if run is not None and not is_run_owner(principal, run.principal):
             raise deny(ProblemCode.principal_mismatch)
         return Admitted(principal, obo, run)
+
+    def _grant_active(self, grant_ref: str, now: datetime, trace_id: str) -> bool:
+        """Sin respuesta del servicio de asignaciones: `503 identity_unavailable`, no `delegation_expired`.
+        No es una denegación (no hay decisión sobre la delegación), así que solo va al log de seguridad."""
+        try:
+            return self._verifier.grant_active(grant_ref, now)
+        except GrantCheckUnavailable:
+            self._security.record(ProblemCode.identity_unavailable.value, None, trace_id)
+            raise EngineError(ProblemCode.identity_unavailable, retry_after=GRANT_RETRY_AFTER_S) from None
 
     def _verify(
         self, raw_auth: str | None, raw_delegation: str | None, trace_id: str

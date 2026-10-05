@@ -43,6 +43,8 @@ La spec general describe el motor completo en un solo documento. Aquí se parte 
 
 Paquete `agent_core.registry/` (unidad 2): implementado (rev. 2, entrega). Solo lo importa `composition` (evaluador, servicio y CLI; la API lo monta como extensión `registry_extension`); ningún módulo del motor lo importa.
 
+**Eventos salientes (2026-10-02):** el contrato público de eventos para otros servicios (lista cerrada, sobre, proyección pura) vive fuera de M0, en `agent_core.outbound`, con spec propia en `../2026-10-02-eventos-salientes-design.md` y esquemas en `contracts/events/`. Solo importa `agent_core.domain`; la entrega es de la unidad 4 (ADR 0013).
+
 **Documentos relacionados:** evaluación y métricas por agente (`Agent.metrics`, `eval_suite`, gate con doble vara), en `../2026-09-30-evaluacion-y-metricas-design.md` y `../../adr/0020-evaluacion-y-metricas-por-agente.md`. Añade a M0 los tipos del DSL de métricas (`SCHEMA_VERSION` 1.2.0) y a M1 las reglas `MT-01` a `MT-06`.
 
 ## 3. Dependencias
@@ -84,7 +86,7 @@ Las unidades 2–7 aún no existen. El motor habla con ellas solo por estos puer
 | `UnitOfWork` | M4 (Postgres) | `InMemoryUoW` con inyección de fallas | M0 | M3, M4, M9, M10 |
 | `AuditSink` | unidad 4 | `InMemoryAuditSink` | M0 | M9, M11 |
 | `Outbox` | unidad 4 | `InMemoryOutbox` | M0 | unidad 4 |
-| `LLMGateway` | unidad 5: `OpenAICompatGateway` (`agent_core.adapters.llm`) | `ScriptedGateway` | M8 | M8, M5 (`llm_structured`) |
+| `LLMGateway` | unidad 5: `HttpLLMGateway` (`agent_core.adapters.llm`) sobre el servicio `llm-gateway` (ADR 0024) | `ScriptedGateway` | M8 | M8, M5 (`llm_structured`) |
 | `AgentPort` | unidad 5: `LLMAgentPort` (sobre `LLMGateway`, `prompted`) | `ScriptedAgent` | M2 | M2 (nodo `agent`) |
 | `TranscriptStore` | unidad 7 | `InMemoryTranscript` | M11 | M11, M5 (`recent_turns`) |
 | `KnowledgeSource` | unidad 7 | `FileKnowledgeSource` / `InMemoryKnowledgeSource` (`testing/fakes/knowledge.py`) | M12 (definitivo, rev. 2; contrato en `tests/contracts/test_knowledge_contract.py`) | M12 |

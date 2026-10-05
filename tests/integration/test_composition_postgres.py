@@ -5,6 +5,7 @@ auditoría y el outbox son los de Postgres."""
 
 import pytest
 
+from agent_core.adapters.postgres_uow import PostgresStore
 from agent_core.audit import AuditLog
 from agent_core.domain import Outcome, ResponseEmitted
 from testing.engine_world import DRAFT, EngineWorld
@@ -56,3 +57,9 @@ def test_dos_corridas_del_mismo_guion_producen_los_mismos_eventos() -> None:
             return [(e.type, e.turn_id) for e in w.audit.read(started.run_id)]
 
     assert run("cableado_det_a") == run("cableado_det_b")
+
+
+def test_ping_is_true_for_a_reachable_database_and_false_otherwise() -> None:
+    with postgres_store("ping_test") as pg:
+        assert pg.ping() is True
+    assert PostgresStore("postgresql://u:secret@127.0.0.1:1/none").ping() is False

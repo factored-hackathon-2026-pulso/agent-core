@@ -1,7 +1,7 @@
 import pytest
 
 from agent_core.composition import EngineScenarioHarness
-from agent_core.domain import GatewayError, GatewayErrorKind, Outcome, RunClosed
+from agent_core.domain import EngineEvent, GatewayError, GatewayErrorKind, Outcome, RunClosed
 from agent_core.registry import EvalSuite, EvalTarget, HarnessUnavailable, LocalSandbox, SnapshotRegistry
 from agent_core.registry.evaluation.scoring import score_run
 from testing.fakes.ids import FakeIds
@@ -43,3 +43,17 @@ def test_a_provider_failure_becomes_harness_unavailable(failure: Failure | Timeo
     sandbox = LocalSandbox(FakeIds())
     with pytest.raises(HarnessUnavailable, match="proveedor"):
         harness.run(_target(), AGENT, scenario, sandbox.tools(sandbox.provision(scenario.seed, _target())))
+
+
+def test_a_second_evaluation_on_a_persistent_store_executes_again() -> None:
+    """Con la base de evaluación persistente, la clave de idempotencia no puede repetir runs viejos."""
+    harness = build_harness(persistent=True)
+    scenario = next(s for s in demo_suite().scenarios if s.id == "resuelto")
+    sandbox = LocalSandbox(FakeIds())
+    def once() -> list[EngineEvent]:
+        handle = sandbox.provision(scenario.seed, _target())
+        return harness.run(_target(), AGENT, scenario, sandbox.tools(handle))
+
+    runs = [once(), once()]
+    assert {e.run_id for e in runs[0]}.isdisjoint({e.run_id for e in runs[1]})
+    assert any(isinstance(e, RunClosed) for e in runs[1])

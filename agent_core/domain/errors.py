@@ -38,6 +38,11 @@ class CredentialsInvalid(DomainError):
     """`IdentityVerifier`: la firma de la credencial no valida."""
 
 
+class GrantCheckUnavailable(DomainError):
+    """`IdentityVerifier.grant_active`: el servicio de asignaciones no pudo responder. El acceso sigue
+    cerrado, pero no se afirma que la delegación venció (M9 responde `503 identity_unavailable`, ADR 0010)."""
+
+
 class GatewayErrorKind(StrEnum):
     """Clases de falla del gateway de LLM (M0 §2.11)."""
     timeout = "timeout"
@@ -84,11 +89,14 @@ class ProblemCode(StrEnum):
     turn_in_progress = "turn_in_progress"
     handoff_already_resolved = "handoff_already_resolved"
     idempotency_conflict = "idempotency_conflict"
+    idempotency_in_progress = "idempotency_in_progress"
     run_closed = "run_closed"
     invalid_request = "invalid_request"
     rate_limited = "rate_limited"
     cost_budget_exceeded = "cost_budget_exceeded"
     internal_error = "internal_error"
+    identity_unavailable = "identity_unavailable"
+    payload_too_large = "payload_too_large"
 
 
 PROBLEM_STATUS: Mapping[ProblemCode, int] = MappingProxyType(
@@ -105,11 +113,14 @@ PROBLEM_STATUS: Mapping[ProblemCode, int] = MappingProxyType(
         ProblemCode.turn_in_progress: 409,
         ProblemCode.handoff_already_resolved: 409,
         ProblemCode.idempotency_conflict: 409,
+        ProblemCode.idempotency_in_progress: 409,
         ProblemCode.run_closed: 410,
         ProblemCode.invalid_request: 422,
         ProblemCode.rate_limited: 429,
         ProblemCode.cost_budget_exceeded: 429,
         ProblemCode.internal_error: 500,
+        ProblemCode.identity_unavailable: 503,
+        ProblemCode.payload_too_large: 413,
     }
 )
 
@@ -117,10 +128,11 @@ PROBLEM_STATUS: Mapping[ProblemCode, int] = MappingProxyType(
 class EngineError(Exception):
     """Error con código HTTP estable. Solo lo lanzan los módulos; M9 lo traduce."""
 
-    def __init__(self, code: ProblemCode, detail: str = "") -> None:
+    def __init__(self, code: ProblemCode, detail: str = "", *, retry_after: int | None = None) -> None:
         super().__init__(f"{code}: {detail}")
         self.code = code
         self.detail = detail
+        self.retry_after = retry_after  # segundos; sale como `Retry-After` (429 y 503)
 
     @property
     def status(self) -> int:

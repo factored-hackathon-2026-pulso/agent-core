@@ -1,0 +1,37 @@
+id: understand-constructor
+version: 1.0.0
+output_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    command: {type: string}
+calibrated_fields: [command, flow, interrupt]
+providers:
+  - provider: jev
+    config:
+      model: jev-1.13.0
+      timeout_ms: 10000
+      questions:
+        command:
+          instructions: >-
+            Quien escribe es un supervisor de la plataforma que quiere cambiar un agente. ¿Qué quiere hacer con su último mensaje?
+            Usa el contexto (turnos recientes y nodo actual).
+          criteria:
+            start_flow: No hay nodo actual y el supervisor describe un cambio que quiere en un agente.
+            continue: Hay un nodo actual esperando un dato (qué agente o qué cambio) y el supervisor lo da, o sigue describiendo el cambio.
+            affirm: Responde que sí o acepta.
+            deny: Responde que no o rechaza.
+            clarify: El mensaje es ambiguo o incompleto y no se entiende qué pide.
+            cancel: Quiere abandonar el cambio.
+            handoff: Pide hablar con otra persona.
+            out_of_scope: Pide algo que no es modificar un agente (por ejemplo aprobar, publicar o ver datos de clientes).
+            interrupt: Reporta una emergencia que interrumpe el trabajo.
+        flow:
+          instructions: Si el supervisor describe un cambio, ¿cuál es el flujo? Elige el más cercano.
+        interrupt:
+          instructions: >-
+            El supervisor reporta una emergencia de la plataforma (un agente publicado se comporta mal y hay que actuar ya).
+          criteria:
+            emergencia: Reporta que un agente en producción se comporta mal y hay que actuar de inmediato.
+calibration: {method: none}
+thresholds_from: cal-transfer-demo

@@ -36,3 +36,8 @@
 - El flow no cablea `step_up_required`; lo maneja el motor.
 - Queda pendiente la integración con un OTP o biometría reales en producción.
 - **(#2)** La app debe manejar `401`/`403` de credenciales y reintentar el turno. `reauth` desaparece de los manejadores globales.
+
+## Enmienda 2026-10-05 (revisión técnica)
+- `max_auth_age` no se aplicaba en ningún lado: un step-up de hace horas seguía habilitando tools de nivel `step_up`. Ahora el chequeo previo del ejecutor es `ToolDef.accepts(auth, at)`: nivel **y** antigüedad de `auth.at` frente a `max_auth_age`, con `at` = instante del turno que el motor pasa en `ToolCallContext.at` (M0 rev. 14). Si la autenticación es más vieja, el resultado es `step_up_required` sin llamar a la tool, igual que un nivel insuficiente. Sin instante, una tool con `max_auth_age` se rechaza.
+- El contrato `tool-provider` 1.0.0 no transporta `auth.at`; el servicio externo no repite este chequeo (lo hace el motor antes de llamarlo).
+- **Delegación no verificable.** Cuando el servicio de asignaciones no responde (transporte, timeout, 5xx, 401/403 o cuerpo ilegible), `grant_active` lanza `GrantCheckUnavailable` y M9 responde `503 identity_unavailable` con `Retry-After`, en vez de `403 delegation_expired`. El acceso sigue cerrado; lo que cambia es que la app no renueva una delegación que no venció. Un `404` o una respuesta que no sea `active: true` sigue siendo "no activo" (`403`). Decisión del usuario (revisión técnica 2026-10-05).

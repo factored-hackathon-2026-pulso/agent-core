@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from agent_core.domain import (
     Agent,
@@ -41,7 +41,9 @@ from agent_core.registry.evaluation.ports import EvalPort, EvalRequest, EvalTarg
 from agent_core.registry.evaluation.report import EvalReport, GateItem
 from agent_core.registry.evaluation.yardstick import Yardstick, YardstickChange, classify_yardstick_change
 from agent_core.registry.models import (
+    RELEASE_SETTINGS,
     AliasChange,
+    AliasState,
     Approval,
     AuditContext,
     ChangedRef,
@@ -57,6 +59,7 @@ from agent_core.registry.models import (
     RegistryEvent,
     ReleaseDetail,
     ReleaseDiff,
+    ReleaseSettings,
     RunLineage,
     StoredRelease,
     StoredVersion,
@@ -67,6 +70,7 @@ from agent_core.registry.models import (
 )
 from agent_core.registry.quotas import DEFAULT_QUOTAS, Quotas
 from agent_core.registry.roles import (
+    ADMIN,
     actor_id,
     require_admin,
     require_approver,
@@ -79,6 +83,7 @@ from agent_core.registry.suite import EvalSuite, suite_problems
 from agent_core.registry.validation import (
     DEFAULT_LIMITS,
     Limits,
+    changes_interrupts,
     check_draft_limits,
     platform_edits,
     suite_violations,
@@ -109,12 +114,22 @@ class CandidateView(_V):
     auto_bumped: list[VersionRef]
 
 
+class ReleaseSettingChange(_V):
+    """Un campo de nivel release que la propuesta cambia, contra la release base (N-07): el aprobador ve el
+    antes y el después en vez de solo el borrador."""
+
+    field: str
+    before: JsonValue
+    after: JsonValue
+
+
 class ApprovalReview(_V):
     """What the approver sees, as three separate elements (evaluation spec §8.5, T-EVAL-17): the functional
     change, the suite the candidate was measured with (and its draft, if it changed) together with each gate
     item, and what the proposal loosens in the yardstick."""
 
     functional_changes: list[EntityDraft]
+    release_changes: list[ReleaseSettingChange] = Field(default_factory=list)
     suite: VersionRef
     suite_changes: list[EntityDraft]
     gate: list[GateItem]
@@ -146,6 +161,11 @@ def release_id_for(candidate_hash: str) -> str:
 def _violations_payload(violations: Sequence[Violation]) -> list[dict[str, str | None]]:
     return [{"rule": v.rule, "path": v.path, "flow": v.flow, "node_id": v.node_id, "message": v.message}
             for v in violations]
+
+
+def _gate_payload(run: EvalRun) -> dict[str, JsonValue]:
+    """Cuerpo de `gate_failed`: el reporte y el id de la corrida que lo guardó (N-10)."""
+    return {**run.report.model_dump(mode="json"), "eval_run_id": run.eval_run_id}
 
 
 def _agent_metrics(entities: Sequence[RegistryEntity], agent_id: str) -> list[MetricDef]:
@@ -321,6 +341,9 @@ class RegistryService:
             raise RegistryError(RegistryErrorCode.forbidden_role,
                                 "los guardarraíles de plataforma no se editan desde una propuesta",
                                 payload=edits)  # type: ignore[arg-type]
+        if changes_interrupts(changes) and ADMIN not in actor.roles:
+            raise RegistryError(RegistryErrorCode.forbidden_role,
+                                "cambiar las interrupciones de la release exige el rol admin")
         request = _request_hash("put_draft", {"proposal_id": proposal_id, "expected_rev": expected_rev,
                                               "changes": [c.model_dump(mode="json") for c in changes]})
         with self._store.transaction() as tx:
@@ -399,10 +422,35 @@ class RegistryService:
             last = tx.latest_eval_run(p.proposal_id, p.candidate_hash) if p.candidate_hash else None
             changes = tx.get_changes(proposal_id)
             review = None if last is None else ApprovalReview(
-                functional_changes=[d for d in changes if d.kind != SUITE_KIND], suite=last.suite,
+                functional_changes=[d for d in changes if d.kind != SUITE_KIND],
+                release_changes=self._release_changes(tx, p, changes), suite=last.suite,
                 suite_changes=[d for d in changes if d.kind == SUITE_KIND], gate=list(last.report.items),
                 yardstick_loosened=list(last.report.yardstick_changes))
             return ProposalDetail(proposal=p, changes=changes, last_eval=last, review=review)
+
+    def _release_changes(self, tx: RegistryTx, p: Proposal, changes: Sequence[EntityDraft]
+                         ) -> list[ReleaseSettingChange]:
+        """Lo que `release_settings` cambia contra la base. Sin base, contra los valores por defecto."""
+        draft = next((d for d in changes if d.kind == RELEASE_SETTINGS), None)
+        if draft is None:
+            return []
+        try:
+            settings = ReleaseSettings.model_validate(draft.content)
+        except ValueError:
+            return []  # un borrador inválido no llega a evaluación
+        base = self._detail(tx, p.base_release_id) if p.base_release_id is not None else None
+        current: dict[str, JsonValue] = {
+            "interrupts": [i.model_dump(mode="json") for i in base.interrupts] if base else [],
+            "language_detection": base.language_detection.id if base else None,
+            "injection_ruleset": base.injection_ruleset.id if base and base.injection_ruleset else None,
+            "max_input_chars": base.max_input_chars if base else 4000}
+        wanted: dict[str, JsonValue] = {
+            "interrupts": None if settings.interrupts is None else
+            [i.model_dump(mode="json") for i in settings.interrupts],
+            "language_detection": settings.language_detection,
+            "injection_ruleset": settings.injection_ruleset, "max_input_chars": settings.max_input_chars}
+        return [ReleaseSettingChange(field=f, before=current[f], after=after)
+                for f, after in wanted.items() if after is not None and after != current[f]]
 
     def list_proposals(self, actor: Principal, *, agent_id: str | None = None, state: str | None = None,
                        created_by: str | None = None, limit: int = 50, offset: int = 0) -> ProposalPage:
@@ -461,7 +509,7 @@ class RegistryService:
             raise RegistryError(RegistryErrorCode.integrity_error, "la evaluación guardada no existe")
         if run.verdict == "fail":
             raise RegistryError(RegistryErrorCode.gate_failed, "la candidata no pasa el gate",
-                                payload=run.report.model_dump(mode="json"))
+                                payload=_gate_payload(run))
         return run.report
 
     def evaluate(self, actor: Principal, proposal_id: str, suite_id: str,
@@ -526,7 +574,7 @@ class RegistryService:
             self._remember(tx, idempotency_key, "evaluate", p, request, audit, result_ref=run.eval_run_id)
         if report.verdict == "fail":
             raise RegistryError(RegistryErrorCode.gate_failed, "la candidata no pasa el gate",
-                                payload=report.model_dump(mode="json"))
+                                payload=_gate_payload(run))
         return report
 
     # --- decisiones humanas ------------------------------------------------------------------------------
@@ -688,7 +736,11 @@ class RegistryService:
                              proposal_id=stored.proposal_id,
                              base_release_id=stored.base_release_id, published_by=stored.published_by,
                              published_at=stored.published_at,
-                             eval_suite_refs=list(stored.eval_suite_refs))
+                             eval_suite_refs=list(stored.eval_suite_refs),
+                             interrupts=list(stored.release.interrupts),
+                             language_detection=stored.release.language_detection,
+                             injection_ruleset=stored.release.injection_ruleset,
+                             max_input_chars=stored.release.max_input_chars)
 
     def get_release(self, release_id: str) -> ReleaseDetail:
         with self._store.transaction() as tx:
@@ -711,6 +763,20 @@ class RegistryService:
             assert isinstance(content, dict)
             return EntityVersion(ref=v.ref, content=content, content_hash=v.content_hash, docs=v.docs,
                                  created_by=v.created_by, created_at=v.created_at)
+
+    def list_events(self, after: int, limit: int) -> list[RegistryEvent]:
+        """Eventos del registry en orden de registro; `after` es cuántos ya se leyeron (N-08)."""
+        with self._store.transaction() as tx:
+            return tx.events()[max(after, 0):max(after, 0) + max(limit, 0)]
+
+    def get_alias(self, agent_id: str, alias: str) -> AliasState:
+        """Lectura pura del alias: no crea propuesta ni gasta cuota (N-02)."""
+        with self._store.transaction() as tx:
+            release_id = tx.get_alias(agent_id, alias)
+            status = None if release_id is None else tx.release_status(release_id)
+            if release_id is None or status is None:
+                raise RegistryError(RegistryErrorCode.not_found, "el alias no apunta a ninguna release")
+            return AliasState(agent_id=agent_id, alias=alias, release_id=release_id, status=status)
 
     def list_versions(self, kind: str, entity_id: str) -> list[VersionSummary]:
         with self._store.transaction() as tx:

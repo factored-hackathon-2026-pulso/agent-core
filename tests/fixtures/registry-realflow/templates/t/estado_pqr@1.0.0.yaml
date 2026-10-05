@@ -1,0 +1,5 @@
+id: t/estado_pqr
+version: 1.0.0
+locales:
+  es: "Ya consulté tu PQR. Si necesitas algo más, dímelo."
+  pt: "Já consultei sua solicitação. Se precisar de algo mais, me avise."

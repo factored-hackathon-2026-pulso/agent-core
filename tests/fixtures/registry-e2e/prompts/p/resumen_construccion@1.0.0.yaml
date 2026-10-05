@@ -1,0 +1,5 @@
+id: p/resumen_construccion
+version: 1.0.0
+locales:
+  es: "Resume en una o dos frases que la propuesta quedó en borrador y si pasó la validación, sin incluir identificadores. Recuerda que una persona debe aprobarla."
+model_profile: perfil-generacion@1

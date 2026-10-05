@@ -1,13 +1,18 @@
 """`create_app`: la puerta HTTP del motor (M9 §2). Sin lógica de conversación: valida, autoriza y delega."""
 
 from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
 from typing import Annotated, Final
 
 from fastapi import APIRouter, FastAPI, Header, Request
+from fastapi.responses import JSONResponse
 from fastapi.telemetry import TelemetryConfig
 
 from agent_core.api.authorization import RunAuthorizer
+from agent_core.api.body_limit import DEFAULT_MAX_BODY_BYTES, BodyLimit
 from agent_core.api.gate import ANON_SESSION_ATTR, AccessGate, Admitted
 from agent_core.api.limits import LimitGuard, RateLimitConfig
 from agent_core.api.problems import install_error_handlers
@@ -30,7 +35,15 @@ from agent_core.api.schemas import (
     session_lineage,
 )
 from agent_core.api.tracing import install_tracing, request_trace_id
-from agent_core.domain import EngineError, Principal, ProblemCode, RunInput, RunState, TurnInput
+from agent_core.domain import (
+    SCHEMA_VERSION,
+    EngineError,
+    Principal,
+    ProblemCode,
+    RunInput,
+    RunState,
+    TurnInput,
+)
 from agent_core.ports import (
     AuthzPort,
     Clock,
@@ -54,10 +67,12 @@ _PROBLEMS = {
         403: "subject_forbidden | agent_forbidden | version_pin_forbidden | delegation_expired | "
         "delegation_mismatch | principal_mismatch",
         404: "not_found",
-        409: "turn_in_progress | handoff_already_resolved | idempotency_conflict",
+        409: "turn_in_progress | handoff_already_resolved | idempotency_conflict | idempotency_in_progress",
         410: "run_closed",
+        413: "payload_too_large",
         422: "invalid_request",
         429: "rate_limited | cost_budget_exceeded",
+        503: "identity_unavailable",
     }.items()
 }
 
@@ -84,8 +99,33 @@ class ApiDeps:
     denials: DenialRecorder
     security: SecurityLog
     limits: RateLimitConfig = field(default_factory=RateLimitConfig)
+    max_body_bytes: int = DEFAULT_MAX_BODY_BYTES  # tope del body de toda petición (413 payload_too_large)
     step_up_simulated: bool = True  # el OTP de la demo es simulado (ADR 0010); apagar con un OTP real
     extensions: tuple[ApiExtension, ...] = ()  # rutas de otros paquetes; vacío = comportamiento previo
+    # Comprobaciones de `/readyz` (nombre, función). Vacío = siempre listo. Las inyecta el cableado.
+    readiness: tuple[tuple[str, Callable[[], bool]], ...] = ()
+    build_sha: str | None = None  # commit de la imagen (`AGENTCORE_GIT_SHA`); lo informa `/version` (N-04)
+
+
+def _package_version() -> str:
+    try:
+        return package_version("agent-core")
+    except PackageNotFoundError:
+        return "0+unknown"
+
+
+def _failed_checks(checks: tuple[tuple[str, Callable[[], bool]], ...]) -> list[str]:
+    """Nombres de las comprobaciones que no pasan. Una que lanza cuenta como fallida y su mensaje se descarta:
+    puede traer hosts o credenciales."""
+    failed: list[str] = []
+    for name, check in checks:
+        try:
+            ok = check()
+        except Exception:
+            ok = False
+        if not ok:
+            failed.append(name)
+    return failed
 
 
 def _idempotency_key(raw: str | None, principal: Principal) -> str:
@@ -113,9 +153,30 @@ FASTAPI_TELEMETRY_OFF: Final[TelemetryConfig] = {
 
 
 def create_app(deps: ApiDeps) -> FastAPI:
-    app = FastAPI(title="agent-core", version="1.0.0", telemetry=FASTAPI_TELEMETRY_OFF)
+    app = FastAPI(title="agent-core", version=SCHEMA_VERSION, telemetry=FASTAPI_TELEMETRY_OFF)
+    # Antes que el tracing: Starlette deja interno el primer middleware, así el 413 ya lleva `trace_id`.
+    app.add_middleware(BodyLimit, max_bytes=deps.max_body_bytes)
     install_tracing(app, deps.ids)
     install_error_handlers(app)
+
+    @app.get("/healthz", include_in_schema=False)
+    def healthz() -> dict[str, str]:
+        """Liveness: el proceso responde. No toca dependencias."""
+        return {"status": "ok"}
+
+    @app.get("/version", include_in_schema=False)
+    def version() -> dict[str, str | None]:
+        """Qué corre: paquete, versión del contrato y commit de la imagen. Sin credencial y sin datos."""
+        return {"package": _package_version(), "contract": SCHEMA_VERSION, "sha": deps.build_sha}
+
+    @app.get("/readyz", include_in_schema=False, response_model=None)
+    def readyz() -> JSONResponse:
+        """Readiness: todas las comprobaciones inyectadas pasan. Sin credencial y sin detalle de errores."""
+        failed = _failed_checks(deps.readiness)
+        if failed:
+            return JSONResponse({"status": "unavailable", "failed": failed}, status_code=503)
+        return JSONResponse({"status": "ready"})
+
     gate = AccessGate(deps.verifier, deps.clock, deps.ids, deps.denials, deps.security)
     guard = LimitGuard(deps.counters, deps.clock, deps.limits)
     authorizer = RunAuthorizer(deps.authz, deps.registry, deps.clock, deps.ids, deps.denials, deps.security)
@@ -127,7 +188,8 @@ def create_app(deps: ApiDeps) -> FastAPI:
         on_behalf_of: str | None,
         session_id: str | None = None,
     ) -> Admitted:
-        """Chequeos 1 a 5: firma, vigencia, delegación, coincidencia de principal y límites."""
+        """Chequeos 1 a 4: firma, vigencia, delegación y coincidencia de principal. Los límites (5) los toma
+        solo quien gasta: `spend` en crear run y en procesar turno, no las lecturas."""
         trace_id = request_trace_id(request)
 
         def load_run() -> RunState | None:
@@ -136,9 +198,11 @@ def create_app(deps: ApiDeps) -> FastAPI:
             with deps.uow_factory() as uow:
                 return uow.find_run_by_session(session_id)
 
-        admitted = gate.admit(authorization, on_behalf_of, load_run, trace_id=trace_id)
-        guard.check(admitted.principal)
-        return admitted
+        return gate.admit(authorization, on_behalf_of, load_run, trace_id=trace_id)
+
+    def spend(principal: Principal, *, replay: bool) -> AbstractContextManager[None]:
+        """Reserva un lugar en el límite del principal; una repetición idempotente no consume ni bloquea."""
+        return nullcontext() if replay else guard.slot(principal)
 
     def readable_run(
         request: Request, run_id: str, authorization: str | None, on_behalf_of: str | None
@@ -170,7 +234,10 @@ def create_app(deps: ApiDeps) -> FastAPI:
             idempotency_key=_idempotency_key(idempotency_key, admitted.principal),
         )
         run_input = authorizer.authorize_new_run(admitted, run_input, trace_id=request_trace_id(request))
-        result = deps.turns.start_run(admitted.principal, admitted.on_behalf_of, run_input)
+        with deps.uow_factory() as uow:
+            replay = uow.get_run_idempotency(admitted.principal.key, run_input.idempotency_key) is not None
+        with spend(admitted.principal, replay=replay):
+            result = deps.turns.start_run(admitted.principal, admitted.on_behalf_of, run_input)
         return JsonResponse(publish_run(result, step_up_simulated=deps.step_up_simulated), 201)
 
     @router.post("/sessions/{session_id}/turns", summary="Procesa un turno", operation_id="post_turn")
@@ -193,7 +260,10 @@ def create_app(deps: ApiDeps) -> FastAPI:
             client_turn_id=body.client_turn_id,
             confirm=body.confirm,
         )
-        result = deps.turns.handle_turn(admitted.principal, admitted.on_behalf_of, turn)
+        with deps.uow_factory() as uow:
+            replay = uow.get_turn_result(admitted.run.run_id, body.client_turn_id) is not None
+        with spend(admitted.principal, replay=replay):
+            result = deps.turns.handle_turn(admitted.principal, admitted.on_behalf_of, turn)
         return JsonResponse(publish_turn(result, step_up_simulated=deps.step_up_simulated))
 
     @router.get("/runs/{run_id}", summary="Estado resumido de un run", operation_id="get_run")

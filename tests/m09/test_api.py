@@ -1,5 +1,6 @@
 """M9 F5: endpoints de `/v1` con `TestClient` (T-M9-01…14 salvo idempotencia, en test_idempotency.py)."""
 
+from dataclasses import replace
 from datetime import timedelta
 from decimal import Decimal
 from typing import Any
@@ -51,7 +52,8 @@ ROUTES: list[tuple[str, str, dict[str, Any] | None]] = [
 
 class World:
     def __init__(
-        self, limits: RateLimitConfig | None = None, verifier: Any = None, clock: FakeClock | None = None
+        self, limits: RateLimitConfig | None = None, verifier: Any = None, clock: FakeClock | None = None,
+        max_body_bytes: int | None = None,
     ) -> None:
         self.store = InMemoryStore()
         self.clock = clock or FakeClock()
@@ -80,6 +82,8 @@ class World:
             security=self.security,
             limits=limits or RateLimitConfig(),
         )
+        if max_body_bytes is not None:
+            deps = replace(deps, max_body_bytes=max_body_bytes)
         self.client = TestClient(create_app(deps), raise_server_exceptions=False)
         if isinstance(self.verifier, StubVerifier):
             self.verifier.register("tok-c", principal())
@@ -512,6 +516,24 @@ def test_rate_and_cost_excess_are_429_and_never_reach_the_engine() -> None:  # T
     assert w2.turns.calls == []
 
 
+def test_reads_are_not_blocked_by_the_rate_limit_and_the_429_says_when_to_retry() -> None:
+    w = World(limits=RateLimitConfig(max_hits=2, daily_budget_usd=Decimal("1.00")))
+    w.seed_run()
+    w.spend(2)
+    assert w.call("GET", "/v1/runs/run-0001").status_code == 200
+    assert w.call("GET", "/v1/runs/run-0001/transcript").status_code == 200
+    blocked = w.turn()
+    problem(blocked, 429, "rate_limited")
+    assert blocked.headers["Retry-After"] == "60"
+
+
+def test_cost_budget_429_retries_after_midnight_utc() -> None:
+    w = World(limits=RateLimitConfig(max_hits=99, daily_budget_usd=Decimal("1.00")))
+    w.seed_run()
+    w.spend(1, cost="1.00")
+    assert w.turn().headers["Retry-After"] == str(12 * 3600)
+
+
 # --- T-M9-13: trace_id y problem+json ------------------------------------------------------------------
 
 
@@ -546,3 +568,38 @@ def test_engine_errors_are_translated_with_their_status() -> None:
     resp = w.turn()
     problem(resp, 500, "internal_error")
     assert "secreto-interno" not in resp.text
+
+
+# --- tope de tamaño (M9 §3.1, revisión 2026-10-05) -----------------------------------------------------
+
+
+def test_a_body_over_the_declared_limit_is_413_without_reaching_the_route() -> None:
+    w = World(max_body_bytes=2048)
+    resp = w.call("POST", "/v1/runs", body={"agent": "atencion", "input": {"x": "a" * 4096}})
+    problem(resp, 413, "payload_too_large")
+    assert w.uow_opens == 0  # ni la puerta ni el motor llegaron a correr
+
+
+def test_a_chunked_body_is_cut_when_it_passes_the_limit() -> None:
+    w = World(max_body_bytes=2048)
+
+    def chunks():  # type: ignore[no-untyped-def]
+        for _ in range(8):
+            yield b"a" * 512  # sin Content-Length: se cuenta lo recibido
+
+    resp = w.client.post("/v1/runs", content=chunks(), headers={
+        "Authorization": "tok-c", "Idempotency-Key": "key-1", "Content-Type": "application/json"})
+    problem(resp, 413, "payload_too_large")
+
+
+def test_a_body_under_the_limit_is_served() -> None:
+    w = World(max_body_bytes=2048)
+    assert w.create_run().status_code == 201
+
+
+@pytest.mark.parametrize(("field", "size"), [("text", 32_001), ("client_turn_id", 256), ("channel", 256)])
+def test_turn_text_fields_have_a_maximum_length(field: str, size: int) -> None:
+    w = World()
+    body = {"text": "hola", "channel": "web", "client_turn_id": "t-1", field: "a" * size}
+    body_problem = problem(w.call("POST", "/v1/sessions/ses-1/turns", body=body), 422, "invalid_request")
+    assert field in body_problem["detail"] and "aaaa" not in body_problem["detail"]

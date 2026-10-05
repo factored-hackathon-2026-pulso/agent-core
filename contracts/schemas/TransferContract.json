@@ -3,7 +3,63 @@
   "$defs": {
     "AcceptedSlot": {
       "additionalProperties": false,
-      "description": "One slot of the input contract: its type and whether the packet must carry it.",
+      "description": "One slot of the input contract: its type and whether the packet must carry it.\n\nA `list` slot (2026-10-05, ADR 0026 input) is a bounded list of flat objects: `items` names the fields of\neach element (scalars only, no nesting) and `max_items` bounds its length; both are required for a list\nand forbidden otherwise.",
+      "properties": {
+        "items": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/ItemField"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Items"
+        },
+        "max_items": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Items"
+        },
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "type": {
+          "enum": [
+            "string",
+            "integer",
+            "decimal",
+            "date",
+            "boolean",
+            "list"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "AcceptedSlot",
+      "type": "object"
+    },
+    "ItemField": {
+      "additionalProperties": false,
+      "description": "One field of each element of a `list` slot: a scalar type and whether every element carries it.",
       "properties": {
         "required": {
           "default": false,
@@ -25,7 +81,7 @@
       "required": [
         "type"
       ],
-      "title": "AcceptedSlot",
+      "title": "ItemField",
       "type": "object"
     }
   },

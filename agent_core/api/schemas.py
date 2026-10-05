@@ -23,6 +23,12 @@ from agent_core.domain import (
 AgentText = Annotated[AgentSelector, WithJsonSchema({"type": "string", "examples": ["atencion@prod"]})]
 
 
+# Topes de los campos de texto (M9 §3.1); el body completo lo acota `BodyLimit`.
+MAX_TURN_TEXT = 32_000  # techo de transporte; el límite de producto es `max_input_chars` de M6
+MAX_SHORT_TEXT = 255
+MAX_NOTES = 4000
+
+
 class CreateRunBody(Model):
     agent: AgentText
     subject: SubjectRef | None = None
@@ -31,10 +37,10 @@ class CreateRunBody(Model):
 
 
 class TurnBody(Model):
-    text: str = ""
-    channel: str
+    text: str = Field(default="", max_length=MAX_TURN_TEXT)
+    channel: str = Field(max_length=MAX_SHORT_TEXT)
     lang: Locale | None = None
-    client_turn_id: str
+    client_turn_id: str = Field(max_length=MAX_SHORT_TEXT)
     confirm: ConfirmAnswer | None = None
 
     @model_validator(mode="after")
@@ -45,9 +51,9 @@ class TurnBody(Model):
 
 
 class ResolutionBody(Model):
-    resolution_code: str
+    resolution_code: str = Field(max_length=MAX_SHORT_TEXT)
     handoff_quality: HandoffQuality
-    notes: str | None = None
+    notes: str | None = Field(default=None, max_length=MAX_NOTES)
 
 
 class ProblemBody(BaseModel):

@@ -1,6 +1,6 @@
 # ADR 0016 — LLM gateway propio sobre la API compatible con OpenAI
 
-- Estado: aceptado (2026-09-28)
+- Estado: aceptado (2026-09-28); **reemplazado en parte por el ADR 0024** (2026-10-03): el comportamiento sigue vigente pero vive en el servicio `llm-gateway`; el adaptador Python con el SDK `openai` se eliminó
 - Unidad: 5 · LLM gateway
 - Spec: `docs/specs/2026-09-28-llm-gateway-design.md`
 

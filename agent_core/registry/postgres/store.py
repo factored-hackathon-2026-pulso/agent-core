@@ -28,6 +28,7 @@ from agent_core.registry.models import (
     VersionDocs,
     VersionRef,
 )
+from agent_core.registry.s3_blobs import ReadThroughBlobStore
 from agent_core.registry.store import RegistryTx, Status
 
 _INSERT_ONLY = ("reg_blobs", "reg_entity_versions", "reg_releases", "reg_release_entities",
@@ -89,11 +90,36 @@ def _ref(kind: str, ident: str, version: str) -> VersionRef:
     return VersionRef(kind=kind, id=ident, version=version)
 
 
+def detach_blob_foreign_key(conn: "psycopg.Connection[Any]") -> None:
+    """Quita la FK `reg_entity_versions.content_hash -> reg_blobs` (ADR 0023): con los blobs en S3 la
+    integridad la da el hash, que se verifica en cada lectura, y el bucket sin borrado. Idempotente; solo el
+    dueño la corre (`agentcore migrate` con `AGENTCORE_BLOB_BUCKET`), nunca el rol de la aplicación."""
+    conn.execute(
+        "ALTER TABLE reg_entity_versions DROP CONSTRAINT IF EXISTS reg_entity_versions_content_hash_fkey")
+
+
+BlobFactory = Callable[["psycopg.Connection[Any]"], BlobStore]
+
+
+def read_through(primary: BlobStore) -> BlobFactory:
+    """Blobs nuevos en `primary` (S3); los anteriores se siguen leyendo de `reg_blobs` hasta el backfill."""
+    return lambda conn: ReadThroughBlobStore(primary, _PgBlobs(conn))
+
+
+def pg_blob_rows(conn: "psycopg.Connection[Any]") -> Iterator[tuple[str, bytes]]:
+    """Todos los `(hash, bytes)` de `reg_blobs`, en streaming, para el backfill a S3."""
+    with conn.cursor(name="reg_blobs_backfill") as cur:
+        cur.execute("SELECT hash, bytes FROM reg_blobs ORDER BY hash")
+        for digest, data in cur:
+            yield str(digest).strip(), bytes(data)
+
+
 class _PgTx:
-    def __init__(self, conn: "psycopg.Connection[Any]", fail_on: Callable[[str], bool] | None) -> None:
+    def __init__(self, conn: "psycopg.Connection[Any]", fail_on: Callable[[str], bool] | None,
+                 blobs: BlobFactory | None = None) -> None:
         self._c = conn
         self._fail_on = fail_on
-        self.blobs: BlobStore = _PgBlobs(conn)
+        self.blobs: BlobStore = blobs(conn) if blobs is not None else _PgBlobs(conn)
 
     def __getattribute__(self, name: str) -> Any:
         fail_on = object.__getattribute__(self, "_fail_on")
@@ -324,11 +350,13 @@ class _PgTx:
 
 
 class PgRegistryStore:
-    def __init__(self, connect: Callable[[], "psycopg.Connection[Any]"]) -> None:
+    def __init__(self, connect: Callable[[], "psycopg.Connection[Any]"],
+                 blobs: BlobFactory | None = None) -> None:
         self.connect = connect
+        self._blobs = blobs
         self.fail_on: Callable[[str], bool] | None = None
 
     @contextmanager
     def transaction(self) -> Iterator[RegistryTx]:
         with self.connect() as conn:  # psycopg: commit al salir sin error, rollback con excepción
-            yield _PgTx(conn, self.fail_on)
+            yield _PgTx(conn, self.fail_on, self._blobs)

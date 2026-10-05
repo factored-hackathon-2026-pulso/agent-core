@@ -553,17 +553,3 @@ def test_the_replay_engine_has_no_telemetry(otel: InMemorySpanExporter, monkeypa
     assert code == 0 and capsys.readouterr().out.startswith("match")
     assert engines and all(isinstance(e._telemetry, NoTurnTelemetry) for e in engines)
     assert otel.get_finished_spans() == ()
-
-
-def test_a_chat_span_has_closed_keys(otel: InMemorySpanExporter, respx_mock: Any) -> None:
-    """The gateway's `chat {model}` span, with the turn's correlation, passes the same closed-key check."""
-    from tests.u05.helpers import CHAT, DRAFT, GOOD_JSON, INPUTS, PROMPT, completion, make_world
-
-    respx_mock.post(CHAT).respond(200, json=completion(GOOD_JSON))
-    with tel.bind(run_id="run-0001", turn_id="turn-0001", release="rel-1", agent="atencion@1.0.0"):
-        make_world().gateway.generate(PROMPT, INPUTS, "es", DRAFT)
-    (span,) = otel.get_finished_spans()
-    assert span.name.startswith("chat ")
-    keys = set(dict(span.attributes or {}))
-    assert {"run_id", "agentcore.release", "gen_ai.response.finish_reasons"} <= keys
-    _assert_closed_keys([span])

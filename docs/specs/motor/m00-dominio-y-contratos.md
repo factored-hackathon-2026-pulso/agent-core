@@ -84,6 +84,7 @@
   - `TurnResult.agent: EntityRef | None = None` (el agente que respondió) e `IdKind.transfer`.
   Los estados, eventos y agentes guardados con la versión anterior siguen cargando (todo campo nuevo es opcional).
 - rev. 13 (2026-10-02), métricas por agente (ADR 0020; `SCHEMA_VERSION` 1.2.0 → **1.3.0**, menor: un campo opcional nuevo). `Agent.metrics: list[MetricDef] = []` y los tipos del DSL (`domain/metrics.py`, `domain/metric_catalog.py`). La rama de métricas lo había numerado 0.5.0, valor que ya usaba `IdKind.proposal`/`IdKind.eval_run` (rev. 9); al integrarla con la rama principal (1.2.0) pasa a 1.3.0. `contracts/` regenerado (`Agent`).
+- rev. 14 (2026-10-05), revisión técnica (`SCHEMA_VERSION` 1.3.0 → **1.4.0**, menor: un campo opcional nuevo). `ToolCallContext.at: UtcDatetime | None = None`: el instante del turno (`Clock`) que el ejecutor usa para `ToolDef.max_auth_age` (ADR 0010); lo llena M2 en `tool_call_context`. `ToolDef.accepts(auth, at)` concentra el chequeo previo: nivel y, si la tool declara `max_auth_age`, antigüedad de la autenticación; sin instante, una tool con `max_auth_age` se rechaza (falla cerrado). Antes `max_auth_age` se declaraba pero nadie lo aplicaba. `contracts/` regenerado (`ToolCallContext`). En la misma versión (sin publicar): `ProblemCode.identity_unavailable` (503) y la excepción `GrantCheckUnavailable`, que `IdentityVerifier.grant_active` lanza cuando el servicio de asignaciones no responde (sigue cerrado, pero M9 ya no lo informa como `delegation_expired`; ADR 0010). `contracts/` regenerado (`ProblemCode`). También `ProblemCode.payload_too_large` (413) para el tope del body de M9. Y slots `list` (entrada del copiloto de sugerencias, ADR 0026, alcance decidido por el usuario el 2026-10-05): `SlotType` suma `list`; `AcceptedSlot` gana `items: dict[str, ItemField]` (campos escalares de cada elemento, sin anidar) y `max_items` (obligatorios para `list`, prohibidos en los demás). Sirve en `Agent.input_schema` y en `accepts`. Un slot escalar se serializa igual que antes (las claves nuevas se omiten si son `None`), así que no cambia el hash de ningún agente publicado. Al modelo un slot llega envuelto como texto no confiable (D8), también cada string de una lista. `contracts/` regenerado (`AcceptedSlot`, `ItemField` y los que lo incluyen). El nodo `suggest` y `RunResult.suggestions` siguen fuera.
 - implementación de M0 (2026-09-29), decisiones que el spec no cubría:
   - `loads` rechaza claves duplicadas; `to_jsonable` rechaza claves que colisionan tras `str()`; `RecursionError` se convierte en `ValueError`; se rechaza un `Decimal` con |exponente| > 1000;
   - `dumps` escribe `Decimal` con `format(d, "f")` (no `str(d)`, que puede emitir `1E+3`);
@@ -433,6 +434,7 @@ class RegistryPort:
 
 class ToolCallContext: run_id: str; release: str; principal: Principal; on_behalf_of: OnBehalfOf | None
                        subject: SubjectRef | None; turn_id: str | None
+                       at: UtcDatetime | None = None   # instante del turno, para max_auth_age (rev. 14)
 class ToolStatus(StrEnum): ok, error, timeout, denied, uncertain, step_up_required   # definido en domain.shared
 class ToolResult:      status: ToolStatus; result_full: JsonValue | None; source: str | None
                        call_id: str; error: str | None; required_level: AuthLevel | None
@@ -467,6 +469,8 @@ class UnitOfWork(Protocol):          # context manager; una instancia = una tran
     def put_turn_result(self, run_id: str, client_turn_id: str, result: TurnResult) -> None
     def get_run_idempotency(self, principal: PrincipalKey, key: str) -> tuple[str, RunResult] | None   # (hash del body, resultado)
     def put_run_idempotency(self, principal: PrincipalKey, key: str, body_hash: str, result: RunResult) -> None
+    def reserve_run_idempotency(self, principal: PrincipalKey, key: str, body_hash: str, now: UtcDatetime, ttl: timedelta) -> tuple[str, RunResult] | None   # inmediata; None = reservada; vigente ajena = 409
+    def release_run_idempotency(self, principal: PrincipalKey, key: str) -> None
     def put_handoff(self, handoff_ref: str, packet: dict[str, JsonValue]) -> None
     def get_handoff(self, handoff_ref: str) -> dict[str, JsonValue] | None
     def append_events(self, run_id: str, events: list[EngineEvent]) -> None     # M11 ya los encadenó
@@ -598,6 +602,7 @@ class ProblemCode(StrEnum):
     delegation_mismatch, principal_mismatch,                                          # 403
     not_found,                                                                        # 404
     turn_in_progress, handoff_already_resolved, idempotency_conflict,                 # 409
+    idempotency_in_progress,                                                          # 409
     run_closed,                                                                       # 410
     invalid_request,                                                                  # 422
     rate_limited, cost_budget_exceeded,                                               # 429
@@ -609,6 +614,7 @@ class EngineError(Exception): code: ProblemCode; detail: str
 - M9 traduce `EngineError` a `application/problem+json` y convierte `TurnInProgress` en `409` y `CredentialsInvalid` en `401`.
 - Cualquier otro `DomainError` que llegue a M9 es un `500 internal_error` con `trace_id`, sin detalle interno.
 - `idempotency_conflict`: la misma `Idempotency-Key` y el mismo principal con otro body.
+- `idempotency_in_progress`: la misma `Idempotency-Key` y el mismo principal mientras otra petición con esa clave sigue en curso (reserva vigente sin resultado). Es reintentable; el cliente distingue por `code`, no por el texto del detalle.
 - `agent_forbidden`: falla `authorize_agent` (tipo de principal, `subject_kind` o nivel de autenticación).
 
 ### 2.12 Conocimiento (`domain/knowledge.py`)

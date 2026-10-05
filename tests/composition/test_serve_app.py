@@ -1,10 +1,13 @@
 """`build_api_deps`: el motor real sobre la API de M9 con un verificador JWS real (sin Postgres ni red)."""
 
+from dataclasses import replace
+
 from fastapi.testclient import TestClient
 
 from agent_core.api.app import create_app
 from agent_core.composition.serve import build_api_deps
 from agent_core.composition.serve_ports import ServePorts
+from agent_core.domain import SCHEMA_VERSION
 from testing.engine_world import EngineWorld
 from testing.fakes.identity import TestIdentityIssuer
 from testing.fakes.storage import InMemoryCostCounters
@@ -81,3 +84,26 @@ def test_build_api_deps_passes_the_directory_to_the_engine() -> None:
     ports = replace(make_ports(world, issuer), directory=InMemoryDirectory(world.registry))
     deps = build_api_deps(ports)
     assert isinstance(deps.turns._runtimes._tools, DirectoryToolExecutor)  # type: ignore[attr-defined]
+
+
+def test_readyz_reports_the_readiness_checks_of_the_ports() -> None:
+    world = EngineWorld()
+    issuer = TestIdentityIssuer(world.clock)
+    ports = replace(make_ports(world, issuer), readiness=(("postgres", lambda: False),))
+    client = TestClient(create_app(build_api_deps(ports)), raise_server_exceptions=False)
+
+    response = client.get("/readyz")
+
+    assert response.status_code == 503 and response.json()["failed"] == ["postgres"]
+    assert client.get("/healthz").status_code == 200
+
+
+def test_version_reports_package_contract_and_sha_without_credentials() -> None:
+    world = EngineWorld()
+    issuer = TestIdentityIssuer(world.clock)
+    app = create_app(build_api_deps(make_ports(world, issuer), build_sha="abc123"))
+    got = TestClient(app).get("/version")
+    assert got.status_code == 200
+    assert got.json() == {"package": got.json()["package"], "contract": SCHEMA_VERSION, "sha": "abc123"}
+    assert app.openapi()["info"]["version"] == SCHEMA_VERSION
+    assert "/version" not in app.openapi()["paths"]

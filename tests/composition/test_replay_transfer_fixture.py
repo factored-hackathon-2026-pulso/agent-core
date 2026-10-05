@@ -142,19 +142,33 @@ def test_the_runner_rejects_a_release_the_registry_does_not_have() -> None:
 
 
 def _a_fixture_pinned_to_another_release() -> Fixture:
-    """`disputas-demo` exists in the registry but is not the `prod` release of the entry agent (recepcion)."""
+    """`disputas-demo` exists in the registry but is not a release of the entry agent (recepcion)."""
     return load_fixture_file(RUN).model_copy(update={"release": "disputas-demo"})
 
 
-def test_the_runner_rejects_a_release_that_is_not_the_prod_alias_of_the_entry_agent() -> None:
+def test_the_runner_rejects_a_release_that_is_not_of_the_entry_agent() -> None:
     runner = build_engine_runner(Path(REGISTRY))
-    message = "el alias prod de recepcion es la release recepcion-demo, no disputas-demo"
+    message = "la release disputas-demo no es del agente de entrada recepcion"
     with pytest.raises(ValueError, match=message):
         Replayer(runner, FakeClock(), definitions=runner.definitions).replay(
             _a_fixture_pinned_to_another_release(), "fixture")
 
 
-def test_the_cli_exits_3_on_a_release_that_is_not_the_prod_alias_of_the_entry_agent(
+def test_a_run_replays_on_its_recorded_release_after_prod_moved() -> None:
+    """Revisión 2026-10-05: promoting a new release must not make the old runs unreplayable."""
+    runner = build_engine_runner(Path(REGISTRY))
+    registry = runner._registry  # type: ignore[attr-defined]
+    newer = registry.resolve_release_by_id("recepcion-demo").model_copy(update={"id": "recepcion-nueva"})
+    registry.add_release(newer, "recepcion", alias="prod")  # prod no longer points to the recorded release
+
+    report = Replayer(runner, FakeClock(), definitions=runner.definitions).replay(load_fixture_file(RUN),
+                                                                                  "fixture")
+
+    assert report.verdict == "match", report.first_divergence
+    assert registry.resolve_release_by_id("recepcion-nueva").id == "recepcion-nueva"  # the runner's own copy
+
+
+def test_the_cli_exits_3_on_a_release_that_is_not_of_the_entry_agent(
         tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     path = tmp_path / "otra-release.yaml"
     path.write_text(dump_fixture(_a_fixture_pinned_to_another_release()), encoding="utf-8")

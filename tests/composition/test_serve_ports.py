@@ -2,10 +2,13 @@
 
 import argparse
 import base64
+from pathlib import Path
 
 import pytest
 
+from agent_core.adapters.llm import HttpLLMGateway
 from agent_core.composition.serve_ports import ServeConfigError, ServePorts, add_serve_parser, resolve_ports
+from agent_core.domain import EntityRef, GatewayError, GatewayErrorKind
 from testing.fakes.clock import FakeClock
 from testing.fakes.ids import FakeIds
 
@@ -72,6 +75,29 @@ def test_with_the_demo_switch_the_doubles_are_listed() -> None:
                                   "field-classifier", "grant-active", "identity"}
 
 
+
+
+def test_lang_thresholds_come_from_a_json_file_and_default_to_none(tmp_path: Path) -> None:
+    assert _resolve(AGENTCORE_ALLOW_DEMO="1").lang_thresholds == {}
+    path = tmp_path / "lang.json"
+    path.write_text('{"lang-cal": {"switch_threshold": 0.9, "unsupported_threshold": 0.95, '
+                    '"min_distance": 0.2}}', encoding="utf-8")
+    ports = _resolve("--lang-thresholds", str(path), AGENTCORE_ALLOW_DEMO="1")
+    assert ports.lang_thresholds["lang-cal"].switch_threshold == 0.9
+    assert ports.lang_thresholds["lang-cal"].switch_active
+    via_env = _resolve(AGENTCORE_ALLOW_DEMO="1", AGENTCORE_LANG_THRESHOLDS=str(path))
+    assert set(via_env.lang_thresholds) == {"lang-cal"}
+
+
+@pytest.mark.parametrize("content", ["no es json", "[1, 2]", '{"x": {"switch_threshold": 7}}'])
+def test_a_broken_lang_thresholds_file_is_a_startup_problem_not_a_silent_off(tmp_path: Path,
+                                                                             content: str) -> None:
+    path = tmp_path / "lang.json"
+    path.write_text(content, encoding="utf-8")
+    with pytest.raises(ServeConfigError) as info:
+        _resolve("--lang-thresholds", str(path), AGENTCORE_ALLOW_DEMO="1")
+    assert "--lang-thresholds" in " ".join(info.value.problems)
+    assert content not in " ".join(info.value.problems)  # el contenido del archivo no se imprime
 
 
 # --- pase de arreglos de la revisión final ------------------------------------------------------------
@@ -150,10 +176,20 @@ def counting_piece(ctx: object) -> _Piece:
     return _Piece()
 
 
-def test_invalid_llm_endpoints_is_a_config_problem_not_a_schema_error() -> None:
+def test_an_invalid_llm_gateway_url_is_a_config_problem_not_a_schema_error() -> None:
     with pytest.raises(ServeConfigError) as info:
-        _resolve(AGENTCORE_ALLOW_DEMO="1", LLM_ENDPOINTS="{no es json")
-    assert "LLM_ENDPOINTS" in " ".join(info.value.problems)
+        _resolve(AGENTCORE_ALLOW_DEMO="1", AGENTCORE_LLM_GATEWAY_URL="no es una url",
+                 AGENTCORE_LLM_GATEWAY_TOKEN="t")
+    assert "AGENTCORE_LLM_GATEWAY_URL" in " ".join(info.value.problems)
+
+
+@pytest.mark.parametrize("env", [{"AGENTCORE_LLM_GATEWAY_URL": "https://gw.test"},
+                                 {"AGENTCORE_LLM_GATEWAY_TOKEN": "t"}])
+def test_a_half_configured_llm_gateway_is_a_config_problem(env: dict[str, str]) -> None:
+    with pytest.raises(ServeConfigError) as info:
+        _resolve(AGENTCORE_ALLOW_DEMO="1", **env)
+    text = " ".join(info.value.problems)
+    assert "AGENTCORE_LLM_GATEWAY_URL" in text and "AGENTCORE_LLM_GATEWAY_TOKEN" in text
 
 
 def test_static_config_problems_are_reported_together_before_any_factory_runs(tmp_path: object) -> None:
@@ -165,9 +201,10 @@ def test_static_config_problems_are_reported_together_before_any_factory_runs(tm
     with pytest.raises(ServeConfigError) as info:
         _resolve("--identity-keys", str(bad_keys), "--tools",
                  "tests.composition.test_serve_ports:counting_piece",
-                 AGENTCORE_ALLOW_DEMO="1", LLM_ENDPOINTS="{no es json")
+                 AGENTCORE_ALLOW_DEMO="1", AGENTCORE_LLM_GATEWAY_URL="no es una url",
+                 AGENTCORE_LLM_GATEWAY_TOKEN="t")
     text = " ".join(info.value.problems)
-    assert "principal_keys" in text and "LLM_ENDPOINTS" in text
+    assert "principal_keys" in text and "AGENTCORE_LLM_GATEWAY_URL" in text
     assert CALLS == []  # las fábricas no corrieron con la configuración estática rota
 
 
@@ -177,7 +214,8 @@ def test_the_dsn_never_reaches_stderr(capsys: pytest.CaptureFixture[str],
     from agent_core.cli import main
 
     monkeypatch.delenv("AGENTCORE_ALLOW_DEMO", raising=False)
-    monkeypatch.setenv("LLM_ENDPOINTS", "{no es json")
+    monkeypatch.setenv("AGENTCORE_LLM_GATEWAY_URL", "no es una url")
+    monkeypatch.setenv("AGENTCORE_LLM_GATEWAY_TOKEN", "t")
     code = main(["serve", "--dsn", "postgresql://user:S3CRETPW@host/db"])
     assert code == 2
     assert "S3CRETPW" not in capsys.readouterr().err
@@ -195,16 +233,18 @@ def test_dsn_help_recommends_the_env_var_over_argv(capsys: pytest.CaptureFixture
 # --- observabilidad (refactor del plano operativo, tarea 2) --------------------------------------------
 
 
-def test_resolve_ports_injects_the_given_tracer_in_the_gateway() -> None:
-    marker = object()
-    ports = resolve_ports(_args(), _env(AGENTCORE_ALLOW_DEMO="1"), FakeClock(), FakeIds(),
-                          tracer=marker)  # type: ignore[arg-type]
-    assert ports.gateway._tracer is marker  # type: ignore[attr-defined]
+def test_a_configured_llm_gateway_is_the_http_client() -> None:
+    ports = _resolve(AGENTCORE_ALLOW_DEMO="1", AGENTCORE_LLM_GATEWAY_URL="https://gw.test/",
+                     AGENTCORE_LLM_GATEWAY_TOKEN="t")
+    assert isinstance(ports.gateway, HttpLLMGateway) and ports.llm_gateway_url == "https://gw.test/"
 
 
-def test_without_a_tracer_the_gateway_resolves_agent_telemetry_per_call() -> None:
+def test_without_a_gateway_every_generation_fails_as_unavailable_and_startup_is_not_blocked() -> None:
     ports = _resolve(AGENTCORE_ALLOW_DEMO="1")
-    assert ports.gateway._tracer is None  # type: ignore[attr-defined]
+    assert ports.llm_gateway_url is None
+    with pytest.raises(GatewayError) as caught:
+        ports.gateway.generate(EntityRef.parse("p@1.0.0"), {}, "es")
+    assert caught.value.kind is GatewayErrorKind.unavailable
 
 
 def boom_factory(ctx: object) -> object:
@@ -224,3 +264,32 @@ def test_serve_wires_the_registry_directory() -> None:
     ports = _resolve(AGENTCORE_ALLOW_DEMO="1")
     assert isinstance(ports.directory, RegistryDirectory)
     assert "directory" not in ports.doubles  # a real piece over the registry, not a demo double
+
+
+def test_serve_registers_a_postgres_readiness_check_that_fails_closed_when_unreachable() -> None:
+    ports = _resolve("--tools", "testing.serve_demo:tools", "--authz", "testing.serve_demo:authz",
+                     "--transcript", "testing.serve_demo:transcript",
+                     "--calibration", "testing.serve_demo:calibration",
+                     "--classifier", "testing.serve_demo:classifier_provider",
+                     "--field-classifier", "testing.serve_demo:field_classifier",
+                     "--grant-active", "testing.serve_demo:grant_active",
+                     AGENTCORE_ALLOW_DEMO="1",
+                     AGENTCORE_REGISTRY_DSN="postgresql://u:secret@127.0.0.1:1/none")
+
+    (name, check), = ports.readiness
+
+    assert name == "postgres"
+    assert check() is False  # nada escucha en el puerto 1: falla cerrado, sin lanzar
+
+
+@pytest.mark.parametrize("value", ["-1", "diez", "1.5"])
+def test_an_invalid_pool_size_is_a_named_problem(value: str) -> None:
+    with pytest.raises(ServeConfigError) as info:
+        _resolve(AGENTCORE_ALLOW_DEMO="1", AGENTCORE_DB_POOL_MAX=value)
+    assert "AGENTCORE_DB_POOL_MAX" in " ".join(info.value.problems)
+
+
+def test_a_valid_pool_size_composes_without_connecting() -> None:
+    ports = _resolve(AGENTCORE_ALLOW_DEMO="1", AGENTCORE_DB_POOL_MAX="4")  # el pool se abre al primer uso
+
+    assert ports.uow_factory is not None

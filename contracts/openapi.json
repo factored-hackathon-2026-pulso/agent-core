@@ -207,6 +207,7 @@
           "notes": {
             "anyOf": [
               {
+                "maxLength": 4000,
                 "type": "string"
               },
               {
@@ -216,6 +217,7 @@
             "title": "Notes"
           },
           "resolution_code": {
+            "maxLength": 255,
             "title": "Resolution Code",
             "type": "string"
           }
@@ -253,10 +255,12 @@
         "additionalProperties": false,
         "properties": {
           "channel": {
+            "maxLength": 255,
             "title": "Channel",
             "type": "string"
           },
           "client_turn_id": {
+            "maxLength": 255,
             "title": "Client Turn Id",
             "type": "string"
           },
@@ -284,6 +288,7 @@
           },
           "text": {
             "default": "",
+            "maxLength": 32000,
             "title": "Text",
             "type": "string"
           }
@@ -299,7 +304,7 @@
   },
   "info": {
     "title": "agent-core",
-    "version": "1.0.0"
+    "version": "1.4.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -400,7 +405,7 @@
                 }
               }
             },
-            "description": "turn_in_progress | handoff_already_resolved | idempotency_conflict"
+            "description": "turn_in_progress | handoff_already_resolved | idempotency_conflict | idempotency_in_progress"
           },
           "410": {
             "content": {
@@ -411,6 +416,16 @@
               }
             },
             "description": "run_closed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "payload_too_large"
           },
           "422": {
             "content": {
@@ -431,6 +446,16 @@
               }
             },
             "description": "rate_limited | cost_budget_exceeded"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "identity_unavailable"
           }
         },
         "summary": "Paquete de traspaso"
@@ -543,7 +568,7 @@
                 }
               }
             },
-            "description": "turn_in_progress | handoff_already_resolved | idempotency_conflict"
+            "description": "turn_in_progress | handoff_already_resolved | idempotency_conflict | idempotency_in_progress"
           },
           "410": {
             "content": {
@@ -554,6 +579,16 @@
               }
             },
             "description": "run_closed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "payload_too_large"
           },
           "422": {
             "content": {
@@ -574,6 +609,16 @@
               }
             },
             "description": "rate_limited | cost_budget_exceeded"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "identity_unavailable"
           }
         },
         "summary": "Resuelve un traspaso"
@@ -695,7 +740,7 @@
                 }
               }
             },
-            "description": "turn_in_progress | handoff_already_resolved | idempotency_conflict"
+            "description": "turn_in_progress | handoff_already_resolved | idempotency_conflict | idempotency_in_progress"
           },
           "410": {
             "content": {
@@ -706,6 +751,16 @@
               }
             },
             "description": "run_closed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "payload_too_large"
           },
           "422": {
             "content": {
@@ -726,6 +781,16 @@
               }
             },
             "description": "rate_limited | cost_budget_exceeded"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "identity_unavailable"
           }
         },
         "summary": "Crea un run"
@@ -828,7 +893,7 @@
                 }
               }
             },
-            "description": "turn_in_progress | handoff_already_resolved | idempotency_conflict"
+            "description": "turn_in_progress | handoff_already_resolved | idempotency_conflict | idempotency_in_progress"
           },
           "410": {
             "content": {
@@ -839,6 +904,16 @@
               }
             },
             "description": "run_closed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "payload_too_large"
           },
           "422": {
             "content": {
@@ -859,6 +934,16 @@
               }
             },
             "description": "rate_limited | cost_budget_exceeded"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "identity_unavailable"
           }
         },
         "summary": "Estado resumido de un run"
@@ -961,7 +1046,7 @@
                 }
               }
             },
-            "description": "turn_in_progress | handoff_already_resolved | idempotency_conflict"
+            "description": "turn_in_progress | handoff_already_resolved | idempotency_conflict | idempotency_in_progress"
           },
           "410": {
             "content": {
@@ -972,6 +1057,16 @@
               }
             },
             "description": "run_closed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "payload_too_large"
           },
           "422": {
             "content": {
@@ -992,6 +1087,16 @@
               }
             },
             "description": "rate_limited | cost_budget_exceeded"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "identity_unavailable"
           }
         },
         "summary": "Transcript renderizado"
@@ -1094,7 +1199,7 @@
                 }
               }
             },
-            "description": "turn_in_progress | handoff_already_resolved | idempotency_conflict"
+            "description": "turn_in_progress | handoff_already_resolved | idempotency_conflict | idempotency_in_progress"
           },
           "410": {
             "content": {
@@ -1105,6 +1210,16 @@
               }
             },
             "description": "run_closed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "payload_too_large"
           },
           "422": {
             "content": {
@@ -1125,6 +1240,16 @@
               }
             },
             "description": "rate_limited | cost_budget_exceeded"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "identity_unavailable"
           }
         },
         "summary": "Linaje de la sesión"
@@ -1237,7 +1362,7 @@
                 }
               }
             },
-            "description": "turn_in_progress | handoff_already_resolved | idempotency_conflict"
+            "description": "turn_in_progress | handoff_already_resolved | idempotency_conflict | idempotency_in_progress"
           },
           "410": {
             "content": {
@@ -1248,6 +1373,16 @@
               }
             },
             "description": "run_closed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "payload_too_large"
           },
           "422": {
             "content": {
@@ -1268,6 +1403,16 @@
               }
             },
             "description": "rate_limited | cost_budget_exceeded"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "identity_unavailable"
           }
         },
         "summary": "Procesa un turno"

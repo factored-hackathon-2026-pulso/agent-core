@@ -2,30 +2,7 @@
   "components": {
     "schemas": {
       "AcceptedSlot": {
-        "additionalProperties": false,
-        "description": "One slot of the input contract: its type and whether the packet must carry it.",
-        "properties": {
-          "required": {
-            "default": false,
-            "title": "Required",
-            "type": "boolean"
-          },
-          "type": {
-            "enum": [
-              "string",
-              "integer",
-              "decimal",
-              "date",
-              "boolean"
-            ],
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "type"
-        ],
-        "title": "AcceptedSlot",
+        "additionalProperties": true,
         "type": "object"
       },
       "ActionSpec": {
@@ -89,6 +66,20 @@
             "format": "duration",
             "title": "Inactivity Ttl",
             "type": "string"
+          },
+          "input_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/AcceptedSlot"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Schema"
           },
           "invocable_by": {
             "items": {
@@ -382,6 +373,40 @@
         "title": "AliasChange",
         "type": "object"
       },
+      "AliasState": {
+        "additionalProperties": false,
+        "description": "Hacia qué release apunta un alias hoy y si esa release sigue activa (N-02).",
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "alias": {
+            "title": "Alias",
+            "type": "string"
+          },
+          "release_id": {
+            "title": "Release Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "revoked"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_id",
+          "alias",
+          "release_id",
+          "status"
+        ],
+        "title": "AliasState",
+        "type": "object"
+      },
       "Approval": {
         "additionalProperties": false,
         "properties": {
@@ -455,6 +480,13 @@
               "$ref": "#/components/schemas/GateItem"
             },
             "title": "Gate",
+            "type": "array"
+          },
+          "release_changes": {
+            "items": {
+              "$ref": "#/components/schemas/ReleaseSettingChange"
+            },
+            "title": "Release Changes",
             "type": "array"
           },
           "suite": {
@@ -2105,6 +2137,11 @@
             "title": "Id",
             "type": "string"
           },
+          "locked": {
+            "default": false,
+            "title": "Locked",
+            "type": "boolean"
+          },
           "priority": {
             "title": "Priority",
             "type": "integer"
@@ -3511,6 +3548,23 @@
             "title": "Eval Suite Refs",
             "type": "array"
           },
+          "injection_ruleset": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EntityRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "interrupts": {
+            "items": {
+              "$ref": "#/components/schemas/Interrupt"
+            },
+            "title": "Interrupts",
+            "type": "array"
+          },
           "knowledge_snapshot": {
             "anyOf": [
               {
@@ -3521,6 +3575,13 @@
               }
             ],
             "title": "Knowledge Snapshot"
+          },
+          "language_detection": {
+            "$ref": "#/components/schemas/EntityRef"
+          },
+          "max_input_chars": {
+            "title": "Max Input Chars",
+            "type": "integer"
           },
           "proposal_id": {
             "anyOf": [
@@ -3564,7 +3625,9 @@
           "proposal_id",
           "base_release_id",
           "published_by",
-          "published_at"
+          "published_at",
+          "language_detection",
+          "max_input_chars"
         ],
         "title": "ReleaseDetail",
         "type": "object"
@@ -3610,6 +3673,29 @@
           "changed"
         ],
         "title": "ReleaseDiff",
+        "type": "object"
+      },
+      "ReleaseSettingChange": {
+        "additionalProperties": false,
+        "description": "Un campo de nivel release que la propuesta cambia, contra la release base (N-07): el aprobador ve el\nantes y el después en vez de solo el borrador.",
+        "properties": {
+          "after": {
+            "$ref": "#/components/schemas/JsonValue-Output"
+          },
+          "before": {
+            "$ref": "#/components/schemas/JsonValue-Output"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "before",
+          "after"
+        ],
+        "title": "ReleaseSettingChange",
         "type": "object"
       },
       "RespondConfig": {
@@ -4842,6 +4928,39 @@
         "title": "VersionRef",
         "type": "object"
       },
+      "VersionSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "docs": {
+            "$ref": "#/components/schemas/VersionDocs"
+          },
+          "ref": {
+            "$ref": "#/components/schemas/VersionRef"
+          }
+        },
+        "required": [
+          "ref",
+          "content_hash",
+          "docs",
+          "created_by",
+          "created_at"
+        ],
+        "title": "VersionSummary",
+        "type": "object"
+      },
       "Violation": {
         "additionalProperties": false,
         "description": "Una violación de una regla G0 o de un chequeo por agente. Nunca lleva datos de cliente.",
@@ -5156,6 +5275,102 @@
   "openapi": "3.1.0",
   "paths": {
     "/v1/registry/aliases/{agent_id}/{alias}": {
+      "get": {
+        "operationId": "alias_state_v1_registry_aliases__agent_id___alias__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "alias",
+            "required": true,
+            "schema": {
+              "title": "Alias",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AliasState"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              }
+            },
+            "description": "credencial ausente, inválida o vencida"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              }
+            },
+            "description": "rol insuficiente o step-up requerido"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              }
+            },
+            "description": "no existe"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Alias State"
+      },
       "post": {
         "operationId": "promote_v1_registry_aliases__agent_id___alias__post",
         "parameters": [
@@ -7106,6 +7321,109 @@
           }
         ],
         "summary": "Lineage"
+      }
+    },
+    "/v1/registry/versions/{kind}/{eid}": {
+      "get": {
+        "description": "Versiones de una entidad, de la más antigua a la más reciente (`eid` admite `/`).",
+        "operationId": "versions_v1_registry_versions__kind___eid__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "eid",
+            "required": true,
+            "schema": {
+              "title": "Eid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/VersionSummary"
+                  },
+                  "title": "Response 200 Versions V1 Registry Versions  Kind   Eid  Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              }
+            },
+            "description": "credencial ausente, inválida o vencida"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              }
+            },
+            "description": "rol insuficiente o step-up requerido"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              }
+            },
+            "description": "no existe"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Versions"
       }
     }
   },

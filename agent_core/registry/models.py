@@ -2,11 +2,11 @@
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from agent_core.domain import EntityId, JsonValue, Release
+from agent_core.domain import EntityId, EntityRef, Interrupt, JsonValue, Release
 from agent_core.registry.evaluation.report import EvalReport, Verdict
 from agent_core.registry.evaluation.yardstick import YardstickChange
 
@@ -45,6 +45,24 @@ class ProposalState(StrEnum):
     published = "published"
 
 
+# Borrador reservado: campos de la release que no son una entidad (N-07).
+RELEASE_SETTINGS = "release_settings"
+
+
+# Tope de `max_input_chars` por propuesta: un valor desmedido desactiva la guarda de largo de la entrada.
+MAX_INPUT_CHARS_CEILING = 100_000
+
+
+class ReleaseSettings(RegModel):
+    """Contenido del borrador `release_settings`. Un campo omitido conserva el valor de la base; no hay forma
+    de quitar el `injection_ruleset` ni la detección de idioma, solo de cambiarlos por otros del registry."""
+
+    interrupts: list[Interrupt] | None = None  # reemplaza la lista completa; `[]` la vacía
+    language_detection: str | None = None  # id de una entidad `language_detection` (se fija a su versión)
+    injection_ruleset: str | None = None  # id de una entidad `injection_ruleset`
+    max_input_chars: Annotated[int, Field(gt=0, le=MAX_INPUT_CHARS_CEILING)] | None = None
+
+
 class EntityDraft(RegModel):
     kind: str
     content: dict[str, JsonValue]
@@ -52,17 +70,19 @@ class EntityDraft(RegModel):
 
     @model_validator(mode="after")
     def _has_identity(self) -> "EntityDraft":
+        if self.kind == RELEASE_SETTINGS:  # no es una entidad versionada: sin `id` ni `version`
+            return self
         if not isinstance(self.content.get("id"), str) or not isinstance(self.content.get("version"), str):
             raise ValueError("el contenido necesita `id` y `version` como texto")
         return self
 
     @property
     def id(self) -> str:
-        return str(self.content["id"])
+        return str(self.content.get("id", self.kind))
 
     @property
     def version(self) -> str:
-        return str(self.content["version"])
+        return str(self.content.get("version", ""))
 
 
 class Proposal(RegModel):
@@ -194,6 +214,20 @@ class ReleaseDetail(RegModel):
     published_by: str
     published_at: datetime
     eval_suite_refs: list[VersionRef] = Field(default_factory=list)  # the next proposal's old yardstick
+    # Campos de nivel release que entran en `release_hash` (N-03): con ellos se reconstruye sin dry-run.
+    interrupts: list[Interrupt] = Field(default_factory=list)
+    language_detection: EntityRef
+    injection_ruleset: EntityRef | None = None
+    max_input_chars: int
+
+
+class AliasState(RegModel):
+    """Hacia qué release apunta un alias hoy y si esa release sigue activa (N-02)."""
+
+    agent_id: str
+    alias: str
+    release_id: str
+    status: Literal["active", "revoked"]
 
 
 class ChangedRef(RegModel):

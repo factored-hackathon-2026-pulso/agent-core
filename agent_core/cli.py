@@ -1,4 +1,5 @@
-"""CLI `agentcore`: `contracts`, `validate`, `sweep`, `replay`, `record`, `llm-smoke`, `registry`, `serve`."""
+"""CLI `agentcore`: `contracts`, `validate`, `sweep`, `replay`, `record`, `llm-smoke`, `registry`, `serve`,
+`migrate`."""
 
 import argparse
 import importlib
@@ -12,7 +13,8 @@ from typing import Any, Protocol
 import psycopg
 
 from agent_core.actions import ActionManager
-from agent_core.adapters.llm import LLMAgentPort, OpenAICompatGateway, load_endpoints
+from agent_core.adapters.llm import HttpLLMGateway, LLMAgentPort
+from agent_core.adapters.llm.http_gateway import LLM_GATEWAY_TOKEN_ENV, LLM_GATEWAY_URL_ENV
 from agent_core.adapters.llm.smoke import (
     SMOKE_PROMPT,
     AgentStepRunner,
@@ -57,14 +59,16 @@ from agent_core.domain import (
 from agent_core.flows import AuthoringRegistry, load_registry
 from agent_core.flows.cli_validate import run_validate
 from agent_core.interpreter import AgentRequest
-from agent_core.ports import Clock
+from agent_core.ports import Clock, RegistryPort
+from agent_core.registry import PgRegistryStore, PostgresRegistry
 from agent_core.turn import Sweeper, SweepReport
 
 ENGINE_UNAVAILABLE_MESSAGE = "motor no disponible: el replay necesita el motor integrado y --registry"
 RECORD_UNAVAILABLE_MESSAGE = "motor no disponible: record necesita el motor integrado y --registry"
 # El motor del replay y `record` son herramientas de desarrollo (`testing/`, no van al wheel).
 _ENGINE_MODULE = "testing.replay"
-DSN_ENV = "AGENTCORE_DATABASE_URL"
+DSN_ENV = "AGENTCORE_REGISTRY_DSN"  # la misma que lee `serve` y `migrate` (ADR infra 0003)
+LEGACY_DSN_ENV = "AGENTCORE_DATABASE_URL"  # nombre anterior de `sweep`; sigue aceptándose
 
 
 class EngineUnavailable(RuntimeError):
@@ -175,14 +179,25 @@ class _AuthoringAgents:
         raise NotImplementedError("el barrido no consulta el estado de las releases")
 
 
-def build_sweeper(dsn: str, registry_root: Path) -> Sweeper:
-    registry, violations = load_registry(registry_root)
-    if violations:
-        raise SchemaError(f"registro inválido: {len(violations)} violaciones (agentcore validate)")
+def build_sweeper(dsn: str, registry_root: Path | None = None) -> Sweeper:
+    """Sin `registry_root` el `Agent` de cada run sale del registry en Postgres (el mismo que lee `serve`);
+    con él, del directorio de autoría (versión exacta)."""
+    from agent_core.composition.blobs import blob_factory_from_env
+
     store = PostgresStore(dsn)
     clock, ids = SystemClock(), SystemIds()
+    if registry_root is None:
+        # Con `AGENTCORE_BLOB_BUCKET` los blobs de las versiones nuevas viven en S3, no en `reg_blobs`.
+        pg_store = PgRegistryStore(lambda: psycopg.connect(dsn, autocommit=False),
+                                   blob_factory_from_env(os.environ))
+        registry: RegistryPort = PostgresRegistry(pg_store, clock)
+    else:
+        authoring, violations = load_registry(registry_root)
+        if violations:
+            raise SchemaError(f"registro inválido: {len(violations)} violaciones (agentcore validate)")
+        registry = _AuthoringAgents(authoring)  # type: ignore[assignment]
     return Sweeper(
-        uow_factory=store.uow, registry=_AuthoringAgents(registry), clock=clock, ids=ids,  # type: ignore[arg-type]
+        uow_factory=store.uow, registry=registry, clock=clock, ids=ids,
         actions=ActionManager(ids, clock), chain=AuditLog(store.audit(), store.uow))
 
 
@@ -191,10 +206,10 @@ class SweeperLike(Protocol):
 
 
 def _run_sweep(args: argparse.Namespace, sweeper: SweeperLike | None, clock: Clock | None) -> int:
-    dsn = args.dsn or os.environ.get(DSN_ENV)
+    dsn = args.dsn or os.environ.get(DSN_ENV) or os.environ.get(LEGACY_DSN_ENV)
     if sweeper is None:
-        if not dsn or args.registry is None:
-            print(f"agentcore sweep necesita --dsn (o {DSN_ENV}) y --registry", file=sys.stderr)
+        if not dsn:
+            print(f"agentcore sweep necesita --dsn (o {DSN_ENV})", file=sys.stderr)
             return 2
         try:
             sweeper = build_sweeper(dsn, args.registry)
@@ -235,25 +250,22 @@ def _agent_step_runner(port: LLMAgentPort, clock: Clock) -> AgentStepRunner:
 
 def _run_llm_smoke(args: argparse.Namespace) -> int:
     """Prueba de humo del gateway: nunca imprime la clave ni el contenido generado."""
-    # El SDK `openai` registra los cuerpos de request en DEBUG (incluso con OPENAI_LOG=debug): se corta.
+    # Las librerías HTTP registran detalles de los requests en DEBUG: se corta.
     from agent_core.composition.observability import quiet_sdk_loggers
 
     quiet_sdk_loggers()
     if args.n < 1:
         print("--n debe ser al menos 1", file=sys.stderr)
         return USAGE_ERROR
+    url = os.environ.get(LLM_GATEWAY_URL_ENV, "").strip()
+    token = os.environ.get(LLM_GATEWAY_TOKEN_ENV, "").strip()
+    if not url or not token:
+        print(f"llm-smoke necesita {LLM_GATEWAY_URL_ENV} y {LLM_GATEWAY_TOKEN_ENV}", file=sys.stderr)
+        return USAGE_ERROR
     try:
-        endpoints = load_endpoints(os.environ)
-        if not endpoints:
-            print("llm-smoke necesita LLM_ENDPOINTS con al menos un endpoint", file=sys.stderr)
-            return USAGE_ERROR
-        try:
-            profile = EntityRef.parse(args.profile)
-        except DomainError:
-            print("--profile debe ser id@versión exacta", file=sys.stderr)
-            return USAGE_ERROR
-    except SchemaError as error:
-        print(str(error), file=sys.stderr)
+        profile = EntityRef.parse(args.profile)
+    except DomainError:
+        print("--profile debe ser id@versión exacta", file=sys.stderr)
         return USAGE_ERROR
     registry, violations = load_registry(args.registry)
     if violations:
@@ -266,7 +278,7 @@ def _run_llm_smoke(args: argparse.Namespace) -> int:
         print(f"el perfil {profile} no está en el registro {args.registry}", file=sys.stderr)
         return USAGE_ERROR
     smoke_registry = SmokeRegistry(agents, profile)  # type: ignore[arg-type]
-    gateway = OpenAICompatGateway(smoke_registry, endpoints, os.environ)
+    gateway = HttpLLMGateway(smoke_registry, url, token)
     clock = SystemClock()
     port = LLMAgentPort(gateway, smoke_registry, lambda kind, ref: ref.require_exact())
     report = run_smoke(gateway, SMOKE_PROMPT, clock, n=args.n, agent_step=_agent_step_runner(port, clock))
@@ -274,9 +286,19 @@ def _run_llm_smoke(args: argparse.Namespace) -> int:
     return 0 if report.ok > 0 else 1
 
 
+def _force_utf8_streams() -> None:
+    """En Windows stdout/stderr usan la página de códigos local (cp1252): imprimir un resultado ya confirmado
+    (p. ej. `registry publish`) fallaba con `UnicodeEncodeError` y el reintento chocaba con la transición."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(
     argv: Sequence[str] | None = None, *, sweeper: SweeperLike | None = None, clock: Clock | None = None
 ) -> int:
+    _force_utf8_streams()
     parser = argparse.ArgumentParser(prog="agentcore")
     sub = parser.add_subparsers(dest="command", required=True)
     contracts = sub.add_parser("contracts", help="genera o verifica contracts/")
@@ -286,7 +308,8 @@ def main(
     validate.add_argument("root", type=Path)
     validate.add_argument("--json", action="store_true", help="salida JSON estable")
     sweep = sub.add_parser("sweep", help="cierra como abandoned los runs vencidos (M4)")
-    sweep.add_argument("--registry", type=Path, default=None, help="directorio del registro de autoría")
+    sweep.add_argument("--registry", type=Path, default=None,
+                       help="directorio del registro de autoría; sin él se usa el registry de Postgres")
     sweep.add_argument("--dsn", default=None,
                        help=f"DSN de Postgres (o la variable {DSN_ENV}); no se imprime nunca")
     sweep.add_argument("--once", action="store_true", help="una sola pasada (por ahora es la única)")
@@ -314,6 +337,15 @@ def main(
     from agent_core.composition.serve_ports import add_serve_parser
 
     add_serve_parser(sub)
+    from agent_core.composition.migrate import add_migrate_parser, run_migrate
+
+    add_migrate_parser(sub)
+    from agent_core.composition.blobs import add_blobs_backfill_parser, run_blobs_backfill
+
+    add_blobs_backfill_parser(sub)
+    from agent_core.composition.relay import add_relay_parser, run_relay
+
+    add_relay_parser(sub)
     args = parser.parse_args(argv)
     if args.command == "llm-smoke":
         return _run_llm_smoke(args)
@@ -321,6 +353,12 @@ def main(
         return run_registry_cli(args, clock=SystemClock(), ids=SystemIds(), env=os.environ.get)
     if args.command == "serve":
         return run_serve(args, clock=SystemClock(), ids=SystemIds(), env=os.environ)
+    if args.command == "migrate":
+        return run_migrate(args, os.environ)
+    if args.command == "relay":
+        return run_relay(args, os.environ)
+    if args.command == "blobs-backfill":
+        return run_blobs_backfill(args, os.environ)
     if args.command == "sweep":
         return _run_sweep(args, sweeper, clock)
     if args.command == "contracts":

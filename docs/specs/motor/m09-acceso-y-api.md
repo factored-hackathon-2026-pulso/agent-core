@@ -28,6 +28,8 @@ Rutas (contrato generado en `contracts/openapi.json` por `agentcore contracts`):
 | `GET /v1/handoffs/{handoff_ref}` | `get_handoff` | M10 `get` |
 | `POST /v1/handoffs/{handoff_ref}/resolution` | `post_resolution` | M10 `record_resolution` |
 
+Rutas de operación, fuera de `/v1` y fuera del contrato generado (`include_in_schema=False`): `GET /healthz` y `GET /readyz` (§3.9). No llevan credencial.
+
 Cabeceras: `Authorization` (principal firmado, con o sin el esquema `Bearer`), `X-On-Behalf-Of` (delegación firmada, solo asesores) e `Idempotency-Key` (obligatoria en `POST /v1/runs`, 1 a 255 caracteres imprimibles). Todas las respuestas llevan `trace_id`.
 
 ```python
@@ -56,9 +58,11 @@ create_app(deps: ApiDeps) -> FastAPI   # ApiDeps agrupa puertos, servicios inyec
 | # | Chequeo | Fallo | Registro |
 |---|---|---|---|
 | 0 | Límites por IP/canal (gateway, fuera del motor) | 429 | — |
+| 0b | Tamaño del body (`BodyLimit`, `ApiDeps.max_body_bytes`, 1 MiB por defecto; con o sin `Content-Length`; rev. 2026-10-05) | `413 payload_too_large` | — |
 | 1 | Firma del principal y de `on_behalf_of` (`IdentityVerifier`) | `401 credentials_invalid` | solo log de seguridad; **nada** en la cadena del run |
 | 2 | Vigencia con el `Clock`: `principal.exp <= now` | `401 principal_expired` | `access_denied` |
 | 3 | Delegación vencida (`exp <= now`) o `grant_ref` revocado | `403 delegation_expired` | `access_denied` |
+| 3b | El servicio de asignaciones no responde (`grant_active` lanza `GrantCheckUnavailable`; rev. 2026-10-05) | `503 identity_unavailable` con `Retry-After: 5` | solo log de seguridad (no hay decisión sobre la delegación) |
 | 3b | `on_behalf_of.grantee` distinto de `principal.key` (ADR 0006, M0 rev. 2) | `403 delegation_mismatch` | `access_denied` |
 | 4 | Run existente: identidad distinta del snapshot | `403 principal_mismatch` | `access_denied` |
 | 5 | Tasa y costo diario **por principal ya validado** (`CostCounters`) | `429 rate_limited` / `cost_budget_exceeded` | — |
@@ -69,6 +73,7 @@ Un rechazo en 1–5 **no procesa el turno**: sin Understand, modelos, tools ni t
 - **Registro.** Todo rechazo va al log de seguridad (`SecurityLog`; implementación `OtelSecurityLog`: evento en el span activo y línea de log, con motivo, tipo de principal y `trace_id`; nunca la credencial, el `principal.id` ni el body). Para 2–4 (y `subject_forbidden`/`agent_forbidden` de §3.2), si el run existe, M9 pide a M11 un append mínimo fuera del turno (`AuditLog.append_standalone`) con `access_denied`. Sin run (p. ej. `POST /v1/runs`) o con firma inválida, solo log de seguridad. Si la escritura en la cadena falla, la denegación se mantiene y se registra `audit_write_failed`.
 - **Identidad de un principal anónimo** (decisión 2026-09-29). Un anónimo no tiene `id`, así que `(type, id)` no lo distingue: su identidad es `attrs["anon_session"]`, un id de sesión firmado en la credencial. El chequeo 4 lo compara además de `(type, id)`. Sin él, cualquier anónimo pasaría el chequeo sobre el run de otro.
 - **`principal_mismatch` con lectura previa.** Comparar con el snapshot exige leer el run. Se lee (solo lectura, sin lease) después de validar la firma y antes de cargar el turno en M4; ninguna otra lectura ni escritura precede a la firma.
+- **Tamaños** (rev. 2026-10-05): además del tope del body, `text` del turno ≤ 32 000 caracteres (techo de transporte; el límite de producto sigue siendo `max_input_chars` de la release, que M6 responde con `input_too_large`), `client_turn_id`, `channel` y `resolution_code` ≤ 255 y `notes` ≤ 4000; pasarse es `422 invalid_request` (el detalle nombra el campo, nunca el valor). `input` de un run queda acotado por el tope del body.
 - **Límites** (`RateLimitConfig`, valores de demo ajustables): 30 turnos por ventana de 60 s y USD 5.00 por día UTC, por principal. Solo cuenta lo que M4 registra con `add_usage`: un rechazo no consume cuota, así que un exceso con firma inválida no toca la del principal suplantado. Un principal anónimo no se cuenta aquí (sus contadores serían los de todos los anónimos); su límite es el del gateway.
 
 ### 3.2 Autorización (§4.2)
@@ -94,7 +99,7 @@ Un rechazo en 1–5 **no procesa el turno**: sin Understand, modelos, tools ni t
 ### 3.3 Versión e idempotencia
 
 - Solo `service` y `builder` pueden pedir `@version` o un alias distinto de `@prod`; si no, `403 version_pin_forbidden` (sin `access_denied`: no hay run).
-- `POST /v1/runs` con `Idempotency-Key` ya vista (mismo principal) devuelve el run creado, con el mismo cuerpo. Misma clave con otro body → `409 idempotency_conflict`. Recursos inexistentes → `404 not_found`; body inválido → `422 invalid_request`; error inesperado → `500 internal_error` sin detalle interno; el log (`agentcore.api`, nivel ERROR) lleva solo el tipo de la excepción, `archivo:línea` del frame que la lanzó, la plantilla de la ruta (nunca la ruta con ids) y el `trace_id` del `problem+json`, para correlacionar el 500 con el span sin exponer el texto de la excepción (regla 6).
+- `POST /v1/runs` con `Idempotency-Key` ya vista (mismo principal) devuelve el run creado, con el mismo cuerpo. Misma clave con otro body → `409 idempotency_conflict`; misma clave mientras otra petición sigue en curso → `409 idempotency_in_progress` (reintentable). Recursos inexistentes → `404 not_found`; body inválido → `422 invalid_request`; error inesperado → `500 internal_error` sin detalle interno; el log (`agentcore.api`, nivel ERROR) lleva solo el tipo de la excepción, `archivo:línea` del frame que la lanzó, la plantilla de la ruta (nunca la ruta con ids) y el `trace_id` del `problem+json`, para correlacionar el 500 con el span sin exponer el texto de la excepción (regla 6).
 - **Dónde vive.** En M4 (`start_run`, cambio pedido por M9 el 2026-09-29; ver m04): busca `(principal.key, key)` y compara el hash JCS del `RunInput` sin la clave; el registro (`put_run_idempotency`) va en la **misma transacción** que el run, así que no hay run sin clave ni clave sin run.
 - **Anónimos.** Comparten `PrincipalKey(customer, None)`: M9 antepone `"{anon_session}:"` a la clave para que la de un anónimo nunca devuelva el run de otro.
 - **Límite conocido.** Dos requests concurrentes con la misma clave pueden crear dos runs antes de que exista el registro (gana el primero en commitear; el otro run queda huérfano). Cerrarlo exige un candado por clave en el adaptador de Postgres.
@@ -149,6 +154,15 @@ JWS compacto `header.payload.firma` (base64url sin relleno), firmado con Ed25519
 - **Cabecera:** `Authorization: Bearer <jws>` (también se acepta sin `Bearer`); la delegación va sin esquema en `X-On-Behalf-Of`.
 - **Demo:** `TestIdentityIssuer` (`testing/fakes/identity.py`) firma con claves de PRUEBA derivadas de una semilla fija y pública (`kid` `test-*`), nunca para producción; con el mismo `Clock` emite los mismos tokens. `uv run python -m testing.demo_identities` imprime el cliente, el asesor con su delegación, el anónimo, el vencido y el elevado (OTP simulado, `auth.simulated`).
 
+### 3.9 Salud y disponibilidad (`/healthz`, `/readyz`)
+
+Las exige quien despliega el servicio (ADR 0003 de `infra`: puerto único, `/healthz` liveness y `/readyz` readiness) y no forman parte del contrato `/v1`.
+
+- `GET /healthz`: `200 {"status": "ok"}` siempre que el proceso responda. No toca ninguna dependencia.
+- `GET /readyz`: ejecuta las comprobaciones de `ApiDeps.readiness` (tupla de `(nombre, función)`; vacía = listo). Todas pasan → `200 {"status": "ready"}`; alguna falla → `503 {"status": "unavailable", "failed": ["<nombre>", ...]}`. Una comprobación que lanza cuenta como fallida y su mensaje **nunca** se devuelve ni se registra (puede traer hosts o credenciales).
+- Sin credencial, sin `Idempotency-Key`, sin cuota y sin `trace_id` obligatorio: no pasan por el `AccessGate`. Tampoco abren el span `agentcore.api.request`: el orquestador las consulta cada pocos segundos y un `503` de `/readyz` no es un error del servicio.
+- `serve` inyecta la comprobación `postgres` (`PostgresStore.ping`: `SELECT 1` con `connect_timeout` de 3 s; falla cerrado y sin detalle).
+
 ## 4. Invariantes
 
 - Ningún byte del mensaje de un turno rechazado en 3.1 llega a un modelo, una tool o el transcript.
@@ -178,7 +192,7 @@ Con `TestClient` de FastAPI, `StubVerifier` (tokens opacos sintéticos), `TableA
 | T-M9-05 | Anónimo no accede a datos personales | 5 | `test_api`, `test_authorization` |
 | T-M9-06 | Firma inválida → `401`, sin llamadas a modelos, tools ni transcript, sin eventos en la cadena | 5 | `test_api` (las 6 rutas), `test_gate` |
 | T-M9-07 | Principal vencido → `401`; reintento renovado con el mismo `client_turn_id` se procesa una vez | 5 | `test_api`, `test_gate` |
-| T-M9-08 | Delegación revocada → `403 delegation_expired` | 5 | `test_api`, `test_gate` |
+| T-M9-08 | Delegación revocada → `403 delegation_expired`; servicio de asignaciones sin respuesta → `503 identity_unavailable`, sin `access_denied` (2026-10-05) | 5 | `test_api`, `test_gate` |
 | T-M9-09 | Otro asesor con delegación vigente sobre el mismo subject → `403 principal_mismatch` | 5 | `test_api`, `test_gate`, `test_m9_postgres` |
 | T-M9-10 | Exceso de tasa con firma inválida no consume la cuota del suplantado | 5 | `test_api` |
 | T-M9-11 | `Idempotency-Key` repetida devuelve el mismo run | 12 | `test_idempotency`, `test_m9_postgres`, `tests/m04/test_start_run_idempotency` |
@@ -187,6 +201,7 @@ Con `TestClient` de FastAPI, `StubVerifier` (tokens opacos sintéticos), `TableA
 | T-M9-14 | `awaiting: step_up` devuelve `step_up` en el cuerpo | 5 | `test_api` |
 | T-M9-15 | La telemetría nativa de FastAPI está apagada, incluso con `OTEL_EXPORTER_OTLP_ENDPOINT`: sin providers globales ni exportadores propios | — | `test_fastapi_telemetry` |
 | T-M9-16 | Una excepción no controlada no deja mensaje ni stack en el span: solo `error.type`, `http.response.status_code` y estado `ERROR` sin descripción | — | `test_fastapi_telemetry` |
+| T-M9-17 | `/healthz` responde sin credencial aunque una dependencia caiga; `/readyz` da `200` o `503` con los nombres que fallan y sin filtrar el error; ninguna entra al OpenAPI ni abre span | — | `test_health`, `tests/composition/test_serve_app` |
 | T-TR-10 | `GET /v1/sessions/{id}/lineage` devuelve la cadena con releases y `transfer_id`; otro cliente recibe `403`; no expone `from_event_hash` | — | `test_session_lineage` |
 
 Además: IDOR de lecturas (dueño, asesor con delegación, run sin subject, anónimos entre sí), decimales en el body, JSON ambiguo, `openapi.json` al día, fixture `TableAuthz`.

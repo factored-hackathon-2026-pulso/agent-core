@@ -12,7 +12,7 @@ Núcleo de agentes: motor de decisión que ejecuta agentes descritos como datos 
 
 ## Stack (ADR 0001)
 
-Python 3.12, FastAPI, Pydantic v2, Postgres 16, `uv`, `docker-compose`. Sin colas, Redis ni vector DB.
+Python 3.12, FastAPI, Pydantic v2, Postgres 16, `uv`, `docker-compose`. Sin Redis ni vector DB. S3 (blobs del registry) y SNS (relay del outbox) son opt-in por ADR 0023.
 
 ## Comandos
 
@@ -37,7 +37,7 @@ agent_core/
   handoff/                   M10  audit/         M11  knowledge/ M12
   registry/                  unidad 2 (spec 2026-09-29-registry-design.md)
   composition/               raíz de composición: motor, evaluador, servicio y CLI del registry
-  adapters/llm/              gateway de LLM compatible con OpenAI y LLMAgentPort (unidad 5)
+  adapters/llm/              HttpLLMGateway (cliente del servicio llm-gateway, ADR 0024) y LLMAgentPort (unidad 5)
 testing/fakes/               dobles en memoria de cada puerto
 tests/mXX/                   pruebas unitarias por módulo (sin red ni Postgres)
 tests/contracts/             suites de contrato de los puertos

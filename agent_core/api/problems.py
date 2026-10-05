@@ -30,11 +30,14 @@ PROBLEM_TITLES: dict[ProblemCode, str] = {
     ProblemCode.turn_in_progress: "Turno en curso",
     ProblemCode.handoff_already_resolved: "Traspaso ya resuelto",
     ProblemCode.idempotency_conflict: "Conflicto de idempotencia",
+    ProblemCode.idempotency_in_progress: "Petición con esta clave en curso",
     ProblemCode.run_closed: "Run cerrado",
     ProblemCode.invalid_request: "Solicitud inválida",
     ProblemCode.rate_limited: "Límite de tasa excedido",
     ProblemCode.cost_budget_exceeded: "Tope de costo diario excedido",
     ProblemCode.internal_error: "Error interno",
+    ProblemCode.identity_unavailable: "No se pudo verificar la delegación; reintenta",
+    ProblemCode.payload_too_large: "Cuerpo de la petición demasiado grande",
 }
 
 
@@ -42,7 +45,8 @@ class ProblemResponse(JSONResponse):
     media_type = "application/problem+json"
 
 
-def problem(code: ProblemCode, detail: str, trace_id: str, status: int | None = None) -> ProblemResponse:
+def problem(code: ProblemCode, detail: str, trace_id: str, status: int | None = None,
+            retry_after: int | None = None) -> ProblemResponse:
     status = PROBLEM_STATUS[code] if status is None else status
     body = {
         "type": f"urn:agentcore:problem:{code.value}",
@@ -52,7 +56,8 @@ def problem(code: ProblemCode, detail: str, trace_id: str, status: int | None = 
         "detail": detail,
         "trace_id": trace_id,
     }
-    return ProblemResponse(body, status_code=status)
+    headers = None if retry_after is None else {"Retry-After": str(retry_after)}
+    return ProblemResponse(body, status_code=status, headers=headers)
 
 
 def _validation_detail(exc: RequestValidationError) -> str:
@@ -75,7 +80,7 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(EngineError)
     async def _engine(request: Request, exc: EngineError) -> ProblemResponse:
         detail = "" if exc.code is ProblemCode.internal_error else exc.detail
-        return problem(exc.code, detail, request_trace_id(request))
+        return problem(exc.code, detail, request_trace_id(request), retry_after=exc.retry_after)
 
     @app.exception_handler(CredentialsInvalid)
     async def _credentials(request: Request, exc: CredentialsInvalid) -> ProblemResponse:

@@ -4,20 +4,25 @@ import argparse
 import importlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import psycopg
 from opentelemetry.trace import Tracer
+from psycopg_pool import ConnectionPool
 
 from agent_core.adapters.env_keys import EnvKeyProvider, KeyConfigError
-from agent_core.adapters.identity_keys import load_identity_verifier
-from agent_core.adapters.llm import EndpointConfig, OpenAICompatGateway, load_endpoints
+from agent_core.adapters.identity_keys import ReloadingIdentityVerifier
+from agent_core.adapters.llm import HttpLLMGateway, UnconfiguredLLMGateway
+from agent_core.adapters.llm.http_gateway import LLM_GATEWAY_TOKEN_ENV, LLM_GATEWAY_URL_ENV
 from agent_core.adapters.postgres_uow import PostgresStore
+from agent_core.composition.blobs import blob_factory_from_env
 from agent_core.decision import DecisionConfigError, DecisionProvider, HttpJevTransport, JevProvider
 from agent_core.decision.calibration.artifact import CalibrationSource
-from agent_core.domain import Release, SchemaError
+from agent_core.domain import Release, SchemaError, loads
+from agent_core.guards import LangThresholds
 from agent_core.ports import (
     AgentDirectory,
     AuditSink,
@@ -29,6 +34,7 @@ from agent_core.ports import (
     KeyProvider,
     LLMGateway,
     RegistryPort,
+    RunExport,
     ToolExecutor,
     TranscriptStore,
     UnitOfWorkFactory,
@@ -41,6 +47,8 @@ JEV_KEY_ENV = "AGENTCORE_JEV_API_KEY"
 DSN_ENV = "AGENTCORE_REGISTRY_DSN"
 EVAL_DSN_ENV = "AGENTCORE_EVAL_DSN"
 AGENTS_ENV = "AGENTCORE_SERVE_AGENTS"
+LANG_THRESHOLDS_ENV = "AGENTCORE_LANG_THRESHOLDS"  # archivo JSON con los umbrales de idioma (M6 §3.1.7)
+POOL_MAX_ENV = "AGENTCORE_DB_POOL_MAX"  # conexiones máximas por proceso; 0 o ausente = una por operación
 DEMO_VERIFIER = "testing.registry_demo:demo_verifier"
 _KEY_VARS = ("AGENTCORE_KEYS_FINGERPRINT", "AGENTCORE_KEYS_TOKEN_MAP")
 
@@ -101,10 +109,14 @@ class ServePorts:
     classifier: FieldClassifier | None
     verifier: IdentityVerifier
     doubles: tuple[str, ...]  # piezas que son dobles de demo (vacío = todo real)
-    agents: tuple[str, ...] = ()  # agentes cuya release `prod` se revisa al arrancar (aviso de alias)
-    endpoints: Mapping[str, EndpointConfig] = field(default_factory=dict)
+    agents: tuple[str, ...] = ()  # agentes cuya release `prod` se revisa al arrancar (aviso)
+    llm_gateway_url: str | None = None  # None: sin llm-gateway configurado (toda generación cae a plantilla)
+    endpoints: Mapping[str, Any] = field(default_factory=dict)  # deprecated, always empty (ADR 0022)
     registry_api: RegistryApiPorts | None = None  # solo con --registry-api
     directory: AgentDirectory | None = None  # ADR 0021: directorio de especialistas (sobre el registry)
+    readiness: tuple[tuple[str, Callable[[], bool]], ...] = ()  # comprobaciones de `/readyz`
+    run_export: RunExport | None = None  # N-08: lectura paginada de runs y eventos (con --registry-api)
+    lang_thresholds: Mapping[str, LangThresholds] = field(default_factory=dict)  # por `thresholds_from`
 
 
 def _flag(attr: str) -> str:
@@ -120,10 +132,18 @@ def add_serve_parser(sub: Any) -> None:
                             "en la lista de procesos. No se imprime nunca")
     serve.add_argument("--identity-keys", type=Path, default=None,
                        help="archivo con las claves públicas de identidad (principal y delegación)")
+    serve.add_argument("--keys-reload-seconds", type=float, default=5.0,
+                       help="cada cuántos segundos, a lo sumo, se vuelve a leer --identity-keys y "
+                            "--staff-keys (rotar sin reiniciar; una lectura rota conserva las últimas "
+                            "claves buenas); 0 lo apaga")
     serve.add_argument("--agents", default=None,
                        help=f"agentes separados por coma (o {AGENTS_ENV}): al arrancar avisa de los perfiles "
                             "de "
                             "su release `prod` cuyo alias de LLM no esté configurado")
+    serve.add_argument("--lang-thresholds", type=Path, default=None,
+                       help=f"archivo JSON {{thresholds_from: {{switch_threshold, unsupported_threshold, "
+                            f"min_distance}}}} (o {LANG_THRESHOLDS_ENV}). Sin él el idioma del run nunca "
+                            "cambia por detección (umbral 1.0 = desactivado, M6 §3.1.7)")
     serve.add_argument("--registry-api", action="store_true",
                        help="monta la API HTTP del registry (/v1/registry); exige --eval-dsn y --staff-keys")
     serve.add_argument("--eval-dsn", default=None,
@@ -158,6 +178,57 @@ def _jev_key(env: Mapping[str, str]) -> str:
     return key
 
 
+def _registry_connect(dsn: str, pool_max: int) -> Callable[[], Any]:
+    """Conexión transaccional del registry: del pool propio (autocommit apagado) o una por transacción."""
+    if pool_max <= 0:
+        return lambda: psycopg.connect(dsn, autocommit=False)
+    pool: ConnectionPool[Any] = ConnectionPool(dsn, min_size=1, max_size=pool_max, open=False,
+                                               check=ConnectionPool.check_connection)
+    opened: list[bool] = []
+
+    def connection() -> Any:
+        if not opened:
+            pool.open()
+            opened.append(True)
+        return pool.connection()  # contexto: commit al salir sin error, rollback con excepción, y devuelve
+
+    return connection
+
+
+def _llm_gateway_config(env: Mapping[str, str], problems: list[str]) -> tuple[str | None, str | None]:
+    """The llm-gateway URL and token, both or neither. Neither is allowed (generation falls back to templates)
+    and announced at startup; half of the pair or an invalid URL is a configuration problem."""
+    url = (env.get(LLM_GATEWAY_URL_ENV) or "").strip()
+    token = (env.get(LLM_GATEWAY_TOKEN_ENV) or "").strip()
+    if not url and not token:
+        return None, None
+    if not url or not token:
+        problems.append(f"{LLM_GATEWAY_URL_ENV} y {LLM_GATEWAY_TOKEN_ENV} van juntas: falta una de las dos")
+        return None, None
+    parsed = urlsplit(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        problems.append(f"{LLM_GATEWAY_URL_ENV} debe ser una URL http(s) con host")
+        return None, None
+    return url, token
+
+
+def _lang_thresholds(args: argparse.Namespace, env: Mapping[str, str],
+                     problems: list[str]) -> dict[str, LangThresholds]:
+    """Umbrales de idioma por `thresholds_from`, de un archivo JSON. Un archivo roto es un problema de
+    configuración: callar dejaría el cambio de idioma apagado sin que nadie lo note."""
+    raw = args.lang_thresholds or (Path(env[LANG_THRESHOLDS_ENV]) if env.get(LANG_THRESHOLDS_ENV) else None)
+    if raw is None:
+        return {}
+    try:
+        data = loads(Path(raw).read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError("debe ser un objeto {thresholds_from: umbrales}")
+        return {str(name): LangThresholds.model_validate(value) for name, value in data.items()}
+    except (OSError, ValueError) as exc:  # ValidationError es un ValueError; sin el texto del archivo
+        problems.append(f"--lang-thresholds: {type(exc).__name__}: archivo ilegible o umbrales inválidos")
+        return {}
+
+
 def _agents(args: argparse.Namespace, env: Mapping[str, str]) -> tuple[str, ...]:
     raw = args.agents or env.get(AGENTS_ENV) or ""
     return tuple(a for a in (part.strip() for part in raw.split(",")) if a)
@@ -165,12 +236,21 @@ def _agents(args: argparse.Namespace, env: Mapping[str, str]) -> tuple[str, ...]
 
 def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
                   clock: Clock, ids: IdSource, *, tracer: Tracer | None = None) -> ServePorts:
+    """`tracer` is kept for the stable composition surface (ADR 0022) and is unused: the `chat` span is
+    emitted by the llm-gateway service (ADR 0024)."""
     problems: list[str] = []
     demo = env.get(DEMO_ENV) == "1"
 
     dsn = args.dsn or env.get(DSN_ENV)
     if not dsn:
         problems.append(f"falta --dsn (o {DSN_ENV})")
+    pool_max = 0
+    try:
+        pool_max = int(env.get(POOL_MAX_ENV) or 0)
+        if pool_max < 0:
+            raise ValueError
+    except ValueError:
+        problems.append(f"{POOL_MAX_ENV} debe ser un entero >= 0")
     keys: KeyProvider | None
     try:
         keys = EnvKeyProvider({k: env[k] for k in _KEY_VARS if env.get(k)})
@@ -194,18 +274,20 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         problems.append("falta --identity-keys (archivo de claves públicas de identidad)")
 
     # Configuración estática: se valida entera antes de ejecutar cualquier fábrica de pieza.
+    reload_seconds = getattr(args, "keys_reload_seconds", 5.0)
+    if reload_seconds < 0:
+        problems.append("--keys-reload-seconds no puede ser negativo")
+    reload_every = timedelta(seconds=max(reload_seconds, 0.0))
     grant_active: list[Callable[[str, datetime], bool]] = []  # lo llena la fábrica de `grant-active`
     verifier: IdentityVerifier | None = None
     if args.identity_keys is not None:
         try:
-            verifier = load_identity_verifier(args.identity_keys, lambda ref, now: grant_active[0](ref, now))
+            verifier = ReloadingIdentityVerifier(
+                args.identity_keys, lambda ref, now: grant_active[0](ref, now), clock, reload_every)
         except SchemaError as exc:
             problems.append(str(exc))
-    endpoints: dict[str, EndpointConfig] = {}
-    try:
-        endpoints = load_endpoints(env)
-    except SchemaError as exc:
-        problems.append(str(exc))
+    llm_url, llm_token = _llm_gateway_config(env, problems)
+    lang_thresholds = _lang_thresholds(args, env, problems)
     eval_dsn: str | None = None
     staff_verifier: IdentityVerifier | None = None
     if args.registry_api:
@@ -218,8 +300,8 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
                             "escribir en la base de producción")
         if args.staff_keys is not None:
             try:
-                staff_verifier = load_identity_verifier(args.staff_keys, lambda ref, now: False,
-                                                        delegation=False)
+                staff_verifier = ReloadingIdentityVerifier(
+                    args.staff_keys, lambda ref, now: False, clock, reload_every, delegation=False)
             except SchemaError as exc:
                 problems.append(f"--staff-keys: {exc}")
         elif not demo:
@@ -227,8 +309,8 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
     if problems or not dsn or keys is None:
         raise ServeConfigError(problems)
 
-    store = PostgresStore(dsn)
-    registry_store = PgRegistryStore(lambda: psycopg.connect(dsn, autocommit=False))
+    store = PostgresStore(dsn, pool_max=pool_max)
+    registry_store = PgRegistryStore(_registry_connect(dsn, pool_max), blob_factory_from_env(env))
     pg_registry = PostgresRegistry(registry_store, clock)
     ctx = DemoContext(clock=clock, ids=ids, registry=pg_registry)
     built: dict[str, Any] = {}
@@ -258,11 +340,12 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         if staff_verifier is None:  # solo en demo (arriba se exigió --staff-keys fuera de demo)
             staff_verifier = _load(DEMO_VERIFIER)()
             doubles.append("staff-identity")
-        eval_store = PostgresStore(eval_dsn)
+        eval_store = PostgresStore(eval_dsn, pool_max=pool_max)
         registry_api = RegistryApiPorts(store=registry_store, staff_verifier=staff_verifier,
                                         eval_uow_factory=eval_store.uow, eval_audit=eval_store.audit())
 
-    gateway = OpenAICompatGateway(pg_registry, endpoints, env, tracer=tracer)
+    gateway: LLMGateway = (HttpLLMGateway(pg_registry, llm_url, llm_token)
+                           if llm_url is not None and llm_token is not None else UnconfiguredLLMGateway())
     jev = JevProvider(HttpJevTransport(lambda: _jev_key(env), clock))
     return ServePorts(
         clock=clock, ids=ids, keys=keys, uow_factory=store.uow, audit=store.audit(), counters=store.costs(),
@@ -270,6 +353,7 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         providers={"jev": jev, "classifier": built["classifier"]},
         tools=built["tools"], authz=built["authz"], transcript=built["transcript"],
         calibrations=built["calibration"], classifier=built["field-classifier"], verifier=verifier,
-        doubles=tuple(doubles), agents=_agents(args, env), endpoints=endpoints,
+        doubles=tuple(doubles), agents=_agents(args, env), llm_gateway_url=llm_url,
         registry_api=registry_api,
-        directory=RegistryDirectory(registry_store, pg_registry, pg_registry.release))
+        directory=RegistryDirectory(registry_store, pg_registry, pg_registry.release),
+        readiness=(("postgres", store.ping),), run_export=store.run_export(), lang_thresholds=lang_thresholds)

@@ -71,3 +71,15 @@ def test_build_turn_engine_sigue_devolviendo_el_motor() -> None:
     from agent_core.turn import TurnEngine
 
     assert isinstance(build_turn_engine(EngineWorld().deps), TurnEngine)
+
+
+def test_las_resoluciones_de_handoff_se_encadenan_como_el_resto_de_la_auditoria() -> None:
+    """Regresión (E2E con Postgres): `record_resolution` corre fuera de un turno y su evento debe llevar
+    `seq`/`hash`; con el recorder por defecto Postgres lo rechazaba y la API respondía 500."""
+    from agent_core.composition import build_engine
+    from agent_core.handoff import append_events
+
+    recorder = build_engine(EngineWorld().deps).handoffs._record
+
+    assert recorder is not append_events
+    assert recorder.__qualname__.startswith("AuditLog.recorder")

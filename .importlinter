@@ -30,6 +30,7 @@ forbidden_modules =
     agent_core.composition
     agent_core.contracts
     agent_core.registry
+    agent_core.outbound
 
 [importlinter:contract:flows]
 name = M1 (flows) solo usa domain, ports
@@ -368,6 +369,31 @@ source_modules =
 forbidden_modules =
     agent_core.ports
 
+[importlinter:contract:outbound]
+name = outbound (contrato de eventos salientes) solo usa domain
+type = forbidden
+source_modules =
+    agent_core.outbound
+forbidden_modules =
+    agent_core.ports
+    agent_core.flows
+    agent_core.views
+    agent_core.guards
+    agent_core.actions
+    agent_core.decision
+    agent_core.response
+    agent_core.interpreter
+    agent_core.handoff
+    agent_core.audit
+    agent_core.knowledge
+    agent_core.turn
+    agent_core.api
+    agent_core.adapters
+    agent_core.cli
+    agent_core.composition
+    agent_core.contracts
+    agent_core.registry
+
 [importlinter:contract:telemetry]
 name = agent_telemetry no importa agent_core
 type = forbidden
@@ -375,3 +401,27 @@ source_modules =
     agent_telemetry
 forbidden_modules =
     agent_core
+
+[importlinter:contract:relay]
+name = relay (ADR 0023) solo usa domain, ports y outbound
+type = forbidden
+source_modules =
+    agent_core.relay
+forbidden_modules =
+    agent_core.flows
+    agent_core.views
+    agent_core.guards
+    agent_core.actions
+    agent_core.decision
+    agent_core.response
+    agent_core.interpreter
+    agent_core.handoff
+    agent_core.audit
+    agent_core.knowledge
+    agent_core.turn
+    agent_core.api
+    agent_core.adapters
+    agent_core.cli
+    agent_core.composition
+    agent_core.contracts
+    agent_core.registry

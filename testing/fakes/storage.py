@@ -28,16 +28,19 @@ from typing import TYPE_CHECKING, Literal, Self
 
 from agent_core.adapters.postgres_uow import ONE_OPEN_RUN_MESSAGE
 from agent_core.domain import (
+    EngineError,
     EngineEvent,
     JsonValue,
     OutboxMessage,
     PrincipalKey,
+    ProblemCode,
     RunResult,
     RunState,
     TurnInProgress,
     TurnResult,
     VersionConflict,
 )
+from agent_core.ports.export import RunSummary
 
 FaultPoint = Literal["on_commit", "after_commit"]
 
@@ -61,6 +64,9 @@ class InMemoryStore:
     leases: dict[str, _Lease] = field(default_factory=dict)
     turn_results: dict[tuple[str, str], TurnResult] = field(default_factory=dict)
     idempotency: dict[tuple[PrincipalKey, str], tuple[str, RunResult]] = field(default_factory=dict)
+    run_cursor: dict[str, int] = field(default_factory=dict)  # run_id -> orden de commit de su último cambio
+    commits: int = 0
+    idempotency_reserved: dict[tuple[PrincipalKey, str], datetime] = field(default_factory=dict)  # vence
     handoffs: dict[str, dict[str, JsonValue]] = field(default_factory=dict)
     events: dict[str, list[EngineEvent]] = field(default_factory=dict)
     outbox_pending: dict[str, OutboxMessage] = field(default_factory=dict)  # orden de inserción = de entrega
@@ -196,6 +202,24 @@ class InMemoryUoW:
         self._check_open()
         self._idempotency[(principal, key)] = (body_hash, deepcopy(result))
 
+    def reserve_run_idempotency(self, principal: PrincipalKey, key: str, body_hash: str, now: datetime,
+                                ttl: timedelta) -> tuple[str, RunResult] | None:
+        self._check_open()
+        scoped = (principal, key)
+        with self._store.lock:
+            found = self._store.idempotency.get(scoped)
+            if found is not None:
+                return deepcopy(found)
+            until = self._store.idempotency_reserved.get(scoped)
+            if until is not None and until > now:
+                raise EngineError(ProblemCode.idempotency_in_progress, "la clave sigue en curso")
+            self._store.idempotency_reserved[scoped] = now + ttl
+            return None
+
+    def release_run_idempotency(self, principal: PrincipalKey, key: str) -> None:
+        with self._store.lock:
+            self._store.idempotency_reserved.pop((principal, key), None)
+
     def put_handoff(self, handoff_ref: str, packet: dict[str, JsonValue]) -> None:
         self._check_open()
         self._handoffs[handoff_ref] = deepcopy(packet)
@@ -273,7 +297,9 @@ class InMemoryUoW:
             if store.version_of(run_id) != base:
                 raise VersionConflict(f"{run_id}: otra transacción commiteó primero (base {base})")
         self._check_one_open_run_per_session(store)
+        store.commits += 1
         for run_id, state in self._runs.items():
+            store.run_cursor[run_id] = store.commits
             store.reindex_inactive(store.runs.get(run_id), state)
             store.runs[run_id] = state
             if state.session_id is not None:
@@ -283,6 +309,7 @@ class InMemoryUoW:
         store.turn_results.update(self._turn_results)
         for scoped, record in self._idempotency.items():
             store.idempotency.setdefault(scoped, record)  # el primer registro gana: un replay no lo pisa
+            store.idempotency_reserved.pop(scoped, None)
         store.handoffs.update(self._handoffs)
         for run_id, events in self._events.items():
             store.events.setdefault(run_id, []).extend(events)
@@ -311,6 +338,27 @@ class InMemoryAuditSink:
     def append_outside_turn(self, run_id: str, events: list[EngineEvent]) -> None:
         with self._store.lock:
             self._store.events.setdefault(run_id, []).extend(deepcopy(events))
+
+
+class InMemoryRunExport:
+    """`RunExport` (N-08), aparte del sink: el sink de auditoría no lee más que una cadena por run."""
+
+    def __init__(self, store: InMemoryStore) -> None:
+        self._store = store
+
+    def list_runs(self, after_cursor: int, limit: int) -> list[RunSummary]:
+        with self._store.lock:  # el orden de inserción del diccionario es el orden de creación
+            rows = [(self._store.run_cursor.get(s.run_id, 0), i, s)
+                    for i, s in enumerate(self._store.runs.values(), start=1)
+                    if self._store.run_cursor.get(s.run_id, 0) > after_cursor]
+            rows.sort(key=lambda r: (r[0], r[1]))
+            keep = sorted({c for c, _, _ in rows})[:max(limit, 0)]
+            return [RunSummary.of(i, deepcopy(s), c) for c, i, s in rows if c in keep]
+
+    def events_after(self, run_id: str, after_seq: int, limit: int) -> list[EngineEvent]:
+        with self._store.lock:
+            found = [e for e in self._store.events.get(run_id, []) if e.seq is not None and e.seq > after_seq]
+            return deepcopy(found[:max(limit, 0)])
 
 
 class InMemoryOutbox:

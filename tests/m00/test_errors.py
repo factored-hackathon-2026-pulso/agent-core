@@ -11,6 +11,7 @@ def test_status_by_family() -> None:
     assert PROBLEM_STATUS[ProblemCode.agent_forbidden] == 403
     assert PROBLEM_STATUS[ProblemCode.not_found] == 404
     assert PROBLEM_STATUS[ProblemCode.idempotency_conflict] == 409
+    assert PROBLEM_STATUS[ProblemCode.idempotency_in_progress] == 409
     assert PROBLEM_STATUS[ProblemCode.run_closed] == 410
     assert PROBLEM_STATUS[ProblemCode.invalid_request] == 422
     assert PROBLEM_STATUS[ProblemCode.cost_budget_exceeded] == 429

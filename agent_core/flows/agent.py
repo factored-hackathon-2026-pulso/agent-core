@@ -2,6 +2,7 @@
 
 from agent_core.domain import (
     Agent,
+    CollectNode,
     EntityKind,
     Flow,
     PrincipalType,
@@ -12,10 +13,12 @@ from agent_core.domain import (
     ToolDef,
     TransferNode,
 )
+from agent_core.flows.context import Ctx
 from agent_core.flows.graph import flow_mode
 from agent_core.flows.metrics import validate_agent_metrics
 from agent_core.flows.refs import TEMPLATE_KINDS, agent_ref_sites, flow_ref_sites, pointer_str
 from agent_core.flows.registry import AuthoringRegistry, ReleaseDecl
+from agent_core.flows.rules.phase5 import slot_reads
 from agent_core.flows.view import RegistryView
 from agent_core.flows.violations import Violation, clip, sort_violations
 
@@ -46,6 +49,23 @@ def _uses_write_draft(flow: Flow, reg: RegistryView) -> bool:
     return False
 
 
+def _unwritable_slot_reads(flow: Flow, agent: Agent, reg: RegistryView, label: str) -> list[Violation]:
+    """AG-04: un flow lee `slots.X` y nadie lo puede dejar `validated`. Solo lo escriben un nodo `collect`, el
+    `input_schema` de un agente task y el contrato `accepts` de una transferencia; el resto (p. ej. el `input`
+    de un task sin schema) entra `claimed` y el motor lo lee como ausente."""
+    writable = {n.config.slot for n in flow.nodes if isinstance(n, CollectNode)}
+    writable |= set(agent.input_schema or {})
+    writable |= set(agent.accepts.slots) if agent.accepts is not None else set()
+    found: list[Violation] = []
+    for name, nodes in sorted(slot_reads(Ctx.build(flow, reg)).items()):
+        if name not in writable:
+            found.append(Violation(
+                rule="AG-04", flow=label, node_id=nodes[0],
+                message=clip(f"el flow lee slots.{name} y {_agent_label(agent)} no tiene cómo dejarlo "
+                             "validado (un nodo collect, input_schema o accepts)", 240)))
+    return found
+
+
 def validate_flow_for_agent(flow: Flow, agent: Agent, reg: RegistryView) -> list[Violation]:
     """AG-01 y G0-12 de un flow frente a un agente. Total: una referencia sin resolver se omite (G0-02)."""
     label = clip(f"{flow.id}@{flow.version}", 160)
@@ -67,6 +87,7 @@ def validate_flow_for_agent(flow: Flow, agent: Agent, reg: RegistryView) -> list
         if agent.subject_kinds:
             text = f"el flow usa una tool write_draft y {_agent_label(agent)} declara subject_kinds"
             found.append(Violation(rule="AG-02", flow=label, message=clip(text, 240)))
+    found += _unwritable_slot_reads(flow, agent, reg, label)
     for site in flow_ref_sites(flow):
         if site.kind not in TEMPLATE_KINDS:
             continue

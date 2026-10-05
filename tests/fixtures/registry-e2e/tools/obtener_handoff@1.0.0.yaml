@@ -1,0 +1,11 @@
+id: obtener_handoff
+version: 1.0.0
+risk_class: read
+min_auth_level: session
+idempotent: true
+source: handoff
+description: "Lee el paquete de traspaso del último run escalado del cliente: motivo, resumen y datos reunidos."
+args_schema:
+  type: object
+  additionalProperties: false
+  properties: {}

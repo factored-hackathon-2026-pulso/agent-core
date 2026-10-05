@@ -27,3 +27,7 @@ data/
 .DS_Store
 Thumbs.db
 .superpowers/
+
+# E2E local: keys y credenciales de prueba
+scripts/e2e/.env.e2e
+.e2e/

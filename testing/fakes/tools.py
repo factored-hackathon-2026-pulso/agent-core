@@ -72,7 +72,7 @@ class FakeToolExecutor:
         tool_def = self._defs[tool]
         if tool_def.is_write and idempotency_key is None:
             raise ValueError("una escritura siempre lleva idempotency_key (ADR 0007)")
-        if ctx.principal.auth.level < tool_def.min_auth_level:
+        if not tool_def.accepts(ctx.principal.auth, ctx.at):
             return self._result(tool, args, bound_params, idempotency_key, tool_def,
                                 Scripted(ToolStatus.step_up_required), required=True)
         if tool in self._readbacks:

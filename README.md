@@ -86,9 +86,23 @@ Qué tener en cuenta:
 | `uv run agentcore validate <registro>` | Valida un registro de autoría |
 | `uv run agentcore replay <fixture> --mode fixture\|audit` | Reproduce un run grabado |
 | `uv run agentcore record <camino> --out <archivo> --registry <dir>` | Graba un camino (`transferencia` con `--registry tests/fixtures/registry-transfer-demo`) |
-| `uv run agentcore sweep --registry <dir> --once` | Cierra como `abandoned` los runs inactivos (necesita Postgres: `--dsn` o `AGENTCORE_DATABASE_URL`) |
+| `uv run agentcore sweep --once` | Cierra como `abandoned` los runs inactivos (necesita Postgres: `--dsn` o `AGENTCORE_REGISTRY_DSN`; lee el registry de Postgres, o `--registry <dir>` para el de autoría) |
+| `uv run agentcore relay [--once]` | Publica el outbox en SNS (`AGENTCORE_EVENTS_TOPIC_ARN`); sin `--once` corre como servicio con un solo líder (ADR 0023) |
+| `uv run agentcore blobs-backfill` | Copia a S3 (`AGENTCORE_BLOB_BUCKET`) los blobs que quedaron en `reg_blobs`; idempotente (ADR 0023) |
+| `uv run agentcore migrate` | Aplica los esquemas de Postgres (idempotente): motor, auditoría y registry en `--dsn`/`AGENTCORE_REGISTRY_DSN`; evaluaciones en `--eval-dsn`/`AGENTCORE_EVAL_DSN`; `--app-role` da permisos mínimos |
 
 Lo mismo corre el CI en `.github/workflows/ci.yml`.
+
+## Imagen y operación
+
+- **Imagen:** `docker build --build-arg GIT_SHA=$(git rev-parse HEAD) -t agent-core .`. Arranca `agentcore serve` en `0.0.0.0:8000` como usuario sin privilegios y sin secretos; DSN, claves y `LLM_ENDPOINTS` llegan por variables de entorno. Con otro comando sirve para `agentcore migrate`, `agentcore sweep --once` y `agentcore relay`.
+- **Escala en AWS (ADR 0023, todo opt-in):** `AGENTCORE_DB_POOL_MAX` activa el pool de conexiones; `AGENTCORE_BLOB_BUCKET` (+ `AGENTCORE_BLOB_PREFIX`, `AGENTCORE_BLOB_KMS_KEY_ARN`) manda los blobs del registry a S3 (`migrate` quita entonces la FK a `reg_blobs`; `blobs-backfill` migra lo anterior).
+- **Sondas y versión** (sin credencial, fuera de `/v1`): `GET /healthz`, `GET /readyz` y `GET /version` (`{package, contract, sha}`; el SHA viene de `AGENTCORE_GIT_SHA`).
+- **Rotación de claves sin reiniciar:** `--identity-keys` y `--staff-keys` se vuelven a leer cada `--keys-reload-seconds` (5 por defecto, 0 lo apaga). Publica la clave nueva con su `kid` junto a la vieja y retira la vieja después; un archivo roto conserva las últimas claves buenas.
+- **Exportación para la ingesta** (con `--registry-api`; credencial del staff con rol `exporter`): `GET /v1/export/runs?after=<run_seq>`, `GET /v1/export/runs/{run_id}/events?after=<seq>` y `GET /v1/export/registry-events?after=<n>`, paginadas con `limit` (máx. 500) y `next_after`.
+- **Registry:** `GET /v1/registry/aliases/{agent}/{alias}` y `GET /v1/registry/versions/{kind}/{id}` leen sin crear propuesta. Los campos de la release (interrupciones, detección de idioma, `injection_ruleset`, `max_input_chars`) se cambian con un borrador `kind: "release_settings"` en `PUT draft`. Los esquemas de cuerpos y modelos están en `contracts/registry/`.
+- **Superficies estables y migraciones:** [`docs/adr/0022-superficies-estables-y-migraciones-compatibles.md`](docs/adr/0022-superficies-estables-y-migraciones-compatibles.md).
+
 
 ## Telemetría
 
@@ -125,7 +139,7 @@ Lo mismo corre el CI en `.github/workflows/ci.yml`.
 | `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES` | recurso; `service.name` es `agentcore` por defecto |
 | `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG` | los seis samplers estándar (por defecto `parentbased_always_on`); el argumento es la razón de `traceidratio`, entre 0 y 1 |
 
-El certificado, la compresión y el timeout del exportador los lee el SDK del entorno del proceso. Al apagar el servidor se vacían los spans pendientes: con el colector inalcanzable el cierre puede tardar hasta unos 10 s, y un segundo Ctrl-C en ese lapso lo interrumpe con un traceback de Python en texto plano (no JSON; no incluye las cabeceras ni otros secretos). El nivel de log (`INFO`) es fijo y `openai`, `httpx` y `httpcore` se silencian por debajo de `WARNING`.
+El certificado, la compresión y el timeout del exportador los lee el SDK del entorno del proceso. Al apagar el servidor se vacían los spans pendientes: con el colector inalcanzable el cierre puede tardar hasta unos 10 s, y un segundo Ctrl-C en ese lapso lo interrumpe con un traceback de Python en texto plano (no JSON; no incluye las cabeceras ni otros secretos). El nivel de log (`INFO`) es fijo y `httpx` y `httpcore` se silencian por debajo de `WARNING`.
 
 **Con Phoenix (local)**
 
@@ -153,7 +167,7 @@ agent_core/
   composition/        raíz de composición que cablea los módulos
   registry/           registry de entidades: propuestas, gate de evaluación, publicación y linaje (unidad 2)
   knowledge/          pendiente: solo spec (M12)
-  adapters/llm/       gateway de LLM compatible con OpenAI y adaptador del nodo `agent` (unidad 5)
+  adapters/llm/       cliente del servicio llm-gateway (ADR 0024) y adaptador del nodo `agent` (unidad 5)
 agent_telemetry/      trazas OpenTelemetry y logs JSON correlacionados
 testing/fakes/        dobles en memoria de cada puerto
 tests/                pruebas por módulo, contratos e integración
@@ -175,7 +189,7 @@ docs/                 ADR, specs y planes
 El motor y sus módulos están implementados y probados con dobles y, donde aplica, sobre Postgres. Lo que **todavía no existe**:
 
 - **Conocimiento:** solo hay propuesta de spec (`docs/specs/motor/m12-conocimiento.md`).
-- **Adaptadores reales** para tools, autorización y transcript: hoy solo hay dobles en `testing/fakes/`. El gateway de LLM sí es real (`agent_core/adapters/llm`); falta correr `agentcore llm-smoke` contra OpenRouter.
+- **Adaptadores reales** para tools, autorización y transcript: hoy solo hay dobles en `testing/fakes/`. El gateway de LLM es un servicio aparte (`pulso-factored/llm-gateway`, ADR 0024) y `agent_core/adapters/llm` es su cliente; falta correr `agentcore llm-smoke` contra OpenRouter a través de él.
 
 ## Cómo contribuir
 

@@ -219,3 +219,16 @@ def test_bearer_without_a_token_or_another_scheme_is_credentials_invalid(raw: st
     w = World()
     w.verifier.register("tok-c", principal())
     assert w.denied(raw).code is ProblemCode.credentials_invalid
+
+
+def test_an_unreachable_grants_service_is_503_not_an_expired_delegation() -> None:
+    """ADR 0010 (enmienda 2026-10-05): sin respuesta no se afirma que la delegación venció; sigue cerrado."""
+    w = World()
+    advisor, obo = advisor_with_delegation()
+    w.verifier.register("tok-a", advisor)
+    w.verifier.register("tok-d", obo)
+    w.verifier.grants_down = True
+    err = w.denied("tok-a", "tok-d", run_state(principal=advisor))
+    assert err.code is ProblemCode.identity_unavailable and err.status == 503 and err.retry_after == 5
+    assert w.denials.calls == []  # no es una decisión sobre la delegación: nada en la cadena del run
+    assert [e["reason"] for e in w.security.entries] == ["identity_unavailable"]

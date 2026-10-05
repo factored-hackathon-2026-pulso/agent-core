@@ -88,10 +88,15 @@ class RunAuthorizer:
 
     def authorize_read(self, admitted: Admitted, run: RunState, *, trace_id: str) -> None:
         """Lectura del estado o del transcript de un run: su dueño, o quien el `AuthzPort` autorice sobre su
-        subject (asesor con delegación, service por scope). Un run sin subject solo lo lee su dueño."""
+        subject (asesor con delegación, service por scope). Un run sin subject solo lo lee su dueño.
+        Un cliente o un anónimo solo lee los suyos."""
         principal, obo = admitted.principal, admitted.on_behalf_of
         if is_run_owner(principal, run.principal):
             return
+        if principal.type is PrincipalType.customer or principal.id is None:
+            # Regla fija de la plataforma: un cliente o un anónimo solo lee lo suyo, diga lo que diga el
+            # `AuthzPort` del consumidor (un puerto permisivo no puede abrir las conversaciones ajenas).
+            raise self._denials.deny(ProblemCode.subject_forbidden, run, principal.type, trace_id)
         if run.subject is not None and self._authz.authorize_subject(principal, obo, run.subject).allowed:
             return
         raise self._denials.deny(ProblemCode.subject_forbidden, run, principal.type, trace_id)

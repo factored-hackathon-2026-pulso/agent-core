@@ -1,0 +1,5 @@
+id: t/pedir_radicado
+version: 1.0.0
+locales:
+  es: "¿Cuál es el número de radicado de tu PQR?"
+  pt: "Qual é o número de protocolo da sua solicitação?"

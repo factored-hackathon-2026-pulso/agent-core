@@ -150,3 +150,50 @@ def test_dos_escritores_de_la_cadena_de_auditoria_no_pisan_ni_dan_error_crudo() 
             with pytest.raises(VersionConflict):
                 second.commit()
         assert [e.event_id for e in pg.audit().read(RUN_ID)] == [event.event_id]
+
+
+def test_n08_run_export_lists_runs_and_pages_their_events() -> None:
+    with postgres_store("m4_export") as pg:
+        w = PgWorld(pg)
+        w.open_run(active=True)
+        w.understand.push(cmd("out_of_scope"))
+        w.turn("hola")
+        export = pg.run_export()
+        runs = export.list_runs(0, 10)
+        assert [r.run_id for r in runs] == [RUN_ID] and runs[0].run_seq >= 1
+        assert export.list_runs(runs[0].cursor, 10) == []
+        events = export.events_after(RUN_ID, -1, 100)
+        assert [e.seq for e in events] == list(range(len(events))) and len(events) >= 2
+        assert [e.seq for e in export.events_after(RUN_ID, 0, 1)] == [1]
+
+
+def test_n08_export_cursor_follows_commit_order_and_reexports_a_run_that_closes() -> None:
+    import psycopg
+
+    from agent_core.domain import dumps
+    from testing.builders import run_state
+    from tests.support.pg import ADMIN_DSN
+
+    with postgres_store("m4_export_order") as pg:
+        slow_state = run_state(run_id="run-slow", session_id="s-slow", state_version=1)
+        # Una transacción inserta primero (run_seq menor) pero confirma después de otra posterior.
+        with psycopg.connect(ADMIN_DSN, options="-c search_path=m4_export_order") as slow:
+            slow.execute("INSERT INTO runs (run_id, session_id, state_version, status, state_json) "
+                         "VALUES ('run-slow', 's-slow', 1, 'open', %s)", (dumps(slow_state),))
+            with pg.uow() as fast:
+                fast.save_run(run_state(run_id="run-fast", session_id="s-fast"), 0)
+                fast.commit()
+            export = pg.run_export()
+            assert export.list_runs(0, 10) == []  # `slow` sigue abierta: el horizonte no pasa de ella
+            slow.commit()
+        page = export.list_runs(0, 10)
+        assert {r.run_id for r in page} == {"run-slow", "run-fast"}
+        cursor = max(r.cursor for r in page)
+        assert export.list_runs(cursor, 10) == []
+        with pg.uow() as uow:  # el run ya exportado cambia (p. ej. se cierra): vuelve a salir
+            current = uow.load_run("run-slow")
+            assert current is not None
+            uow.save_run(current.model_copy(update={"locale": "pt"}), current.state_version)
+            uow.commit()
+        again = export.list_runs(cursor, 10)
+        assert [(r.run_id, r.locale) for r in again] == [("run-slow", "pt")] and again[0].cursor > cursor
