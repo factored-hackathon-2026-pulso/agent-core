@@ -77,3 +77,20 @@ def test_with_the_key_production_mode_resolves(tmp_path: object) -> None:
 
 def test_demo_mode_does_not_need_the_jev_key() -> None:
     assert _resolve(AGENTCORE_ALLOW_DOUBLES="1", AGENTCORE_JEV_API_KEY="").doubles
+
+
+def test_the_worker_thread_limit_is_really_applied_at_startup() -> None:
+    from anyio import to_thread
+    from fastapi import FastAPI
+
+    app = FastAPI()
+    serve_module.install_worker_threads(app, 7)
+    seen: list[float] = []
+
+    @app.get("/limit")
+    async def limit() -> dict[str, float]:
+        seen.append(to_thread.current_default_thread_limiter().total_tokens)
+        return {"n": seen[-1]}
+
+    with TestClient(app) as client:  # entering the context runs the startup handlers
+        assert client.get("/limit").json() == {"n": 7}

@@ -24,3 +24,16 @@ La imagen: multi-etapa, usuario no root (uid 10001), bases fijadas por digest, `
 docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t agent-core:local .            # arquitectura local
 docker buildx build --platform linux/amd64,linux/arm64 -t agent-core:multi .                    # ambas
 ```
+
+## Prueba local con datos sintéticos
+
+```bash
+uv run python scripts/serve_state.py                      # claves de PRUEBA, calibración y clasificador sintéticos, catálogo
+docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/docker-compose.local.yml \
+  --env-file deploy/compose/.env up --build
+```
+
+`docker-compose.local.yml` añade el puerto de Postgres para importar el registry desde el host y un
+`grants-stub` (DOBLE de la plataforma: toda delegación firmada vale). `serve` corre en `mode=production`: las
+siete piezas son reales; lo único sintético son los artefactos de calibración y de clasificador y la plataforma.
+Si cambias el código y la imagen no lo recoge, reconstruye con `docker compose build --no-cache migrate`.
