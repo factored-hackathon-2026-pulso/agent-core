@@ -65,3 +65,13 @@ def test_keys_fail_when_a_key_file_reload_failed() -> None:
     assert checks["keys"]() is False
     checks, _, _ = _build({}, verifiers=(healthy, object()))  # a verifier without the attribute is fine
     assert checks["keys"]() is True
+
+
+def test_the_schema_check_is_registered_and_required_when_given() -> None:
+    checks, optional = build_readiness({}, postgres=lambda: True, verifiers=(), schema=lambda: False)
+    assert dict(checks)["schema"]() is False and "schema" not in optional
+
+
+def test_without_a_schema_check_none_is_registered() -> None:
+    checks, _ = build_readiness({}, postgres=lambda: True, verifiers=())
+    assert "schema" not in dict(checks)
