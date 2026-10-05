@@ -1,4 +1,4 @@
-"""Puertos de `agentcore serve`: piezas reales por defecto; dobles solo con AGENTCORE_ALLOW_DEMO=1."""
+"""Puertos de `agentcore serve`: piezas reales por defecto; dobles solo con AGENTCORE_ALLOW_DOUBLES=1."""
 
 import argparse
 import base64
@@ -50,7 +50,7 @@ def test_without_the_demo_switch_every_missing_piece_is_named(value: str | None)
 def test_an_explicit_double_path_does_not_bypass_the_protection() -> None:
     with pytest.raises(ServeConfigError) as info:
         _resolve("--tools", "testing.serve_demo:tools")
-    assert "AGENTCORE_ALLOW_DEMO=1" in " ".join(info.value.problems)
+    assert "AGENTCORE_ALLOW_DOUBLES=1" in " ".join(info.value.problems)
 
 
 def test_a_path_that_cannot_be_imported_is_a_clear_problem() -> None:
@@ -147,7 +147,7 @@ def test_a_testing_double_path_is_rejected_without_the_demo_switch_even_if_every
     with pytest.raises(ServeConfigError) as info:
         _resolve(*_real_args(tmp_path, tools="testing.serve_demo:tools"))
     text = " ".join(info.value.problems)
-    assert "tools" in text and "AGENTCORE_ALLOW_DEMO=1" in text
+    assert "tools" in text and "AGENTCORE_ALLOW_DOUBLES=1" in text
 
 
 @pytest.mark.parametrize("path", ["..x:y", "os:getcwd", "builtins:print", "json:loads", "tests:__doc__"])
