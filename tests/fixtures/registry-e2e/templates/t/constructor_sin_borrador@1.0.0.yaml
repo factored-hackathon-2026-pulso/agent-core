@@ -2,4 +2,4 @@ id: t/constructor_sin_borrador
 version: 1.0.0
 locales:
   es: "No pude producir un borrador válido para ese objetivo. Intenta describirlo más concreto."
-  pt: "No pude producir un borrador válido para ese objetivo. Intenta describirlo más concreto."
+  pt: "Não consegui produzir um rascunho válido para esse objetivo. Tente descrevê-lo de forma mais concreta."

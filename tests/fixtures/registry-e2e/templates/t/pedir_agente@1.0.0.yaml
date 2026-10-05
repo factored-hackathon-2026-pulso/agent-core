@@ -2,4 +2,4 @@ id: t/pedir_agente
 version: 1.0.0
 locales:
   es: "¿Qué agente quieres modificar? (por ejemplo: disputas)"
-  pt: "¿Qué agente quieres modificar? (por ejemplo: disputas)"
+  pt: "Qual agente você quer modificar? (por exemplo: disputas)"

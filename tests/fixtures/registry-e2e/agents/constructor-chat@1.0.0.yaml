@@ -5,7 +5,7 @@ entry_flow: construir@1
 invocable_by: [builder]
 min_auth_level: session
 subject_kinds: []
-supported_locales: [es]
+supported_locales: [es, pt]
 default_locale: es
 understand: understand-constructor@1
 tools_allowed: [registry/get_entity@1, registry/list_versions@1, registry/get_proposal@1, registry/get_write@1, registry/create_proposal@1, registry/put_draft@1, registry/validate@1]
