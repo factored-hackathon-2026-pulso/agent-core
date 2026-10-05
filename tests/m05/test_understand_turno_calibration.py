@@ -19,7 +19,7 @@ from testing.calibration.calibrate_understand_turno import (
 )
 from testing.calibration.understand_turno import examples
 
-DATA = Path(__file__).resolve().parents[2] / "testing" / "calibration" / "data"
+DATA = Path(__file__).resolve().parents[2] / "testing" / "calibration" / "recorded"
 RAW = DATA / "understand_turno_raw.jsonl"
 ARTIFACTS = sorted(DATA.glob("cal-*.json"))
 STRICT = DATA / "strict"
