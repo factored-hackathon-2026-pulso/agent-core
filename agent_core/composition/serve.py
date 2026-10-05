@@ -4,7 +4,7 @@ import argparse
 import logging
 import sys
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from decimal import Decimal
 
@@ -84,9 +84,44 @@ def rate_limits_from_env(env: Mapping[str, str]) -> RateLimitConfig:
                          f"{DAILY_BUDGET_ENV}, {SERVICE_MULTIPLIER_ENV})") from exc
 
 
+MAX_INFLIGHT_ENV = "AGENTCORE_MAX_INFLIGHT"
+WORKER_THREADS_ENV = "AGENTCORE_WORKER_THREADS"
+SHUTDOWN_GRACE_ENV = "AGENTCORE_SHUTDOWN_GRACE_SECONDS"
+
+
+@dataclass(frozen=True)
+class OpsConfig:
+    max_inflight: int = 0  # 0 = sin tope
+    worker_threads: int = 40  # hilos de las rutas síncronas (el valor por defecto de anyio)
+    shutdown_grace_s: float = 25.0  # plazo de uvicorn para las peticiones en curso al recibir SIGTERM
+
+
+def ops_from_env(env: Mapping[str, str]) -> OpsConfig:
+    """Topes de carga y plazo de apagado; lo no definido conserva el valor por defecto. `ValueError` con el
+    nombre de la variable inválida (el arranque lo informa y sale)."""
+    defaults = OpsConfig()
+
+    def number(name: str, default: float, cast: Callable[[str], float], minimum: float) -> float:
+        raw = env.get(name)
+        if not raw:
+            return default
+        try:
+            value = cast(raw)
+        except ValueError:
+            raise ValueError(f"{name} debe ser un número") from None
+        if value < minimum:
+            raise ValueError(f"{name} debe ser >= {minimum:g}")
+        return value
+
+    return OpsConfig(
+        max_inflight=int(number(MAX_INFLIGHT_ENV, defaults.max_inflight, int, 0)),
+        worker_threads=int(number(WORKER_THREADS_ENV, defaults.worker_threads, int, 1)),
+        shutdown_grace_s=number(SHUTDOWN_GRACE_ENV, defaults.shutdown_grace_s, float, 0))
+
+
 def build_api_deps(ports: ServePorts, *, registry_service: RegistryService | None = None,
                    telemetry: TurnTelemetry | None = None, build_sha: str | None = None,
-                   limits: RateLimitConfig | None = None) -> ApiDeps:
+                   limits: RateLimitConfig | None = None, max_inflight: int = 0) -> ApiDeps:
     built = build_engine(EngineDeps(
         clock=ports.clock, ids=ports.ids, keys=ports.keys, uow_factory=ports.uow_factory, audit=ports.audit,
         registry=ports.registry, releases=ports.releases, tools=ports.tools, gateway=ports.gateway,
@@ -101,7 +136,7 @@ def build_api_deps(ports: ServePorts, *, registry_service: RegistryService | Non
         handoffs=built.handoffs, transcripts=built.transcripts,
         denials=AuditLog(ports.audit, ports.uow_factory), security=OtelSecurityLog(),
         readiness=ports.readiness, optional_checks=ports.optional_readiness, build_sha=build_sha,
-        limits=limits or RateLimitConfig(),
+        max_inflight=max_inflight, limits=limits or RateLimitConfig(),
         extensions=_extensions(ports, registry_service))
 
 
@@ -137,6 +172,13 @@ def gateway_warnings(url: str | None) -> list[str]:
     return []
 
 
+async def _set_worker_threads(total: int) -> None:
+    """Hilos de las rutas síncronas: el límite por defecto de anyio (40) acota la concurrencia."""
+    from anyio import to_thread
+
+    to_thread.current_default_thread_limiter().total_tokens = total
+
+
 def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Mapping[str, str],
               serve: Callable[..., None] | None = None) -> int:
     """Configura la observabilidad, resuelve los puertos, avisa de los dobles y arranca uvicorn. `serve` se
@@ -150,6 +192,7 @@ def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Map
         return 2
     try:
         limits = rate_limits_from_env(env)
+        ops = ops_from_env(env)
     except ValueError as exc:
         print("agentcore serve no puede arrancar:", file=sys.stderr)
         print(f"  - {exc}", file=sys.stderr)
@@ -187,7 +230,9 @@ def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Map
                 BuilderToolExecutor(registry_service, constructor_bot(ports.clock), ports.ids), ports.tools))
         app = create_app(
             build_api_deps(ports, registry_service=registry_service, telemetry=OtelTurnTelemetry(),
-                           build_sha=env.get("AGENTCORE_GIT_SHA") or None, limits=limits))
+                           build_sha=env.get("AGENTCORE_GIT_SHA") or None, limits=limits,
+                           max_inflight=ops.max_inflight))
+        app.router.on_startup.append(lambda: _set_worker_threads(ops.worker_threads))
         if serve is None:
             import uvicorn
 
@@ -196,7 +241,8 @@ def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Map
         # message and stack (Starlette re-raises after the 500 handler); with `log_config=None` it reaches the
         # root JSON formatter, which keeps only `exc_type`. The access log would print client IPs and id
         # paths.
-        serve(app, host=args.host, port=args.port, log_config=None, access_log=False)
+        serve(app, host=args.host, port=args.port, log_config=None, access_log=False,
+              timeout_graceful_shutdown=int(ops.shutdown_grace_s))
         return 0
     finally:
         if bootstrap is not None:

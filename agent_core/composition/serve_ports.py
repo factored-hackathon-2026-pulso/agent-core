@@ -303,6 +303,8 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
                 args.identity_keys, lambda ref, now: grant_active[0](ref, now), clock, reload_every)
         except SchemaError as exc:
             problems.append(str(exc))
+    if not demo and not (env.get(JEV_KEY_ENV) or "").strip():
+        problems.append(f"falta {JEV_KEY_ENV}: sin ella el proveedor jev falla en el primer turno")
     llm_url, llm_token = _llm_gateway_config(env, problems)
     lang_thresholds = _lang_thresholds(args, env, problems)
     fx_rates: dict[str, Decimal] | None = None

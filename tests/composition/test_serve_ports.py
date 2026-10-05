@@ -30,6 +30,7 @@ def _key(seed: bytes) -> str:
 
 def _env(**extra: str) -> dict[str, str]:
     return {"AGENTCORE_KEYS_FINGERPRINT": _key(b"a"), "AGENTCORE_KEYS_TOKEN_MAP": _key(b"b"),
+            "AGENTCORE_JEV_API_KEY": "test-key",
             "AGENTCORE_REGISTRY_DSN": "postgresql://ignored/ignored", **extra}
 
 
@@ -160,7 +161,7 @@ def test_any_failing_or_empty_factory_is_a_clean_problem_not_a_traceback(path: s
 def test_a_missing_jev_key_is_a_config_error_that_is_not_swallowed_as_a_provider_error() -> None:
     from agent_core.decision import DecisionConfigError
 
-    ports = _resolve(AGENTCORE_ALLOW_DEMO="1")
+    ports = _resolve(AGENTCORE_ALLOW_DEMO="1", AGENTCORE_JEV_API_KEY="")
     transport = ports.providers["jev"]._transport  # type: ignore[attr-defined]
     with pytest.raises(DecisionConfigError, match="AGENTCORE_JEV_API_KEY"):
         transport.send({}, 1000)
