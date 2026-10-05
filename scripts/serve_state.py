@@ -41,8 +41,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--state", type=Path, default=ROOT / "deploy" / "compose" / "state")
     parser.add_argument("--data-pipeline", type=Path, default=_sibling_data())
     parser.add_argument("--grant-synthetic-fields", action="store_true",
-                        help="concede (campo, purpose) de todo campo no público: solo para el dataset sintético "
-                             "de la prueba local; la concesión real es de gobierno de datos")
+                        help="concede (campo, purpose) de todo campo no público: solo para el dataset "
+                             "sintético de la prueba local (la concesión real es de gobierno de datos)")
     args = parser.parse_args(argv)
     state: Path = args.state
     (state / "calibration").mkdir(parents=True, exist_ok=True)
