@@ -3,11 +3,13 @@
 The registry still owns the `ToolDef` (risk, auth level, idempotence, read-back); the service only runs the
 data side by tool name. The engine already verified the caller's identity, so the service receives the
 verified *claims* (never a token) next to `bound_params`, which are engine-controlled; the model's `args`
-never carry the subject. Nothing here raises into the engine and nothing logs args, results or claims.
+never carry the subject. Nothing here raises into the engine and nothing logs args, results or claims;
+of a service error only its `kind` is kept.
 """
 
 import logging
 import os
+import re
 from collections.abc import Mapping
 from typing import Protocol
 from urllib.parse import quote, urlsplit
@@ -23,6 +25,7 @@ TOOL_SERVICE_URL_ENV = "AGENTCORE_TOOL_SERVICE_URL"
 TOOL_SERVICE_TOKEN_ENV = "AGENTCORE_TOOL_SERVICE_TOKEN"
 TOOL_SERVICE_TIMEOUT_ENV = "AGENTCORE_TOOL_SERVICE_TIMEOUT_S"
 DEFAULT_TIMEOUT_S = 10.0
+_KIND = re.compile(r"[a-z][a-z0-9_]{0,39}")  # a code like `unknown_tool`, never a sentence
 
 _READ_STATUSES = frozenset({ToolStatus.ok, ToolStatus.error, ToolStatus.timeout, ToolStatus.denied,
                             ToolStatus.step_up_required})
@@ -103,14 +106,22 @@ class HttpToolExecutor:
             why = f"status {status.value} out of contract"
             return self._failure(tool_def, call_id, why, ToolStatus.error)
         error = data.get("error")
-        message = error.get("message") if isinstance(error, dict) else error
+        kind = error.get("kind") if isinstance(error, dict) else None
         required = tool_def.min_auth_level if status is ToolStatus.step_up_required else None
         source = data.get("source")
         return ToolResult(
             status=status, result_full=data.get("result") if status is ToolStatus.ok else None,
             source=source if isinstance(source, str) else tool_def.source, call_id=call_id,
-            error=message[:200] if isinstance(message, str) and status is not ToolStatus.ok else None,
+            error=None if status is ToolStatus.ok else _error_kind(kind),
             required_level=required)
+
+
+def _error_kind(kind: object) -> str:
+    """Only the service's `error.kind`, as a short code: its `message` is free text that can carry customer
+    data and would reach events and the model without passing through the views (ADR 0008, ADR 0025 s.6)."""
+    if isinstance(kind, str) and _KIND.fullmatch(kind):
+        return kind
+    return "tool_error"
 
 
 def _context(ctx: ToolCallContext, call_id: str) -> dict[str, JsonValue]:
