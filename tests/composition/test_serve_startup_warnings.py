@@ -100,3 +100,37 @@ def test_a_reachable_llm_gateway_gives_no_gateway_warning(
     ports = base.__class__(**{**base.__dict__, "llm_gateway_url": "https://gw.test"})
     assert _run_with(ports, monkeypatch, world, probe=lambda url: True) == 0
     assert "gateway" not in capsys.readouterr().err.lower()
+
+
+class _DownRegistry(InMemoryRegistry):
+    def resolve_release(self, *a: Any, **k: Any) -> Any:
+        raise TimeoutError("couldn't get a connection after 30.00 sec")
+
+
+def test_serve_starts_even_if_the_release_check_cannot_reach_the_database(
+        capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, root_logging: None) -> None:
+    """With Postgres down at boot the process must still answer `/healthz` (and `/readyz` 503): the startup
+    check of the `prod` releases is a warning, never a reason not to start."""
+    world = EngineWorld()
+    base = make_ports(world, TestIdentityIssuer(world.clock))
+    ports = base.__class__(**{**base.__dict__, "registry": _DownRegistry(), "agents": ("atencion",)})
+    assert _run_with(ports, monkeypatch, world) == 0
+    err = capsys.readouterr().err
+    assert "AVISO" in err and "atencion" in err and "TimeoutError" in err
+
+
+def test_a_database_that_is_down_is_not_even_queried_for_the_release_check(
+        capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, root_logging: None) -> None:
+    world = EngineWorld()
+    base = make_ports(world, TestIdentityIssuer(world.clock))
+    asked: list[str] = []
+
+    class Spy(_DownRegistry):
+        def resolve_release(self, *a: Any, **k: Any) -> Any:
+            asked.append("asked")
+            return super().resolve_release(*a, **k)
+
+    ports = base.__class__(**{**base.__dict__, "registry": Spy(), "agents": ("atencion",),
+                              "readiness": (("postgres", lambda: False),)})
+    assert _run_with(ports, monkeypatch, world) == 0
+    assert asked == [] and "no responde" in capsys.readouterr().err

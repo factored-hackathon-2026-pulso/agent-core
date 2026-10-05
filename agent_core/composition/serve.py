@@ -164,6 +164,23 @@ def release_warnings(registry: RegistryPort, agents: Iterable[str], clock: Clock
     return warnings
 
 
+def startup_release_warnings(ports: ServePorts) -> list[str]:
+    """`release_warnings` that never keeps the process from starting: with Postgres down the check is skipped
+    (`/readyz` already says 503) and any other failure of the check is itself a warning naming only its type
+    (a database error can carry a host or a credential)."""
+    if not ports.agents:
+        return []
+    database = dict(ports.readiness).get("postgres")
+    if database is not None and not database():
+        return ["la base no responde: no se revisan las releases `prod` al arrancar "
+                "(`/readyz` da 503 hasta que responda)"]
+    try:
+        return release_warnings(ports.registry, ports.agents, ports.clock)
+    except Exception as exc:
+        names = ", ".join(ports.agents)
+        return [f"no se pudieron revisar las releases `prod` de {names}: {type(exc).__name__}"]
+
+
 def gateway_warnings(url: str | None) -> list[str]:
     """Startup notes about the llm-gateway: not configured, or not answering `/healthz`. The URL is not
     printed (it can carry credentials)."""
@@ -219,8 +236,7 @@ def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Map
         if ports.doubles:
             print("AVISO: piezas que son DOBLES de demo (no producción): " + ", ".join(ports.doubles),
                   file=sys.stderr)
-        for warning in (*release_warnings(ports.registry, ports.agents, ports.clock),
-                        *gateway_warnings(ports.llm_gateway_url)):
+        for warning in (*startup_release_warnings(ports), *gateway_warnings(ports.llm_gateway_url)):
             print(f"AVISO: {warning}", file=sys.stderr)
         if ports.migrate is not None and env.get(AUTO_MIGRATE_ENV) != "0":
             # En segundo plano y con reintentos: sin base `serve` arranca igual y `/readyz` dice 503.
