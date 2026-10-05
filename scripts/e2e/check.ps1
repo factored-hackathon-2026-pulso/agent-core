@@ -8,16 +8,19 @@ checkout), corre scripts\e2e\check.py contra él y lo apaga. No toca el `serve` 
 
 Antes: setup.ps1 una vez (Postgres en 55432, registry importado, llm-gateway). Lee scripts\e2e\.env.e2e; lo que
 falte toma el valor por defecto del stack local, y las claves de huellas, si faltan, se generan solo para esta
-corrida (avisa). El token del gateway sale de .e2e\gateway.env si no está en el entorno (-GatewayEnv para otra ruta).
+corrida (avisa); -EnvFile lee otro .env.e2e (p. ej. el del checkout principal desde un worktree). El token del gateway sale de .e2e\gateway.env si no está en el entorno (-GatewayEnv para otra ruta).
 Sale con 0 si nada falló; el log del servidor queda en .e2e\check-serve.log.
 #>
 param(
     [int]$Port = 8010,
     [switch]$Llm,
     [switch]$Conversations,
-    [string]$GatewayEnv = ""
+    [string]$GatewayEnv = "",
+    [string]$EnvFile = ""
 )
 . $PSScriptRoot\_env.ps1
+# _env.ps1 fija $EnvFile al de este checkout; -EnvFile lo reemplaza (p. ej. el del checkout principal).
+if ($PSBoundParameters.ContainsKey("EnvFile")) { $EnvFile = $PSBoundParameters["EnvFile"] }
 Set-Location $Root
 if ((Test-Path $EnvFile) -and ((Get-Item $EnvFile).Length -gt 8)) { Import-E2EEnv }
 else { Write-Warning "$EnvFile no existe o está vacío: uso los valores por defecto del stack local." }

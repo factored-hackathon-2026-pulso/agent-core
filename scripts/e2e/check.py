@@ -16,14 +16,18 @@ Nunca imprime credenciales ni el texto de las respuestas: solo estados, códigos
 `report.ps1 -Run <id>`. Sale con 0 si nada falló."""
 
 import argparse
+import http.client
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from typing import Any
+from urllib.parse import urlsplit
 
 from agent_core.adapters.system_clock import SystemClock
 from agent_core.adapters.system_ids import SystemIds
@@ -72,6 +76,22 @@ class Check:
                 return error.code, (json.loads(payload) if payload else {})
             except ValueError:
                 return error.code, {}
+
+    def declared_too_large(self, path: str, length: int, token: str) -> tuple[int, str | None]:
+        url = urlsplit(self.base_url)
+        conn = http.client.HTTPConnection(url.hostname or "127.0.0.1", url.port or 80, timeout=30)
+        try:
+            conn.putrequest("POST", path)
+            for name, value in (("Authorization", f"Bearer {token}"), ("Content-Type", "application/json"),
+                                ("Idempotency-Key", "k-big"), ("Content-Length", str(length))):
+                conn.putheader(name, value)
+            conn.endheaders()
+            response = conn.getresponse()
+            payload = response.read()
+            code = json.loads(payload).get("code") if payload else None
+            return response.status, code
+        finally:
+            conn.close()
 
     def start_run(self, token: str, agent: str, *, key: str | None = None,
                   extra: Mapping[str, str] | None = None, **body: Any) -> tuple[int, Json]:
@@ -143,9 +163,11 @@ def platform_checks(c: Check) -> None:
         return "firma inválida, ausente y vencida rechazadas"
 
     def body_limits() -> str:
-        big = json.dumps({"agent": "recepcion", "input": {"x": "a" * 1_100_000}}).encode()
-        expect(*c.call("POST", "/v1/runs", c.issuer.customer(CUSTOMER), raw=big,
-                       headers={"Idempotency-Key": "k-big"}), 413, "payload_too_large")
+        # Se declara un Content-Length de 2 MB sin mandar el cuerpo: el servidor tiene que responder 413 sin
+        # leerlo. (Mandar el MB de verdad hace que el cierre de la conexión le gane a la lectura del 413.)
+        status, code = c.declared_too_large("/v1/runs", 2_000_000, c.issuer.customer(CUSTOMER))
+        assert status == 413 and code == "payload_too_large", (
+            f"esperaba 413 payload_too_large, llegó {status} {code}")
         long_turn = {"text": "a" * 32_001, "channel": "web", "client_turn_id": "t-1"}
         expect(*c.call("POST", "/v1/sessions/no-existe/turns", c.issuer.customer(CUSTOMER), long_turn),
                422, "invalid_request")
@@ -279,15 +301,35 @@ def conversation_checks(c: Check) -> None:
     def copilot_figure() -> str:
         chat, said, run = conversation(c, agent="copiloto-asesor", advisor=True,
                                        lines=["¿cuánto debe en la tarjeta?"])
-        text = " ".join(said).replace(".", "").replace(",", "")
-        assert "134280" in text, (
-            f"la respuesta no trae la cifra de la tarjeta (report.ps1 -Run {chat.run_id})")
+        found = amounts(" ".join(said))
+        assert Decimal("1342.80") in found, (
+            f"la respuesta no trae el saldo de la tarjeta (1342.80); cifras halladas: "
+            f"{sorted(str(a) for a in found) or 'ninguna'} (report.ps1 -Run {chat.run_id})")
         return f"cifra validada (run {run.get('run_id')})"
 
     for name, test in [("A · disputa resuelta", resolved), ("A · escala por monto", escalated_by_amount),
                        ("A · interrupción por fraude", fraud),
                        ("B · copiloto responde una cifra", copilot_figure)]:
         c.run(name, test)
+
+
+_NUMBER = re.compile(r"\d[\d.,\s\u00a0]*\d|\d")
+
+
+def amounts(text: str) -> set[Decimal]:
+    """Las cifras de un texto en formato es o en (1.342,80 · 1,342.80 · 1 342,80 · 1342.8). Ante la duda se
+    agregan las dos lecturas: el check pregunta si la cifra esperada está, no cuál quiso decir el modelo."""
+    found: set[Decimal] = set()
+    for match in _NUMBER.finditer(text):
+        raw = re.sub(r"[\s\u00a0]", "", match.group(0))
+        for decimal_mark in (",", "."):
+            thousands = "." if decimal_mark == "," else ","
+            candidate = raw.replace(thousands, "").replace(decimal_mark, ".")
+            try:
+                found.add(Decimal(candidate))
+            except InvalidOperation:
+                continue
+    return found
 
 
 # --- salida ----------------------------------------------------------------------------------------------
