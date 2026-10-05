@@ -5,9 +5,9 @@ Cada operación usa la conexión de `PostgresStore.reading()` en autocommit: una
 que la falla de una escritura no deja medias filas. Una falla del store sube como excepción de psycopg y
 `TurnRecorder` la convierte en `TranscriptWriteError` sin mensaje (el texto no se pierde en silencio).
 
-Abierto (m11 decisión 4): `append` no es idempotente. Si el store cae a mitad de las entradas de un turno, el
-reintento duplica las ya escritas; hace falta una clave `(run_id, turn_id, role, ordinal)` que el puerto no
-trae. Se decide en el spec, no aquí."""
+`write_turn` es la vía del motor (m11 decisión 4): borra e inserta las entradas del turno en una sola
+transacción, así que un reintento del turno no duplica ni deja restos. `append` sigue siendo una escritura
+suelta, no idempotente."""
 
 from agent_core.adapters.postgres_uow import PostgresStore
 from agent_core.domain import TranscriptEntry
@@ -26,7 +26,23 @@ class PgTranscriptStore:
                 "VALUES (%s, %s, %s, %s, %s) RETURNING seq",
                 (entry.run_id, entry.turn_id, entry.role, entry.text_model, entry.reason)).fetchone()
         assert row is not None
-        return f"entry-{row[0]:0{_ENTRY_ID_WIDTH}d}"
+        return _entry_id(row[0])
+
+    def write_turn(self, run_id: str, turn_id: str, entries: list[TranscriptEntry]) -> list[str]:
+        if any(e.run_id != run_id or e.turn_id != turn_id for e in entries):
+            raise ValueError("todas las entradas deben ser del run y el turno indicados")
+        ids: list[str] = []
+        with self._store.reading() as conn, conn.transaction():  # borrar e insertar: todo o nada
+            conn.execute("DELETE FROM transcript_entries WHERE run_id = %s AND turn_id = %s",
+                         (run_id, turn_id))
+            for entry in entries:
+                row = conn.execute(
+                    "INSERT INTO transcript_entries (run_id, turn_id, role, text_model, reason) "
+                    "VALUES (%s, %s, %s, %s, %s) RETURNING seq",
+                    (run_id, turn_id, entry.role, entry.text_model, entry.reason)).fetchone()
+                assert row is not None
+                ids.append(_entry_id(row[0]))
+        return ids
 
     def read(self, run_id: str) -> list[TranscriptEntry]:
         with self._store.reading() as conn:
@@ -49,6 +65,10 @@ class PgTranscriptStore:
         """Supresión (unidad 7). No toca el log de auditoría: T-M11-08."""
         with self._store.reading() as conn:
             conn.execute("DELETE FROM transcript_entries WHERE run_id = %s", (run_id,))
+
+
+def _entry_id(seq: int) -> str:
+    return f"entry-{seq:0{_ENTRY_ID_WIDTH}d}"
 
 
 def _entry(row: tuple[str, str, str, str, str | None]) -> TranscriptEntry:

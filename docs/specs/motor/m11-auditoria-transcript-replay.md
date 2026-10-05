@@ -220,7 +220,7 @@ Es la **fuente de datos** de la unidad 6 y de la auto-mejora: exportación de ev
 
 ## 11. Abiertos
 
-- Transcript store caído: resuelto en rev. 2 (falla el turno); queda abierta la idempotencia del reintento con la unidad 7.
+- Transcript store caído: resuelto en rev. 2 (falla el turno); idempotencia del reintento resuelta (decisión 4, enmienda 2026-10-04).
 
 ## 12. Decisiones de la rev. 2
 
@@ -228,7 +228,7 @@ Es la **fuente de datos** de la unidad 6 y de la auto-mejora: exportación de ev
 1. **`ChainedEvent`** no existe en M0. Es un alias `type ChainedEvent = EngineEvent` en `agent_core.audit` con la garantía de que `seq`, `prev_hash` y `hash` no son `None`. M0 no cambia (no se regeneran `contracts/`).
 2. **Fórmula del hash:** `hash_n = sha256_hex(canonical_bytes(evento_n con seq y prev_hash, SIN el campo hash) ‖ prev_hash.encode("ascii"))`. `hash_0 = sha256_hex(b"agentcore:" ‖ run_id.encode())` (hex de 64) y es el `prev_hash` del evento con `seq = 0` (nunca `None` en un evento encadenado). `seq` empieza en 0 y es contiguo.
 3. **`record_turn` recibe `turn_id`** (el spec no lo trae y `TranscriptEntry` lo exige): `record_turn(run_id, turn_id, user_msg_model, final_model, rejected)`. Orden de las referencias devueltas: `[user, *rejected (en orden), final]`. Todas las huellas se calculan **antes** de escribir en el store.
-4. **Transcript store caído (Abierto del spec):** se falla el turno con `TranscriptWriteError` (sin mensaje del store, solo el nombre del tipo). Riesgo anotado: si el store falla a mitad de las entradas, el reintento del turno duplica las ya escritas; la idempotencia por `(run_id, turn_id, role, ordinal)` queda como abierto para la unidad 7.
+4. **Transcript store caído (Abierto del spec):** se falla el turno con `TranscriptWriteError` (sin mensaje del store, solo el nombre del tipo). ~~Riesgo: el reintento duplicaba las entradas ya escritas.~~ **Enmienda 2026-10-04:** `TurnRecorder` escribe el turno con `TranscriptStore.write_turn(run_id, turn_id, entries)`, que reemplaza de forma atómica las entradas del turno (borrar e insertar en una transacción). Un reintento, tras falla o tras éxito, deja una sola copia y gana el último intento; no quedan restos si el reintento trae menos entradas (el borrador rechazado de un intento anterior, por ejemplo). Se eligió el reemplazo por turno en lugar de la clave `(run_id, turn_id, role, ordinal)` porque esa clave dejaba restos y mezclaba intentos. `append` queda como escritura suelta.
 5. **`read_rendered`** necesita el `token_map` del run: `TranscriptReader(store, uow_factory, views, keys, ids)` carga el `RunState` por UoW, abre el vault y renderiza con `purpose = "transcript_read"`. Run inexistente → `RunNotFound`.
 6. **Eventos fuera de turno** (p. ej. `access_denied` de M9): `AuditSink.append_outside_turn` **no encadena** (el doble en memoria guarda tal cual). Se añade `AuditLog.append_standalone(run_id, events)` (abre una UoW, encadena, commitea). Aviso a M9: debe usar esa vía en lugar de `AuditSink.append_outside_turn`.
 7. **Recorder para M3:** `AuditLog.recorder()` devuelve un callable con la firma de `EventRecorder` de M3 (`(uow, state, events) -> None`) que encadena y persiste. M4 lo cablea como `ActionContext.record`.

@@ -35,16 +35,15 @@ class TurnRecorder:
             ("assistant", final_model, None),
         ]
         fingerprints = [fingerprint(text, self._keys) for _, text, _ in planned]  # antes de escribir
-        refs: list[TranscriptRef] = []
-        for (role, text, reason), fp in zip(planned, fingerprints, strict=True):
-            entry = TranscriptEntry.model_validate(
-                {"run_id": run_id, "turn_id": turn_id, "role": role, "text_model": text, "reason": reason})
-            try:
-                entry_id = self._store.append(entry)
-            except Exception as exc:  # cualquier falla del store: el turno falla y se reintenta
-                raise TranscriptWriteError(run_id, turn_id, type(exc).__name__) from None
-            refs.append(TranscriptRef(entry_id=entry_id, fingerprint=fp))
-        return refs
+        entries = [TranscriptEntry.model_validate(
+            {"run_id": run_id, "turn_id": turn_id, "role": role, "text_model": text, "reason": reason})
+            for role, text, reason in planned]
+        try:  # todo el turno de una vez: atómico, y reescribirlo en un reintento no duplica
+            entry_ids = self._store.write_turn(run_id, turn_id, entries)
+        except Exception as exc:  # cualquier falla del store: el turno falla y se reintenta
+            raise TranscriptWriteError(run_id, turn_id, type(exc).__name__) from None
+        return [TranscriptRef(entry_id=entry_id, fingerprint=fp)
+                for entry_id, fp in zip(entry_ids, fingerprints, strict=True)]
 
 
 class RunNotFound(LookupError):
