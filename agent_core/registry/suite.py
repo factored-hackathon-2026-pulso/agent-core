@@ -68,7 +68,6 @@ class Step(_M):
         return self
 
 
-
 class ToolReply(_M):
     status: ToolStatus = ToolStatus("ok")
     result: JsonValue = None
@@ -107,7 +106,6 @@ class Expect(_M):
     suggestions: list[SuggestionExpect] = Field(
         default_factory=list, max_length=20, exclude_if=lambda v: not v
     )
-
 
 
 class ScenarioSubject(_M):

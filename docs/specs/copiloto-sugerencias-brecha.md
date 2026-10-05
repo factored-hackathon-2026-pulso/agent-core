@@ -23,7 +23,7 @@ Lo que **no** se probó: ningún modelo real produjo estas sugerencias. En la su
 ## 1. Brechas del núcleo
 
 ### B1. La salida: `Suggestion` y `RunResult.suggestions` (M0, M4, M9, M11) — RESUELTA
-- M0: `domain/suggestions.py` (unión discriminada por `type`, límites de longitud de la plataforma, `executable: Literal[False]`), `RunResult.suggestions: list[Suggestion] = []` (un resultado guardado antes se sigue leyendo) y `SCHEMA_VERSION` 1.5.0.
+- M0: `domain/suggestions.py` (unión discriminada por `type`, límites de longitud de la plataforma, `executable: Literal[False]`), `RunResult.suggestions: list[Suggestion] = []` (un resultado guardado antes se sigue leyendo) y `SCHEMA_VERSION` 1.6.0.
 - M4: `start_run` entrega la lista que acumuló el flow, **solo si el run termina `completed`**; se guarda con el resultado idempotente.
 - M9: `POST /v1/runs` la publica (`to_jsonable`). **No se agregó a `GET /v1/runs/{id}`**, que tampoco publica `output`: la plataforma lee `suggestions` de la respuesta de `POST` (pendiente solo si la plataforma pidiera `GET`).
 - M11/replay: evento `suggestions_produced` con contadores y tipos, `result`, `failures` (ids de comprobaciones), `regenerations`, una huella con clave de la lista y el uso del LLM (`llm` es campo de medición: el replay lo excluye). Nunca el texto.
