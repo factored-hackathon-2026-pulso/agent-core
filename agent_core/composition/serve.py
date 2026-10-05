@@ -8,6 +8,8 @@ from dataclasses import dataclass, replace
 from datetime import timedelta
 from decimal import Decimal
 
+from fastapi import FastAPI
+
 from agent_core.adapters.llm import gateway_is_up
 from agent_core.adapters.llm.http_gateway import LLM_GATEWAY_URL_ENV
 from agent_core.api.app import ApiDeps, ApiExtension, create_app
@@ -172,11 +174,15 @@ def gateway_warnings(url: str | None) -> list[str]:
     return []
 
 
-async def _set_worker_threads(total: int) -> None:
-    """Hilos de las rutas síncronas: el límite por defecto de anyio (40) acota la concurrencia."""
+def install_worker_threads(app: FastAPI, total: int) -> None:
+    """Hilos de las rutas síncronas: el límite por defecto de anyio (40) acota la concurrencia. Se aplica al
+    arrancar la app, dentro del bucle de eventos (el manejador tiene que ser `async def`, no un lambda)."""
     from anyio import to_thread
 
-    to_thread.current_default_thread_limiter().total_tokens = total
+    async def apply() -> None:
+        to_thread.current_default_thread_limiter().total_tokens = total
+
+    app.router.on_startup.append(apply)
 
 
 def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Mapping[str, str],
@@ -232,7 +238,7 @@ def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Map
             build_api_deps(ports, registry_service=registry_service, telemetry=OtelTurnTelemetry(),
                            build_sha=env.get("AGENTCORE_GIT_SHA") or None, limits=limits,
                            max_inflight=ops.max_inflight))
-        app.router.on_startup.append(lambda: _set_worker_threads(ops.worker_threads))
+        install_worker_threads(app, ops.worker_threads)
         if serve is None:
             import uvicorn
 
