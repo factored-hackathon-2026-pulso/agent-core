@@ -2,7 +2,7 @@
 
 import re
 from collections.abc import Mapping
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
 from types import MappingProxyType
@@ -12,7 +12,7 @@ from pydantic import Field, NonNegativeInt, PositiveInt, StringConstraints, mode
 
 from agent_core.domain.base import EntityId, ExactVersion, Locale, Model, Sha256Hex
 from agent_core.domain.errors import InvalidRuntimeRef
-from agent_core.domain.identity import AuthLevel, PrincipalType
+from agent_core.domain.identity import AuthInfo, AuthLevel, PrincipalType
 from agent_core.domain.json import JsonValue
 from agent_core.domain.knowledge import (
     MAX_PAGE_SOURCE_REFS,
@@ -315,6 +315,16 @@ class ToolDef(Model):
     @property
     def is_write(self) -> bool:
         return self.risk_class not in (RiskClass.read, RiskClass.compute)
+
+    def accepts(self, auth: AuthInfo, at: datetime | None) -> bool:
+        """Whether `auth` is enough for this tool at instant `at` (ADR 0010): the level and, when the tool
+        declares `max_auth_age`, how old the authentication is. Without an instant the age cannot be checked,
+        so a tool with `max_auth_age` is refused (fails closed)."""
+        if auth.level < self.min_auth_level:
+            return False
+        if self.max_auth_age is None:
+            return True
+        return at is not None and at - auth.at <= self.max_auth_age
 
     @model_validator(mode="after")
     def _write_needs_readback(self) -> "ToolDef":

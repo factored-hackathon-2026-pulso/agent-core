@@ -84,6 +84,7 @@
   - `TurnResult.agent: EntityRef | None = None` (el agente que respondió) e `IdKind.transfer`.
   Los estados, eventos y agentes guardados con la versión anterior siguen cargando (todo campo nuevo es opcional).
 - rev. 13 (2026-10-02), métricas por agente (ADR 0020; `SCHEMA_VERSION` 1.2.0 → **1.3.0**, menor: un campo opcional nuevo). `Agent.metrics: list[MetricDef] = []` y los tipos del DSL (`domain/metrics.py`, `domain/metric_catalog.py`). La rama de métricas lo había numerado 0.5.0, valor que ya usaba `IdKind.proposal`/`IdKind.eval_run` (rev. 9); al integrarla con la rama principal (1.2.0) pasa a 1.3.0. `contracts/` regenerado (`Agent`).
+- rev. 14 (2026-10-05), revisión técnica (`SCHEMA_VERSION` 1.3.0 → **1.4.0**, menor: un campo opcional nuevo). `ToolCallContext.at: UtcDatetime | None = None`: el instante del turno (`Clock`) que el ejecutor usa para `ToolDef.max_auth_age` (ADR 0010); lo llena M2 en `tool_call_context`. `ToolDef.accepts(auth, at)` concentra el chequeo previo: nivel y, si la tool declara `max_auth_age`, antigüedad de la autenticación; sin instante, una tool con `max_auth_age` se rechaza (falla cerrado). Antes `max_auth_age` se declaraba pero nadie lo aplicaba. `contracts/` regenerado (`ToolCallContext`).
 - implementación de M0 (2026-09-29), decisiones que el spec no cubría:
   - `loads` rechaza claves duplicadas; `to_jsonable` rechaza claves que colisionan tras `str()`; `RecursionError` se convierte en `ValueError`; se rechaza un `Decimal` con |exponente| > 1000;
   - `dumps` escribe `Decimal` con `format(d, "f")` (no `str(d)`, que puede emitir `1E+3`);
@@ -433,6 +434,7 @@ class RegistryPort:
 
 class ToolCallContext: run_id: str; release: str; principal: Principal; on_behalf_of: OnBehalfOf | None
                        subject: SubjectRef | None; turn_id: str | None
+                       at: UtcDatetime | None = None   # instante del turno, para max_auth_age (rev. 14)
 class ToolStatus(StrEnum): ok, error, timeout, denied, uncertain, step_up_required   # definido en domain.shared
 class ToolResult:      status: ToolStatus; result_full: JsonValue | None; source: str | None
                        call_id: str; error: str | None; required_level: AuthLevel | None

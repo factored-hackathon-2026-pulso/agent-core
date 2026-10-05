@@ -54,7 +54,7 @@ class HttpToolExecutor:
         if tool_def.is_write and idempotency_key is None:
             raise ValueError("una escritura siempre lleva idempotency_key (ADR 0007)")
         call_id = self._ids.new_id(IdKind.call)
-        if ctx.principal.auth.level < tool_def.min_auth_level:  # before any call: nothing can have happened
+        if not tool_def.accepts(ctx.principal.auth, ctx.at):  # before any call: nothing can have happened
             return ToolResult(status=ToolStatus.step_up_required, source=tool_def.source, call_id=call_id,
                               required_level=tool_def.min_auth_level)
         body = {"tool": str(tool), "args": args, "bound_params": bound_params,

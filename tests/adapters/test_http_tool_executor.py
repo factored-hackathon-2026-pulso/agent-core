@@ -217,3 +217,27 @@ def test_the_factory_wants_url_and_token_together_and_valid() -> None:
                  "AGENTCORE_TOOL_SERVICE_TIMEOUT_S": "0"}):
         with pytest.raises(SchemaError):
             from_env(registry, ids, env)
+
+
+def test_a_step_up_older_than_max_auth_age_asks_again_without_calling_the_service(
+        service: Service) -> None:
+    registry = InMemoryRegistry()
+    aged = ToolDef.model_validate({"id": "radicar_pqr", "version": "1.0.0", "risk_class": "write_reversible",
+                                   "min_auth_level": "step_up", "max_auth_age": "PT5M", "idempotent": True,
+                                   "readback_by": "idempotency_key"})
+    registry.add(aged)
+    executor = HttpToolExecutor(registry, FakeIds(), BASE, TOKEN,
+                                client=httpx.Client(transport=httpx.MockTransport(service)))
+    stepped = principal(auth={"level": "step_up", "at": "2026-09-28T12:00:00Z"})
+
+    def at(instant: str | None) -> ToolCallContext:
+        return ToolCallContext(run_id="run-1", release="rel-1", principal=stepped, turn_id="turn-1",
+                               at=instant)
+
+    old = executor.execute(WRITE, {}, {}, at("2026-09-28T12:06:00Z"), idempotency_key="action-1")
+    unknown = executor.execute(WRITE, {}, {}, at(None), idempotency_key="action-1")  # fails closed
+    assert old.status is ToolStatus.step_up_required and old.required_level == "step_up"
+    assert unknown.status is ToolStatus.step_up_required and service.requests == []
+
+    fresh = executor.execute(WRITE, {}, {}, at("2026-09-28T12:04:00Z"), idempotency_key="action-1")
+    assert fresh.status is not ToolStatus.step_up_required and len(service.requests) == 1

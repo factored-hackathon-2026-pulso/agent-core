@@ -12,7 +12,8 @@ from agent_core.ports import ToolCallContext
 
 def tool_call_context(state: RunState, ctx: StepContext) -> ToolCallContext:
     return ToolCallContext(run_id=state.run_id, release=state.release, principal=state.principal,
-                           on_behalf_of=state.on_behalf_of, subject=state.subject, turn_id=ctx.turn_id)
+                           on_behalf_of=state.on_behalf_of, subject=state.subject, turn_id=ctx.turn_id,
+                           at=ctx.clock.now())
 
 
 def build_action_context(run: RunState, ctx: StepContext) -> ActionContext:

@@ -195,6 +195,19 @@
   "additionalProperties": false,
   "description": "Contexto de una llamada a tool: run, release, principal y sujeto (M0 §2.9).",
   "properties": {
+    "at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "At"
+    },
     "on_behalf_of": {
       "anyOf": [
         {
