@@ -22,5 +22,6 @@
   "status": {"field_class": "public"},
   "transaction_id": {"field_class": "public"},
   "filed_at": {"field_class": "public"},
-  "description": {"field_class": "untrusted_text"}
+  "description": {"field_class": "untrusted_text"},
+  "proposal_id": {"field_class": "public"}
 }

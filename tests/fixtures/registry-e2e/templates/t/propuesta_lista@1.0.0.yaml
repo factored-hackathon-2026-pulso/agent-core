@@ -1,5 +1,5 @@
 id: t/propuesta_lista
 version: 1.0.0
 locales:
-  es: "Dejé la propuesta en borrador. Revísala y apruébala en el registry."
-  pt: "Deixei a proposta em rascunho. Revise-a e aprove-a no registry."
+  es: "Dejé la propuesta {{facts.propuesta.value.proposal_id}} en borrador. Revísala y apruébala en el registry."
+  pt: "Deixei a proposta {{facts.propuesta.value.proposal_id}} em rascunho. Revise-a e aprove-a no registry."

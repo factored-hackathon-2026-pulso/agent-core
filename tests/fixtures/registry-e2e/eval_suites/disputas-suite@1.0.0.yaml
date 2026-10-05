@@ -1,0 +1,64 @@
+# `eval_suite` del agente `disputas`: tres casos sintéticos sobre el flow `disputa-cargo` con el motor real y las
+# tools del sandbox. Mide el comportamiento del agente (resolver, rechazar, escalar por monto), no datos reales.
+# Los umbrales son los de la plataforma por defecto; los ajusta quien publique.
+id: disputas-suite
+version: 1.0.0
+agent_id: disputas
+repetitions: 2
+scenarios:
+  - id: resuelto
+    principal: {id: cust-001, attrs: {country: CO}}
+    steps:
+      - {op: start}
+      - {op: turn, text: "no reconozco un cargo de ciento veinte dólares"}
+      - {op: confirm, answer: "yes"}
+    seed:
+      tools:
+        buscar_transacciones:
+          - result:
+              - {transaction_id: tx-1, amount: "120.50", currency: USD}
+              - {transaction_id: tx-2, amount: "30.00", currency: USD}
+        seleccionar:
+          - result: {transaction_id: tx-1, amount: "120.50", currency: USD}
+        convertir_moneda:
+          - result: "120.50"
+        radicar_pqr:
+          - result: {status: Open, id: pqr-demo-1}
+        obtener_pqr:
+          - result: {status: Open, id: pqr-demo-1}
+    expect: {outcome: resolved, actions_verified: [radicar_pqr], escalated: false}
+
+  - id: rechaza-la-confirmacion
+    principal: {id: cust-001, attrs: {country: CO}}
+    steps:
+      - {op: start}
+      - {op: turn, text: "no reconozco un cargo de ciento veinte dólares"}
+      - {op: confirm, answer: "no"}
+    seed:
+      tools:
+        buscar_transacciones:
+          - result:
+              - {transaction_id: tx-1, amount: "120.50", currency: USD}
+              - {transaction_id: tx-2, amount: "30.00", currency: USD}
+        seleccionar:
+          - result: {transaction_id: tx-1, amount: "120.50", currency: USD}
+        convertir_moneda:
+          - result: "120.50"
+    expect: {outcome: cancelled, escalated: false}   # sin confirmación no se radica nada
+
+  - id: monto-alto-pasa-a-una-persona
+    principal: {id: cust-001, attrs: {country: CO}}
+    steps:
+      - {op: start}
+      - {op: turn, text: "no reconozco un cargo de novecientos dólares"}
+    seed:
+      tools:
+        buscar_transacciones:
+          - result:
+              - {transaction_id: tx-9, amount: "900.00", currency: USD}
+              - {transaction_id: tx-2, amount: "30.00", currency: USD}
+        seleccionar:
+          - result: {transaction_id: tx-9, amount: "900.00", currency: USD}
+        convertir_moneda:
+          - result: "900.00"
+    expect: {outcome: escalated, escalated: true}   # escalamiento-disputa-monto: más de 500 USD

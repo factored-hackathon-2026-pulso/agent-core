@@ -1,5 +1,5 @@
 id: t/te_comunico
 version: 1.0.0
 locales:
-  es: "Te comunico con un especialista."
-  pt: "Vou te transferir para um especialista."
+  es: "Te paso con otro de nuestros agentes, que atiende este tema."
+  pt: "Vou te passar para outro dos nossos agentes, que cuida deste assunto."

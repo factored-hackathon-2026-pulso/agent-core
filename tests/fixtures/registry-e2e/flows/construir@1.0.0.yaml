@@ -7,6 +7,9 @@ nodes:
   config:
     slot: agente
     prompt_ref: t/pedir_agente
+    validator:
+      kind: regex
+      value: '[a-z0-9][a-z0-9_-]{0,63}'
     max_attempts: 3
   next:
     ok: pedir_objetivo
@@ -95,8 +98,14 @@ nodes:
       - create_proposal
     save_as: crear_ok
   next:
-    verified: guardar
+    verified: creada
     failed: esc
+- id: creada
+  type: respond
+  config:
+    template_ref: t/propuesta_creada
+  next:
+    next: guardar
 - id: guardar
   type: tool
   config:
@@ -139,13 +148,7 @@ nodes:
 - id: responder
   type: respond
   config:
-    generate:
-      prompt_ref: p/resumen_construccion@1
-      allowed_facts:
-      - facts.propuesta
-      - facts.validacion
-      purpose: agent_guidance
-      fallback_template_ref: t/propuesta_lista@1
+    template_ref: t/propuesta_lista
   next:
     next: fin
 - id: fin

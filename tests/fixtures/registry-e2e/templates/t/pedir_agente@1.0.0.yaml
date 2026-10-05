@@ -1,5 +1,5 @@
 id: t/pedir_agente
 version: 1.0.0
 locales:
-  es: "¿Qué agente quieres modificar? (por ejemplo: disputas)"
-  pt: "Qual agente você quer modificar? (por exemplo: disputas)"
+  es: "¿Qué agente quieres modificar o crear? Dime su id en minúsculas, sin espacios (por ejemplo: disputas o cobros)."
+  pt: "Qual agente você quer modificar ou criar? Diga o id dele em minúsculas, sem espaços (por exemplo: disputas ou cobros)."
