@@ -8,17 +8,18 @@ El artefacto real lo exporta el equipo de datos; este solo existe para la prueba
 
 from agent_core.domain import canonical_bytes, dumps, sha256_hex
 
-_VOCAB = ["cargo", "disputa", "reclamo", "reconozco", "fraude", "duplicado", "pqr", "estado", "consulta",
-          "radicado", "caso", "revisar"]
+_DISPUTE = ["cargo", "disputa", "reclamo", "reconozco", "fraude", "duplicado", "cobrança", "cobranca",
+            "contestação", "contestacao", "reconheço", "reconheco", "indevida", "cobraram"]
+_INQUIRY = ["pqr", "estado", "consulta", "radicado", "caso", "revisar", "solicitação", "solicitacao",
+            "reclamação", "reclamacao", "status"]
+_VOCAB = [*_DISPUTE, *_INQUIRY]
 _CHOICE = ["consultas", "disputas"]
 
 
 def synthetic_classifier_json() -> str:
     idf = [1.0] * len(_VOCAB)
-    dispute = {"cargo", "disputa", "reclamo", "reconozco", "fraude", "duplicado"}
-    coef_choice = [[2.0 if t in {"pqr", "estado", "consulta", "radicado", "caso", "revisar"} else 0.0
-                    for t in _VOCAB],
-                   [2.0 if t in dispute else 0.0 for t in _VOCAB]]
+    coef_choice = [[2.0 if t in _INQUIRY else 0.0 for t in _VOCAB],
+                   [2.0 if t in _DISPUTE else 0.0 for t in _VOCAB]]
     body = {
         "format": "tfidf-logreg-v1",
         "vocab": {token: i for i, token in enumerate(_VOCAB)},

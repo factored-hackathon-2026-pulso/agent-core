@@ -40,6 +40,9 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--state", type=Path, default=ROOT / "deploy" / "compose" / "state")
     parser.add_argument("--data-pipeline", type=Path, default=_sibling_data())
+    parser.add_argument("--grant-synthetic-fields", action="store_true",
+                        help="concede (campo, purpose) de todo campo no público: solo para el dataset "
+                             "sintético de la prueba local (la concesión real es de gobierno de datos)")
     args = parser.parse_args(argv)
     state: Path = args.state
     (state / "calibration").mkdir(parents=True, exist_ok=True)
@@ -71,7 +74,13 @@ def main(argv: list[str]) -> int:
              "CLP": "0.0011", "EUR": "1.08"}
     (state / "fx-rates.json").write_text(json.dumps(rates), encoding="utf-8")
     grants = state / "field-grants.json"
-    if not grants.exists():
+    if args.grant_synthetic_fields:
+        catalog = {**published, **overlay}
+        purposes = ("customer_answer", "advisor_view", "agent_guidance")
+        pairs = [[name, purpose] for name, rule in sorted(catalog.items())
+                 if rule.get("field_class") != "public" for purpose in purposes]
+        grants.write_text(json.dumps(pairs), encoding="utf-8")
+    elif not grants.exists():
         grants.write_text("[]", encoding="utf-8")
     print(f"estado en {state}")
     return 0
