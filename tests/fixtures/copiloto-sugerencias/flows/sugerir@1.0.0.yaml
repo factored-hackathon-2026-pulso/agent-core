@@ -44,7 +44,7 @@ nodes:
       reads: [slots.turnos, slots.idioma, slots.canal, slots.prioridad, slots.sla_estado,
               slots.espera_del_cliente_segundos, facts.productos.value]
       optional_reads: [slots.sla_minutos_restantes, slots.motivo_llegada, slots.sugerencia_borrador,
-                       slots.sugerencia_escalacion_aceptada]
+                       slots.sugerencia_escalacion_aceptada, slots.modo_copiloto]
       tools_allowed: [leer_movimientos@1, leer_productos@1, leer_pqr_cliente@1]
       actions_allowed: []   # ADR 0026 Abierto 6, decidido: vacío; una `action` no es ejecutable en esta etapa
       max_items: 3          # Abierto 2, decidido
@@ -60,7 +60,7 @@ nodes:
       reads: [slots.turnos, slots.idioma, slots.canal, slots.prioridad, slots.sla_estado,
               slots.espera_del_cliente_segundos]
       optional_reads: [slots.sla_minutos_restantes, slots.motivo_llegada, slots.sugerencia_borrador,
-                       slots.sugerencia_escalacion_aceptada]
+                       slots.sugerencia_escalacion_aceptada, slots.modo_copiloto]
       tools_allowed: [leer_movimientos@1, leer_productos@1, leer_pqr_cliente@1]
       actions_allowed: []
       max_items: 3

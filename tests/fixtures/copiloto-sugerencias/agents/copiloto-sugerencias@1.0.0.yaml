@@ -54,6 +54,9 @@ input_schema:
   motivo_llegada: {type: string}              # se omite si no hay
   sugerencia_borrador: {type: string}         # estado del borrador anterior; se omite si no hubo
   sugerencia_escalacion_aceptada: {type: boolean}
+  # Etapa del tipo de caso en la plataforma (ADR plataforma 0006): `tools` = solo herramientas (y escalar),
+  # `drafts` = también borrador. Se omite si la plataforma no lo sabe (se comporta como `drafts`).
+  modo_copiloto: {type: string}
   # Metadato de TRAZABILIDAD (correlación de logs/auditoría con la sesión del asistente), decisión del usuario
   # 2026-10-05. NO es memoria: ningún nodo del flow lo lee (una prueba lo fija) y el modelo nunca lo ve.
   assistant_session_id: {type: string}
