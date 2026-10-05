@@ -51,6 +51,16 @@ class HttpLLMGateway:
         self._headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         self._client = client if client is not None else httpx.Client()
 
+    def bound_to(self, registry: RegistryPort) -> "HttpLLMGateway":
+        """The same service client over another registry (the evaluator binds a candidate release's entities
+        this way). Shares the HTTP client, so closing either closes both."""
+        return HttpLLMGateway.__new__(HttpLLMGateway)._share(self, registry)
+
+    def _share(self, origin: "HttpLLMGateway", registry: RegistryPort) -> "HttpLLMGateway":
+        self._registry, self._url, self._headers, self._client = (
+            registry, origin._url, origin._headers, origin._client)
+        return self
+
     def close(self) -> None:
         self._client.close()
 
