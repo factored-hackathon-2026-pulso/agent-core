@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -56,6 +56,7 @@ from agent_core.registry.models import (
     Origin,
     Proposal,
     ProposalState,
+    ReasonCode,
     RegistryEvent,
     ReleaseDetail,
     ReleaseDiff,
@@ -127,6 +128,16 @@ class ReleaseSettingChange(_V):
     inherited_from: str | None = None
 
 
+class LastDecision(_V):
+    """The last human decision on a proposal. Deliberately without the free-text reason (it may hold personal
+    data) and without the actor id: only the closed-vocabulary code and the role that decided."""
+
+    decision: Literal["approved", "rejected"]
+    reason_code: ReasonCode | None = None
+    decided_by_role: Literal["approver"] = "approver"  # only approvers can decide (require_approver)
+    decided_at: datetime
+
+
 class ApprovalReview(_V):
     """What the approver sees, as three separate elements (evaluation spec §8.5, T-EVAL-17): the functional
     change, the suite the candidate was measured with (and its draft, if it changed) together with each gate
@@ -153,6 +164,7 @@ class ProposalDetail(_V):
     changes: list[EntityDraft]
     last_eval: EvalRun | None
     review: ApprovalReview | None = None
+    last_decision: LastDecision | None = None
 
 
 PROMOTABLE_ALIASES = frozenset({"staging", "prod"})
@@ -215,12 +227,12 @@ class RegistryService:
 
     def _event(self, tx: RegistryTx, type_: str, actor: Principal, p: Proposal | None = None,
                release_id: str | None = None, *, agent_id: str | None = None, alias: str | None = None,
-               before: str | None = None) -> None:
+               before: str | None = None, reason_code: ReasonCode | None = None) -> None:
         tx.append_event(RegistryEvent(
             type=type_, actor=actor.id or "", principal_type=actor.type.value,
             origin=p.origin.value if p else None, proposal_id=p.proposal_id if p else None,
             candidate_hash=p.candidate_hash if p else None, release_id=release_id, agent_id=agent_id,
-            alias=alias, before=before, at=self._clock.now()))
+            alias=alias, before=before, reason_code=reason_code, at=self._clock.now()))
 
     def _load(self, tx: RegistryTx, ref: VersionRef) -> AnyEntity:
         stored = tx.get_version(ref)
@@ -445,7 +457,11 @@ class RegistryService:
                 release_changes=self._release_changes(tx, p, changes), suite=last.suite,
                 suite_changes=[d for d in changes if d.kind == SUITE_KIND], gate=list(last.report.items),
                 yardstick_loosened=list(last.report.yardstick_changes))
-            return ProposalDetail(proposal=p, changes=changes, last_eval=last, review=review)
+            decided = tx.latest_decision(proposal_id)
+            last_decision = None if decided is None else LastDecision(
+                decision=decided.decision, reason_code=decided.reason_code, decided_at=decided.at)
+            return ProposalDetail(proposal=p, changes=changes, last_eval=last, review=review,
+                                  last_decision=last_decision)
 
     def _release_changes(self, tx: RegistryTx, p: Proposal, changes: Sequence[EntityDraft]
                          ) -> list[ReleaseSettingChange]:
@@ -638,15 +654,16 @@ class RegistryService:
             self._event(tx, "approved", actor, p)
             return approval
 
-    def reject(self, actor: Principal, proposal_id: str, reason: str) -> Proposal:
+    def reject(self, actor: Principal, proposal_id: str, reason: str, *,
+               reason_code: ReasonCode | None = None) -> Proposal:
         require_approver(actor)
         with self._store.transaction() as tx:
             p = self._proposal(tx, proposal_id)
             self._expect(p, ProposalState.evaluated)  # spec §4; para deshacer una aprobación, `reopen`
             tx.insert_approval(Approval(proposal_id=proposal_id, candidate_hash=p.candidate_hash or "",
                                         actor=actor_id(actor), decision="rejected", reason=reason[:2000],
-                                        at=self._clock.now()))
-            self._event(tx, "rejected", actor, p)
+                                        reason_code=reason_code, at=self._clock.now()))
+            self._event(tx, "rejected", actor, p, agent_id=p.agent_id, reason_code=reason_code)
             return self._save(tx, p, state=ProposalState.draft, candidate_hash=None, rev=p.rev + 1)
 
     def publish(self, actor: Principal, proposal_id: str, idempotency_key: str) -> ReleaseDetail:

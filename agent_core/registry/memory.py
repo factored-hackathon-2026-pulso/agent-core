@@ -136,6 +136,10 @@ class _Tx:
         found = [a for a in self._s.approvals if (a.proposal_id, a.candidate_hash) == key]
         return found[-1] if found else None
 
+    def latest_decision(self, proposal_id: str) -> Approval | None:
+        found = [a for a in self._s.approvals if a.proposal_id == proposal_id]
+        return found[-1] if found else None
+
     def append_event(self, event: RegistryEvent) -> None:
         self._s.events.append(event)
 

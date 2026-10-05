@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS reg_approvals (
     decision text NOT NULL CHECK (decision IN ('approved', 'rejected')), reason text, at timestamptz NOT NULL);
 -- ADR 0020 §6.2: what the approval accepted to loosen (JSON). Additive and idempotent; existing rows get '[]'.
 ALTER TABLE reg_approvals ADD COLUMN IF NOT EXISTS yardstick_loosened text NOT NULL DEFAULT '[]';
+-- Optional closed-vocabulary rejection code (validated by the service). Additive; existing rows get NULL.
+ALTER TABLE reg_approvals ADD COLUMN IF NOT EXISTS reason_code text;
 CREATE TABLE IF NOT EXISTS reg_eval_runs (
     eval_run_id text PRIMARY KEY, seq bigserial UNIQUE, proposal_id text NOT NULL, candidate_hash text NOT NULL,
     base_release_id text, suite text NOT NULL, verdict text NOT NULL, report text NOT NULL, at timestamptz NOT NULL);

@@ -87,6 +87,27 @@
       "default": null,
       "title": "Proposal Id"
     },
+    "reason_code": {
+      "anyOf": [
+        {
+          "enum": [
+            "insufficient_evidence",
+            "wrong_target",
+            "risk",
+            "duplicate",
+            "policy_conflict",
+            "wording",
+            "other"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reason Code"
+    },
     "release_id": {
       "anyOf": [
         {
