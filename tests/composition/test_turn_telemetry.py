@@ -250,13 +250,13 @@ def test_without_a_provider_the_turn_still_binds_the_log_correlation(entry: str)
     still correlates what runs inside the turn (here, the transcript write of step 13)."""
     world = EngineWorld(telemetry=OtelTurnTelemetry())
     seen: list[dict[str, str]] = []
-    append = world.transcript.append
+    write_turn = world.transcript.write_turn
 
-    def spying(entry_: Any) -> str:
+    def spying(*args: Any) -> list[str]:
         seen.append(dict(tel.correlation()))
-        return append(entry_)
+        return write_turn(*args)
 
-    world.transcript.append = spying  # type: ignore[method-assign]
+    world.transcript.write_turn = spying  # type: ignore[method-assign]
     world.start()
     if entry == "turn":
         seen.clear()

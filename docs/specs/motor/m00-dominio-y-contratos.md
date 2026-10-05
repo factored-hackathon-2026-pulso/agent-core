@@ -497,7 +497,9 @@ class LLMGateway:
                  schema: dict[str, JsonValue] | None = None) -> GenerationResult
 
 class TranscriptStore:
-    def append(self, entry: TranscriptEntry) -> str                    # entry_id
+    def append(self, entry: TranscriptEntry) -> str                    # entry_id; escritura suelta, no idempotente
+    def write_turn(self, run_id: str, turn_id: str, entries: list[TranscriptEntry]) -> list[str]
+                                                                       # atómico e idempotente: reemplaza el turno
     def read(self, run_id: str) -> list[TranscriptEntry]
     def recent_turns(self, run_id: str, n: int) -> list[TranscriptEntry]
 
