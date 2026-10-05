@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 import pytest
+from opentelemetry.sdk.trace import TracerProvider
 
 from agent_core.adapters.tools import HttpToolExecutor
 from agent_core.adapters.tools.http_executor import from_env
@@ -256,3 +257,11 @@ def test_only_the_error_kind_is_kept_never_the_service_message(executor: HttpToo
     result = executor.execute(READ, {}, {}, _ctx("session"))
 
     assert result.status is ToolStatus.denied and result.error == kept
+
+
+def test_trace_context_is_propagated_to_the_service(executor: HttpToolExecutor, service: Service) -> None:
+    tracer = TracerProvider().get_tracer("prueba")
+    with tracer.start_as_current_span("turno") as span:
+        executor.execute(READ, {}, {}, _ctx("session"))
+        trace_id = format(span.get_span_context().trace_id, "032x")
+    assert trace_id in service.requests[0].headers["traceparent"]

@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
+from opentelemetry.sdk.trace import TracerProvider
 
 from agent_core.adapters.grants import GRANTS_TOKEN_ENV, GRANTS_URL_ENV, HttpGrantActive, from_env
 from agent_core.domain import GrantCheckUnavailable, SchemaError
@@ -130,3 +131,11 @@ def test_the_factory_wants_url_and_token_together_and_valid() -> None:
                 {GRANTS_URL_ENV: "http://x", GRANTS_TOKEN_ENV: "t", "AGENTCORE_GRANTS_CACHE_TTL_S": "x"}):
         with pytest.raises(SchemaError):
             from_env(env)
+
+
+def test_trace_context_is_propagated_to_the_platform(platform: Platform) -> None:
+    tracer = TracerProvider().get_tracer("prueba")
+    with tracer.start_as_current_span("peticion") as span:
+        _grants(platform)(REF, NOW)
+        trace_id = format(span.get_span_context().trace_id, "032x")
+    assert trace_id in platform.requests[0].headers["traceparent"]

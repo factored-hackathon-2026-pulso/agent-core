@@ -15,6 +15,7 @@ from typing import Protocol
 from urllib.parse import quote, urlsplit
 
 import httpx
+from opentelemetry.propagate import inject
 
 from agent_core.domain import EntityRef, JsonValue, SchemaError, ToolDef, dumps, loads
 from agent_core.ports import IdKind, IdSource, RegistryPort, ToolCallContext, ToolResult, ToolStatus
@@ -68,7 +69,9 @@ class HttpToolExecutor:
             raise SchemaError("los argumentos de la tool no son JSON canónico") from None
         url = f"{self._base}/v1/tools/{quote(str(tool.id), safe='')}/execute"
         try:
-            response = self._client.post(url, content=payload.encode(), headers=self._headers,
+            headers = dict(self._headers)
+            inject(headers)  # W3C traceparent: the service's spans nest under the turn's (ADR 0003)
+            response = self._client.post(url, content=payload.encode(), headers=headers,
                                          timeout=self._timeout)
         except httpx.TimeoutException:
             return self._failure(tool_def, call_id, "timeout", ToolStatus.timeout)

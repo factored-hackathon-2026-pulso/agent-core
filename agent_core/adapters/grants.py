@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from urllib.parse import quote, urlsplit
 
 import httpx
+from opentelemetry.propagate import inject
 
 from agent_core.domain import GrantCheckUnavailable, SchemaError, loads
 
@@ -59,8 +60,10 @@ class HttpGrantActive:
         return True
 
     def _ask(self, grant_ref: str) -> bool:
+        headers = dict(self._headers)
+        inject(headers)  # W3C traceparent: the platform's span nests under the request's (ADR 0003)
         try:
-            response = self._client.get(self._base + quote(grant_ref, safe=""), headers=self._headers,
+            response = self._client.get(self._base + quote(grant_ref, safe=""), headers=headers,
                                         timeout=self._timeout)
         except Exception as error:  # transport or anything else: no answer (text not logged)
             _LOG.warning("grants service unreachable: %s", type(error).__name__)
