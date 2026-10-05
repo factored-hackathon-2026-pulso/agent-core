@@ -29,6 +29,12 @@ def _with_portuguese(artifact_json: str) -> str:
     return json.dumps(doc, ensure_ascii=False, sort_keys=True)
 
 
+def write_lang_thresholds(state: Path) -> None:
+    """Umbrales de idioma (`AGENTCORE_LANG_THRESHOLDS`): sin ellos un mensaje en pt se responde en es."""
+    source = ROOT / "scripts" / "e2e" / "lang-thresholds.json"
+    (state / "lang-thresholds.json").write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+
+
 def _sibling_data() -> Path:
     for parent in ROOT.parents:
         if (parent / "data-pipeline" / "data" / "publish" / "latest.json").is_file():
@@ -63,6 +69,7 @@ def main(argv: list[str]) -> int:
     (state / "calibration" / "cal-transfer-demo.json").write_text(
         _with_portuguese(transfer.read_text(encoding="utf-8")), encoding="utf-8")
     (state / "classifier" / "sintetico.json").write_text(synthetic_classifier_json(), encoding="utf-8")
+    write_lang_thresholds(state)
 
     pointer = json.loads((args.data_pipeline / "publish" / "latest.json").read_text(encoding="utf-8"))
     published = json.loads((args.data_pipeline / pointer["path"] / "field_classification.json")

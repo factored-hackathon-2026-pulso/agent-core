@@ -67,6 +67,7 @@ services:
       AGENTCORE_FIELD_CLASSIFICATION_FILES: /state/field-classification.json
       AGENTCORE_AUTHZ_FIELD_GRANTS_FILE: /state/field-grants.json
       AGENTCORE_FX_RATES_FILE: /state/fx-rates.json
+      AGENTCORE_LANG_THRESHOLDS: /state/lang-thresholds.json
       AGENTCORE_AUTHZ_BIND_KEYS: subject_ref,customer_id
       AGENTCORE_LLM_GATEWAY_URL: http://llm-gateway:8080
       AGENTCORE_LLM_GATEWAY_TOKEN: ${GATEWAY_TOKEN_AGENT_CORE}
