@@ -30,6 +30,7 @@ from agent_core.ports import (
     IdSource,
     KeyProvider,
     LLMGateway,
+    RegistryPort,
     ToolExecutor,
     TranscriptStore,
     UnitOfWorkFactory,
@@ -83,7 +84,12 @@ class EngineScenarioHarness:
                  providers: Callable[[str], Mapping[str, DecisionProvider]],
                  calibrations: CalibrationSource,
                  authz: AuthzPort, storage: Callable[[], EvalStorage],
-                 classifier: FieldClassifier | None = None, config: EngineConfig | None = None) -> None:
+                 classifier: FieldClassifier | None = None, config: EngineConfig | None = None,
+                 bind_gateway: Callable[[RegistryPort], LLMGateway] | None = None) -> None:
+        """`bind_gateway` rebuilds the gateway over the evaluated target's registry. Without it the shared
+        `gateway` is used as is; a registry-backed one then resolves prompts in the LIVE registry and never
+        exercises a candidate's prompts (the responder silently falls back to its template)."""
+        self._bind_gateway = bind_gateway
         self._clock, self._ids, self._keys = clock, ids, keys
         self._gateway, self._providers, self._calibrations = gateway, providers, calibrations
         self._authz, self._storage, self._classifier = authz, storage, classifier
@@ -101,7 +107,8 @@ class EngineScenarioHarness:
         # La base de evaluación es persistente: una clave derivada solo del escenario devolvería los eventos
         # del primer run sin ejecutar nada. Cada ejecución (etiqueta, escenario, repetición) lleva su id.
         idempotency_key = f"eval-{self._ids.new_id(IdKind.eval_run)}-{target.label}-{scenario.id}"
-        probe = _ProbingGateway(self._gateway)
+        probe = _ProbingGateway(self._gateway if self._bind_gateway is None
+                                else self._bind_gateway(target.registry))
         provider_failures: list[str] = []
         providers = {name: _ProbingProvider(p, provider_failures)
                      for name, p in self._providers(scenario.id).items()}

@@ -11,8 +11,17 @@ from opentelemetry.sdk.trace import TracerProvider
 from respx import MockRouter
 
 from agent_core.adapters.llm.http_gateway import HttpLLMGateway
-from agent_core.domain import GatewayError, GatewayErrorKind, SchemaError, StructuredMode, loads
+from agent_core.domain import (
+    GatewayError,
+    GatewayErrorKind,
+    ModelProfile,
+    Prompt,
+    SchemaError,
+    StructuredMode,
+    loads,
+)
 from agent_telemetry import bind
+from testing.fakes.registry import InMemoryRegistry
 from tests.gateway_http.helpers import DRAFT, GENERATE, INPUTS, PROMPT, TOKEN, failure, make_gateway, success
 
 
@@ -167,3 +176,18 @@ def test_neither_the_token_nor_content_reach_logs_or_error_messages(
     for text in (caplog.text, str(error), str(error2)):
         for secret in (TOKEN, "CONTENIDO-SENSIBLE", "⟦name:1⟧"):
             assert secret not in text
+
+
+def test_bound_to_resolves_the_prompt_in_another_registry(respx_mock: MockRouter) -> None:
+    """The evaluator binds a candidate's entities: same client and token, the other registry's prompt text."""
+    route = respx_mock.post(GENERATE).respond(200, text=success())
+    live = make_gateway()
+    other = InMemoryRegistry()
+    prompt = live._registry.get(PROMPT, Prompt)  # type: ignore[attr-defined]
+    other.add(prompt.model_copy(update={"locales": {"es": "Texto del candidato."}}),
+              live._registry.get(prompt.model_profile.require_exact(), ModelProfile))  # type: ignore[attr-defined]
+    _gen(live)
+    _gen(live.bound_to(other))
+    texts = [json.loads(c.request.content)["prompt"] for c in route.calls]
+    assert texts == ["Resume la disputa.", "Texto del candidato."]
+    assert all(c.request.headers["Authorization"] == f"Bearer {TOKEN}" for c in route.calls)
