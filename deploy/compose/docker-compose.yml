@@ -1,0 +1,89 @@
+# Referencia de despliegue de `agentcore serve` (brief A4): serve + migrate + Postgres + llm-gateway + tool-service.
+# Es el contrato que infra traslada a EC2/Terraform; no edites infra desde aquí. Un comando:
+#   docker compose -f deploy/compose/docker-compose.yml --env-file deploy/compose/.env up --build
+# Variables y formatos: docs/serve-env.md. Los secretos entran solo por .env (nunca en este archivo).
+name: agentcore-serve
+
+x-agentcore-env: &agentcore-env
+  AGENTCORE_REGISTRY_DSN: postgresql://agentcore:${POSTGRES_PASSWORD}@postgres:5432/agent_runtime
+  AGENTCORE_EVAL_DSN: postgresql://agentcore:${POSTGRES_PASSWORD}@postgres:5432/agent_eval
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: agentcore
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: agent_runtime
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro   # crea agent_eval (las evaluaciones tienen su propia base)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentcore -d agent_runtime"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:  # una pasada con el rol dueño; `serve` también migra al arrancar, esto deja el orden explícito
+    image: ${AGENTCORE_IMAGE:-agent-core:local}
+    build: {context: ../.., args: {GIT_SHA: "${GIT_SHA:-local}"}}
+    command: ["migrate"]
+    environment: *agentcore-env
+    depends_on:
+      postgres: {condition: service_healthy}
+    restart: "no"
+
+  llm-gateway:
+    image: ${LLM_GATEWAY_IMAGE:-llm-gateway:local}
+    build: ${LLM_GATEWAY_CONTEXT:-../../../llm-gateway}
+    environment:
+      GATEWAY_CONSUMERS: '{"agent-core":{"token_env":"GATEWAY_TOKEN_AGENT_CORE"}}'
+      LLM_ENDPOINTS: '{"openrouter":{"base_url":"https://openrouter.ai/api/v1","api_key_env":"OPENROUTER_API_KEY"}}'
+      GATEWAY_TOKEN_AGENT_CORE: ${GATEWAY_TOKEN_AGENT_CORE}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+
+  tool-service:
+    image: ${TOOL_SERVICE_IMAGE:-tool-service:local}
+    build: ${TOOL_SERVICE_CONTEXT:-../../../tool-service}
+    environment:
+      TOOL_DATA_DIR: /data
+      TOOL_SERVICE_TOKENS: agent-core:${TOOL_SERVICE_TOKEN}
+    volumes:
+      - ${TOOL_DATA_HOST_DIR}:/data:ro
+
+  serve:
+    image: ${AGENTCORE_IMAGE:-agent-core:local}
+    environment:
+      <<: *agentcore-env
+      AGENTCORE_REGISTRY_API: "1"
+      AGENTCORE_KEYS_FINGERPRINT: ${AGENTCORE_KEYS_FINGERPRINT}
+      AGENTCORE_KEYS_TOKEN_MAP: ${AGENTCORE_KEYS_TOKEN_MAP}
+      AGENTCORE_JEV_API_KEY: ${AGENTCORE_JEV_API_KEY}
+      AGENTCORE_SERVE_AGENTS: recepcion,disputas,consultas,copiloto-asesor
+      AGENTCORE_IDENTITY_KEYS_FILE: /state/identity-keys.json
+      AGENTCORE_STAFF_KEYS_FILE: /state/staff-keys.json
+      AGENTCORE_CALIBRATION_DIR: /state/calibration
+      AGENTCORE_CLASSIFIER_ARTIFACTS_DIR: /state/classifier
+      AGENTCORE_FIELD_CLASSIFICATION_FILES: /state/field-classification.json
+      AGENTCORE_AUTHZ_FIELD_GRANTS_FILE: /state/field-grants.json
+      AGENTCORE_AUTHZ_BIND_KEYS: subject_ref,customer_id
+      AGENTCORE_LLM_GATEWAY_URL: http://llm-gateway:8080
+      AGENTCORE_LLM_GATEWAY_TOKEN: ${GATEWAY_TOKEN_AGENT_CORE}
+      AGENTCORE_TOOL_SERVICE_URL: http://tool-service:8080
+      AGENTCORE_TOOL_SERVICE_TOKEN: ${TOOL_SERVICE_TOKEN}
+      AGENTCORE_GRANTS_URL: ${AGENTCORE_GRANTS_URL}
+      AGENTCORE_GRANTS_TOKEN: ${AGENTCORE_GRANTS_TOKEN}
+      AGENTCORE_MAX_INFLIGHT: ${AGENTCORE_MAX_INFLIGHT:-64}
+      AGENTCORE_DB_POOL_MAX: ${AGENTCORE_DB_POOL_MAX:-10}
+    volumes:
+      - ./state:/state:ro
+    ports:
+      - "127.0.0.1:${SERVE_PORT:-8000}:8000"
+    stop_grace_period: 30s   # mayor que AGENTCORE_SHUTDOWN_GRACE_SECONDS (25)
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      llm-gateway: {condition: service_started}
+      tool-service: {condition: service_started}
+
+volumes:
+  pgdata:
