@@ -1,5 +1,5 @@
 id: t/pedir_objetivo
 version: 1.0.0
 locales:
-  es: "Cuéntame qué cambio quieres en ese agente."
-  pt: "Conte-me qual mudança você quer nesse agente."
+  es: "Cuéntame qué cambio quieres en ese agente, o qué debe hacer si es uno nuevo."
+  pt: "Conte-me qual mudança você quer nesse agente, ou o que ele deve fazer se for novo."

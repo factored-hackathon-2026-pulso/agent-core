@@ -4,6 +4,7 @@ from dataclasses import replace
 
 from agent_core.domain import (
     ActiveFlow,
+    CollectNode,
     EngineEvent,
     EntityRef,
     Flow,
@@ -36,6 +37,14 @@ def _move(state: RunState, node: Node, key: str) -> RunState:
         raise IllegalTransition(f"el nodo {node.id} no tiene transición para {key!r}")
     assert state.active_flow is not None
     return state.model_copy(update={"active_flow": state.active_flow.model_copy(update={"node_id": target})})
+
+
+def _carry(carried: Resume, state: RunState, flow: Flow) -> Resume:
+    """El texto de arranque sigue ofreciéndose solo al siguiente `collect` con `capture_start` (M2 D16)."""
+    if not carried.carry or state.active_flow is None:
+        return NO_RESUME
+    nxt = _node(flow, state.active_flow.node_id)
+    return carried if isinstance(nxt, CollectNode) and nxt.config.capture_start else NO_RESUME
 
 
 def start_flow(state: RunState, flow: Flow) -> RunState:
@@ -77,6 +86,7 @@ def advance(state: RunState, ctx: StepContext, resume: Resume) -> StepOutcome:
         if handler is None:
             raise IllegalTransition(f"no hay handler para el tipo de nodo {kind!r}")
         result = handler(node, state, handler_ctx, resume)
+        carried = resume if resume.carry and result.stop is None else NO_RESUME
         resume = NO_RESUME
         state = result.state
         pending.extend(result.events)
@@ -92,3 +102,4 @@ def advance(state: RunState, ctx: StepContext, resume: Resume) -> StepOutcome:
         if result.result_key is None:
             raise IllegalTransition(f"el handler de {node.id} no devolvió rama ni detención")
         state = _move(state, node, result.result_key)
+        resume = _carry(carried, state, flow)

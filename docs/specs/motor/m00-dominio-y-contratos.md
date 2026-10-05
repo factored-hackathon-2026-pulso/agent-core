@@ -270,7 +270,7 @@ Un modelo por tipo, con `id`, `type`, `config` y `next: dict[str, str]` (resulta
 class DecideConfig:   model: RefSpec; input_view: list[str] | None; branch_on: str; save_as: str
                       # resultados = valores del enum de branch_on + low_confidence, cableados en next
 class RuleConfig:     policy: RefSpec | None; expr: JsonValue | None        # exactamente uno
-class CollectConfig:  slot: str; prompt_ref: RefSpec; validator: SlotValidator | None = None; max_attempts: int = 2   # None: texto no vacío
+class CollectConfig:  slot: str; prompt_ref: RefSpec; validator: SlotValidator | None = None; max_attempts: int = 2; capture_start: bool = False   # None: texto no vacío; capture_start: M2 D16
 class ToolConfig:     tool: RefSpec; args: dict[str, JsonValue]; save_as: str; step_up_max_attempts: int = 2
 class WriteToolConfig: action_from: str | None; draft: bool = False; tool: RefSpec | None; args: dict; save_as: str; step_up_max_attempts: int = 2
                        # con `action_from` (confirm) sin `tool` ni `args`; con `draft: true` (ADR 0019) `tool` y `args` propios

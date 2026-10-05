@@ -205,6 +205,7 @@ campo   := [A-Za-z0-9_]+
 | G0-28 | Nodo `suggest` mal formado (ADR 0026) | Solo en flows task; el flow no escribe (`confirm`, escritura `draft`), no escala ni transfiere (`escalate`, `transfer`); `suggested` va directo a un `end`; `actions_allowed` son escrituras y no repiten `tools_allowed`; con `escalate`, toda ruta desde la entrada pasa por la rama `true` de una `rule` (§3.13) | 8 |
 | G0-26 | `transfer` sin origen de destino o de directorio que lo domine | `target_from` (`decisions.<save_as>.choice`) nombra un `decide` con `choices_from` y `directory_from` es el `save_as` de un nodo `tool` de `directory/list`; quitando la arista `chosen` del `decide` (`none` y `low_confidence` no producen `choice`) y todas las aristas de salida del `tool`, el `transfer` no es alcanzable desde la entrada (ADR 0021, spec de transferencia §6) | 7 |
 | G0-27 | Slot del paquete de transferencia no recolectado | Cada `packet.slots[i]` es el `slot` de algún `collect` del flow | 7 |
+| G0-29 | `capture_start` fuera de la entrada | Un `collect` con `capture_start` es el nodo de entrada del flow o sigue por `ok` a otro con `capture_start` que lo es (M2 D16) | 1 |
 | G0-23 | Escritura `draft` sin `confirm` mal formada | La tool es `write_draft` con `readback_by: idempotency_key`; `ok` y `uncertain` van al mismo `verify` con `by: idempotency_key`, que ningún otro nodo de escritura comparte; el flow solo vuelve al nodo desde `verified` (§3.13) | 5 |
 | G0-25 | Prompt de un nodo `agent` o `suggest` en modo nativo | El `model_profile` del prompt del `agent` o `suggest` es `structured: prompted` (§3.13) | 5 |
 | G0-26 | `transfer` sin origen de destino o de directorio que lo domine | `target_from` (`decisions.<save_as>.choice`) nombra un `decide` con `choices_from` y `directory_from` es el `save_as` de un nodo `tool` de `directory/list`; quitando la arista `chosen` del `decide` (`none` y `low_confidence` no producen `choice`) y todas las aristas de salida del `tool`, el `transfer` no es alcanzable desde la entrada (ADR 0021, spec de transferencia §6) | 7 |
@@ -218,6 +219,7 @@ campo   := [A-Za-z0-9_]+
 |---|---|
 | `type` | uno de `string`, `integer`, `decimal`, `date`, `boolean` |
 | `regex` | string que compila con `re` y tiene 200 caracteres o menos |
+| `extract` | como `regex` (200 caracteres o menos, sin cuantificadores anidados) y con **exactamente un grupo de captura**: el valor del slot es ese grupo (M2 D16) |
 | `enum` | lista no vacía de strings sin repetidos |
 | `decide` | **no soportado todavía**: G0-01 lo rechaza (el intérprete no sabe qué campo de la decisión valida, m02 D14). Diseño previsto: string `RefSpec` de un `decision_model` (G0-02 lo resuelve) |
 

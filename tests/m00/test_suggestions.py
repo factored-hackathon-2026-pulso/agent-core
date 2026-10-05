@@ -111,7 +111,7 @@ def test_run_result_carries_suggestions_and_defaults_to_an_empty_list() -> None:
 
 
 def test_schema_version_is_minor_bumped() -> None:
-    assert SCHEMA_VERSION == "1.6.0"
+    assert SCHEMA_VERSION == "1.7.0"
 
 
 def test_suggest_node_parses_and_has_its_results() -> None:

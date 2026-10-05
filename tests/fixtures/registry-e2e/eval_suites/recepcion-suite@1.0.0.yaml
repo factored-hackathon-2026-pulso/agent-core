@@ -1,0 +1,14 @@
+# `eval_suite` del agente `recepcion`: el motor real con la release a evaluar y sus interrupciones. El ruteo
+# a un especialista usa el directorio del despliegue (`directory/list`), que el sandbox no siembra: se evalúa
+# aparte (pendiente: sembrar el directorio en el arnés).
+id: recepcion-suite
+version: 1.0.0
+agent_id: recepcion
+repetitions: 2
+scenarios:
+  - id: fraude-interrumpe
+    principal: {id: cust-001, attrs: {country: CO}}
+    steps:
+      - {op: start}
+      - {op: turn, text: "me robaron la tarjeta y están haciendo compras que no hice"}
+    expect: {outcome: escalated, escalated: true}   # interrupción `fraude` de la release
