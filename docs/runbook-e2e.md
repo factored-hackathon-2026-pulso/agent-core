@@ -16,6 +16,19 @@ el motor, el llm-gateway, JEV y el registry, **no** datos reales de clientes.
    el registry `tests/fixtures/registry-e2e` y arranca el llm-gateway. Si cambias una entidad del registry: `-ResetDb`
    (las versiones son inmutables por hash).
 
+## 1b. Check automático (¿sigue funcionando?)
+
+`.\scripts\e2e\check.ps1` arranca un `serve` propio en el puerto 8010 con el código del checkout actual (no toca el de 8000),
+corre `scripts/e2e/check.py` y lo apaga. Sale con 0 si nada falló; el log del servidor queda en `.e2e\check-serve.log`.
+
+| Nivel | Opción | Qué prueba | Costo |
+|---|---|---|---|
+| Plataforma | (siempre) | `/healthz`, `/readyz`, versión del contrato del servidor = la del checkout, credenciales (inválida, ausente, vencida), topes de tamaño (413/422), run del cliente con idempotencia y conflicto, lectura del run por su dueño y por otro cliente, IDOR por `subject`, asesor con delegación y delegación ajena, y si un cliente puede abrir un agente interno (aviso conocido con el authz de demo) | nada |
+| LLM | `-Llm` | una llamada real al llm-gateway (`llm-smoke --n 1`) | centavos |
+| Conversaciones | `-Conversations` | escenarios A (disputa resuelta, escala por monto, fraude) y B (el copiloto responde la cifra de la tarjeta) con JEV y el LLM reales; sin `AGENTCORE_JEV_API_KEY` se marcan como omitidos | llamadas a JEV y al LLM |
+
+Nunca imprime credenciales ni el texto de las respuestas: solo estados, códigos y `run_id` (para `report.ps1 -Run <id>`).
+
 ## 2. Cada sesión de pruebas
 
 | Terminal | Comando |
