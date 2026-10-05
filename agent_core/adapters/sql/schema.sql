@@ -83,3 +83,16 @@ CREATE TABLE IF NOT EXISTS usage (
     cost_usd       numeric     NOT NULL CHECK (cost_usd >= 0)
 );
 CREATE INDEX IF NOT EXISTS usage_principal_idx ON usage (principal_type, principal_id, at);
+
+-- Transcript del run (M11, unidad 7): texto en vista `model`, nunca `full`. Sin clave foránea a `runs`: la
+-- supresión del transcript (`delete_run`) y la del estado del run son decisiones separadas, y el log de
+-- auditoría no depende de esta tabla (T-M11-08). `entry_id` se deriva de `seq`, así que no hay azar.
+CREATE TABLE IF NOT EXISTS transcript_entries (
+    seq        bigserial PRIMARY KEY,
+    run_id     text      NOT NULL,
+    turn_id    text      NOT NULL,
+    role       text      NOT NULL,
+    text_model text      NOT NULL,
+    reason     text
+);
+CREATE INDEX IF NOT EXISTS transcript_entries_run_idx ON transcript_entries (run_id, seq);
