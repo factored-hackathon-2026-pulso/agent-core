@@ -19,7 +19,8 @@ def project_registry_event(event: RegistryEvent, seq: int) -> OutboundEvent | No
     if event.release_id is None:
         return None
     event_id, occurred_at = f"reg-{seq}", event.at
-    data = ReleaseData(release_id=event.release_id, proposal_id=event.proposal_id)
+    data = ReleaseData(release_id=event.release_id, proposal_id=event.proposal_id, agent_id=event.agent_id,
+                       alias=event.alias, before=event.before)
     if event.type == "published":
         return ReleasePublishedEvent(event_id=event_id, occurred_at=occurred_at, data=data)
     if event.type == "promoted":

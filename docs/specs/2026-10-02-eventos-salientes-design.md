@@ -18,11 +18,11 @@ Un sobre estable (`OutboundEvent`) con una **lista cerrada** de tipos públicos,
 | `run.transferred` | evento `run_transferred` | `transfer_id`, `to_agent`, `to_release_id`, `to_run_id` |
 | `handoff.created` | `OutboxMessage` de tipo `handoff_created` | `handoff_ref`, `target_queue`, `priority`, `reason_code`, `language` |
 | `handoff.resolved` | evento `handoff_resolved` | `handoff_ref`, `handoff_quality`, `reader_type` |
-| `release.published` · `release.promoted` · `release.revoked` | evento `published`, `promoted`, `revoked` de `reg_events` | `release_id`, `proposal_id` |
+| `release.published` · `release.promoted` · `release.revoked` | evento `published`, `promoted`, `revoked` de `reg_events` | `release_id`, `proposal_id`, `agent_id`, `alias`, `before` |
 
 Fuera de la v1: eventos de turno, decisión, acción, seguridad y medición.
 
-**Registry.** Los `release.*` salen con `source = "registry"`, sin `run_id` y con `event_id = reg-<seq>` (la posición en `reg_events`, que pone quien lee). El proyector vive en `agent_core.registry.outbound` (`project_registry_event`). No llevan actor, motivo, origen ni hash del candidato; tampoco el agente ni el alias, porque `RegistryEvent` no los guarda (ampliarlo es un cambio de registry aparte).
+**Registry.** Los `release.*` salen con `source = "registry"`, sin `run_id` y con `event_id = reg-<seq>` (la posición en `reg_events`, que pone quien lee). El proyector vive en `agent_core.registry.outbound` (`project_registry_event`). No llevan actor, motivo, origen ni hash del candidato; `agent_id`, `alias` y `before` son opcionales y aditivos (2026-10-05): `RegistryEvent` los guarda desde esa fecha y un evento anterior los proyecta como `null`. `published`: `alias = staging` y `before` la base de `staging`; `promoted`: el alias promovido y la release a la que apuntaba; `revoked`: solo `agent_id` (la revocación no toca un alias).
 
 **Excluido a propósito (decisión del usuario, 2026-10-02):** `reportable_attrs` (de `run_started` y `handoff_created`), `reason` de `run_transferred` y `resolution_code` de `handoff_resolved`. También quedan fuera `notes`, `origin`, `packet_fp`, `directory`, `directory_hash` y `candidates`.
 
@@ -52,6 +52,6 @@ Los consumidores ignoran campos y tipos desconocidos. Un campo opcional o un tip
 
 ## 7. Abiertos
 
-- Agente y alias en `release.*`: exigen guardarlos en `RegistryEvent`.
+- ~~Agente y alias en `release.*`~~: hecho el 2026-10-05 (campos opcionales en `RegistryEvent` y `ReleaseData`).
 - Quién consume esto y desde dónde (unidad 4): outbox transaccional o relay con cursor sobre la cadena.
 - `contracts/VERSION` no cambia con este contrato (no toca M0); `catalog.json` lleva su propia versión. Confirmar que ADR 0002 ("un solo semver") lo admite.
