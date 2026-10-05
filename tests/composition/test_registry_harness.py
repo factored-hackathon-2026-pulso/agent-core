@@ -153,3 +153,18 @@ def test_a_customer_scenario_is_unchanged_no_delegation_and_customer_type() -> N
     _run_with_principal(authz, {"id": "cust-001"})
     assert authz.seen
     assert all(p.type is PrincipalType.customer and o is None for p, o, _ in authz.seen)
+
+
+def test_a_step_after_the_run_closed_does_not_crash_the_evaluation() -> None:
+    """A scenario may keep talking after the agent closed the run (abstained, resolved, escalated): the
+    evaluator records what happened instead of failing the whole evaluation with `run_closed`."""
+    from agent_core.registry.suite import Step
+
+    harness = build_harness()
+    base = next(s for s in demo_suite().scenarios if s.id == "resuelto")
+    longer = base.model_copy(update={"steps": [*base.steps, Step(op="turn", text="gracias"),
+                                               Step(op="turn", text="una cosa más")]})
+    sandbox = LocalSandbox(FakeIds())
+    events = harness.run(_target(), AGENT, longer, sandbox.tools(sandbox.provision(longer.seed, _target())))
+    closed = [e for e in events if isinstance(e, RunClosed)]
+    assert len(closed) == 1 and closed[0].payload.outcome is Outcome.resolved
