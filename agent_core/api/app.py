@@ -23,6 +23,7 @@ from agent_core.api.protocols import (
     TranscriptService,
     TurnService,
 )
+from agent_core.api.readiness import run_checks
 from agent_core.api.routing import DecimalJsonRoute, JsonResponse
 from agent_core.api.schemas import (
     CreateRunBody,
@@ -104,6 +105,9 @@ class ApiDeps:
     extensions: tuple[ApiExtension, ...] = ()  # rutas de otros paquetes; vacío = comportamiento previo
     # Comprobaciones de `/readyz` (nombre, función). Vacío = siempre listo. Las inyecta el cableado.
     readiness: tuple[tuple[str, Callable[[], bool]], ...] = ()
+    # Nombres de `readiness` que solo se informan (`degraded`): su caída no vuelve el servicio no listo.
+    optional_checks: frozenset[str] = frozenset()
+    readiness_timeout_s: float = 1.0  # plazo de todas las comprobaciones juntas; una lenta falla
     build_sha: str | None = None  # commit de la imagen (`AGENTCORE_GIT_SHA`); lo informa `/version` (N-04)
 
 
@@ -112,20 +116,6 @@ def _package_version() -> str:
         return package_version("agent-core")
     except PackageNotFoundError:
         return "0+unknown"
-
-
-def _failed_checks(checks: tuple[tuple[str, Callable[[], bool]], ...]) -> list[str]:
-    """Nombres de las comprobaciones que no pasan. Una que lanza cuenta como fallida y su mensaje se descarta:
-    puede traer hosts o credenciales."""
-    failed: list[str] = []
-    for name, check in checks:
-        try:
-            ok = check()
-        except Exception:
-            ok = False
-        if not ok:
-            failed.append(name)
-    return failed
 
 
 def _idempotency_key(raw: str | None, principal: Principal) -> str:
@@ -172,10 +162,15 @@ def create_app(deps: ApiDeps) -> FastAPI:
     @app.get("/readyz", include_in_schema=False, response_model=None)
     def readyz() -> JSONResponse:
         """Readiness: todas las comprobaciones inyectadas pasan. Sin credencial y sin detalle de errores."""
-        failed = _failed_checks(deps.readiness)
-        if failed:
-            return JSONResponse({"status": "unavailable", "failed": failed}, status_code=503)
-        return JSONResponse({"status": "ready"})
+        report = run_checks(deps.readiness, deps.optional_checks, deps.readiness_timeout_s)
+        body: dict[str, object] = {"status": "ready" if report.ready else "unavailable"}
+        if report.failed:
+            body["failed"] = report.failed
+        if report.checks:
+            body["checks"] = report.checks
+        if report.degraded:
+            body["degraded"] = report.degraded
+        return JSONResponse(body, status_code=200 if report.ready else 503)
 
     gate = AccessGate(deps.verifier, deps.clock, deps.ids, deps.denials, deps.security)
     guard = LimitGuard(deps.counters, deps.clock, deps.limits)

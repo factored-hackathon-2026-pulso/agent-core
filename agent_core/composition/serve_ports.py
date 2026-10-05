@@ -21,6 +21,7 @@ from agent_core.adapters.llm.http_gateway import LLM_GATEWAY_TOKEN_ENV, LLM_GATE
 from agent_core.adapters.postgres_uow import PostgresStore
 from agent_core.composition.blobs import blob_factory_from_env
 from agent_core.composition.engine_tools import fx_rates_from_env
+from agent_core.composition.readiness import build_readiness
 from agent_core.decision import DecisionConfigError, DecisionProvider, HttpJevTransport, JevProvider
 from agent_core.decision.calibration.artifact import CalibrationSource
 from agent_core.domain import Release, SchemaError, loads
@@ -124,6 +125,7 @@ class ServePorts:
     registry_api: RegistryApiPorts | None = None  # solo con --registry-api
     directory: AgentDirectory | None = None  # ADR 0021: directorio de especialistas (sobre el registry)
     readiness: tuple[tuple[str, Callable[[], bool]], ...] = ()  # comprobaciones de `/readyz`
+    optional_readiness: frozenset[str] = frozenset()  # las de `readiness` que solo se informan
     run_export: RunExport | None = None  # N-08: lectura paginada de runs y eventos (con --registry-api)
     lang_thresholds: Mapping[str, LangThresholds] = field(default_factory=dict)  # por `thresholds_from`
     # Tabla FIJA de tasas de `convertir_moneda` (AGENTCORE_FX_RATES_FILE); None: la tool falla cerrada.
@@ -365,6 +367,8 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
     gateway: LLMGateway = (HttpLLMGateway(pg_registry, llm_url, llm_token)
                            if llm_url is not None and llm_token is not None else UnconfiguredLLMGateway())
     jev = JevProvider(HttpJevTransport(lambda: _jev_key(env), clock))
+    readiness, optional_readiness = build_readiness(
+        env, postgres=store.ping, verifiers=[v for v in (verifier, staff_verifier) if v is not None])
     return ServePorts(
         clock=clock, ids=ids, keys=keys, uow_factory=store.uow, audit=store.audit(), counters=store.costs(),
         registry=pg_registry, releases=pg_registry.release, gateway=gateway,
@@ -374,5 +378,6 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         doubles=tuple(doubles), agents=_agents(args, env), llm_gateway_url=llm_url,
         registry_api=registry_api,
         directory=RegistryDirectory(registry_store, pg_registry, pg_registry.release),
-        readiness=(("postgres", store.ping),), run_export=store.run_export(), lang_thresholds=lang_thresholds,
+        readiness=readiness, optional_readiness=optional_readiness, run_export=store.run_export(),
+        lang_thresholds=lang_thresholds,
         fx_rates=fx_rates, engine_tools=not demo)

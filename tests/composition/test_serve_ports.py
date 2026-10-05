@@ -276,9 +276,9 @@ def test_serve_registers_a_postgres_readiness_check_that_fails_closed_when_unrea
                      AGENTCORE_ALLOW_DEMO="1",
                      AGENTCORE_REGISTRY_DSN="postgresql://u:secret@127.0.0.1:1/none")
 
-    (name, check), = ports.readiness
+    check = dict(ports.readiness)["postgres"]
 
-    assert name == "postgres"
+    assert set(dict(ports.readiness)) == {"postgres", "keys"}
     assert check() is False  # nada escucha en el puerto 1: falla cerrado, sin lanzar
 
 

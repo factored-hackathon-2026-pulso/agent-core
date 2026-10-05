@@ -98,7 +98,8 @@ def build_api_deps(ports: ServePorts, *, registry_service: RegistryService | Non
         counters=ports.counters, clock=ports.clock, ids=ports.ids, turns=built.turns,
         handoffs=built.handoffs, transcripts=built.transcripts,
         denials=AuditLog(ports.audit, ports.uow_factory), security=OtelSecurityLog(),
-        readiness=ports.readiness, build_sha=build_sha, limits=limits or RateLimitConfig(),
+        readiness=ports.readiness, optional_checks=ports.optional_readiness, build_sha=build_sha,
+        limits=limits or RateLimitConfig(),
         extensions=_extensions(ports, registry_service))
 
 
