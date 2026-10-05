@@ -335,7 +335,7 @@ def test_the_input_schema_surface_is_pinned() -> None:
     required = {n for n, slot in spec.items() if slot.required}
     assert required == {"turnos", "idioma", "canal", "prioridad", "sla_estado", "espera_del_cliente_segundos"}
     assert set(spec) == required | {"sla_minutos_restantes", "motivo_llegada", "sugerencia_borrador",
-                                    "sugerencia_escalacion_aceptada", "assistant_session_id"}
+                                    "sugerencia_escalacion_aceptada", "assistant_session_id", "modo_copiloto"}
     assert spec["sugerencia_escalacion_aceptada"].type == "boolean" and spec["turnos"].max_items == 12
     items = spec["turnos"].items or {}
     assert {n for n, f in items.items() if f.required} == {"rol", "texto", "hora"}
