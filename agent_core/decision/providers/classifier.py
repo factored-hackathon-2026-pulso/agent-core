@@ -6,6 +6,8 @@ Formato `tfidf-logreg-v1` (JSON, lo entrena y exporta el científico de datos; r
      "classes": {campo: [valor, ...]}, "coef": {campo: [[peso por token] por clase]},
      "intercept": {campo: [sesgo por clase]}}
 
+`config.text_from` (opcional) nombra la clave de la entrada de la que sale el texto (por defecto `text`).
+
 Evaluación: tokens = `re.findall(r"\\w+")` sobre el texto en NFKC y minúsculas; `x[i] = conteo[i] * idf[i]`
 normalizado en L2 (si la norma es 0, `x = 0`); logits = `coef · x + intercept`; softmax estable. La clase
 elegida es el argmax con desempate por valor; `top_k` va ordenado por `(-p, valor)`. Determinista."""
@@ -78,6 +80,20 @@ class ClassifierArtifact:
                 raise DecisionConfigError(f"classifier: coef de {field!r} no cubre el vocabulario")
 
 
+def _text(spec: ProviderSpec, inputs: dict[str, JsonValue]) -> str:
+    """El texto a clasificar: `inputs["text"]`, o la(s) clave(s) de `config.text_from` (texto o lista de
+    textos, unidos con un espacio) cuando el `input_view` de la decisión no se llama `text`."""
+    source = spec.config.get("text_from", "text")
+    raw = [source] if isinstance(source, str) else source
+    if not isinstance(raw, list) or not raw or not all(isinstance(k, str) and k for k in raw):
+        raise DecisionConfigError("classifier: config.text_from debe ser un texto o una lista de textos")
+    keys = [k for k in raw if isinstance(k, str)]
+    parts = [inputs.get(k) for k in keys]
+    if not all(isinstance(p, str) for p in parts):
+        raise ProviderError(f"classifier: la entrada necesita {' y '.join(repr(k) for k in keys)} (string)")
+    return " ".join(p for p in parts if isinstance(p, str))
+
+
 def _typed[T](doc: dict[str, Any], key: str, kind: type[T]) -> T:
     value = doc.get(key)
     if not isinstance(value, kind):
@@ -98,9 +114,7 @@ class ClassifierProvider:
     def predict(self, spec: ProviderSpec, inputs_model_view: dict[str, JsonValue],
                 schema: dict[str, JsonValue], locale: Locale) -> RawPrediction:
         artifact = self._artifact(spec)
-        text = inputs_model_view.get("text")
-        if not isinstance(text, str):
-            raise ProviderError("classifier: la entrada necesita 'text' (string)")
+        text = _text(spec, inputs_model_view)
         x = _features(text, artifact)
         value: dict[str, JsonValue] = {}
         p_raw: dict[str, float | None] = {}

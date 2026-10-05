@@ -7,6 +7,6 @@ output_schema:
     choice: {type: string}
 calibrated_fields: [choice]
 input_view: [slots.problema, facts.directorio.value.entries]
-providers: [{provider: classifier, config: {artifact: sintetico}}]
+providers: [{provider: classifier, config: {artifact: sintetico, text_from: slots.problema}}]
 calibration: {method: none}
 thresholds_from: cal-transfer-demo

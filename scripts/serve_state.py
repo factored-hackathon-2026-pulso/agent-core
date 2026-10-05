@@ -66,6 +66,10 @@ def main(argv: list[str]) -> int:
                            .read_text(encoding="utf-8"))
     overlay = json.loads((ROOT / "scripts" / "e2e" / "field-overlay.json").read_text(encoding="utf-8"))
     (state / "field-classification.json").write_text(json.dumps({**published, **overlay}), encoding="utf-8")
+    # Tasas FIJAS e inventadas (USD por unidad), solo para ensayar `convertir_moneda`; las reales: finanzas.
+    rates = {"USD": "1", "MXN": "0.055", "COP": "0.00025", "ARS": "0.001", "BRL": "0.19", "PEN": "0.27",
+             "CLP": "0.0011", "EUR": "1.08"}
+    (state / "fx-rates.json").write_text(json.dumps(rates), encoding="utf-8")
     grants = state / "field-grants.json"
     if not grants.exists():
         grants.write_text("[]", encoding="utf-8")

@@ -8,6 +8,21 @@ output_schema:
     transaction: {type: string}
 calibrated_fields: [match]
 input_view: [slots.descripcion_cargo, facts.candidatas.value]
-providers: [{provider: classifier, config: {artifact: sintetico}}]
+providers:
+  - provider: rule
+    config:
+      cases:
+        - when:
+            path: facts.candidatas.value
+            count: 1
+            narrow: {text_from: slots.descripcion_cargo, fields: [merchant_name, amount]}
+          value: {match: unica}
+          value_from: {transaction: {path: facts.candidatas.value, at: [0, transaction_id]}}
+        - when:
+            path: facts.candidatas.value
+            count_min: 2
+            narrow: {text_from: slots.descripcion_cargo, fields: [merchant_name, amount]}
+          value: {match: varias}
+      default: {match: ninguna}
 calibration: {method: none}
 thresholds_from: cal-transfer-demo
