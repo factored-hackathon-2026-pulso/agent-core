@@ -37,7 +37,7 @@ class _Narrow:
     fields: list[str]
 
 
-_NUMBER = re.compile(r"\d+(?:[.,]\d+)?")
+_NUMBER = re.compile(r"\d[\d.,]*\d|\d")
 
 
 def _fold(text: str) -> str:
@@ -46,13 +46,36 @@ def _fold(text: str) -> str:
     return " ".join(plain.casefold().split())
 
 
+def _decimal(text: str) -> Decimal | None:
+    try:
+        return Decimal(text)
+    except InvalidOperation:  # pragma: no cover - el patrón solo deja dígitos y un punto
+        return None
+
+
+def _readings(token: str) -> set[Decimal]:
+    """Lecturas razonables de una cifra escrita con `.` y/o `,` (`344456.72`, `344.456,72`, `1,586,612.76`,
+    `1.038.345`). Una ambigua (`1.038`: mil o un decimal) da las dos."""
+    seps = [i for i, ch in enumerate(token) if ch in ".,"]
+    if not seps:
+        value = _decimal(token)
+        return {value} if value is not None else set()
+    head, tail = token[:seps[-1]], token[seps[-1] + 1:]
+    kinds = {token[i] for i in seps}
+    readings: list[str] = []
+    if len(kinds) == 2 or (len(seps) > 1 and len(tail) != 3):
+        readings.append(re.sub(r"[.,]", "", head) + "." + tail)  # el último separador es el decimal
+    if len(seps) > 1 and len(kinds) == 1:
+        readings.append(re.sub(r"[.,]", "", token))  # 1.038.345: solo miles
+    if len(seps) == 1:
+        readings += [head + tail, head + "." + tail] if len(tail) == 3 else [head + "." + tail]
+    return {value for r in readings if (value := _decimal(r)) is not None}
+
+
 def _numbers(text: str) -> set[Decimal]:
     found: set[Decimal] = set()
     for raw in _NUMBER.findall(text):
-        try:
-            found.add(Decimal(raw.replace(",", ".")))
-        except InvalidOperation:  # pragma: no cover - el patrón solo deja dígitos y un separador
-            continue
+        found |= _readings(raw)
     return found
 
 
@@ -94,28 +117,38 @@ class _Case:
     value_from: dict[str, tuple[str, list[_Step]]]
     narrow: _Narrow | None = None
 
-    def view(self, inputs: dict[str, JsonValue], path: str) -> JsonValue:
-        """La entrada de `path`; la lista de `self.path` ya reducida por `narrow`, si el caso la trae."""
+    def view(self, inputs: dict[str, JsonValue], path: str,
+             full: dict[str, JsonValue] | None = None) -> JsonValue:
+        """La entrada de `path` (vista `model`); la lista de `self.path` ya reducida por `narrow`, si lo trae.
+
+        Con `full` (ADR 0027) las filas se eligen COMPARANDO en la vista `full` (el texto y los valores en
+        claro), pero lo que se devuelve son las filas de la vista `model`, en las mismas posiciones: la salida
+        nunca lleva un dato en claro. Si las dos listas no miden lo mismo, no queda ninguna fila (falla
+        cerrada)."""
         found = inputs.get(path)
         if self.narrow is None or path != self.path:
             return found
-        texts = [inputs.get(k) for k in self.narrow.text_from]
-        if not isinstance(found, list) or not all(isinstance(t, str) for t in texts):
+        basis = inputs if full is None else full
+        rows = basis.get(path)
+        texts = [basis.get(k) for k in self.narrow.text_from]
+        if (not isinstance(found, list) or not isinstance(rows, list) or len(rows) != len(found)
+                or not all(isinstance(t, str) for t in texts)):
             return [] if isinstance(found, list) else found
         text = _fold(" ".join(t for t in texts if isinstance(t, str)))
         numbers = _numbers(text)
-        by_field = [[row for row in found if _mentions(row, text, numbers, [field])]
+        by_field = [{i for i, row in enumerate(rows) if _mentions(row, text, numbers, [field])}
                     for field in self.narrow.fields]
-        active = [rows for rows in by_field if rows]  # los campos que el texto sí menciona
+        active = [indexes for indexes in by_field if indexes]  # los campos que el texto sí menciona
         if not active:
             return []
-        every = [row for row in found if all(any(row is r for r in rows) for rows in active)]
-        return every or [row for row in found if any(any(row is r for r in rows) for rows in active)]
+        every = [i for i in range(len(rows)) if all(i in indexes for indexes in active)]
+        keep = every or [i for i in range(len(rows)) if any(i in indexes for indexes in active)]
+        return [found[i] for i in keep]
 
-    def matches(self, inputs: dict[str, JsonValue]) -> bool:
+    def matches(self, inputs: dict[str, JsonValue], full: dict[str, JsonValue] | None = None) -> bool:
         if self.path not in inputs:
             return False
-        found = self.view(inputs, self.path)
+        found = self.view(inputs, self.path, full)
         if self.count is None and self.count_min is None:
             return _same(found, self.equals)
         if not isinstance(found, list):
@@ -128,23 +161,38 @@ class RuleProvider:
 
     def predict(self, spec: ProviderSpec, inputs_model_view: dict[str, JsonValue],
                 schema: dict[str, JsonValue], locale: Locale) -> RawPrediction:
+        return self._run(spec, inputs_model_view, None)
+
+    def predict_full(self, spec: ProviderSpec, inputs_model_view: dict[str, JsonValue],
+                     inputs_full: dict[str, JsonValue], schema: dict[str, JsonValue],
+                     locale: Locale) -> RawPrediction:
+        """Con `compare_on: full` (ADR 0027): compara en `inputs_full`; devuelve solo valores de la vista
+        `model`."""
+        return self._run(spec, inputs_model_view, inputs_full)
+
+    @staticmethod
+    def _run(spec: ProviderSpec, inputs_model_view: dict[str, JsonValue],
+             full: dict[str, JsonValue] | None) -> RawPrediction:
+        if spec.config.get("compare_on", "model") not in ("model", "full"):
+            raise DecisionConfigError("rule: config.compare_on debe ser 'model' o 'full'")
         cases = _cases(spec.config)
         default = spec.config.get("default")
         if default is not None and not isinstance(default, dict):
             raise DecisionConfigError("rule: config.default debe ser un objeto")
         for case in cases:
-            if case.matches(inputs_model_view):
-                value = {**case.value, **_derived(case, inputs_model_view)}
+            if case.matches(inputs_model_view, full):
+                value = {**case.value, **_derived(case, inputs_model_view, full)}
                 return RawPrediction(value=value, p_raw=dict.fromkeys(value, 1.0), model_version="rule-1")
         if default is None:
             raise ProviderError("rule: ningún caso coincide y no hay default")
         return RawPrediction(value=default, p_raw=dict.fromkeys(default, 0.0), model_version="rule-1")
 
 
-def _derived(case: _Case, inputs: dict[str, JsonValue]) -> dict[str, JsonValue]:
+def _derived(case: _Case, inputs: dict[str, JsonValue],
+             full: dict[str, JsonValue] | None) -> dict[str, JsonValue]:
     out: dict[str, JsonValue] = {}
     for field, (path, at) in case.value_from.items():
-        current: JsonValue = case.view(inputs, path)
+        current: JsonValue = case.view(inputs, path, full)
         for step in at:
             if isinstance(step, int) and isinstance(current, list) and -len(current) <= step < len(current):
                 current = current[step]

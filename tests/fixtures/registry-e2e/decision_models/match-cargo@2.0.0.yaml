@@ -11,6 +11,7 @@ input_view: [slots.descripcion_cargo, facts.candidatas.value]
 providers:
   - provider: rule
     config:
+      compare_on: full   # ADR 0027: compara el texto del cliente en claro; devuelve la vista model
       cases:
         - when:
             path: facts.candidatas.value

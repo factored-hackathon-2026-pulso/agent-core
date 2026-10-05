@@ -27,13 +27,15 @@ class ScriptedDecision:
         self._script = deque(script)
         self.calls: list[tuple[EntityRef, dict[str, JsonValue], str]] = []
         self.choice_calls: list[tuple[EntityRef, dict[str, JsonValue], list[str], str]] = []
+        self.full_inputs: list[dict[str, JsonValue] | None] = []  # lo que `decide` recibió como `inputs_full`
 
     def push(self, *results: DecisionResult) -> None:
         self._script.extend(results)
 
     def decide(self, model: EntityRef, inputs_model_view: dict[str, JsonValue],
-               locale: Locale) -> DecisionResult:
+               locale: Locale, inputs_full: dict[str, JsonValue] | None = None) -> DecisionResult:
         self.calls.append((model, deepcopy(inputs_model_view), locale))
+        self.full_inputs.append(deepcopy(inputs_full))
         if not self._script:
             raise AssertionError("ScriptedDecision sin resultado guionado")
         return self._script.popleft()

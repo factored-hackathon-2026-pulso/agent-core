@@ -21,6 +21,20 @@ def model_inputs(paths: list[str], state: RunState, ctx: StepContext) -> dict[st
     return inputs
 
 
+def full_inputs(paths: list[str], state: RunState) -> dict[str, JsonValue]:
+    """Input en vista `full` de un modelo con un proveedor `rule` de `compare_on: full` (ADR 0027).
+
+    SOLO para comparar dentro de ese proveedor local: nunca sale del motor ni llega a un modelo, y lo que el
+    proveedor devuelve se toma de la vista `model`. Lanza `MissingPath` igual que `model_inputs`."""
+    inputs: dict[str, JsonValue] = {}
+    for raw in paths:
+        path = parse_runtime_path(raw)
+        if path is None:
+            raise MissingPath(raw)
+        inputs[raw] = resolve_path(state, path)
+    return inputs
+
+
 class Projector:
     """Proyecta cada hecho una sola vez por instancia (el `TokenVault` da el mismo token al mismo valor)."""
 
