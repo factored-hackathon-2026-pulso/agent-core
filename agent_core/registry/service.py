@@ -121,6 +121,10 @@ class ReleaseSettingChange(_V):
     field: str
     before: JsonValue
     after: JsonValue
+    # Set when `after` was resolved server-side from the `release_settings.inherit_from` donor and not
+    # written in the draft: the approver sees the effective value and its origin. Additive, default unchanged.
+    inherited: bool = False
+    inherited_from: str | None = None
 
 
 class ApprovalReview(_V):
@@ -454,6 +458,8 @@ class RegistryService:
         except ValueError:
             return []  # un borrador inválido no llega a evaluación
         base = self._detail(tx, p.base_release_id) if p.base_release_id is not None else None
+        donor_id = settings.inherit_from if base is None else None
+        donor = self._donor(tx, changes) if donor_id is not None else None
         current: dict[str, JsonValue] = {
             "interrupts": [i.model_dump(mode="json") for i in base.interrupts] if base else [],
             "language_detection": base.language_detection.id if base else None,
@@ -464,8 +470,21 @@ class RegistryService:
             [i.model_dump(mode="json") for i in settings.interrupts],
             "language_detection": settings.language_detection,
             "injection_ruleset": settings.injection_ruleset, "max_input_chars": settings.max_input_chars}
-        return [ReleaseSettingChange(field=f, before=current[f], after=after)
-                for f, after in wanted.items() if after is not None and after != current[f]]
+        inherited: set[str] = set()
+        if donor is not None:  # what the candidate really gets: explicit fields win, the rest is the donor's
+            from_donor: dict[str, JsonValue] = {
+                "interrupts": [i.model_dump(mode="json") for i in donor.interrupts],
+                "language_detection": donor.language_detection.id,
+                "injection_ruleset": donor.injection_ruleset.id if donor.injection_ruleset else None,
+                "max_input_chars": donor.max_input_chars}
+            for f, value in from_donor.items():
+                if wanted[f] is None and value is not None:
+                    wanted[f] = value
+                    inherited.add(f)
+        return [ReleaseSettingChange(field=f, before=current[f], after=after, inherited=f in inherited,
+                                     inherited_from=donor_id if f in inherited else None)
+                for f, after in wanted.items()
+                if after is not None and (after != current[f] or f in inherited)]
 
     def list_proposals(self, actor: Principal, *, agent_id: str | None = None, state: str | None = None,
                        created_by: str | None = None, limit: int = 50, offset: int = 0) -> ProposalPage:

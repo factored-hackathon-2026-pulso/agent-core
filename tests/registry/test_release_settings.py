@@ -7,7 +7,7 @@ import pytest
 
 from agent_core.registry.errors import RegistryError, RegistryErrorCode
 from agent_core.registry.models import EntityDraft, Origin
-from tests.registry.helpers import AGENT, admin, bot, demo_pinned, docs, human, prompt_draft
+from tests.registry.helpers import AGENT, admin, bot, demo_pinned, docs, human, prompt_draft, suite_draft
 from tests.registry.service_world import ANA, SUITE, World, publish_cycle
 
 ADMIN = admin()
@@ -245,3 +245,21 @@ def test_an_unknown_donor_release_is_not_found_and_a_constructor_cannot_approve_
     with pytest.raises(RegistryError) as denied:
         w.service.publish(bot(), ok, "k")
     assert denied.value.code is RegistryErrorCode.forbidden_role
+
+
+def test_the_approver_sees_the_resolved_inherited_settings_and_their_donor() -> None:
+    w = World()
+    pid = _clone(w, bot(), suite_draft(agent_id="soporte"),
+                 settings(inherit_from="rel-demo", max_input_chars=9000))
+    w.service.freeze(bot(), pid)
+    w.service.evaluate(bot(), pid, "disputas-suite")
+    review = w.service.get_proposal(pid).review
+    assert review is not None
+    donor = w.service.get_release("rel-demo")
+    by_field = {c.field: c for c in review.release_changes}
+    assert by_field["interrupts"].inherited and by_field["interrupts"].inherited_from == "rel-demo"
+    assert by_field["interrupts"].after == [i.model_dump(mode="json") for i in donor.interrupts]
+    assert by_field["language_detection"].after == donor.language_detection.id
+    assert by_field["language_detection"].inherited
+    assert not by_field["max_input_chars"].inherited  # explicit value wins and is not marked
+    assert by_field["max_input_chars"].after == 9000 and by_field["max_input_chars"].inherited_from is None
