@@ -159,6 +159,17 @@ class ToolCalledPayload(Model):
     attempt: PositiveInt = 1
     action_id: str | None = None
     latency_ms: NonNegativeInt
+    # `ToolDef.source` of the tool called (its source class, e.g. the origin table): lets tool-usage signals
+    # group calls without reading the registry. Omitted from the serialisation when absent, so events
+    # recorded before this field existed re-serialise to the same bytes (hash chain).
+    tool_source: str | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_source(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.tool_source is None:
+            data.pop("tool_source", None)
+        return data
 
 
 class AgentStepPayload(Model):
@@ -175,6 +186,7 @@ class AgentStepPayload(Model):
     status: ToolStatus | None = None
     text_fp: Fingerprint | None = None
     error_kind: GatewayErrorKind | None = None  # solo con `kind = "failed"`: la falla del gateway
+    tokens: NonNegativeInt | None = None  # tokens (entrada + salida) que el proveedor informó en el paso
     latency_ms: NonNegativeInt
 
 
@@ -625,7 +637,7 @@ MEASURED_FIELDS: Mapping[str, frozenset[str]] = MappingProxyType(
     {
         "decision_made": frozenset({"latency_ms"}),
         "tool_called": frozenset({"latency_ms"}),
-        "agent_step": frozenset({"latency_ms"}),
+        "agent_step": frozenset({"latency_ms", "tokens"}),
         "response_emitted": frozenset({"llm"}),
         "response_failed": frozenset({"llm"}),
         "turn_completed": frozenset({"duration_ms", "stages"}),

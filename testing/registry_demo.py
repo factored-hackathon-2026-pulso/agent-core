@@ -13,7 +13,7 @@ from agent_core.composition import EngineScenarioHarness, EvalStorage
 from agent_core.decision import DecisionProvider, RawPrediction
 from agent_core.decision.calibration.artifact import InMemoryCalibrationSource
 from agent_core.domain import GatewayError
-from agent_core.ports import IdentityVerifier, LLMGateway, RegistryPort
+from agent_core.ports import AuthzPort, IdentityVerifier, LLMGateway, RegistryPort
 from agent_core.registry import EvalSuite
 from agent_core.views import FieldClassifier
 from testing.engine_world import CATALOG, CitingGateway, SyntheticAuthz, demo_calibration
@@ -75,7 +75,8 @@ def demo_suite() -> EvalSuite:
 
 def build_harness(gateway_error: GatewayError | None = None, provider_failure: Step | None = None,
                   persistent: bool = False,
-                  bind_gateway: Callable[[RegistryPort], LLMGateway] | None = None) -> EngineScenarioHarness:
+                  bind_gateway: Callable[[RegistryPort], LLMGateway] | None = None,
+                  authz: AuthzPort | None = None) -> EngineScenarioHarness:
     """`persistent`: todas las ejecuciones comparten la base de evaluación, como en `serve`."""
     clock, ids = FakeClock(), FakeIds()
 
@@ -103,7 +104,8 @@ def build_harness(gateway_error: GatewayError | None = None, provider_failure: S
 
     return EngineScenarioHarness(
         clock=clock, ids=ids, keys=FakeKeyProvider.default(), gateway=_Gateway(), providers=providers,
-        calibrations=InMemoryCalibrationSource({"cal-demo": demo_calibration()}), authz=SyntheticAuthz(),
+        calibrations=InMemoryCalibrationSource({"cal-demo": demo_calibration()}),
+        authz=authz or SyntheticAuthz(),
         storage=storage, classifier=FieldClassifier(CATALOG), bind_gateway=bind_gateway)
 
 

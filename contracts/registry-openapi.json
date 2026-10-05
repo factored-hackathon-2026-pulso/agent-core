@@ -446,6 +446,26 @@
             ],
             "title": "Reason"
           },
+          "reason_code": {
+            "anyOf": [
+              {
+                "enum": [
+                  "insufficient_evidence",
+                  "wrong_target",
+                  "risk",
+                  "duplicate",
+                  "policy_conflict",
+                  "wording",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          },
           "yardstick_loosened": {
             "items": {
               "$ref": "#/components/schemas/YardstickChange"
@@ -2672,6 +2692,57 @@
         "title": "LanguageDetection",
         "type": "object"
       },
+      "LastDecision": {
+        "additionalProperties": false,
+        "description": "The last human decision on a proposal. Deliberately without the free-text reason (it may hold personal\ndata) and without the actor id: only the closed-vocabulary code and the role that decided.",
+        "properties": {
+          "decided_at": {
+            "format": "date-time",
+            "title": "Decided At",
+            "type": "string"
+          },
+          "decided_by_role": {
+            "const": "approver",
+            "default": "approver",
+            "title": "Decided By Role",
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "approved",
+              "rejected"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "enum": [
+                  "insufficient_evidence",
+                  "wrong_target",
+                  "risk",
+                  "duplicate",
+                  "policy_conflict",
+                  "wording",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          }
+        },
+        "required": [
+          "decision",
+          "decided_at"
+        ],
+        "title": "LastDecision",
+        "type": "object"
+      },
       "MetricDef": {
         "additionalProperties": false,
         "description": "One agent metric, with the role it plays in the gate and in production.",
@@ -3267,6 +3338,16 @@
             "title": "Changes",
             "type": "array"
           },
+          "last_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LastDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "last_eval": {
             "anyOf": [
               {
@@ -3728,6 +3809,22 @@
           "field": {
             "title": "Field",
             "type": "string"
+          },
+          "inherited": {
+            "default": false,
+            "title": "Inherited",
+            "type": "boolean"
+          },
+          "inherited_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inherited From"
           }
         },
         "required": [
@@ -4143,25 +4240,7 @@
         "type": "object"
       },
       "ScenarioPrincipal": {
-        "additionalProperties": false,
-        "properties": {
-          "attrs": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "title": "Attrs",
-            "type": "object"
-          },
-          "id": {
-            "minLength": 1,
-            "title": "Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id"
-        ],
-        "title": "ScenarioPrincipal",
+        "additionalProperties": true,
         "type": "object"
       },
       "ScenarioResult": {
@@ -5290,6 +5369,26 @@
           "reason": {
             "title": "Reason",
             "type": "string"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "enum": [
+                  "insufficient_evidence",
+                  "wrong_target",
+                  "risk",
+                  "duplicate",
+                  "policy_conflict",
+                  "wording",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
           }
         },
         "required": [

@@ -172,6 +172,18 @@
     },
     "tool": {
       "$ref": "#/$defs/EntityRef"
+    },
+    "tool_source": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Tool Source"
     }
   },
   "required": [

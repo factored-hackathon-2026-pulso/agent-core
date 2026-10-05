@@ -21,6 +21,7 @@ from agent_core.registry.models import (
     Origin,
     Proposal,
     ProposalState,
+    ReasonCode,
     ReleaseDetail,
     ReleaseDiff,
     RunLineage,
@@ -91,6 +92,7 @@ class _Approve(BaseModel):
 
 class _Reason(BaseModel):
     reason: str
+    reason_code: ReasonCode | None = None  # optional closed vocabulary; 422 outside the list
 
 
 class _Promote(BaseModel):
@@ -243,7 +245,8 @@ def registry_extension(service: RegistryService, verifier: IdentityVerifier | No
 
         @router.post("/proposals/{pid}/reject", **_doc(Proposal, 200, 404, 409))
         def reject(request: Request, pid: str, body: _Reason, authorization: Auth = None) -> Response:
-            return _json(service.reject(who(request, authorization), pid, body.reason))
+            return _json(service.reject(who(request, authorization), pid, body.reason,
+                                        reason_code=body.reason_code))
 
         @router.post("/proposals/{pid}/publish", **_doc(ReleaseDetail, 200, 404, 409, 422))
         def publish(

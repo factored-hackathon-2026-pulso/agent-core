@@ -6,7 +6,8 @@ El middleware lo publica con `agent_telemetry.bind_trace_id`: el `TurnResult` de
 from typing import Final
 
 from fastapi import FastAPI, Request, Response
-from opentelemetry.trace import Status, StatusCode
+from opentelemetry.trace import Status, StatusCode, get_current_span
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from starlette.middleware.base import RequestResponseEndpoint
 
 from agent_core.ports import IdKind, IdSource
@@ -14,6 +15,8 @@ from agent_telemetry import bind_trace_id
 from agent_telemetry import tracer as telemetry_tracer
 
 FALLBACK_TRACE_ID = "unknown"
+# Private propagator (not the process-global one, F3): reads only the W3C `traceparent`/`tracestate` headers.
+_PROPAGATOR = TraceContextTextMapPropagator()
 
 
 def request_trace_id(request: Request) -> str:
@@ -35,9 +38,14 @@ def install_tracing(app: FastAPI, ids: IdSource) -> None:
         if request.url.path in PROBE_PATHS:  # las sondas del orquestador no son tráfico del servicio
             return await call_next(request)
         tracer = telemetry_tracer("agentcore.api")
+        # An inbound `traceparent` makes this span a child of the caller's trace; absent or malformed, `None`
+        # keeps the current context (the request starts its own trace as before).
+        inbound = _PROPAGATOR.extract(request.headers)
+        parent = inbound if get_current_span(inbound).get_span_context().is_valid else None
         # C2: never an `exception` event (message, stack) nor a status description: only the type.
         with tracer.start_as_current_span(
             "agentcore.api.request",
+            context=parent,
             attributes={"http.request.method": request.method},
             record_exception=False,
             set_status_on_exception=False,

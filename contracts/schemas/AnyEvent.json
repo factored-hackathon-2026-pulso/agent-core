@@ -840,6 +840,19 @@
           ],
           "default": null
         },
+        "tokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tokens"
+        },
         "tool": {
           "anyOf": [
             {
@@ -3837,6 +3850,18 @@
         },
         "tool": {
           "$ref": "#/$defs/EntityRef"
+        },
+        "tool_source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool Source"
         }
       },
       "required": [

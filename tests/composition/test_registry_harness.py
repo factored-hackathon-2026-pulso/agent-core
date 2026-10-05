@@ -4,11 +4,24 @@ from typing import Any
 import pytest
 
 from agent_core.composition import EngineScenarioHarness
-from agent_core.domain import EngineEvent, GatewayError, GatewayErrorKind, Outcome, Prompt, RunClosed
+from agent_core.domain import (
+    EngineEvent,
+    GatewayError,
+    GatewayErrorKind,
+    OnBehalfOf,
+    Outcome,
+    Principal,
+    PrincipalKey,
+    PrincipalType,
+    Prompt,
+    RunClosed,
+    SubjectRef,
+)
 from agent_core.ports import LLMGateway, RegistryPort
 from agent_core.registry import EvalSuite, EvalTarget, HarnessUnavailable, LocalSandbox, SnapshotRegistry
 from agent_core.registry.evaluation.scoring import score_run
-from testing.engine_world import CitingGateway
+from agent_core.registry.suite import ScenarioPrincipal
+from testing.engine_world import CitingGateway, SyntheticAuthz
 from testing.fakes.ids import FakeIds
 from testing.fakes.provider import Failure, Timeout
 from testing.registry_demo import build_harness, demo_suite
@@ -103,3 +116,40 @@ def test_without_bind_gateway_the_shared_gateway_is_used_unchanged() -> None:
     harness = build_harness()
     closed = [e for e in _run(harness, _with_prompt_text("OTRO")) if isinstance(e, RunClosed)]
     assert closed and closed[-1].payload.outcome is Outcome.resolved
+
+
+class _RecordingAuthz(SyntheticAuthz):
+    def __init__(self) -> None:
+        self.seen: list[tuple[Principal, OnBehalfOf | None, SubjectRef | None]] = []
+
+    def bind_params(self, principal: Principal, obo: OnBehalfOf | None,
+                    subject: SubjectRef | None) -> dict[str, str]:
+        self.seen.append((principal, obo, subject))
+        return super().bind_params(principal, obo, subject)
+
+
+def _run_with_principal(authz: _RecordingAuthz, principal: dict[str, Any]) -> None:
+    harness = build_harness(authz=authz)
+    who = ScenarioPrincipal.model_validate(principal)
+    scenario = demo_suite().scenarios[0].model_copy(update={"principal": who})
+    sandbox = LocalSandbox(FakeIds())
+    harness.run(_target(), AGENT, scenario, sandbox.tools(sandbox.provision(scenario.seed, _target())))
+
+
+def test_an_advisor_scenario_runs_with_an_advisor_principal_and_a_synthetic_delegation() -> None:
+    authz = _RecordingAuthz()
+    _run_with_principal(authz, {"id": "adv-7", "type": "advisor",
+                                "subject": {"kind": "customer", "ref": "cust-001"}})
+    assert authz.seen
+    principal, obo, subject = authz.seen[0]
+    assert principal.type is PrincipalType.advisor and principal.id == "adv-7"
+    assert obo is not None and obo.grantee == PrincipalKey(type=PrincipalType.advisor, id="adv-7")
+    assert obo.subject == SubjectRef(kind="customer", ref="cust-001") and obo.grant_ref == "eval"
+    assert subject == obo.subject
+
+
+def test_a_customer_scenario_is_unchanged_no_delegation_and_customer_type() -> None:
+    authz = _RecordingAuthz()
+    _run_with_principal(authz, {"id": "cust-001"})
+    assert authz.seen
+    assert all(p.type is PrincipalType.customer and o is None for p, o, _ in authz.seen)
