@@ -12,7 +12,7 @@ from agent_core.domain import Fingerprint, JsonValue, OnBehalfOf, Principal, dum
 from agent_core.domain.base import Model
 from agent_core.ports import AuthzPort, Clock, KeyProvider, KeyPurpose
 from agent_core.views.classification import UNCLASSIFIED, UNTRUSTED, FieldClassifier, FieldRule, field_name
-from agent_core.views.detector import EMAIL_RE, MIN_DIGITS, digit_runs
+from agent_core.views.detector import MIN_DIGITS, digit_runs, has_email
 from agent_core.views.fingerprints import fingerprint
 from agent_core.views.quasi import Dropped, apply_quasi
 from agent_core.views.tokens import MASK, TOKEN_RE, mask, neutralize
@@ -224,6 +224,6 @@ class ViewService:
                     rf"(?<!\w){re.escape(needle.casefold())}(?!\w)", folded
                 ):
                     found.add(path)
-        if EMAIL_RE.search(visible):
+        if has_email(visible):
             found.add("pattern:email")
         return sorted(found)

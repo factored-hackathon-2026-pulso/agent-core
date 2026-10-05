@@ -1,6 +1,6 @@
 # M7 — Vistas de datos y tokenización
 
-- Estado: rev. 3 (2026-09-29) · Fase 3
+- Estado: rev. 4 (2026-10-05) · Fase 3
 - Paquete: `agent_core.views`
 - Origen: spec general §8.1, §8.1.1, §4.8 (renderer), §12 (fugas), §13.6
 - ADRs: 0008 (vistas, `untrusted_text`, huellas con clave), 0003 (huellas del transcript)
@@ -73,7 +73,11 @@ def verify_fingerprint(data: Any, fp: Fingerprint, keys: KeyProvider) -> bool
 
 **Formato del token:** `⟦<tag>:<n>⟧`, p. ej. `⟦doc:1⟧`, `⟦tx:3⟧`; `n` es un contador por tag dentro del run. Regex: `⟦([a-z]{1,12}):([1-9][0-9]*)⟧`.
 
-**Detector:** email; secuencias de 6 o más dígitos con separadores sueltos (de 1 a 3 caracteres entre espacio, tab, punto, coma o guion ASCII/Unicode U+2010–U+2015, p. ej. `300  123  4567`, `1.023.456.789`, `1023 – 456789`), con límites solo contra otros dígitos (detecta `CC1023456789`). Con `+` o 10 dígitos separados por espacio, tab o guion → `tel` (campo `mobile_phone`); 12 o más → `prod` (`product_number`); el resto → `doc` (`document_number`). Las fechas `AAAA-MM-DD` se ignoran. Un número pegado a un email por un separador se recorta donde empieza el email (no se descarta); los dígitos dentro de la parte local de un email son parte del email. La coma como separador hace que listas como `1, 2, 3, 4, 5, 6` se tokenicen (falso positivo conservador). Es conservador a propósito: un monto de 6 o más dígitos en texto libre se tokeniza. Los nombres propios en texto libre no se detectan (límite conocido).
+**Normalización previa (rev. 4):** el detector no tiene una regex por variante: primero normaliza el texto (ya en NFKC) **solo para detectar** y después aplica las mismas reglas. La normalización (`views.detector.fold`) (1) elimina los caracteres de control (`Cc`), de formato (`Cf`: ancho cero U+200B–U+200D, U+2060, U+FEFF, guion blando U+00AD, marcas bidi…) y las marcas combinantes (`Mn`/`Me`); (2) lleva todo dígito decimal Unicode (`Nd`: árabe-índico, persa, devanagari, etc.) a ASCII (NFKC ya convirtió ancho completo, matemáticos y circulados); (3) reconstruye `@` y `.` ofuscados: `( @ )`, `(@)`, `[at]`, `(at)`, `{at}`, `[arroba]` (sin distinguir mayúsculas, con hasta 3 espacios alrededor), `@` con hasta 3 espacios a un lado o a ambos, y `[dot]`/`(punto)` entre un alfanumérico y una letra. Cada hit se mapea de vuelta a los offsets del texto de entrada: se enmascara el span original completo (con sus separadores y caracteres invisibles) y el valor del token es el normalizado, así que `4111 1111 1111 1111`, `4111` + U+200B + `1111`… y `٤١١١…` dan el mismo token. El texto sin PII no cambia (los caracteres invisibles fuera de un hit se conservan). Costo lineal: todas las clases están acotadas, la comprobación de solapes email/número usa búsqueda binaria y hay una prueba con entradas de 1 MB (T-M7-14).
+
+**Detector:** email (también las variantes ofuscadas de arriba); secuencias de 6 o más dígitos con separadores sueltos (de 1 a 3 caracteres entre espacio, tab, punto, coma, `/`, `_`, `·`, paréntesis o guion ASCII/Unicode U+2010–U+2015, p. ej. `300  123  4567`, `(300) 123 4567`, `4111/1111/1111/1111`, `1.023.456.789`, `1023 – 456789`), con límites solo contra otros dígitos (detecta `CC1023456789`). Con `+` o 10 dígitos separados por espacio, tab, paréntesis o guion → `tel` (campo `mobile_phone`); 12 o más → `prod` (`product_number`); el resto → `doc` (`document_number`). Las fechas `AAAA-MM-DD` y las fechas con `/` (`d/m/aa`, `d/m/aaaa`, `aaaa/mm/dd`) se ignoran. `/`, `_`, `·` y los paréntesis como separadores amplían los falsos positivos conservadores (p. ej. `1/2/3/4/5/6`, `(1) (2) (3) (4)`). Un número pegado a un email por un separador se recorta donde empieza el email (no se descarta); los dígitos dentro de la parte local de un email son parte del email. La coma como separador hace que listas como `1, 2, 3, 4, 5, 6` se tokenicen (falso positivo conservador). Es conservador a propósito: un monto de 6 o más dígitos en texto libre se tokeniza. Los nombres propios en texto libre no se detectan (límite conocido).
+
+**Límites conocidos del detector (no cubiertos):** nombres propios; números separados por salto de línea o por más de 3 caracteres, o por puntuación no listada (`|`, `:`, `*`, `'`); `@`/`.` en palabras sin corchetes (`usuario arroba dominio punto com`, `usuario at dominio.com`) o con punto espaciado (`dominio . com`); dígitos escritos con letras (`cuatro uno uno uno`) o intercalando letras (`4a1b1c1`); homóglifos de letras en correos (cirílico por latino); dígitos de sistemas sin categoría `Nd` (p. ej. ideográficos); PII partida en varios mensajes; texto codificado (base64, URL, entidades HTML).
 
 **Claves de dict:** son nombres de esquema; solo se neutralizan `⟦`/`⟧`. Un identificador usado como clave no se tokeniza (límite conocido). Traspaso: la validación de resultados de tools aguas arriba (M5 / unidad 3) debe rechazar claves de dict con forma de dígitos o email; M7 solo neutraliza `⟦`/`⟧` en las claves.
 
@@ -108,7 +112,7 @@ Recorre los tokens del texto validado; para cada uno pregunta a la política (`c
 
 ### 3.7 PII en claro (`find_clear_pii`, para M8)
 
-Sobre el texto sin tokens (NFKC): cada hoja de `facts_full` cuya clase efectiva sea `pii_direct` (ruta `hecho.campo`) se busca en claro, sin distinguir mayúsculas y con límites de palabra; los identificadores numéricos (6 o más dígitos) se comparan sin separadores. Se añade `"pattern:email"` si aparece cualquier email. Devuelve rutas ordenadas, nunca valores. Las hojas sin clasificar cuentan como `pii_direct`: el catálogo debe clasificar los campos de hechos que se citan en claro.
+Sobre el texto sin tokens (NFKC, y con la normalización previa del detector para los números y para `pattern:email`): cada hoja de `facts_full` cuya clase efectiva sea `pii_direct` (ruta `hecho.campo`) se busca en claro, sin distinguir mayúsculas y con límites de palabra; los identificadores numéricos (6 o más dígitos) se comparan sin separadores. Se añade `"pattern:email"` si aparece cualquier email. Devuelve rutas ordenadas, nunca valores. Las hojas sin clasificar cuentan como `pii_direct`: el catálogo debe clasificar los campos de hechos que se citan en claro.
 
 **Límites:** los valores de menos de 4 caracteres (p. ej. `"Ana"`) y las cadenas de 1 a 3 dígitos nunca se buscan; un needle de varias palabras solo coincide con un único espacio entre ellas; los booleanos o enteros cortos sin clasificar pueden buscar palabras como `"true"`/`"2026"` (falsos positivos conservadores). `find_clear_pii` ve solo `hecho.campo` (sin la tabla de origen), mientras `project` clasifica por `tabla.campo`: las reglas de ruta exacta del catálogo no deben contradecir las reglas por nombre de campo; es responsabilidad del dueño de `FieldClassification` (unidad 3).
 
@@ -147,6 +151,10 @@ Ninguno propio. Sus vistas `audit` y huellas van dentro de los eventos de otros 
 | T-M7-09 | Campo sin clasificar → tokenizado | — |
 | T-M7-10 | `seal`/`open` del `token_map` hace round-trip | — |
 | T-M7-11 | `tokenize_text` cambia la PII del texto por tokens del vault, sin envoltura; mismo valor, mismo token; token o etiqueta falsos se neutralizan | 6 |
+| T-M7-12 | Catálogo de variantes sintéticas (PAN Luhn de prueba, celular, correo, documento) con separadores `/` `_` `·`, ancho cero, controles, dígitos árabe-índicos/persas/devanagari/ancho completo/matemáticos, paréntesis, `[at]`, `( @ )`: todas enmascaradas en `model` por el span original completo; variantes equivalentes comparten token; `find_clear_pii` ve las mismas variantes | 6 |
+| T-M7-13 | Controles negativos: fechas (`d/m/aaaa`, ISO, árabe-índicas), horas, versiones, números de 5 dígitos, `@`/`[at]` sin correo, emojis con ZWJ, texto con acentos: sin tokens y texto intacto; los montos de 6+ dígitos siguen tokenizándose | 6 |
+| T-M7-14 | Entradas hostiles de 1 MB (ancho cero, separadores, paréntesis, `[at]`, `@` con espacios, números pegados a emails…) se detectan en tiempo acotado; 1 MB con PII real se tokeniza en tiempo acotado | — |
+| T-M7-15 | El hueco histórico (PAN con U+200B entre grupos llegaba en claro) queda cerrado | 6 |
 
 ## 8. Evaluación
 
@@ -162,7 +170,7 @@ Ninguno propio. Sus vistas `audit` y huellas van dentro de los eventos de otros 
 
 ## 10. Definición de terminado
 
-- Tres vistas, `TokenVault` cifrado, renderer y huellas con T-M7-01…10 en verde.
+- Tres vistas, `TokenVault` cifrado, renderer y huellas con T-M7-01…15 en verde.
 - Captura de requests en los adaptadores externos activada en pruebas: `RequestCapture` listo en M7; se activa en `ScriptedGateway` (M8) y en el adaptador JEV (M5).
 
 ## 11. Abiertos
@@ -171,5 +179,6 @@ Ninguno. Resueltos en rev. 2 (2026-09-29): formato del token (§3.2) y generaliz
 
 ## Cambios
 
+- rev. 4 (2026-10-05): el detector normaliza antes de detectar (§3.2): quita controles/formato/marcas, dígitos Unicode a ASCII, reconstruye `@`/`.` ofuscados y mapea los hits al span original; separadores nuevos `/`, `_`, `·` y paréntesis (con exclusión de fechas con `/`); `find_clear_pii` usa la misma normalización; T-M7-12…15. Sin cambios de interfaz pública. Corrige un costo cuadrático al solapar números con emails.
 - rev. 3 (2026-09-29): `ViewService.tokenize_text(text, vault)` (T-M7-11), pedido por el cableado del motor: `TurnRuntime.model_text` no tenía API pública en M7 (el detector solo se usaba dentro de `untrusted_text`).
 - rev. 2 (2026-09-29): formato `⟦tag:n⟧` adoptado; `pii_quasi` como regla de datos (`QuasiRule`, por defecto `drop`); catálogo por defecto solo §8.1 + override; `TokenVault(run_id, keys, ids)`, `tokenize(value, field, tag)`, `lookup`, `open(blob, run_id, keys, ids)`; `Views.fingerprint`; `render(..., on_behalf_of) -> Rendered`; `find_clear_pii` definido (§3.7); detector definido (§3.2); AES-GCM con HKDF y AAD por run (§3.4).
