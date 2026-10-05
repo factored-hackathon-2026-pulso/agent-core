@@ -326,3 +326,54 @@ def test_a_reply_that_echoes_the_card_is_caught() -> None:
     echoing = [{**_REPLY, "text": "Recibí tu tarjeta 4111-1111-1111-1111"}]
     assert _problems(echoing) == []  # la forma es válida...
     assert leaks(json.dumps(echoing, ensure_ascii=False), case["must_not_leak"])  # ...pero filtra: se detecta
+
+
+# ------------------------------------------------------------------ superficie fija (mutaciones del revisor)
+def test_the_input_schema_surface_is_pinned() -> None:
+    spec = _agent().input_schema or {}
+    required = {n for n, slot in spec.items() if slot.required}
+    assert required == {"turnos", "idioma", "canal", "prioridad", "sla_estado", "espera_del_cliente_segundos"}
+    assert set(spec) == required | {"sla_minutos_restantes", "motivo_llegada", "sugerencia_borrador",
+                                    "sugerencia_escalacion_aceptada", "assistant_session_id"}
+    assert spec["sugerencia_escalacion_aceptada"].type == "boolean" and spec["turnos"].max_items == 12
+    items = spec["turnos"].items or {}
+    assert {n for n, f in items.items() if f.required} == {"rol", "texto", "hora"}
+
+
+def test_the_agent_budget_and_locales_are_pinned_as_provisional() -> None:
+    agent = _agent()
+    assert agent.budgets.max_cost_per_run <= 1 and set(agent.supported_locales) == {"es", "pt"}
+    assert agent.default_locale == "es" and agent.max_clarifications == 0
+
+
+@pytest.mark.parametrize("case", _cases(), ids=lambda c: c["id"])
+def test_synthetic_inputs_use_the_values_the_platform_sends(case: dict[str, Any]) -> None:
+    data = case["input"]
+    assert data["sla_estado"] in {"respondida", "vencido", "en_riesgo", "a_tiempo"}
+    assert data["prioridad"] in {"normal", "alta", "critica"} and data["canal"] in {"chat", "email", "call"}
+    assert data["espera_del_cliente_segundos"] >= 0 and data.get("sla_minutos_restantes", 0) >= 0
+    for turn in data["turnos"]:
+        assert turn["rol"] in {"cliente", "analista", "asistente"}
+        assert turn["hora"].endswith("+00:00") and len(turn["texto"]) <= 1000
+
+
+@pytest.mark.parametrize(("items", "fragment"), [
+    ([{**_REPLY, "citations": [1]}], "citations"),
+    ([{**_REPLY, "text": "x" * 4001}], "text"),
+    ([{**_TOOL, "why": ""}], "why"),
+    ([{**_TOOL, "args": []}], "args"),
+    ([{**_ACTION, "summary": " "}], "summary"),
+    ([{**_ESC, "motive_draft": ""}], "motive_draft"),
+    ([{**_ESC, "evidence": ["ok", " "]}], "evidence"),
+])
+def test_every_branch_of_the_validator_can_fail(items: object, fragment: str) -> None:
+    assert any(fragment in p for p in _problems(items))
+
+
+def test_known_gap_the_m7_detector_misses_zero_width_separated_cards() -> None:
+    """Hueco de M7 (no de este cambio), hallado por el revisor: un PAN con U+200B entre grupos llega en claro.
+    Si esta prueba empieza a fallar, el detector se arregló: borra la prueba y actualiza la brecha §3."""
+    hostile = {"turnos": [{"rol": "cliente", "hora": "2026-10-04T15:00:00+00:00",
+                           "texto": "tarjeta 4111​1111​1111​1111"}]}
+    model, _ = _model_and_audit(hostile, FieldClassifier())
+    assert leaks(model, ["4111111111111111"]) == [] and "4111" in model  # fuga real, pero `leaks` no la ve

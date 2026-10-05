@@ -71,7 +71,7 @@ casos:
       motivo_llegada: traspaso_del_asistente
     expected:
       - type: escalate
-        reason_code: "policy:escalamiento-disputa-monto"
+        reason_code: "rule:fraude-con-supervisor"  # regla PENDIENTE (no existe; `escalamiento-disputa-monto` mide monto, no aplica)
         evidence: ["sla_estado: vencido", "el cliente pide supervisor"]
         motive_draft: "Cliente reporta posible fraude y pide supervisor; el SLA está vencido."
     must_not_leak: []

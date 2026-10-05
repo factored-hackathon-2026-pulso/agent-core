@@ -5,6 +5,10 @@
 #    `respond` (ADR 0026 Abierto 1) y `RunResult.suggestions` (cambio de M0). Por eso este agente no se
 #    puede publicar ni hay `release`: se valida solo como entidad (`Agent`) en las pruebas.
 #  - `budgets` copia los del copiloto-asesor: PROVISIONAL hasta el Abierto 4 (tope de costo por run).
+#  - Tambien PROVISIONALES, sin respaldo del ADR: `max_clarifications`, `on_clarify_exhausted`, `default_target_queue`,
+#    las plantillas (copiadas), `min_auth_level: session`, `supported_locales` y el subconjunto de 3 tools
+#    (se omiten `obtener_handoff` y `leer_transcript`, que el copiloto Q&A si tiene).
+#  - `assistant_session_id` convive con 'sin sesion ni memoria' del ADR §1: tension por aclarar con el usuario.
 #  - No hay campo `actions_allowed` (Abierto 6): `tools_allowed` son solo lecturas.
 id: copiloto-sugerencias
 version: 1.0.0
