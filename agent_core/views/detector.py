@@ -33,6 +33,8 @@ _DIGITS_RE = re.compile(
 )
 _ISO_DATE_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 _WEAK_CHARS_RE = re.compile(r"[/_·()]")
+# Listas o rangos de `d/m` y `m/aaaa` (`15/09 - 20/09`, `09/2026, 10/2026`): fechas parciales.
+_PARTIAL_DATES_RE = re.compile(r"(?:[0-9]{1,2}/[0-9]{1,4}[ 	,‐-―-]{0,3})+")
 _GROUPS_RE = re.compile(r"[0-9]+")
 _DASHES = "-‐‑‒–—―"
 _SEPARATORS = str.maketrans("", "", " \t.,/_·()" + _DASHES)
@@ -48,8 +50,13 @@ _SPECIAL_RE = re.compile(r"[^\x20-\x7e\t\n\r]+")
 _DROPPED_CATEGORIES = frozenset({"Cc", "Cf", "Mn", "Me", "Cn", "Co", "Cs"})
 # Invisibles que no son Cf: rellenos hangul, braille en blanco y carácter de reemplazo de objeto.
 _DROPPED_CHARS = frozenset("ᅟᅠㅤﾠ⠀￼")
+# Letras con trazo o ligadura que NFD no descompone: a su base ASCII más cercana (1:1).
+_NO_DECOMPOSITION = {"ø": "o", "Ø": "O", "ł": "l", "Ł": "L", "đ": "d", "Đ": "D", "ð": "d", "Ð": "D",
+                     "ı": "i", "ß": "s", "æ": "a", "Æ": "A", "œ": "o", "Œ": "O", "þ": "t", "Þ": "T"}
 # Un grupo de 3+ dígitos, un salto de línea o 4+ espacios, y otro grupo de 3+ dígitos: un solo espacio.
-_GAP_RE = re.compile(r"(?:(?<=[0-9]{3})|(?<=[0-9]{3}\)))(?:[ \t]*[\r\n][ \t\r\n]*|[ \t]{4,})(?=[0-9]{3})")
+_GAP_ONLY_RE = re.compile(
+    r"\)?[ \t]*[-.,/_·‐-―]?[ \t]*[\r\n][ \t\r\n]*[-.,/_·(‐-―]?[ \t]*|[ \t]{4,}"
+)
 # Ofuscaciones de `@` y `.`; todo acotado a 3 espacios, sin backtracking.
 _BRACKET_AT_RE = re.compile(
     r"[ \t]{0,3}[(\[{<][ \t]{0,3}(?:@|at|arroba)[ \t]{0,3}[)\]}>][ \t]{0,3}", re.IGNORECASE
@@ -103,6 +110,8 @@ def _fold_char(char: str) -> str:
     category = unicodedata.category(char)
     if category in _DROPPED_CATEGORIES or char in _DROPPED_CHARS:
         return ""
+    if char in _NO_DECOMPOSITION:
+        return _NO_DECOMPOSITION[char]
     if category == "Nd":
         return str(unicodedata.decimal(char))
     if category == "Zs":
@@ -146,9 +155,48 @@ def _map_chars(text: str) -> Folded:
 
 def _substitute(folded: Folded, pattern: re.Pattern[str], replacement: str) -> Folded:
     """Cambia cada coincidencia por `replacement`, que cubre el span completo reemplazado."""
+    return _replace_spans(folded, [m.span() for m in pattern.finditer(folded.text)], replacement)
+
+
+def _gap_spans(text: str) -> list[tuple[int, int]]:
+    """Huecos (salto de línea o 4+ espacios, con a lo sumo un separador a cada lado) entre dos corridas de
+    dígitos que se juntan en un identificador: grupos de 3+ dígitos a ambos lados, sin fechas ISO, y 10+
+    dígitos en total. Así `4111-\\n1111-\\n1111-\\n1111` se une y una tabla de importes o fechas no."""
+    spans: list[tuple[int, int]] = []
+    chain: list[tuple[int, int]] = []
+    digits = 0
+    previous_end = -1
+
+    def flush() -> None:
+        if chain and digits >= _PHONE_DIGITS:
+            spans.extend(chain)
+        chain.clear()
+
+    for match in _DIGITS_RE.finditer(text):
+        body = match.group("body")
+        if body is None or _ISO_DATE_RE.fullmatch(body):
+            flush()
+            digits, previous_end = 0, -1
+            continue
+        begin = match.start("body")
+        gap = text[previous_end:begin] if previous_end >= 0 else ""
+        joined = (previous_end >= 3 and _GAP_ONLY_RE.fullmatch(gap) is not None
+                  and text[previous_end - 3:previous_end].isdigit() and text[begin:begin + 3].isdigit())
+        if joined:
+            chain.append((previous_end, begin))
+            digits += len(body.translate(_SEPARATORS))
+        else:
+            flush()
+            digits = len(body.translate(_SEPARATORS))
+        previous_end = match.end("body")
+    flush()
+    return spans
+
+
+def _replace_spans(folded: Folded, spans: list[tuple[int, int]], replacement: str) -> Folded:
+    """Cambia cada span por `replacement`, que cubre el span completo reemplazado."""
     text = folded.text
-    matches = list(pattern.finditer(text))
-    if not matches:
+    if not spans:
         return folded
     old_starts = folded.starts if folded.starts is not None else array("q", range(len(text)))
     old_ends = folded.ends if folded.ends is not None else array("q", range(1, len(text) + 1))
@@ -156,8 +204,7 @@ def _substitute(folded: Folded, pattern: re.Pattern[str], replacement: str) -> F
     starts = array("q")
     ends = array("q")
     cursor = 0
-    for match in matches:
-        begin, finish = match.span()
+    for begin, finish in spans:
         out.append(text[cursor:begin])
         starts.extend(old_starts[cursor:begin])
         ends.extend(old_ends[cursor:begin])
@@ -174,7 +221,7 @@ def _substitute(folded: Folded, pattern: re.Pattern[str], replacement: str) -> F
 def fold(text: str) -> Folded:
     """Normaliza `text` (ya en NFKC) solo para detectar; ver el docstring del módulo."""
     folded = _map_chars(text) if _SPECIAL_RE.search(text) else Folded(text)
-    folded = _substitute(folded, _GAP_RE, " ")
+    folded = _replace_spans(folded, _gap_spans(folded.text), " ")
     folded = _substitute(folded, _BRACKET_AT_RE, "@")
     folded = _substitute(folded, _ARROBA_RE, "@")
     folded = _substitute(folded, _SPACED_AT_RE, "@")
@@ -195,14 +242,19 @@ def _digit_hit(start: int, end: int, plus: bool, body: str) -> Hit | None:
 
 def _weak_accepted(body: str) -> bool:
     """Con separadores débiles (`/ _ · ( )`) solo se acepta lo que parece un identificador: 10+ dígitos, o
-    3+ grupos con 8+ dígitos (sin paréntesis): `ley 1581/2012` o `(601) 234` no se tokenizan."""
+    3+ grupos de 3+ dígitos con 8+ en total (sin paréntesis): `ley 1581/2012`, `15/09 - 20/09` o `(601) 234`
+    no se tokenizan."""
     digits = len(body.translate(_SEPARATORS))
     if digits >= _PHONE_DIGITS:
         return True
-    return digits >= 8 and len(_GROUPS_RE.findall(body)) >= 3 and "(" not in body and ")" not in body
+    groups = _GROUPS_RE.findall(body)
+    return (digits >= 8 and len(groups) >= 3 and all(len(g) >= 3 for g in groups)
+            and "(" not in body and ")" not in body)
 
 
 def _body_hits(start: int, body_start: int, plus: bool, body: str) -> list[Hit]:
+    if _PARTIAL_DATES_RE.fullmatch(body):
+        return []
     if _WEAK_CHARS_RE.search(body) is None or _weak_accepted(body):
         hit = _digit_hit(start, body_start + len(body), plus, body)
         return [] if hit is None else [hit]

@@ -98,8 +98,8 @@ def _squash(text: str) -> str:
 
 
 def _digits_present(digits: str, runs: set[str]) -> bool:
-    return any(run == digits or (len(run) >= MIN_DIGITS and (digits.endswith(run) or run.endswith(digits)))
-               for run in runs)
+    # El valor puede ir dentro de una corrida más larga (fundida con dígitos vecinos) o ser parte de él.
+    return any(digits in run or (len(run) >= MIN_DIGITS and run in digits) for run in runs)
 
 
 class ViewService:

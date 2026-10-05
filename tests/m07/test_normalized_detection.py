@@ -69,6 +69,15 @@ PAN_VARIANTS = [
     "tarjeta 4111\u16801111\u16801111\u16801111 vence",  # espacio ogham
     "tarjeta 4111\U000e0020\U000e00211111\ue0001111\ufff91111 vence",  # etiquetas, uso privado, anotaciones
     "tarjeta 4111\u03011111\u03081111\u20e31111 vence",  # marcas combinantes entre grupos
+    "tarjeta 4111-\n1111-\n1111-\n1111 vence",  # texto envuelto: guion al final de la línea
+    "tarjeta 4111,\n1111,\n1111,\n1111 vence",
+    "tarjeta 4111 -\n1111 -\n1111 -\n1111 vence",
+    "tarjeta 4111\n-1111\n-1111\n-1111 vence",
+    "tarjeta 4111\n(1111\n(1111\n(1111 vence",
+    "tarjeta 4111-\r\n1111-\r\n1111-\r\n1111 vence",
+    f"tarjeta 4111-{ZW}\n1111-{ZW}\n1111-{ZW}\n1111 vence",
+    "tarjeta 4111–\n1111–\n1111–\n1111 vence",
+    "tarjeta 4111 1111\n1111 1111 vence",  # separador normal en un grupo y salto en otro
 ]
 
 
@@ -88,6 +97,7 @@ PHONE_VARIANTS = [
     f"llama al (300) 123{ZW} 4567 ya",
     f"llama al (300){ZW}123{ZW}-{ZW}4567 ya",
     "llama al (300)\n123\n4567 ya",
+    "llama al 300-\n123-\n4567 ya",
     f"llama al 300{ZW} 123{ZW} 4567 ya",
     "llama al ٣٠٠ ١٢٣ ٤٥٦٧ ya",
     "llama al ３００　１２３　４５６７ ya",
@@ -142,6 +152,10 @@ EMAIL_VARIANTS = [
     "escribe a muñoz@dominio.com ya",
     "escribe a maría.lópez@dominio.com ya",
     "escribe a usuario@dominio\u200d。\u2060com ya",
+    "escribe a søren@dominio.dk ya",  # letras que NFD no descompone
+    "escribe a łukasz@dominio.pl ya",
+    "escribe a ana@københavn.dk ya",
+    "escribe a ana@straße.de ya",
 ]
 
 
@@ -203,6 +217,15 @@ def test_t_m7_12_find_clear_pii_normalizes_text_needles_too() -> None:
     assert service.find_clear_pii("hola Ana", facts) == []
 
 
+def test_t_m7_12_find_clear_pii_finds_a_value_fused_with_neighbours() -> None:
+    service = make_service()
+    facts = {"cliente": {"document_number": DOC}}
+    for text in (f"doc {DOC} (123)", f"{DOC}/{PHONE}", f"{DOC} · {PHONE}", f"{DOC}\n{PHONE}",
+                 f"{DOC}    {PHONE}",
+                 f"{DOC} {PHONE}", f"{DOC},15", f"{DOC}/12", f"{DOC}_15/09/2026"):
+        assert service.find_clear_pii(text, facts) == ["cliente.document_number"], text
+
+
 def test_t_m7_12_find_clear_pii_sees_the_same_variants() -> None:
     service = make_service()
     facts = {"cliente": {"document_number": DOC, "email": "usuario@dominio.com"}}
@@ -249,6 +272,10 @@ NEGATIVES = [
     "https://ejemplo.test/items/123/456 ok",
     "10\n20\n30\n40 son cuatro líneas cortas",
     "paso 1\n\npaso 2\n\npaso 3",
+    "2026-09-12  Compra  450\n2026-09-13  Retiro  300\n2026-09-14  Pago  120\n",  # extracto
+    "total 450\n300 pendientes y\nHab 10\n20",
+    "15/09 - 20/09 y 15/09 16/09 17/09 18/09 y 09/2026 - 12/2026 y 09/2026, 10/2026, 11/2026",
+    "receta 1/2 1/3 1/4 1/5 y 2 1/2 3 1/4 4 3/4",
     "ho\u3164la \u2800mundo \ue000 café ñandú MARÍA",  # invisibles sin PII se conservan
     "",
 ]
@@ -304,6 +331,15 @@ MB = 1024 * 1024
     lambda: "(dot)" * (MB // 5) + "a",
     lambda: "x" * 60 + "@" + "a" * MB,
     lambda: "é" * MB,
+    lambda: "123\n" * (MB // 4),
+    lambda: "123    " * (MB // 7),
+    lambda: "123-\n" * (MB // 5),
+    lambda: "1 " * (MB // 4) + "\n" + "1 " * (MB // 4),
+    lambda: " arroba " * (MB // 8),
+    lambda: " punto " * (MB // 7),
+    lambda: "_" * MB,
+    lambda: "(1)" * (MB // 3),
+    lambda: ("é1" * 100 + "\n") * (MB // 201),
 ])
 def test_t_m7_14_detector_is_linear_on_one_megabyte_hostile_inputs(make: Callable[[], str]) -> None:
     assert _timed(make()) < 8.0
