@@ -136,6 +136,18 @@
   "additionalProperties": false,
   "description": "Contenido del borrador `release_settings`. Un campo omitido conserva el valor de la base; no hay forma\nde quitar el `injection_ruleset` ni la detección de idioma, solo de cambiarlos por otros del registry.",
   "properties": {
+    "inherit_from": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Inherit From"
+    },
     "injection_ruleset": {
       "anyOf": [
         {

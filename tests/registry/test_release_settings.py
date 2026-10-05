@@ -7,7 +7,7 @@ import pytest
 
 from agent_core.registry.errors import RegistryError, RegistryErrorCode
 from agent_core.registry.models import EntityDraft, Origin
-from tests.registry.helpers import AGENT, admin, docs, human, prompt_draft
+from tests.registry.helpers import AGENT, admin, bot, demo_pinned, docs, human, prompt_draft
 from tests.registry.service_world import ANA, SUITE, World, publish_cycle
 
 ADMIN = admin()
@@ -160,3 +160,88 @@ def test_a_locked_interrupt_can_be_raised_and_others_added() -> None:
              "action": {"type": "escalate", "target_queue": "quejas", "priority": "normal"}}
     pid = _freeze_as_admin(w, [{**FRAUDE, "priority": 120}, other])
     assert w.service.freeze(ANA, pid).candidate_hash
+
+
+# --- inherit_from: un agente nuevo copia los ajustes de una release publicada ------------------------------
+
+def _clone_drafts(w: World, new_id: str = "soporte") -> list[EntityDraft]:
+    """El cierre completo del donante con el agente renombrado: lo que hace el motor al clonar."""
+    from tests.registry.helpers import demo_pinned
+    out = []
+    for e in demo_pinned().entities:
+        content = e.model_dump(mode="json")
+        if type(e).__name__ == "Agent":
+            content["id"] = new_id
+        out.append(EntityDraft(kind=_kind(e), content=content, docs=docs("clon")))
+    return out
+
+
+def _kind(e: Any) -> str:
+    from agent_core.flows.registry import kind_of
+    return kind_of(e).value
+
+
+def _clone(w: World, actor: Any, *extra: EntityDraft) -> str:
+    p = w.service.create_proposal(actor, "soporte", Origin.manual, "clon")
+    w.service.put_draft(actor, p.proposal_id, [*_clone_drafts(w), *extra], expected_rev=0)
+    return p.proposal_id
+
+
+def test_a_constructor_can_freeze_a_clone_that_inherits_the_donor_settings() -> None:
+    w = World()
+    bot_ = bot()
+    pid = _clone(w, bot_, settings(inherit_from="rel-demo"))
+    w.service.freeze(bot_, pid)
+    with w.store.transaction() as tx:
+        p = tx.get_proposal(pid)
+    assert p is not None and p.candidate_hash is not None
+    donor = w.service.get_release("rel-demo")
+    assert donor.interrupts, "the donor carries a locked fraud interrupt"
+
+
+def test_the_candidate_carries_exactly_the_donor_interrupts() -> None:
+    from agent_core.registry.candidate import build_candidate
+    donor = demo_pinned().release
+    drafts = [*_clone_drafts(World()), settings(inherit_from="rel-demo")]
+    cand = build_candidate(agent_id="soporte", base=None, base_entities=[], drafts=drafts,
+                           published_hash=lambda _: None, donor=donor)
+    assert [i.model_dump() for i in cand.release.interrupts] == [i.model_dump() for i in donor.interrupts]
+    assert cand.release.max_input_chars == donor.max_input_chars
+
+
+def test_a_constructor_still_cannot_write_interrupts_even_with_inherit_from() -> None:
+    w = World()
+    p = w.service.create_proposal(bot(), "soporte", Origin.manual, "clon")
+    with pytest.raises(RegistryError) as info:
+        w.service.put_draft(bot(), p.proposal_id, [settings(inherit_from="rel-demo", interrupts=[])],
+                            expected_rev=0)
+    assert info.value.code is RegistryErrorCode.forbidden_role
+
+
+def test_inherit_from_cannot_be_used_to_remove_a_locked_interrupt_even_by_admin() -> None:
+    w = World()
+    pid = _clone(w, ADMIN, settings(inherit_from="rel-demo", interrupts=[]))
+    with pytest.raises(RegistryError) as info:
+        w.service.freeze(ADMIN, pid)
+    assert [v["rule"] for v in info.value.payload] == ["REG-LOCKED"]  # type: ignore[union-attr]
+
+
+def test_inherit_from_is_refused_for_an_agent_that_already_has_a_base() -> None:
+    w = World()
+    assert _violations(w, _freeze(w, settings(inherit_from="rel-demo"))) == ["REG-SCHEMA"]
+
+
+def test_an_unknown_donor_release_is_not_found_and_a_constructor_cannot_approve_or_publish() -> None:
+    w = World()
+    pid = _clone(w, bot(), settings(inherit_from="no-existe"))
+    with pytest.raises(RegistryError) as info:
+        w.service.freeze(bot(), pid)
+    assert info.value.code is RegistryErrorCode.not_found
+    ok = _clone(w, bot(), settings(inherit_from="rel-demo"))
+    w.service.freeze(bot(), ok)
+    with pytest.raises(RegistryError) as denied:
+        w.service.approve(bot(), ok, "x")
+    assert denied.value.code is RegistryErrorCode.forbidden_role
+    with pytest.raises(RegistryError) as denied:
+        w.service.publish(bot(), ok, "k")
+    assert denied.value.code is RegistryErrorCode.forbidden_role
