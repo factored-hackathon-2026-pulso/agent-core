@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -123,12 +123,18 @@ class StoredRelease(RegModel):
     eval_suite_refs: list[VersionRef] = Field(default_factory=list)  # ADR 0020: suites used by the gate
 
 
+ReasonCode = Literal["insufficient_evidence", "wrong_target", "risk", "duplicate", "policy_conflict",
+                     "wording", "other"]
+REASON_CODES: tuple[str, ...] = get_args(ReasonCode)
+
+
 class Approval(RegModel):
     proposal_id: str
     candidate_hash: str
     actor: str
     decision: Literal["approved", "rejected"]
     reason: str | None = None
+    reason_code: ReasonCode | None = None  # closed vocabulary; optional and only set on rejections
     yardstick_loosened: list[YardstickChange] = Field(default_factory=list)  # ADR 0020 §6.2: approved apart
     at: datetime
 
@@ -167,6 +173,8 @@ class RegistryEvent(RegModel):
     agent_id: str | None = None
     alias: str | None = None
     before: str | None = None
+    # Closed-vocabulary reason of a `rejected` event; never the free text (it may hold personal data).
+    reason_code: ReasonCode | None = None
     at: datetime
 
 
