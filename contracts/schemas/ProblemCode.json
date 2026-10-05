@@ -19,7 +19,8 @@
     "invalid_request",
     "rate_limited",
     "cost_budget_exceeded",
-    "internal_error"
+    "internal_error",
+    "identity_unavailable"
   ],
   "title": "ProblemCode",
   "type": "string"

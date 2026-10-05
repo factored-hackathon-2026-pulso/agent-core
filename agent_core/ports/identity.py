@@ -17,5 +17,6 @@ class IdentityVerifier(Protocol):
         ...
 
     def grant_active(self, grant_ref: str, now: UtcDatetime) -> bool:
-        """`False` si el permiso no existe, está revocado o no se puede consultar (falla cerrado)."""
+        """`False` si el permiso no existe o está revocado. Si no se puede consultar lanza
+        `GrantCheckUnavailable` (sigue cerrado, pero M9 no lo informa como delegación vencida)."""
         ...

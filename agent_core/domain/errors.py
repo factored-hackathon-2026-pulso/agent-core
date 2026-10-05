@@ -38,6 +38,11 @@ class CredentialsInvalid(DomainError):
     """`IdentityVerifier`: la firma de la credencial no valida."""
 
 
+class GrantCheckUnavailable(DomainError):
+    """`IdentityVerifier.grant_active`: el servicio de asignaciones no pudo responder. El acceso sigue
+    cerrado, pero no se afirma que la delegación venció (M9 responde `503 identity_unavailable`, ADR 0010)."""
+
+
 class GatewayErrorKind(StrEnum):
     """Clases de falla del gateway de LLM (M0 §2.11)."""
     timeout = "timeout"
@@ -90,6 +95,7 @@ class ProblemCode(StrEnum):
     rate_limited = "rate_limited"
     cost_budget_exceeded = "cost_budget_exceeded"
     internal_error = "internal_error"
+    identity_unavailable = "identity_unavailable"
 
 
 PROBLEM_STATUS: Mapping[ProblemCode, int] = MappingProxyType(
@@ -112,6 +118,7 @@ PROBLEM_STATUS: Mapping[ProblemCode, int] = MappingProxyType(
         ProblemCode.rate_limited: 429,
         ProblemCode.cost_budget_exceeded: 429,
         ProblemCode.internal_error: 500,
+        ProblemCode.identity_unavailable: 503,
     }
 )
 
@@ -123,7 +130,7 @@ class EngineError(Exception):
         super().__init__(f"{code}: {detail}")
         self.code = code
         self.detail = detail
-        self.retry_after = retry_after  # segundos; sale como `Retry-After` en los 429
+        self.retry_after = retry_after  # segundos; sale como `Retry-After` (429 y 503)
 
     @property
     def status(self) -> int:

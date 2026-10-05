@@ -9,6 +9,7 @@ from agent_core.domain import (
     Awaiting,
     CredentialsInvalid,
     EngineEvent,
+    GrantCheckUnavailable,
     Message,
     OnBehalfOf,
     Principal,
@@ -50,6 +51,7 @@ class StubVerifier:
         self._principals: dict[str, Principal] = {}
         self._delegations: dict[str, OnBehalfOf] = {}
         self.revoked: set[str] = set()
+        self.grants_down = False  # el servicio de asignaciones no responde
         self.verify_calls = 0
 
     def register(self, token: str, who: Principal | OnBehalfOf) -> str:
@@ -73,6 +75,8 @@ class StubVerifier:
             raise CredentialsInvalid("firma inválida") from None
 
     def grant_active(self, grant_ref: str, now: Any) -> bool:
+        if self.grants_down:
+            raise GrantCheckUnavailable("asignaciones caídas")
         return grant_ref not in self.revoked
 
 

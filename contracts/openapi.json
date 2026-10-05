@@ -431,6 +431,16 @@
               }
             },
             "description": "rate_limited | cost_budget_exceeded"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "identity_unavailable"
           }
         },
         "summary": "Paquete de traspaso"
@@ -574,6 +584,16 @@
               }
             },
             "description": "rate_limited | cost_budget_exceeded"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "identity_unavailable"
           }
         },
         "summary": "Resuelve un traspaso"
@@ -726,6 +746,16 @@
               }
             },
             "description": "rate_limited | cost_budget_exceeded"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "identity_unavailable"
           }
         },
         "summary": "Crea un run"
@@ -859,6 +889,16 @@
               }
             },
             "description": "rate_limited | cost_budget_exceeded"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "identity_unavailable"
           }
         },
         "summary": "Estado resumido de un run"
@@ -992,6 +1032,16 @@
               }
             },
             "description": "rate_limited | cost_budget_exceeded"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "identity_unavailable"
           }
         },
         "summary": "Transcript renderizado"
@@ -1125,6 +1175,16 @@
               }
             },
             "description": "rate_limited | cost_budget_exceeded"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "identity_unavailable"
           }
         },
         "summary": "Linaje de la sesión"
@@ -1268,6 +1328,16 @@
               }
             },
             "description": "rate_limited | cost_budget_exceeded"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "identity_unavailable"
           }
         },
         "summary": "Procesa un turno"

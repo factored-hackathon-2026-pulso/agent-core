@@ -70,6 +70,7 @@ _PROBLEMS = {
         410: "run_closed",
         422: "invalid_request",
         429: "rate_limited | cost_budget_exceeded",
+        503: "identity_unavailable",
     }.items()
 }
 

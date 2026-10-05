@@ -12,7 +12,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from agent_core.adapters.jws_identity import JwsIdentityVerifier
-from agent_core.domain import CredentialsInvalid
+from agent_core.domain import CredentialsInvalid, GrantCheckUnavailable
 from testing.builders import NOW, advisor_with_delegation, principal
 from testing.fakes.clock import FakeClock
 from testing.fakes.identity import (
@@ -215,6 +215,13 @@ def test_grant_active_delegates_and_fails_closed() -> None:
 
     broken = JwsIdentityVerifier(principal_keys={}, delegation_keys={}, grant_active=boom)
     assert broken.grant_active("grant-9", NOW) is False
+
+    def down(grant_ref: str, now: Any) -> bool:
+        raise GrantCheckUnavailable("sin respuesta")
+
+    unavailable = JwsIdentityVerifier(principal_keys={}, delegation_keys={}, grant_active=down)
+    with pytest.raises(GrantCheckUnavailable):  # M9 la convierte en 503, no en "delegación vencida"
+        unavailable.grant_active("grant-9", NOW)
 
 
 # --- TestIdentityIssuer: la demo -----------------------------------------------------------------------

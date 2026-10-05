@@ -4,8 +4,10 @@ A delegation (`on_behalf_of`) is signed for a few minutes but its grant can end 
 someone else, the analyst left): on every call that carries one the engine asks
 `grant_active(grant_ref, now)`.
 The platform answers `GET {url}/api/v1/internal/grants/{grantRef}` with `{"active": true|false}` behind a
-shared bearer secret. It **fails closed**: any error, timeout, bad status or non-boolean answer is "not
-active". Only a positive answer is cached, briefly (`ttl`), so a revocation takes at most that long to bite.
+shared bearer secret. It **fails closed**: an answer that is not an explicit `true` is "not active" (`404`
+included), and when the platform cannot answer (transport, timeout, 5xx, 401/403, unreadable body) it
+raises `GrantCheckUnavailable`, which M9 turns into `503 identity_unavailable` instead of "delegation
+expired". Only a positive answer is cached, briefly (`ttl`), so a revocation takes at most that long to bite.
 """
 
 import logging
@@ -17,7 +19,7 @@ from urllib.parse import quote, urlsplit
 
 import httpx
 
-from agent_core.domain import SchemaError, loads
+from agent_core.domain import GrantCheckUnavailable, SchemaError, loads
 
 _LOG = logging.getLogger("agent_core.adapters.grants")
 
@@ -60,13 +62,19 @@ class HttpGrantActive:
         try:
             response = self._client.get(self._base + quote(grant_ref, safe=""), headers=self._headers,
                                         timeout=self._timeout)
-            if response.status_code != 200:
-                _LOG.warning("grants service answered http %d", response.status_code)
-                return False
-            data = loads(response.content.decode())
-        except Exception as error:  # transport, decoding or anything else: not active (text not logged)
-            _LOG.warning("grants service unreachable or unreadable: %s", type(error).__name__)
+        except Exception as error:  # transport or anything else: no answer (text not logged)
+            _LOG.warning("grants service unreachable: %s", type(error).__name__)
+            raise GrantCheckUnavailable("grants service unreachable") from None
+        if response.status_code == 404:  # the platform does not know the grant: not active
             return False
+        if response.status_code != 200:  # 5xx, or 401/403 (this deployment's token): no answer about it
+            _LOG.warning("grants service answered http %d", response.status_code)
+            raise GrantCheckUnavailable(f"grants service answered http {response.status_code}")
+        try:
+            data = loads(response.content.decode())
+        except Exception as error:
+            _LOG.warning("grants service unreadable: %s", type(error).__name__)
+            raise GrantCheckUnavailable("grants service unreadable") from None
         return isinstance(data, dict) and data.get("active") is True
 
 
