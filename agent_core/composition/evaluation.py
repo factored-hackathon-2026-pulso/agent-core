@@ -16,9 +16,13 @@ from agent_core.domain import (
     GatewayError,
     JsonValue,
     Locale,
+    OnBehalfOf,
     Principal,
+    PrincipalKey,
+    PrincipalType,
     ProviderSpec,
     RunInput,
+    SubjectRef,
     TurnInput,
 )
 from agent_core.ports import (
@@ -98,8 +102,20 @@ class EngineScenarioHarness:
     def _principal(self, scenario: Scenario, level: str) -> Principal:
         now = self._clock.now()
         return Principal.model_validate({
-            "type": "customer", "id": scenario.principal.id, "attrs": dict(scenario.principal.attrs),
+            "type": scenario.principal.type, "id": scenario.principal.id,
+            "attrs": dict(scenario.principal.attrs),
             "auth": {"level": level, "at": now}, "exp": now + timedelta(hours=1)})
+
+    def _on_behalf_of(self, scenario: Scenario) -> tuple[OnBehalfOf | None, SubjectRef | None]:
+        """An advisor scenario acts on a subject through a synthetic delegation; a customer one has none."""
+        who = scenario.principal
+        if who.type != "advisor" or who.subject is None:
+            return None, None
+        subject = SubjectRef(kind=who.subject.kind, ref=who.subject.ref)
+        obo = OnBehalfOf(subject=subject, grant_ref="eval",
+                         grantee=PrincipalKey(type=PrincipalType.advisor, id=who.id),
+                         exp=self._clock.now() + timedelta(hours=1))
+        return obo, subject
 
     def run(self, target: EvalTarget, agent_id: str, scenario: Scenario,
             tools: ToolExecutor) -> list[EngineEvent]:
@@ -121,6 +137,7 @@ class EngineScenarioHarness:
         run_id: str | None = None
         session_id: str | None = None
         token: str | None = None
+        obo, subject = self._on_behalf_of(scenario)
         for n, step in enumerate(scenario.steps):
             principal = self._principal(scenario, step.auth)
             if step.op == "start":
@@ -128,14 +145,16 @@ class EngineScenarioHarness:
                                         "idempotency_key": idempotency_key}
                 if step.lang is not None:
                     data["lang"] = step.lang
-                result = engine.start_run(principal, None, RunInput.model_validate(data))
+                if subject is not None:
+                    data["subject"] = subject
+                result = engine.start_run(principal, obo, RunInput.model_validate(data))
                 run_id, session_id, turn = result.run_id, result.session_id, result.first_turn
             else:
                 if session_id is None:
                     break  # modo task: el run ya terminó en start
                 confirm = (ConfirmAnswer(token=token or "", answer=step.answer)  # type: ignore[arg-type]
                            if step.op == "confirm" else None)
-                turn = engine.handle_turn(principal, None, TurnInput(
+                turn = engine.handle_turn(principal, obo, TurnInput(
                     session_id=session_id, text=step.text or "", channel="web", client_turn_id=f"c-{n}",
                     confirm=confirm))
             token = turn.confirmation.token if turn is not None and turn.confirmation is not None else None

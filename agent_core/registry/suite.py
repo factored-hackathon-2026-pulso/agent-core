@@ -10,7 +10,17 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Discriminator, Field, PositiveInt, Tag, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Discriminator,
+    Field,
+    PositiveInt,
+    SerializerFunctionWrapHandler,
+    Tag,
+    model_serializer,
+    model_validator,
+)
 
 from agent_core.domain import (
     Agent,
@@ -67,9 +77,37 @@ class Expect(_M):
     escalated: bool | None = None
 
 
+class ScenarioSubject(_M):
+    """The subject an advisor acts on behalf of in a scenario (maps to the engine `SubjectRef`)."""
+
+    kind: str = Field(min_length=1)
+    ref: str = Field(min_length=1)
+
+
 class ScenarioPrincipal(_M):
+    """Who runs the scenario. Default: a `customer`. An `advisor` needs the `subject` it acts on behalf of:
+    the evaluator builds a synthetic delegation for it (agents invocable by advisors). The new fields are
+    omitted from the serialisation at their defaults, so published suites keep their hash."""
+
     id: str = Field(min_length=1)
     attrs: dict[str, str] = Field(default_factory=dict)
+    type: Literal["customer", "advisor"] = "customer"
+    subject: ScenarioSubject | None = None
+
+    @model_validator(mode="after")
+    def _advisor_has_subject(self) -> "ScenarioPrincipal":
+        if self.type == "advisor" and self.subject is None:
+            raise ValueError("a `subject` is required when the principal `type` is advisor")
+        return self
+
+    @model_serializer(mode="wrap")
+    def _omit_defaults(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.type == "customer":
+            data.pop("type", None)
+        if self.subject is None:
+            data.pop("subject", None)
+        return data
 
 
 class Assertion(_M):
