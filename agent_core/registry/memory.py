@@ -15,6 +15,7 @@ from agent_core.registry.models import (
     DraftWrite,
     EntityDraft,
     EvalRun,
+    PauseState,
     Proposal,
     RegistryEvent,
     StoredRelease,
@@ -33,6 +34,7 @@ class _State:
     release_refs: dict[str, list[VersionRef]] = field(default_factory=dict)
     status: dict[str, Status] = field(default_factory=dict)
     aliases: dict[tuple[str, str], str] = field(default_factory=dict)
+    pauses: dict[str, PauseState] = field(default_factory=dict)
     alias_log: list[AliasChange] = field(default_factory=list)
     eval_runs: list[EvalRun] = field(default_factory=list)
     approvals: list[Approval] = field(default_factory=list)
@@ -113,6 +115,15 @@ class _Tx:
     def set_alias(self, change: AliasChange) -> None:
         self._s.aliases[(change.agent_id, change.alias)] = change.after
         self._s.alias_log.append(change)
+
+    def get_pause(self, agent_id: str, *, for_update: bool = False) -> PauseState | None:
+        return self._s.pauses.get(agent_id)
+
+    def set_pause(self, state: PauseState) -> None:
+        self._s.pauses[state.agent_id] = state
+
+    def paused_agents(self) -> set[str]:
+        return {a for a, s in self._s.pauses.items() if s.paused}
 
     def aliases_to(self, release_id: str) -> list[tuple[str, str]]:
         return sorted(k for k, v in self._s.aliases.items() if v == release_id)

@@ -55,6 +55,7 @@ from agent_core.registry.models import (
     EntityVersion,
     EvalRun,
     Origin,
+    PauseState,
     Proposal,
     ProposalState,
     ReasonCode,
@@ -762,6 +763,38 @@ class RegistryService:
             self._event(tx, "promoted", actor, release_id=release_id, agent_id=agent_id, alias=alias,
                         before=change.before)
             return change
+
+    def pause_agent(self, actor: Principal, agent_id: str, reason: str = "") -> PauseState:
+        """Saca al agente del directorio de `recepcion` sin tocar `prod` (los casos ya abiertos siguen)."""
+        require_approver(actor)
+        with self._store.transaction() as tx:
+            prod = tx.get_alias(agent_id, "prod", for_update=True)
+            if prod is None:
+                raise RegistryError(RegistryErrorCode.not_found, "el agente no tiene release en prod")
+            current = tx.get_pause(agent_id, for_update=True)
+            if current is not None and current.paused:
+                raise RegistryError(RegistryErrorCode.illegal_transition, "el agente ya está en pausa")
+            state = PauseState(agent_id=agent_id, paused=True, release_id=prod, actor=actor_id(actor),
+                               at=self._clock.now())
+            tx.set_pause(state)
+            self._event(tx, "paused", actor, release_id=prod, agent_id=agent_id)
+            return state
+
+    def resume_agent(self, actor: Principal, agent_id: str, reason: str = "") -> PauseState:
+        require_approver(actor)
+        with self._store.transaction() as tx:
+            current = tx.get_pause(agent_id, for_update=True)
+            if current is None or not current.paused:
+                raise RegistryError(RegistryErrorCode.illegal_transition, "el agente no está en pausa")
+            state = PauseState(agent_id=agent_id, paused=False, release_id=tx.get_alias(agent_id, "prod"),
+                               actor=actor_id(actor), at=self._clock.now())
+            tx.set_pause(state)
+            self._event(tx, "resumed", actor, release_id=current.release_id, agent_id=agent_id)
+            return state
+
+    def get_pause(self, agent_id: str) -> PauseState:
+        with self._store.transaction() as tx:
+            return tx.get_pause(agent_id) or PauseState(agent_id=agent_id, paused=False, release_id=None)
 
     def revoke(self, actor: Principal, release_id: str, reason: str) -> ReleaseDetail:
         require_admin(actor)
