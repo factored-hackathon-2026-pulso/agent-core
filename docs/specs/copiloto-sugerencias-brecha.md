@@ -64,14 +64,14 @@ Coinciden: nombres snake_case en el HTTP de agent-core (`reason_code`, `motive_d
 ## 3. PII y texto no confiable
 - Todo slot entra al modelo envuelto como `untrusted_text` (M7 D8) y la PII detectada en el texto (tarjeta, correo, cédula, celular de los casos sintéticos) se sustituye por tokens del vault. Un cierre falso `</datos_no_confiables>` dentro de un turno queda escapado. No hace falta añadir `turnos[*].texto` al catálogo de campos.
 - **Salida (nuevo):** M8 rechaza una sugerencia con PII de un hecho (`find_clear_pii`), con un valor que M7 ocultó del mensaje del cliente (`find_tokenized_echo`, nuevo en M7 §3.7.1) o con cualquier token. La suite lo ejercita con mutaciones (la tarjeta y el correo del cliente vuelven en el borrador: la suite falla). El evento `suggestions_produced` nunca lleva texto.
-- **Hueco conocido de M7 (no corregido aquí):** el detector no ve un PAN con separadores U+200B, `/` o `_`, dígitos árabe-índicos, un celular con paréntesis ni un correo con `@` separado; esas variantes llegan en claro a la vista `model` y, al no entrar al vault, tampoco se detectan como eco en la salida (`test_known_gap_…` fija uno). Los casos sintéticos solo cubren formatos canónicos, así que **no** se demuestra que no haya fugas por formato.
+- **PII por formato (M7 rev. 4):** M7 normaliza antes de detectar; PAN con separadores/invisibles/dígitos Unicode y correos ofuscados (`arroba`, `[at]`, U+200B) se tokenizan (`test_m7_normalization_masks_obfuscated_pii_…`). Siguen sin cubrirse, y los casos sintéticos tampoco los demuestran: los límites listados en `m07 §3.2` (documentos de 6-9 dígitos partidos, dígitos en palabras, `at` suelto, `%40`, codificados, PII entre mensajes).
 - La evidencia de `escalate` sale de valores escalares de slots (o hechos) con la vista del detector: un valor con PII hace `gave_up`. La evidencia no se envía al modelo.
 - No se verificó con un modelo real que no repita PII: la suite usa un modelo guionado.
 - Reglas del validador independiente de `test_copiloto_sugerencias_data.py` que el ADR no fija (copiadas de la plataforma o supuestas): `text` ≤ 4000, `language` ∈ locales del agente, `evidence` ≥ 1, `why` no vacío.
 - `assistant_session_id`: la plataforma podría enviarlo en una rama que no pude leer; D2 vale para su código principal.
 
-### Pendientes de M7 (huecos hallados por la revisión; no se tocó el detector)
-PAN con U+00AD, U+2060, saltos de línea y 4+ espacios; dígitos árabe-índicos y fullwidth; celular con paréntesis + U+200B parcialmente tokenizado; correo ofuscado (`arroba`, `[at]`, ` @ `, `punto`, U+200B en el dominio) que llega a una sugerencia con `result=ok`; dígitos escritos con palabras. Hoy la única defensa contra cifras con separadores es el chequeo `numbers` (los `args` no lo tienen). **El agente de M7 (rama aparte) cubre la normalización antes de detectar; al fusionarse hay que re-correr la suite del copiloto.**
+### Pendientes de M7 (tras rev. 4)
+Cubierto por la normalización: PAN con U+00AD, U+2060, U+200B, saltos de línea, 4+ espacios, dígitos árabe-índicos/fullwidth; correo ofuscado. Pendiente: los límites de `m07 §3.2` ("Límites conocidos del detector"). La única defensa contra cifras con separadores no cubiertas sigue siendo el chequeo `numbers` (los `args` no lo tienen). Falta además un tope de longitud de mensaje aguas arriba (entradas de 1 MB tardan 0,5-5 s).
 
 ### Cambios de la ronda de correcciones (2026-10-05)
 - Esquema OpenAPI de `Step`/`Expect` conservado (`exclude_if` en vez de `model_serializer`; prueba `test_openapi_keeps_suite_schemas`).

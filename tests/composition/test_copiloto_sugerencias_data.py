@@ -371,10 +371,16 @@ def test_every_branch_of_the_validator_can_fail(items: object, fragment: str) ->
     assert any(fragment in p for p in _problems(items))
 
 
-def test_known_gap_the_m7_detector_misses_zero_width_separated_cards() -> None:
-    """Hueco de M7 (no de este cambio), hallado por el revisor: un PAN con U+200B entre grupos llega en claro.
-    Si esta prueba empieza a fallar, el detector se arregló: borra la prueba y actualiza la brecha §3."""
-    hostile = {"turnos": [{"rol": "cliente", "hora": "2026-10-04T15:00:00+00:00",
-                           "texto": "tarjeta 4111​1111​1111​1111"}]}
+@pytest.mark.parametrize("text, leaked", [
+    ("tarjeta 4111​1111​1111​1111", "4111"),
+    ("tarjeta 4111­1111⁠1111​1111", "4111"),
+    ("tarjeta ٤١١١ 1111 1111 1111", "1111 1111"),
+    ("escribe a ana.prueba arroba example.test", "ana.prueba"),
+    ("escribe a ana.prueba [at] example.test", "ana.prueba"),
+    ("escribe a ana.prueba@exam​ple.test", "ana.prueba"),
+])
+def test_m7_normalization_masks_obfuscated_pii_before_it_reaches_the_model(text: str, leaked: str) -> None:
+    """Antes era `test_known_gap_…`: M7 normaliza antes de detectar, así que estas variantes ya no llegan en claro."""
+    hostile = {"turnos": [{"rol": "cliente", "hora": "2026-10-04T15:00:00+00:00", "texto": text}]}
     model, _ = _model_and_audit(hostile, FieldClassifier())
-    assert leaks(model, ["4111111111111111"]) == [] and "4111" in model  # fuga real, pero `leaks` no la ve
+    assert leaked not in model and "⟦" in model
