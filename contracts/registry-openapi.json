@@ -4103,25 +4103,7 @@
         "type": "object"
       },
       "ScenarioPrincipal": {
-        "additionalProperties": false,
-        "properties": {
-          "attrs": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "title": "Attrs",
-            "type": "object"
-          },
-          "id": {
-            "minLength": 1,
-            "title": "Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id"
-        ],
-        "title": "ScenarioPrincipal",
+        "additionalProperties": true,
         "type": "object"
       },
       "ScenarioResult": {

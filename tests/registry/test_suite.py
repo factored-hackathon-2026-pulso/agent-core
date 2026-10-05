@@ -162,3 +162,33 @@ def test_problems_are_sorted_and_deterministic() -> None:
     first, second = suite_problems(agent, s), suite_problems(agent, s)
     assert first == second == sorted(first, key=lambda p: (p.path, p.code.value))
     assert len(first) == 4  # two missing thresholds, one unknown and the dataset
+
+
+# --- scenario principal: optional type and subject (advisor-invocable agents) -------------------------
+
+def _principal_suite(principal: dict[str, Any]) -> dict[str, Any]:
+    content = suite_content()
+    content["scenarios"][0]["principal"] = principal
+    return content
+
+
+def test_a_customer_principal_keeps_its_serialisation_and_hash_when_the_new_fields_are_omitted() -> None:
+    plain = EvalSuite.model_validate(suite_content())
+    dumped = plain.model_dump(mode="json", by_alias=True)
+    assert dumped["scenarios"][0]["principal"] == {"id": "cust-001", "attrs": {}}
+
+
+def test_an_advisor_principal_needs_a_subject() -> None:
+    with pytest.raises(ValidationError, match="subject"):
+        EvalSuite.model_validate(_principal_suite({"id": "adv-1", "type": "advisor"}))
+    ok = EvalSuite.model_validate(_principal_suite(
+        {"id": "adv-1", "type": "advisor", "subject": {"kind": "customer", "ref": "cust-001"}}))
+    principal = ok.scenarios[0].principal  # type: ignore[union-attr]
+    assert principal.type == "advisor"
+    assert principal.subject is not None and principal.subject.ref == "cust-001"
+    assert ok.model_dump(mode="json")["scenarios"][0]["principal"]["type"] == "advisor"
+
+
+def test_only_customer_and_advisor_principals_are_allowed() -> None:
+    with pytest.raises(ValidationError):
+        EvalSuite.model_validate(_principal_suite({"id": "x", "type": "builder"}))
