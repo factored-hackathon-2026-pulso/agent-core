@@ -137,6 +137,10 @@ class _PgTx:
                         (proposal_id,))
         return Proposal.model_validate(loads(row[0])) if row else None
 
+    def list_proposals(self) -> list[Proposal]:
+        rows = self._c.execute("SELECT proposal_json FROM reg_proposals").fetchall()
+        return [Proposal.model_validate(loads(r[0])) for r in rows]
+
     def save_proposal(self, proposal: Proposal) -> None:
         self._c.execute("INSERT INTO reg_proposals (proposal_id, proposal_json) VALUES (%s, %s) "
                         "ON CONFLICT (proposal_id) DO UPDATE SET proposal_json = EXCLUDED.proposal_json",

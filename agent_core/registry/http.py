@@ -3,19 +3,69 @@
 from collections.abc import Callable
 from typing import Annotated, Any
 
-from fastapi import APIRouter, FastAPI, Header, Request
+from fastapi import APIRouter, FastAPI, Header, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
 from agent_core.domain import CredentialsInvalid, EngineError, Principal, ProblemCode, dumps
 from agent_core.ports import Clock, IdentityVerifier
+from agent_core.registry.candidate import Candidate
 from agent_core.registry.errors import HTTP_STATUS, RegistryError, RegistryErrorCode
-from agent_core.registry.models import EntityDraft, Origin
+from agent_core.registry.evaluation.report import EvalReport
+from agent_core.registry.models import (
+    AliasChange,
+    AliasState,
+    Approval,
+    EntityDraft,
+    EntityVersion,
+    Origin,
+    Proposal,
+    ProposalState,
+    ReleaseDetail,
+    ReleaseDiff,
+    RunLineage,
+    VersionSummary,
+)
 from agent_core.registry.roles import require_builder
-from agent_core.registry.service import RegistryService
+from agent_core.registry.service import ProposalDetail, ProposalPage, RegistryService, ValidationReport
 
 Authenticate = Callable[[Request, str | None], Principal]
 Auth = Annotated[str | None, Header(alias="authorization")]
+_IDEM_DOC = ("Reintentar con la misma clave devuelve el mismo resultado; "
+             "la misma clave con otro cuerpo da 409 idempotency_conflict.")
+IdemKey = Annotated[str | None, Header(alias="idempotency-key", max_length=255, description=_IDEM_DOC)]
+
+
+class ProblemDoc(BaseModel):
+    """`application/problem+json` del registry (spec §7.4). `violations` solo en `validation_failed`."""
+
+    type: str
+    title: str
+    status: int
+    code: str
+    detail: str | None = None
+    trace_id: str | None = None
+    violations: list[Any] | None = None
+    payload: Any | None = None
+
+
+_ERRORS = {401: "credencial ausente, inválida o vencida", 403: "rol insuficiente o step-up requerido",
+           404: "no existe", 409: "conflicto de estado, de revisión o de idempotencia",
+           422: "cuerpo o validación inválidos", 429: "tope de cuota"}
+
+
+def _doc(model: Any, status: int = 200, *errors: int) -> dict[str, Any]:
+    """Documentación OpenAPI de una ruta: el cuerpo de éxito y los problem+json posibles. Solo documenta;
+    los handlers devuelven `Response` ya serializada con `dumps`."""
+    codes = sorted({401, 403, *errors})
+    return {
+        "status_code": status,
+        "responses": {
+            status: {"model": model, "description": "OK"},
+            **{c: {"model": ProblemDoc, "description": _ERRORS[c], "content": {
+                "application/problem+json": {"schema": {"$ref": "#/components/schemas/ProblemDoc"}}}}
+               for c in codes}},
+    }
 
 
 class _Create(BaseModel):
@@ -129,48 +179,73 @@ def registry_extension(service: RegistryService, verifier: IdentityVerifier | No
             require_builder(principal)  # incluye las lecturas
             return principal
 
-        @router.post("/proposals", status_code=201)
-        def create(request: Request, body: _Create, authorization: Auth = None) -> Response:
+        @router.post("/proposals", **_doc(Proposal, 201, 409, 422, 429))
+        def create(request: Request, body: _Create, authorization: Auth = None,
+                   idempotency_key: IdemKey = None) -> Response:
             actor = who(request, authorization)
-            return _json(service.create_proposal(actor, body.agent_id, body.origin, body.title), 201)
+            created = service.create_proposal(actor, body.agent_id, body.origin, body.title,
+                                              idempotency_key=idempotency_key)
+            return _json(created, 201)
 
-        @router.get("/proposals/{pid}")
+        @router.get("/proposals", **_doc(ProposalPage, 200, 422))
+        def listing(
+            request: Request,
+            agent_id: str | None = None,
+            state: ProposalState | None = None,
+            created_by: str | None = None,
+            limit: Annotated[int, Query(description="1 a 200; más grande se acota")] = 50,
+            offset: Annotated[int, Query(ge=0)] = 0,
+            authorization: Auth = None,
+        ) -> Response:
+            """Más recientes primero. Solo lectura, para cualquier `builder`."""
+            page = service.list_proposals(who(request, authorization), agent_id=agent_id,
+                                          state=None if state is None else state.value, created_by=created_by,
+                                          limit=limit, offset=offset)
+            return _json(page)
+
+        @router.get("/proposals/{pid}", **_doc(ProposalDetail, 200, 404))
         def show(request: Request, pid: str, authorization: Auth = None) -> Response:
             who(request, authorization)
             return _json(service.get_proposal(pid))
 
-        @router.put("/proposals/{pid}/draft")
-        def draft(request: Request, pid: str, body: _Draft, authorization: Auth = None) -> Response:
-            return _json(service.put_draft(who(request, authorization), pid, body.changes, body.expected_rev))
+        @router.put("/proposals/{pid}/draft", **_doc(Proposal, 200, 404, 409, 422))
+        def draft(request: Request, pid: str, body: _Draft, authorization: Auth = None,
+                  idempotency_key: IdemKey = None) -> Response:
+            return _json(service.put_draft(who(request, authorization), pid, body.changes, body.expected_rev,
+                                           idempotency_key=idempotency_key))
 
-        @router.post("/proposals/{pid}/validate")
+        @router.post("/proposals/{pid}/validate", **_doc(ValidationReport, 200, 404))
         def validate(request: Request, pid: str, authorization: Auth = None) -> Response:
             return _json(service.validate(who(request, authorization), pid))
 
-        @router.post("/proposals/{pid}/freeze")
-        def freeze(request: Request, pid: str, authorization: Auth = None) -> Response:
-            return _json(service.freeze(who(request, authorization), pid))
+        @router.post("/proposals/{pid}/freeze", **_doc(Candidate, 200, 404, 409, 422))
+        def freeze(request: Request, pid: str, authorization: Auth = None,
+                   idempotency_key: IdemKey = None) -> Response:
+            return _json(service.freeze(who(request, authorization), pid, idempotency_key=idempotency_key))
 
-        @router.post("/proposals/{pid}/reopen")
-        def reopen(request: Request, pid: str, authorization: Auth = None) -> Response:
-            return _json(service.reopen(who(request, authorization), pid))
+        @router.post("/proposals/{pid}/reopen", **_doc(Proposal, 200, 404, 409))
+        def reopen(request: Request, pid: str, authorization: Auth = None,
+                   idempotency_key: IdemKey = None) -> Response:
+            return _json(service.reopen(who(request, authorization), pid, idempotency_key=idempotency_key))
 
-        @router.post("/proposals/{pid}/evaluate")
-        def evaluate(request: Request, pid: str, body: _Evaluate, authorization: Auth = None) -> Response:
+        @router.post("/proposals/{pid}/evaluate", **_doc(EvalReport, 200, 404, 409, 422, 429))
+        def evaluate(request: Request, pid: str, body: _Evaluate, authorization: Auth = None,
+                     idempotency_key: IdemKey = None) -> Response:
             actor = who(request, authorization)
-            return _json(service.evaluate(actor, pid, body.suite_id, body.suite_version))
+            return _json(service.evaluate(actor, pid, body.suite_id, body.suite_version,
+                                          idempotency_key=idempotency_key))
 
-        @router.post("/proposals/{pid}/approve")
+        @router.post("/proposals/{pid}/approve", **_doc(Approval, 200, 404, 409))
         def approve(request: Request, pid: str, body: _Approve, authorization: Auth = None) -> Response:
             approval = service.approve(who(request, authorization), pid, body.candidate_hash,
                                        accept_yardstick_loosened=body.accept_yardstick_loosened)
             return _json(approval)
 
-        @router.post("/proposals/{pid}/reject")
+        @router.post("/proposals/{pid}/reject", **_doc(Proposal, 200, 404, 409))
         def reject(request: Request, pid: str, body: _Reason, authorization: Auth = None) -> Response:
             return _json(service.reject(who(request, authorization), pid, body.reason))
 
-        @router.post("/proposals/{pid}/publish")
+        @router.post("/proposals/{pid}/publish", **_doc(ReleaseDetail, 200, 404, 409, 422))
         def publish(
             request: Request,
             pid: str,
@@ -179,45 +254,45 @@ def registry_extension(service: RegistryService, verifier: IdentityVerifier | No
         ) -> Response:
             return _json(service.publish(who(request, authorization), pid, idempotency_key))
 
-        @router.post("/aliases/{agent_id}/{alias}")
+        @router.post("/aliases/{agent_id}/{alias}", **_doc(AliasChange, 200, 404, 409, 422))
         def promote(
             request: Request, agent_id: str, alias: str, body: _Promote, authorization: Auth = None
         ) -> Response:
             actor = who(request, authorization)
             return _json(service.promote(actor, agent_id, alias, body.release_id, body.reason))
 
-        @router.get("/aliases/{agent_id}/{alias}")
+        @router.get("/aliases/{agent_id}/{alias}", **_doc(AliasState, 200, 404))
         def alias_state(request: Request, agent_id: str, alias: str, authorization: Auth = None) -> Response:
             who(request, authorization)
             return _json(service.get_alias(agent_id, alias))
 
-        @router.get("/versions/{kind}/{eid:path}")
+        @router.get("/versions/{kind}/{eid:path}", **_doc(list[VersionSummary], 200, 404))
         def versions(request: Request, kind: str, eid: str, authorization: Auth = None) -> Response:
             """Versiones de una entidad, de la más antigua a la más reciente (`eid` admite `/`)."""
             who(request, authorization)
             return _json(service.list_versions(kind, eid))
 
-        @router.post("/releases/{rid}/revoke")
+        @router.post("/releases/{rid}/revoke", **_doc(ReleaseDetail, 200, 404, 409))
         def revoke(request: Request, rid: str, body: _Reason, authorization: Auth = None) -> Response:
             return _json(service.revoke(who(request, authorization), rid, body.reason))
 
-        @router.get("/releases/{rid}")
+        @router.get("/releases/{rid}", **_doc(ReleaseDetail, 200, 404))
         def release(request: Request, rid: str, authorization: Auth = None) -> Response:
             who(request, authorization)
             return _json(service.get_release(rid))
 
-        @router.get("/releases/{a}/diff/{b}")
+        @router.get("/releases/{a}/diff/{b}", **_doc(ReleaseDiff, 200, 404))
         def diff(request: Request, a: str, b: str, authorization: Auth = None) -> Response:
             who(request, authorization)
             return _json(service.diff_releases(a, b))
 
-        @router.get("/entities/{kind}/{eid:path}")
+        @router.get("/entities/{kind}/{eid:path}", **_doc(EntityVersion, 200, 404))
         def entity(request: Request, kind: str, eid: str, authorization: Auth = None) -> Response:
             """`eid` admite `/` (p. ej. `t/saludo`); una versión se pide con `?version=`."""
             who(request, authorization)
             return _json(service.get_entity(kind, eid, request.query_params.get("version")))
 
-        @router.get("/runs/{run_id}/lineage")
+        @router.get("/runs/{run_id}/lineage", **_doc(RunLineage, 200, 404))
         def lineage(request: Request, run_id: str, authorization: Auth = None) -> Response:
             return _json(service.lineage_for_run(who(request, authorization), run_id))
 

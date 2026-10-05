@@ -57,6 +57,9 @@ class _Tx:
     def get_proposal(self, proposal_id: str, *, for_update: bool = False) -> Proposal | None:
         return self._s.proposals.get(proposal_id)
 
+    def list_proposals(self) -> list[Proposal]:
+        return list(self._s.proposals.values())
+
     def save_proposal(self, proposal: Proposal) -> None:
         self._s.proposals[proposal.proposal_id] = proposal
 
