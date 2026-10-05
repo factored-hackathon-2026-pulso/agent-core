@@ -3,10 +3,16 @@ version: 1.0.0
 priority: 50
 nodes:
   - {id: pedir_radicado, type: collect, config: {slot: radicado, prompt_ref: t/pedir_radicado, max_attempts: 2},
-     next: {ok: consultar, max_attempts: esc_sin_datos}}
-  - {id: consultar, type: tool, config: {tool: obtener_pqr@1, args: {radicado: slots.radicado}, save_as: pqr},
+     next: {ok: leer_casos, max_attempts: esc_sin_datos}}
+  - {id: leer_casos, type: tool, config: {tool: leer_pqr_cliente@1, args: {limite: 50}, save_as: casos},
+     next: {ok: coincide, error: esc_tool, timeout: esc_tool, denied: esc_tool}}
+  - {id: coincide, type: decide, config: {model: match-radicado@1, branch_on: match, save_as: coincide},
+     next: {unica: elegir, ninguna: no_encontrado, low_confidence: no_encontrado}}
+  - {id: elegir, type: tool, config: {tool: seleccionar_caso@1, args: {lista: facts.casos.value, id: decisions.coincide.case_id}, save_as: caso},
      next: {ok: responder, error: esc_tool, timeout: esc_tool, denied: esc_tool}}
-  - {id: responder, type: respond, config: {template_ref: t/estado_pqr}, next: {next: fin}}
+  - {id: responder, type: respond, config: {generate: {prompt_ref: p/estado_pqr@1, allowed_facts: [facts.caso], fallback_template_ref: t/estado_pqr@1}},
+     next: {next: fin}}
   - {id: fin, type: end, config: {outcome: resolved}}
+  - {id: no_encontrado, type: respond, config: {template_ref: t/radicado_no_encontrado, await: true}, next: {next: pedir_radicado}}
   - {id: esc_sin_datos, type: escalate, config: {reason_code: low_confidence}}
   - {id: esc_tool, type: escalate, config: {reason_code: tool_failure}}

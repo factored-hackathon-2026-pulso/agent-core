@@ -3,10 +3,15 @@ version: 1.0.0
 risk_class: read
 min_auth_level: session
 idempotent: true
-source: movimientos
-description: "Lista los últimos movimientos de la tarjeta del cliente atendido (monto, comercio, fecha, estado)."
+source: customer_transactions
+description: Lista los últimos movimientos del cliente atendido, del más reciente al más antiguo (monto, comercio,
+  fecha, estado). amount_usd es aproximado cuando amount_usd_source es 'derived_fx'; 'reported' es el valor original.
 args_schema:
   type: object
   additionalProperties: false
   properties:
-    limite: {type: integer, enum: [5, 10, 20, 50]}   # cota: el subconjunto de esquema no tiene `maximum`
+    limite:
+      type: integer
+      default: 10
+    product_id:
+      type: string

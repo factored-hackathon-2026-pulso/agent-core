@@ -4,7 +4,9 @@ risk_class: read
 min_auth_level: session
 idempotent: true
 source: customer_products
-description: Lista los productos del cliente atendido (tipo, saldo, cupo, tasa, estado, mora).
+description: 'Lista los productos del cliente atendido (tipo, saldo, cupo, tasa, estado, mora). Un credit_limit
+  nulo con credit_limit_applicable=false significa que el producto no tiene cupo (no aplica); con credit_limit_applicable=true
+  significa que el cupo se desconoce (is_missing_credit_limit): no lo digas como ''sin cupo''.'
 args_schema:
   type: object
   additionalProperties: false

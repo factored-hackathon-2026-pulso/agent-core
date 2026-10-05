@@ -440,12 +440,12 @@ def test_only_the_echo_wiring_catches_the_card_the_customer_pasted() -> None:
     assert "tokens_pii" in failures_of("pii-en-el-texto-del-cliente", tamper_model=leaky)
 
 
-def test_an_oversized_arg_is_rejected_by_the_tool_schema() -> None:
-    huge = only(
-        "tool-de-lectura",
-        lambda c, o: first_with(o, args={"limite": 999999999}),
-    )
-    assert "args_invalid" in failures_of("tool-de-lectura", tamper_model=huge)
+def test_an_arg_outside_the_tool_schema_is_rejected() -> None:
+    """La tool es la del contrato del tool-service (`registry-e2e`): su esquema no tiene cota numérica, que
+    aplica el servicio (`limite` de 1 a 50). Lo que agent-core rechaza aquí es el tipo y lo no declarado."""
+    for args in ({"limite": "todo"}, {"limite": 5, "texto": "x"}):
+        wrong = only("tool-de-lectura", lambda c, o, args=args: first_with(o, args=args))
+        assert "args_invalid" in failures_of("tool-de-lectura", tamper_model=wrong)
 
 
 def test_the_obedient_model_is_contained_by_the_core_not_by_the_model() -> None:

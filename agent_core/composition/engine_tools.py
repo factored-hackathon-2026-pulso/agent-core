@@ -1,11 +1,14 @@
-"""Tools que sirve el propio motor (composición), no un tool provider: `seleccionar`, `convertir_moneda`,
-`obtener_handoff` y `leer_transcript`.
+"""Tools que sirve el propio motor (composición), no un tool provider: `seleccionar`, `seleccionar_caso`,
+`convertir_moneda`, `obtener_handoff` y `leer_transcript`.
 
 Envuelve el `ToolExecutor` real (el `HttpToolExecutor` del tool-service), como `DirectoryToolExecutor`:
 lo que no es una de estas cuatro tools pasa tal cual. Se activa solo en `serve`
 (`EngineDeps.engine_tools`); el replay y la evaluación siguen con sus dobles guionados.
 
 - `seleccionar` (compute): el elemento de `lista` cuyo `transaction_id` es `id`.
+- `seleccionar_caso` (compute): el elemento de `lista` cuyo `case_id` es `id`. Es una tool aparte porque la
+  tabla de origen (`source`) sale de la definición de la tool, y de ella depende cómo se clasifican los campos
+  del elemento (`customer_cases` y no `customer_transactions`).
 - `convertir_moneda` (compute): monto × tasa con una tabla FIJA de un archivo de despliegue
   (`AGENTCORE_FX_RATES_FILE`, `{"USD": "1", "MXN": "0.055", ...}`, USD por unidad de cada moneda). No es
   una fuente de mercado: el resultado es aproximado. Sin tabla, la tool falla cerrada (`fx_unconfigured`).
@@ -51,7 +54,8 @@ DEFAULT_TURNS = 20
 MAX_TURNS = 50
 _CENT = Decimal("0.01")
 
-ENGINE_TOOL_IDS = frozenset({"seleccionar", "convertir_moneda", "obtener_handoff", "leer_transcript"})
+ENGINE_TOOL_IDS = frozenset({"seleccionar", "seleccionar_caso", "convertir_moneda", "obtener_handoff",
+                             "leer_transcript"})
 
 Handler = Callable[[dict[str, JsonValue], ToolCallContext, str, str], ToolResult]
 
@@ -155,7 +159,8 @@ class EngineToolExecutor:
         self._transcripts = transcripts
         self._fx = fx_rates
         self._handlers: dict[str, Handler] = {
-            "seleccionar": self._seleccionar, "convertir_moneda": self._convertir,
+            "seleccionar": self._seleccionar, "seleccionar_caso": self._seleccionar_caso,
+            "convertir_moneda": self._convertir,
             "obtener_handoff": self._handoff, "leer_transcript": self._transcript}
 
     def definition(self, tool: EntityRef) -> ToolDef:
@@ -173,15 +178,24 @@ class EngineToolExecutor:
     # --- compute -----------------------------------------------------------------------------------------
 
     @staticmethod
-    def _seleccionar(args: dict[str, JsonValue], ctx: ToolCallContext, call_id: str,
-                     source: str) -> ToolResult:
+    def _pick(args: dict[str, JsonValue], call_id: str, source: str, key: str) -> ToolResult:
         lista, wanted = args.get("lista"), args.get("id")
         if not isinstance(lista, list) or not isinstance(wanted, str) or not wanted:
             return _error(call_id, "bad_args")
         for item in lista:
-            if isinstance(item, dict) and item.get("transaction_id") == wanted:
+            if isinstance(item, dict) and item.get(key) == wanted:
                 return _ok(call_id, item, source)
         return _error(call_id, "not_found")
+
+    @staticmethod
+    def _seleccionar(args: dict[str, JsonValue], ctx: ToolCallContext, call_id: str,
+                     source: str) -> ToolResult:
+        return EngineToolExecutor._pick(args, call_id, source, "transaction_id")
+
+    @staticmethod
+    def _seleccionar_caso(args: dict[str, JsonValue], ctx: ToolCallContext, call_id: str,
+                          source: str) -> ToolResult:
+        return EngineToolExecutor._pick(args, call_id, source, "case_id")
 
     def _convertir(self, args: dict[str, JsonValue], ctx: ToolCallContext, call_id: str,
                    source: str) -> ToolResult:

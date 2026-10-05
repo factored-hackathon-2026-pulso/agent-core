@@ -90,6 +90,7 @@ def _executor(fx: dict[str, Decimal] | None = None, *, deny_handoff: bool = Fals
     ids = FakeIds()
     inner = FakeToolExecutor(ids)
     inner.register(_def("seleccionar", "compute", "customer_transactions"), handler=lambda a: None)
+    inner.register(_def("seleccionar_caso", "compute", "customer_cases"), handler=lambda a: None)
     inner.register(_def("convertir_moneda", "compute"), handler=lambda a: None)
     inner.register(_def("obtener_handoff", "read", "handoff"), handler=lambda a: None)
     inner.register(_def("leer_transcript", "read", "transcript"), handler=lambda a: None)
@@ -120,6 +121,24 @@ def test_seleccionar_returns_the_item_with_that_transaction_id_keeping_the_sourc
     assert result.status is ToolStatus.ok
     assert result.result_full == {"transaction_id": "tx-2", "amount": "2"}
     assert result.source == "customer_transactions"
+
+
+def test_seleccionar_caso_returns_the_case_keeping_its_own_source_table() -> None:
+    executor, _, _ = _executor()
+    lista: list[JsonValue] = [{"case_id": "CMP-1", "complaint_status": "Open"},
+                              {"case_id": "CMP-2", "complaint_status": "Closed"}]
+    result = executor.execute(_ref("seleccionar_caso"), {"lista": lista, "id": "CMP-2"}, {}, _ctx())
+    assert result.status is ToolStatus.ok
+    assert result.result_full == {"case_id": "CMP-2", "complaint_status": "Closed"}
+    assert result.source == "customer_cases"  # no `customer_transactions`: los campos se clasifican por tabla
+
+
+def test_seleccionar_caso_does_not_match_a_transaction_id_nor_an_unknown_case() -> None:
+    executor, _, _ = _executor()
+    lista: list[JsonValue] = [{"transaction_id": "tx-1"}, {"case_id": "CMP-1"}]
+    for wanted in ("tx-1", "CMP-9"):
+        result = executor.execute(_ref("seleccionar_caso"), {"lista": lista, "id": wanted}, {}, _ctx())
+        assert result.status is ToolStatus.error
 
 
 @pytest.mark.parametrize("args", [{"lista": [], "id": "tx-9"}, {"lista": "x", "id": "tx-1"}, {"lista": []}])

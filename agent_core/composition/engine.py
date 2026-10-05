@@ -53,8 +53,9 @@ class EngineConfig:
 
 @dataclass(frozen=True)
 class EngineTools:
-    """Las tools que sirve el motor (`seleccionar`, `convertir_moneda`, `obtener_handoff`, `leer_transcript`;
-    `composition.engine_tools`). Solo `serve` las activa; `fx_rates` None deja `convertir_moneda` cerrada."""
+    """Las tools que sirve el motor (`seleccionar`, `seleccionar_caso`, `convertir_moneda`, `obtener_handoff`,
+    `leer_transcript`; `composition.engine_tools`). Solo `serve` las activa; `fx_rates` None deja
+    `convertir_moneda` cerrada."""
 
     fx_rates: Mapping[str, Decimal] | None = None
 
