@@ -14,6 +14,7 @@ from fastapi.telemetry import TelemetryConfig
 from agent_core.api.authorization import RunAuthorizer
 from agent_core.api.body_limit import DEFAULT_MAX_BODY_BYTES, BodyLimit
 from agent_core.api.gate import ANON_SESSION_ATTR, AccessGate, Admitted
+from agent_core.api.inflight import InflightLimit
 from agent_core.api.limits import LimitGuard, RateLimitConfig
 from agent_core.api.problems import install_error_handlers
 from agent_core.api.protocols import (
@@ -107,6 +108,7 @@ class ApiDeps:
     readiness: tuple[tuple[str, Callable[[], bool]], ...] = ()
     # Nombres de `readiness` que solo se informan (`degraded`): su caída no vuelve el servicio no listo.
     optional_checks: frozenset[str] = frozenset()
+    max_inflight: int = 0  # tope de peticiones `/v1` simultáneas del proceso; 0 = sin tope
     readiness_timeout_s: float = 1.0  # plazo de todas las comprobaciones juntas; una lenta falla
     build_sha: str | None = None  # commit de la imagen (`AGENTCORE_GIT_SHA`); lo informa `/version` (N-04)
 
@@ -146,6 +148,8 @@ def create_app(deps: ApiDeps) -> FastAPI:
     app = FastAPI(title="agent-core", version=SCHEMA_VERSION, telemetry=FASTAPI_TELEMETRY_OFF)
     # Antes que el tracing: Starlette deja interno el primer middleware, así el 413 ya lleva `trace_id`.
     app.add_middleware(BodyLimit, max_bytes=deps.max_body_bytes)
+    if deps.max_inflight > 0:
+        app.add_middleware(InflightLimit, max_inflight=deps.max_inflight)
     install_tracing(app, deps.ids)
     install_error_handlers(app)
 
