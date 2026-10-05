@@ -30,7 +30,7 @@ def test_serve_without_demo_and_without_pieces_exits_2_and_names_them(
     monkeypatch.delenv("AGENTCORE_ALLOW_DOUBLES", raising=False)
     code = main(["serve", "--dsn", "postgresql://x/y"])
     err = capsys.readouterr().err
-    assert code == 2 and "--tools" in err and "AGENTCORE_ALLOW_DOUBLES=1" in err
+    assert code == 2 and "AGENTCORE_IDENTITY_KEYS_FILE" in err
 
 
 def test_run_serve_prints_the_doubles_and_starts_uvicorn(

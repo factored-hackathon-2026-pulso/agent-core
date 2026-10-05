@@ -54,6 +54,10 @@ EVAL_DSN_ENV = "AGENTCORE_EVAL_DSN"
 AGENTS_ENV = "AGENTCORE_SERVE_AGENTS"
 LANG_THRESHOLDS_ENV = "AGENTCORE_LANG_THRESHOLDS"  # archivo JSON con los umbrales de idioma (M6 §3.1.7)
 POOL_MAX_ENV = "AGENTCORE_DB_POOL_MAX"  # conexiones máximas por proceso; 0 o ausente = una por operación
+IDENTITY_KEYS_ENV = "AGENTCORE_IDENTITY_KEYS_FILE"  # equivale a --identity-keys
+STAFF_KEYS_ENV = "AGENTCORE_STAFF_KEYS_FILE"  # equivale a --staff-keys
+REGISTRY_API_ENV = "AGENTCORE_REGISTRY_API"  # "1" equivale a --registry-api
+KEYS_RELOAD_ENV = "AGENTCORE_KEYS_RELOAD_SECONDS"  # equivale a --keys-reload-seconds (defecto 5)
 DEMO_VERIFIER = "testing.registry_demo:demo_verifier"
 _KEY_VARS = ("AGENTCORE_KEYS_FINGERPRINT", "AGENTCORE_KEYS_TOKEN_MAP")
 
@@ -72,6 +76,23 @@ _DOUBLES: tuple[tuple[str, str, str], ...] = (
 def doubles_allowed(env: Mapping[str, str]) -> bool:
     """`True` si el entorno permite dobles de demo: `AGENTCORE_ALLOW_DOUBLES=1` o el nombre heredado."""
     return env.get(DOUBLES_ENV) == "1" or env.get(LEGACY_DOUBLES_ENV) == "1"
+
+
+# Pieza reales por defecto fuera de demo: cada una se configura con su propio entorno (ver docs/serve-env.md).
+_REAL: dict[str, str] = {
+    "tools": "agent_core.adapters.tools.http_executor:http_tool_executor",
+    "authz": "agent_core.adapters.policy_authz:policy_authz",
+    "transcript": "agent_core.composition.transcript:transcript",
+    "calibration": "agent_core.composition.artifacts:calibration",
+    "classifier": "agent_core.composition.artifacts:classifier_provider",
+    "field-classifier": "agent_core.composition.classification:field_classifier",
+    "grant-active": "agent_core.adapters.grants:http_grant_active",
+}
+
+
+def _path_env(env: Mapping[str, str], name: str) -> Path | None:
+    value = (env.get(name) or "").strip()
+    return Path(value) if value else None
 
 
 class ServeConfigError(Exception):
@@ -149,7 +170,7 @@ def add_serve_parser(sub: Any) -> None:
                             "en la lista de procesos. No se imprime nunca")
     serve.add_argument("--identity-keys", type=Path, default=None,
                        help="archivo con las claves públicas de identidad (principal y delegación)")
-    serve.add_argument("--keys-reload-seconds", type=float, default=5.0,
+    serve.add_argument("--keys-reload-seconds", type=float, default=None,
                        help="cada cuántos segundos, a lo sumo, se vuelve a leer --identity-keys y "
                             "--staff-keys (rotar sin reiniciar; una lectura rota conserva las últimas "
                             "claves buenas); 0 lo apaga")
@@ -280,27 +301,32 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         given = getattr(args, attr)
         if demo:
             chosen[name] = given or default
-        elif given is None:
-            problems.append(f"falta {name}: pasa {_flag(attr)} con una pieza real; "
-                            f"los dobles de demo solo se usan con {DOUBLES_ENV}=1")
-        elif _is_test_double(given):
+        elif given is not None and _is_test_double(given):
             problems.append(f"{name}: `{given}` es un doble de prueba; solo se usa con {DOUBLES_ENV}=1")
         else:
-            chosen[name] = given
-    if not demo and args.identity_keys is None:
-        problems.append("falta --identity-keys (archivo de claves públicas de identidad)")
+            chosen[name] = given or _REAL[name]
+    identity_keys = args.identity_keys or _path_env(env, IDENTITY_KEYS_ENV)
+    staff_keys = args.staff_keys or _path_env(env, STAFF_KEYS_ENV)
+    registry_api = args.registry_api or env.get(REGISTRY_API_ENV) == "1"
+    if not demo and identity_keys is None:
+        problems.append(f"falta --identity-keys (o {IDENTITY_KEYS_ENV}): claves públicas de identidad")
 
     # Configuración estática: se valida entera antes de ejecutar cualquier fábrica de pieza.
-    reload_seconds = getattr(args, "keys_reload_seconds", 5.0)
+    reload_seconds = getattr(args, "keys_reload_seconds", None)
+    if reload_seconds is None:
+        try:
+            reload_seconds = float(env.get(KEYS_RELOAD_ENV) or 5.0)
+        except ValueError:
+            reload_seconds = -1.0
     if reload_seconds < 0:
-        problems.append("--keys-reload-seconds no puede ser negativo")
+        problems.append(f"--keys-reload-seconds ({KEYS_RELOAD_ENV}) debe ser un número >= 0")
     reload_every = timedelta(seconds=max(reload_seconds, 0.0))
     grant_active: list[Callable[[str, datetime], bool]] = []  # lo llena la fábrica de `grant-active`
     verifier: IdentityVerifier | None = None
-    if args.identity_keys is not None:
+    if identity_keys is not None:
         try:
             verifier = ReloadingIdentityVerifier(
-                args.identity_keys, lambda ref, now: grant_active[0](ref, now), clock, reload_every)
+                identity_keys, lambda ref, now: grant_active[0](ref, now), clock, reload_every)
         except SchemaError as exc:
             problems.append(str(exc))
     if not demo and not (env.get(JEV_KEY_ENV) or "").strip():
@@ -314,7 +340,7 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         problems.append(str(exc))
     eval_dsn: str | None = None
     staff_verifier: IdentityVerifier | None = None
-    if args.registry_api:
+    if registry_api:
         eval_dsn = args.eval_dsn or env.get(EVAL_DSN_ENV)
         if not eval_dsn:
             problems.append(f"falta --eval-dsn (o {EVAL_DSN_ENV}): las evaluaciones del registry usan "
@@ -322,14 +348,14 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         elif eval_dsn == dsn:
             problems.append("--eval-dsn debe ser distinto de --dsn: las evaluaciones no pueden "
                             "escribir en la base de producción")
-        if args.staff_keys is not None:
+        if staff_keys is not None:
             try:
                 staff_verifier = ReloadingIdentityVerifier(
-                    args.staff_keys, lambda ref, now: False, clock, reload_every, delegation=False)
+                    staff_keys, lambda ref, now: False, clock, reload_every, delegation=False)
             except SchemaError as exc:
                 problems.append(f"--staff-keys: {exc}")
         elif not demo:
-            problems.append("falta --staff-keys (archivo de claves públicas del emisor del staff)")
+            problems.append(f"falta --staff-keys (o {STAFF_KEYS_ENV}): claves públicas del emisor del staff")
     if problems or not dsn or keys is None:
         raise ServeConfigError(problems)
 
@@ -342,7 +368,9 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         try:
             piece = _load(path)(ctx)
         except Exception as exc:  # código de usuario: cualquier fallo es un problema de configuración
-            problems.append(f"no se pudo cargar {name} ({path}): {type(exc).__name__}; "
+            # Un `SchemaError` de una fábrica nombra la variable que falta, nunca su valor.
+            detail = f": {exc}" if isinstance(exc, SchemaError) else ""
+            problems.append(f"no se pudo cargar {name} ({path}): {type(exc).__name__}{detail}; "
                             "revisa la ruta modulo:atributo y que la fábrica acepte un DemoContext")
             continue
         if piece is None:
@@ -358,14 +386,14 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         verifier = _load(DEMO_VERIFIER)()
         doubles.append("identity")
 
-    registry_api: RegistryApiPorts | None = None
-    if args.registry_api:
+    registry_api_ports: RegistryApiPorts | None = None
+    if registry_api:
         assert eval_dsn is not None
         if staff_verifier is None:  # solo en demo (arriba se exigió --staff-keys fuera de demo)
             staff_verifier = _load(DEMO_VERIFIER)()
             doubles.append("staff-identity")
         eval_store = PostgresStore(eval_dsn, pool_max=pool_max)
-        registry_api = RegistryApiPorts(store=registry_store, staff_verifier=staff_verifier,
+        registry_api_ports = RegistryApiPorts(store=registry_store, staff_verifier=staff_verifier,
                                         eval_uow_factory=eval_store.uow, eval_audit=eval_store.audit())
 
     gateway: LLMGateway = (HttpLLMGateway(pg_registry, llm_url, llm_token)
@@ -373,7 +401,7 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
     jev = JevProvider(HttpJevTransport(lambda: _jev_key(env), clock))
     from agent_core.composition.migrate import migrate_databases  # local: migrate importa este módulo
 
-    scopes = [(dsn, "main")] + ([(eval_dsn, "eval")] if args.registry_api and eval_dsn else [])
+    scopes = [(dsn, "main")] + ([(eval_dsn, "eval")] if registry_api and eval_dsn else [])
     readiness, optional_readiness = build_readiness(
         env, postgres=store.ping, verifiers=[v for v in (verifier, staff_verifier) if v is not None],
         schema=lambda: all(schema_is_current(d, scope, timeout_s=1) for d, scope in scopes))
@@ -384,7 +412,7 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         tools=built["tools"], authz=built["authz"], transcript=built["transcript"],
         calibrations=built["calibration"], classifier=built["field-classifier"], verifier=verifier,
         doubles=tuple(doubles), agents=_agents(args, env), llm_gateway_url=llm_url,
-        registry_api=registry_api,
+        registry_api=registry_api_ports,
         directory=RegistryDirectory(registry_store, pg_registry, pg_registry.release),
         readiness=readiness, optional_readiness=optional_readiness,
         migrate=lambda: migrate_databases(dsn, scopes[1][0] if len(scopes) > 1 else None, env),

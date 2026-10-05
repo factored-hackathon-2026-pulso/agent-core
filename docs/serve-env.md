@@ -21,13 +21,21 @@ Leyenda: **R** requerida en producción · **C** requerida si se usa la función
 | `AGENTCORE_LANG_THRESHOLDS` | O | — | Ruta de un JSON `{thresholds_from: {switch_threshold, unsupported_threshold, min_distance}}`. Sin él el idioma nunca cambia por detección. |
 | `AGENTCORE_FX_RATES_FILE` | C | — | Ruta de un JSON `{"USD":"1","MXN":"0.055"}` para `convertir_moneda`. Sin él la tool falla cerrada. |
 
-Argumentos de archivo de `serve`: `--identity-keys` (**R**, claves públicas de identidad), `--staff-keys`
-(**R** con `--registry-api`), `--registry-api` (activa la API del registry; exige `--eval-dsn` o
-`AGENTCORE_EVAL_DSN`, distinto del principal), `--keys-reload-seconds` (defecto 5; 0 apaga la recarga).
+Archivos y API del registry (cada uno tiene su variable y su argumento equivalente; el argumento gana):
 
-## 2. Piezas reales (una ruta `modulo:atributo` por argumento)
+| Variable | Argumento | Tipo | Descripción |
+|---|---|---|---|
+| `AGENTCORE_IDENTITY_KEYS_FILE` | `--identity-keys` | R | Ruta del archivo de claves públicas de identidad (§6). |
+| `AGENTCORE_REGISTRY_API` | `--registry-api` | O | `1` monta la API del registry (`/v1/registry`) y la exportación de runs. Exige las dos siguientes. |
+| `AGENTCORE_STAFF_KEYS_FILE` | `--staff-keys` | C | Con la API del registry: claves públicas del emisor del staff (§6). |
+| `AGENTCORE_EVAL_DSN` | `--eval-dsn` | C, S | Con la API del registry: base propia de las evaluaciones, distinta de la principal. |
+| `AGENTCORE_KEYS_RELOAD_SECONDS` | `--keys-reload-seconds` | O | Relectura de los archivos de claves (defecto 5; 0 la apaga). |
 
-Sin `AGENTCORE_ALLOW_DOUBLES=1`, `serve` exige las siete y rechaza cualquier ruta bajo `testing.`.
+## 2. Piezas reales
+
+Sin `AGENTCORE_ALLOW_DOUBLES=1`, `serve` usa **por defecto** las siete fábricas reales de la tabla (no hace falta
+pasar nada) y rechaza cualquier ruta bajo `testing.`. Cada fábrica se puede cambiar con su argumento
+`modulo:atributo`; si le falta su entorno, el arranque dice qué variable.
 
 | Argumento | Fábrica real | Variables que necesita |
 |---|---|---|

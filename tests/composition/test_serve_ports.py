@@ -39,13 +39,11 @@ def _resolve(*argv: str, **env: str) -> ServePorts:
 
 
 @pytest.mark.parametrize("value", [None, "0", "true", ""])
-def test_without_the_demo_switch_every_missing_piece_is_named(value: str | None) -> None:
+def test_without_the_demo_switch_the_identity_keys_are_required_and_named(value: str | None) -> None:
     extra = {} if value is None else {"AGENTCORE_ALLOW_DEMO": value}
     with pytest.raises(ServeConfigError) as info:
         _resolve(**extra)
-    text = " ".join(info.value.problems)
-    for option in DOUBLE_OPTIONS:
-        assert option in text
+    assert "AGENTCORE_IDENTITY_KEYS_FILE" in " ".join(info.value.problems)
 
 
 def test_an_explicit_double_path_does_not_bypass_the_protection() -> None:
