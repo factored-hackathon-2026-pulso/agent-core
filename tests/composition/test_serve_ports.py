@@ -1,4 +1,4 @@
-"""Puertos de `agentcore serve`: piezas reales por defecto; dobles solo con AGENTCORE_ALLOW_DEMO=1."""
+"""Puertos de `agentcore serve`: piezas reales por defecto; dobles solo con AGENTCORE_ALLOW_DOUBLES=1."""
 
 import argparse
 import base64
@@ -30,6 +30,7 @@ def _key(seed: bytes) -> str:
 
 def _env(**extra: str) -> dict[str, str]:
     return {"AGENTCORE_KEYS_FINGERPRINT": _key(b"a"), "AGENTCORE_KEYS_TOKEN_MAP": _key(b"b"),
+            "AGENTCORE_JEV_API_KEY": "test-key",
             "AGENTCORE_REGISTRY_DSN": "postgresql://ignored/ignored", **extra}
 
 
@@ -50,7 +51,7 @@ def test_without_the_demo_switch_every_missing_piece_is_named(value: str | None)
 def test_an_explicit_double_path_does_not_bypass_the_protection() -> None:
     with pytest.raises(ServeConfigError) as info:
         _resolve("--tools", "testing.serve_demo:tools")
-    assert "AGENTCORE_ALLOW_DEMO=1" in " ".join(info.value.problems)
+    assert "AGENTCORE_ALLOW_DOUBLES=1" in " ".join(info.value.problems)
 
 
 def test_a_path_that_cannot_be_imported_is_a_clear_problem() -> None:
@@ -147,7 +148,7 @@ def test_a_testing_double_path_is_rejected_without_the_demo_switch_even_if_every
     with pytest.raises(ServeConfigError) as info:
         _resolve(*_real_args(tmp_path, tools="testing.serve_demo:tools"))
     text = " ".join(info.value.problems)
-    assert "tools" in text and "AGENTCORE_ALLOW_DEMO=1" in text
+    assert "tools" in text and "AGENTCORE_ALLOW_DOUBLES=1" in text
 
 
 @pytest.mark.parametrize("path", ["..x:y", "os:getcwd", "builtins:print", "json:loads", "tests:__doc__"])
@@ -160,7 +161,7 @@ def test_any_failing_or_empty_factory_is_a_clean_problem_not_a_traceback(path: s
 def test_a_missing_jev_key_is_a_config_error_that_is_not_swallowed_as_a_provider_error() -> None:
     from agent_core.decision import DecisionConfigError
 
-    ports = _resolve(AGENTCORE_ALLOW_DEMO="1")
+    ports = _resolve(AGENTCORE_ALLOW_DEMO="1", AGENTCORE_JEV_API_KEY="")
     transport = ports.providers["jev"]._transport  # type: ignore[attr-defined]
     with pytest.raises(DecisionConfigError, match="AGENTCORE_JEV_API_KEY"):
         transport.send({}, 1000)
@@ -276,9 +277,9 @@ def test_serve_registers_a_postgres_readiness_check_that_fails_closed_when_unrea
                      AGENTCORE_ALLOW_DEMO="1",
                      AGENTCORE_REGISTRY_DSN="postgresql://u:secret@127.0.0.1:1/none")
 
-    (name, check), = ports.readiness
+    check = dict(ports.readiness)["postgres"]
 
-    assert name == "postgres"
+    assert set(dict(ports.readiness)) == {"postgres", "keys", "schema"}
     assert check() is False  # nada escucha en el puerto 1: falla cerrado, sin lanzar
 
 

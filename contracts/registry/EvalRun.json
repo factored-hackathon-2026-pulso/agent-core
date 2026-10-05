@@ -17,6 +17,13 @@
           "default": null,
           "title": "Detail"
         },
+        "guardrail_changes": {
+          "items": {
+            "$ref": "#/$defs/GuardrailChange"
+          },
+          "title": "Guardrail Changes",
+          "type": "array"
+        },
         "items": {
           "items": {
             "$ref": "#/$defs/GateItem"
@@ -210,6 +217,66 @@
         "cand_on_new"
       ],
       "title": "GateRuns",
+      "type": "object"
+    },
+    "GuardrailChange": {
+      "additionalProperties": false,
+      "description": "A policy, flow, tool or agent-tool link the candidate adds, removes or changes against the base. The\ngate does NOT evaluate these artifacts: the list tells the reviewer what to read (names and ids only).\n`kind` is `policy`, `flow`, `tool` or `tool_link` (`id` is `<agent>/<tool>`, from\n`Agent.tools_allowed`).",
+      "properties": {
+        "base_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Version"
+        },
+        "candidate_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Version"
+        },
+        "change": {
+          "enum": [
+            "added",
+            "removed",
+            "changed"
+          ],
+          "title": "Change",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "policy",
+            "flow",
+            "tool",
+            "tool_link"
+          ],
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "change"
+      ],
+      "title": "GuardrailChange",
       "type": "object"
     },
     "JudgeNote": {

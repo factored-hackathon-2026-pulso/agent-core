@@ -1,0 +1,13 @@
+id: sugerir-escalamiento
+version: 1.0.0
+owner: pendiente-supervision
+# PROVISIONAL. Marcador de la política real de escalamiento del copiloto (ADR 0026 §5; plataforma ADR 0005,
+# abierto 3: la definen los supervisores). NO es `escalamiento-disputa-monto` (esa mide el monto de una
+# disputa) y no dispara ningún traspaso: solo permite que el copiloto RECOMIENDE escalar, y únicamente cuando
+# el modelo detectó la señal (el `decide` del flow) y el caso ya está vencido o es crítico.
+# Mejora futura (se quitó por ahora): «tercer contacto en 7 días»; la plataforma aún no envía ese conteo.
+expr:
+  or:
+    - {"==": [{var: slots.sla_estado}, vencido]}
+    - {"==": [{var: slots.prioridad}, critica]}
+rationale: "PROVISIONAL (sin supervisores): se recomienda escalar si el SLA está vencido o la prioridad es crítica y hay señal de escalamiento."

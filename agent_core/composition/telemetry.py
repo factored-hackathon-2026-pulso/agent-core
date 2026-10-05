@@ -17,11 +17,12 @@ from opentelemetry.context import Context
 from opentelemetry.trace import Link, Span, SpanContext
 
 import agent_telemetry as tel
-from agent_core.domain import DecisionMade, EngineError, EngineEvent, RuleEvaluated, ToolCalled
+from agent_core.domain import AgentStep, DecisionMade, EngineError, EngineEvent, RuleEvaluated, ToolCalled
 from agent_core.turn import TransferOutcome, TransferSpan, TurnScope, TurnSpan
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 _NS_PER_MS = 1_000_000
+AGENT_STEP = "agentcore.agent_step"
 
 
 @dataclass(frozen=True)
@@ -46,8 +47,9 @@ def derived_spans(events: Sequence[EngineEvent]) -> list[DerivedSpan]:
 
     Times: every emitter takes `ts` after the call (`decision/service.py`, `actions/execution.py`,
     `interpreter/handlers/tool.py` and `agent.py`), so `decide` and `execute_tool` end at `ts` and start
-    `latency_ms` earlier; a rule is instantaneous at `ts`. `agent_step`, `knowledge_read` and the rest have no
-    child: the gateway's live `chat` already covers the LLM."""
+    `latency_ms` earlier; a rule is instantaneous at `ts`. An `agent_step` that reports `tokens` ends at
+    `ts` like the others and carries that usage; `knowledge_read` and the rest have no child (the
+    gateway's live `chat` is the generation)."""
     out: list[DerivedSpan] = []
     for event in events:
         end = _ns(event.ts)
@@ -71,6 +73,11 @@ def derived_spans(events: Sequence[EngineEvent]) -> list[DerivedSpan]:
                 "gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": t.tool.id,
                 "gen_ai.tool.call.id": t.call_id, "agentcore.tool": str(t.tool), "agentcore.node": t.node_id,
                 "agentcore.tool.status": t.status.value, "agentcore.tool.attempt": t.attempt}))
+        elif isinstance(event, AgentStep) and (tokens := event.payload.tokens) is not None:
+            a = event.payload  # only steps that report usage: older recorded events have none
+            out.append(DerivedSpan(AGENT_STEP, end - a.latency_ms * _NS_PER_MS, end, {
+                "agentcore.node": a.node_id, "agentcore.agent_step.kind": a.kind,
+                "agentcore.agent_step.tokens": tokens}))
     return out
 
 

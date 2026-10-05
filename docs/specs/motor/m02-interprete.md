@@ -24,6 +24,7 @@ class StepContext:                    # dataclass congelada
     views: ViewService; vault: TokenVault                                       # M7
     ids: IdSource; uow_factory: UnitOfWorkFactory                               # D2
     knowledge: KnowledgeService | None = None    # M12; sin él, un nodo `knowledge` es error de cableado
+    suggester: SuggesterPort | None = None       # M8 (ADR 0026); sin él, un nodo `suggest` es error de cableado
     bound_params: Mapping[str, str] = {}
     record: EventRecorder = append_events                                       # M3; M4 lo reemplaza
     turn_id: str | None = None
@@ -140,7 +141,7 @@ ReAct acotado de **solo lectura y cálculo**. Lo usan el copiloto del asesor y e
 
 **Presupuestos.** El nodo cuenta como un nodo (`max_nodes_per_turn`).
 
-**Eventos.** Cada tool ejecutada emite su `tool_called` (argumentos y resultado en vista `audit`), y cada paso un `agent_step` (M0): `node_id`, `step`, `kind` (`tool`/`final`/`failed`), `tool`, `call_id` (enlaza con su `tool_called`), `status`, `text_fp` (huella con clave de la respuesta final), `error_kind` (solo con `failed`: el `GatewayErrorKind` que llevó a `gave_up`) y `latency_ms`. Nunca el razonamiento intermedio.
+**Eventos.** Cada tool ejecutada emite su `tool_called` (argumentos y resultado en vista `audit`), y cada paso un `agent_step` (M0): `node_id`, `step`, `kind` (`tool`/`final`/`failed`), `tool`, `call_id` (enlaza con su `tool_called`), `status`, `text_fp` (huella con clave de la respuesta final), `error_kind` (solo con `failed`: el `GatewayErrorKind` que llevó a `gave_up`), `tokens` (opcional: tokens que el proveedor informó en el paso; campo de medición) y `latency_ms`. Nunca el razonamiento intermedio.
 
 **Determinismo y replay.** El bucle usa solo puertos inyectados: con un `AgentPort` guionado produce los mismos eventos. El replay `audit` verifica la cadena de `agent_step` sin volver a llamar al modelo.
 
@@ -151,6 +152,23 @@ ReAct acotado de **solo lectura y cálculo**. Lo usan el copiloto del asesor y e
 - Los campos de la salida se clasifican por nombre en M7 (origen `agent`); los que no estén clasificados se tokenizan.
 
 **Pruebas:** `tests/m02/test_agent.py` (16, más T-U5-17 para el `GatewayError` y 4 de `input_view`) y `tests/m02/test_output_schema.py`.
+
+### 3.8 Nodo `suggest` (ADR 0026; implementado: `handlers/suggest.py`)
+
+Una lista tipada de sugerencias, posiblemente vacía, para `RunResult.suggestions` (M0 §2.8). **No ejecuta tools:** el modelo *recomienda* lecturas (`tools_allowed`) y *prepara* acciones (`actions_allowed`, vacío hoy: ninguna `action` es ejecutable).
+
+**Puerto.** `SuggesterPort.suggest(SuggestRequest, state) → SuggestResult`. `SuggestRequest{node_id, config, inputs, escalation}`; `SuggestResult{suggestions, failures, regenerations, llm, model_calls, tokens, cost_usd}`. `failures` no vacío es `gave_up`; una lista vacía sin fallas es un resultado válido. M8 lo adapta (`composition/suggester.py`); la validación de la lista es de M8 (m08 §3.4).
+
+**Pasos del handler:**
+1. Sin `ctx.suggester` es `IllegalTransition` (error de cableado). Con `ctx.degraded` no llama al modelo: `gave_up`. **Hoy `degraded` solo lo activa el guard de inyección sobre el texto de un turno conversacional; un run `task` no corre los guards sobre `input.turnos` (M4/M6), así que en el copiloto esta rama no se activa.** La defensa contra una inyección en el texto del cliente es la envoltura `<datos_no_confiables>` (M7 D8) y la validación estructural de M8 (el modelo no crea `escalate`, solo tools del catálogo, sin enlaces ni PII); la prueba es el escenario de inyección del `eval_suite`. Correr el guard sobre `input.turnos` queda como pendiente (cambio de M4/M6). Con el presupuesto de llamadas al modelo agotado, `escalate_now(budget_exceeded)` como `decide`/`respond`.
+2. `inputs` = las rutas de `reads` en vista `model` (slots envueltos como texto no confiable, D8) más las de `optional_reads` que existan. Si falta una de `reads`, no se llama al modelo: `gave_up`.
+3. Con `escalate`, M2 arma la evidencia: cada ruta de `evidence_from` es un valor escalar (texto, número o booleano) de un slot o hecho, dicho como `nombre: valor`. Un valor no escalar, ausente, de más de 300 caracteres o con PII (el detector de M7 lo halla, o es un token) hace `gave_up` sin llamar al modelo. **Ojo:** el detector marca como PII cualquier cifra de 6 o más dígitos (`1342.80`, `1500000`), así que una evidencia con un monto grande rinde el nodo (`failures=["escalation_evidence"]`); la evidencia hoy es para estados y prioridades, no para montos. Tampoco consulta la clase del campo: apuntar `evidence_from` a un slot `pii_direct` no lo impide M1 (pendiente). **La evidencia no va al modelo:** solo va a la salida; el modelo recibe `reason_code` y redacta únicamente `motive_draft`. El `reason_code` y la evidencia son del flow (M1 G0-28 exige que el nodo cuelgue de la rama `true` de una `rule`).
+4. Cobra el uso al presupuesto (`charge_model`). Siempre emite `suggestions_produced` (M0 §2.10): contadores por tipo, `result`, `failures`, `regenerations`, huella con clave de la lista (nunca el texto) y `llm`.
+5. Resultados: `suggested` (lista, posiblemente vacía) o `gave_up`. La lista se acumula en `StepOutcome.suggestions` (como `messages`) y M4 la entrega en `RunResult` si el run termina `completed`.
+
+**Determinismo y replay.** Solo puertos inyectados: con un `SuggesterPort` guionado produce los mismos eventos. **El replay de un run con nodo `suggest` está PENDIENTE** (igual que el bucle del nodo `agent`, ADR 0019): `RecordedGateway` solo sirve borradores de `response_emitted`/`rejected_draft` y el texto de las sugerencias no se persiste en eventos ni en el transcript, así que un replay `fixture` daría `diverged`. Lo que sí vale: la cadena de eventos de un run con `suggest` se verifica (el `suggestions_produced` se compara sin su `llm`, campo de medición).
+
+**Pruebas:** `tests/m02/test_suggest.py`.
 
 ## 4. Invariantes
 

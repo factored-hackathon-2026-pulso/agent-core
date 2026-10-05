@@ -12,7 +12,7 @@ from agent_core.domain import Fingerprint, JsonValue, OnBehalfOf, Principal, dum
 from agent_core.domain.base import Model
 from agent_core.ports import AuthzPort, Clock, KeyProvider, KeyPurpose
 from agent_core.views.classification import UNCLASSIFIED, UNTRUSTED, FieldClassifier, FieldRule, field_name
-from agent_core.views.detector import EMAIL_RE, MIN_DIGITS, digit_runs
+from agent_core.views.detector import DETECTOR_TAGS, MIN_DIGITS, digit_runs, fold, has_email
 from agent_core.views.fingerprints import fingerprint
 from agent_core.views.quasi import Dropped, apply_quasi
 from agent_core.views.tokens import MASK, TOKEN_RE, mask, neutralize
@@ -92,9 +92,26 @@ def _leaves(value: JsonValue, path: str) -> Iterator[tuple[str, JsonValue]]:
         yield path, value
 
 
+def _squash(text: str) -> str:
+    """Texto con la normalización del detector (sin invisibles ni acentos) y los espacios colapsados."""
+    return " ".join(fold(text).text.split())
+
+
 def _digits_present(digits: str, runs: set[str]) -> bool:
-    return any(run == digits or (len(run) >= MIN_DIGITS and (digits.endswith(run) or run.endswith(digits)))
-               for run in runs)
+    # El valor puede ir dentro de una corrida más larga (fundida con dígitos vecinos) o ser parte de él.
+    return any(digits in run or (len(run) >= MIN_DIGITS and run in digits) for run in runs)
+
+
+def _needle_present(value: str, folded: str, runs: set[str]) -> bool:
+    """`value` aparece en el texto (ya en NFKC, `folded` en minúsculas y `runs` con sus dígitos): un número de
+    6+ dígitos por sus dígitos (sin separadores) y el resto como palabra completa de 4+ caracteres."""
+    raw = unicodedata.normalize("NFKC", value)
+    digits = raw.translate(_NUMBER_SEPARATORS)
+    if digits.isascii() and digits.isdigit() and len(digits) >= MIN_DIGITS:
+        return _digits_present(digits, runs)
+    needle = _squash(raw)
+    return len(needle) >= _MIN_NEEDLE and re.search(
+        rf"(?<!\w){re.escape(needle.casefold())}(?!\w)", folded) is not None
 
 
 class ViewService:
@@ -205,25 +222,29 @@ class ViewService:
             case _:
                 return value
 
+    def find_tokenized_echo(self, text: str, vault: TokenVault) -> list[str]:
+        """Tokens del `vault` cuyo valor en claro aparece en `text` (ADR 0026). La PII que el detector halló
+        en un texto libre del cliente (tarjeta, documento, teléfono, correo: no es un hecho, así que
+        `find_clear_pii` no la ve) no puede volver en una salida. Solo cuentan las entradas del detector: el
+        `pii` de un campo sin clasificar puede ser una palabra de negocio (`vencido`) que la salida dice con
+        razón. Devuelve los tokens (seguros de mostrar), nunca los valores."""
+        visible = unicodedata.normalize("NFKC", TOKEN_RE.sub(" ", text))
+        folded, runs = visible.casefold(), digit_runs(visible)
+        return sorted(entry.token for entry in vault.entries()
+                      if entry.tag in DETECTOR_TAGS and _needle_present(entry.value, folded, runs))
+
     def find_clear_pii(self, text: str, facts_full: Mapping[str, JsonValue]) -> list[str]:
         """Rutas de hechos `pii_direct` que aparecen en claro, más `pattern:email`. Nunca devuelve valores."""
         visible = unicodedata.normalize("NFKC", TOKEN_RE.sub(" ", text))
-        folded = visible.casefold()
+        folded = _squash(visible).casefold()
         runs = digit_runs(visible)
         found: set[str] = set()
         for name, value in facts_full.items():
             for path, leaf in _leaves(value, name):
                 if leaf is None or self._classifier.rule(path).field_class != "pii_direct":
                     continue
-                needle = unicodedata.normalize("NFKC", _text(leaf))
-                digits = needle.translate(_NUMBER_SEPARATORS)
-                if digits.isascii() and digits.isdigit() and len(digits) >= MIN_DIGITS:
-                    if _digits_present(digits, runs):
-                        found.add(path)
-                elif len(needle) >= _MIN_NEEDLE and re.search(
-                    rf"(?<!\w){re.escape(needle.casefold())}(?!\w)", folded
-                ):
+                if _needle_present(_text(leaf), folded, runs):
                     found.add(path)
-        if EMAIL_RE.search(visible):
+        if has_email(visible):
             found.add("pattern:email")
         return sorted(found)

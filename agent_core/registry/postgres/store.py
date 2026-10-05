@@ -279,12 +279,14 @@ class _PgTx:
 
     def insert_approval(self, a: Approval) -> None:
         self._c.execute("INSERT INTO reg_approvals (proposal_id, candidate_hash, actor, decision, "
-                        "reason, at, yardstick_loosened) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                        "reason, at, yardstick_loosened, reason_code) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                         (a.proposal_id, a.candidate_hash, a.actor, a.decision, a.reason, a.at,
-                         dumps([c.model_dump(mode="json") for c in a.yardstick_loosened])))
+                         dumps([c.model_dump(mode="json") for c in a.yardstick_loosened]), a.reason_code))
 
     def latest_approval(self, proposal_id: str, candidate_hash: str) -> Approval | None:
-        row = self._one("SELECT actor, decision, reason, at, yardstick_loosened FROM reg_approvals "
+        row = self._one("SELECT actor, decision, reason, at, yardstick_loosened, reason_code "
+                        "FROM reg_approvals "
                         "WHERE proposal_id = %s AND candidate_hash = %s ORDER BY seq DESC LIMIT 1",
                         (proposal_id, candidate_hash))
         if row is None:
@@ -292,7 +294,15 @@ class _PgTx:
         loosened = parse_loosened(row[4])
         return Approval(proposal_id=proposal_id, candidate_hash=candidate_hash, actor=row[0],
                         decision=row[1], reason=row[2], at=row[3],
-                        yardstick_loosened=loosened)
+                        yardstick_loosened=loosened, reason_code=row[5])
+
+    def latest_decision(self, proposal_id: str) -> Approval | None:
+        row = self._one("SELECT actor, decision, candidate_hash, at, reason_code FROM reg_approvals "
+                        "WHERE proposal_id = %s ORDER BY seq DESC LIMIT 1", (proposal_id,))
+        if row is None:
+            return None
+        return Approval(proposal_id=proposal_id, candidate_hash=row[2], actor=row[0], decision=row[1],
+                        at=row[3], reason_code=row[4])
 
     def append_event(self, event: RegistryEvent) -> None:
         self._c.execute("INSERT INTO reg_events (event_json) VALUES (%s)", (dumps(event),))

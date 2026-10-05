@@ -6,9 +6,17 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import Field, NonNegativeInt, PositiveInt, StringConstraints, model_validator
+from pydantic import (
+    Field,
+    NonNegativeInt,
+    PositiveInt,
+    SerializerFunctionWrapHandler,
+    StringConstraints,
+    model_serializer,
+    model_validator,
+)
 
 from agent_core.domain.base import EntityId, ExactVersion, Locale, Model, Sha256Hex
 from agent_core.domain.errors import InvalidRuntimeRef
@@ -239,6 +247,17 @@ class Policy(Model):
     owner: str
     expr: JsonValue
     rationale: str
+    # Platform guardrail (mirrors `Interrupt.locked`): a later proposal cannot remove it, unlock it or change
+    # it (REG-LOCKED). Only an admin can set it. Omitted from the serialisation when false, so the content
+    # hash of already published policies does not change.
+    locked: bool = False
+
+    @model_serializer(mode="wrap")
+    def _omit_default_locked(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if not self.locked:
+            data.pop("locked", None)
+        return data
 
 
 class Template(Model):

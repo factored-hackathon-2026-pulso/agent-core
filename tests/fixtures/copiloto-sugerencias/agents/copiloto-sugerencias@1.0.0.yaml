@@ -1,0 +1,59 @@
+# NOTA: editado en sitio sin subir versión: es PROVISIONAL y no tiene release publicada (no hay hash publicado que cambie).
+# Agente `copiloto-sugerencias` (ADR 0026 §1): un run `task` por sugerencia, con la delegación del asesor.
+# Entra por `sugerir@1` (flow con el nodo `suggest`) y sale por `RunResult.suggestions`.
+#
+# PROVISIONAL, sin respaldo del ADR ni de datos reales (docs/specs/copiloto-sugerencias-brecha.md):
+#  - `budgets`: el tope de costo por run (Abierto 4) está por decidir; los valores son un supuesto razonable
+#    para 1 clasificación + 1 sugerencia (+ 1 regeneración), por debajo de los 60 s que espera la plataforma.
+#  - `max_clarifications`, `on_clarify_exhausted`, `default_target_queue`, las plantillas del motor (copiadas),
+#    `min_auth_level: session`, `supported_locales` y el subconjunto de 3 tools (se omiten `obtener_handoff` y
+#    `leer_transcript`, que el copiloto Q&A sí tiene).
+#  - No hay campo `actions_allowed` en `Agent`: es del nodo `suggest` (vacío, Abierto 6) y `tools_allowed`
+#    son solo lecturas.
+id: copiloto-sugerencias
+version: 1.0.0
+mode: task
+entry_flow: sugerir@1
+invocable_by: [advisor]
+min_auth_level: session
+subject_kinds: [customer]
+supported_locales: [es, pt]
+default_locale: es
+tools_allowed: [leer_movimientos@1, leer_productos@1, leer_pqr_cliente@1]
+budgets: {max_nodes_per_turn: 20, max_model_calls_per_turn: 4, max_tokens_per_run: 20000, max_cost_per_run: 0.10, max_wall_ms_per_turn: 20000}
+templates:
+  clarify: t/aclarar
+  abstain: t/abstencion
+  handoff: t/traspaso
+  pending_ack: t/acuse
+  pending_offer: t/oferta
+  unsupported_language: t/idioma_no_soportado
+  input_too_large: t/mensaje_largo
+max_clarifications: 0
+on_clarify_exhausted: end
+default_target_queue: general
+# Contrato de `input` del run (ADR 0026 §1). Forma APLANADA a propósito (decisión del usuario): la plataforma
+# aplana su `input` (`sla` -> `sla_estado` + `sla_minutos_restantes`; `sugerencia_anterior` ->
+# `sugerencia_borrador` + `sugerencia_escalacion_aceptada`) y omite los nulos; el núcleo NO acepta slots de tipo
+# objeto ni null. Ver la discrepancia D1 del informe de brecha.
+input_schema:
+  turnos:
+    type: list
+    required: true
+    max_items: 12            # la plataforma envía los últimos 12 (CONTEXT_TURNS)
+    items:
+      rol: {type: string, required: true}     # cliente | analista | asistente
+      texto: {type: string, required: true}   # texto del cliente: untrusted_text (ADR 0026 §6)
+      hora: {type: string, required: true}    # ISO 8601 con zona (no es `date`)
+  idioma: {type: string, required: true}
+  canal: {type: string, required: true}
+  prioridad: {type: string, required: true}
+  sla_estado: {type: string, required: true}  # respondida | vencido | en_riesgo | a_tiempo
+  sla_minutos_restantes: {type: integer}      # se omite si no aplica (no se envía null)
+  espera_del_cliente_segundos: {type: integer, required: true}
+  motivo_llegada: {type: string}              # se omite si no hay
+  sugerencia_borrador: {type: string}         # estado del borrador anterior; se omite si no hubo
+  sugerencia_escalacion_aceptada: {type: boolean}
+  # Metadato de TRAZABILIDAD (correlación de logs/auditoría con la sesión del asistente), decisión del usuario
+  # 2026-10-05. NO es memoria: ningún nodo del flow lo lee (una prueba lo fija) y el modelo nunca lo ve.
+  assistant_session_id: {type: string}

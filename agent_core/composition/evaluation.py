@@ -16,9 +16,14 @@ from agent_core.domain import (
     GatewayError,
     JsonValue,
     Locale,
+    OnBehalfOf,
     Principal,
+    PrincipalKey,
+    PrincipalType,
     ProviderSpec,
     RunInput,
+    SubjectRef,
+    Suggestion,
     TurnInput,
 )
 from agent_core.ports import (
@@ -35,7 +40,7 @@ from agent_core.ports import (
     TranscriptStore,
     UnitOfWorkFactory,
 )
-from agent_core.registry import EvalTarget, HarnessUnavailable, Scenario
+from agent_core.registry import EvalTarget, HarnessUnavailable, Scenario, ScenarioRun
 from agent_core.views import FieldClassifier
 
 
@@ -85,30 +90,57 @@ class EngineScenarioHarness:
                  calibrations: CalibrationSource,
                  authz: AuthzPort, storage: Callable[[], EvalStorage],
                  classifier: FieldClassifier | None = None, config: EngineConfig | None = None,
-                 bind_gateway: Callable[[RegistryPort], LLMGateway] | None = None) -> None:
+                 bind_gateway: Callable[[RegistryPort], LLMGateway] | None = None,
+                 gateway_for: Callable[[str], LLMGateway] | None = None) -> None:
         """`bind_gateway` rebuilds the gateway over the evaluated target's registry. Without it the shared
         `gateway` is used as is; a registry-backed one then resolves prompts in the LIVE registry and never
-        exercises a candidate's prompts (the responder silently falls back to its template)."""
+        exercises a candidate's prompts (the responder silently falls back to its template).
+        `gateway_for` (scenario id → gateway) lets a double answer per scenario, as `providers` does; the
+        real gateway is the same for every scenario, so it is `None` outside tests and demos. It wins over
+        both."""
         self._bind_gateway = bind_gateway
         self._clock, self._ids, self._keys = clock, ids, keys
         self._gateway, self._providers, self._calibrations = gateway, providers, calibrations
+        self._gateway_for = gateway_for
         self._authz, self._storage, self._classifier = authz, storage, classifier
         self._config = config or EngineConfig()
 
     def _principal(self, scenario: Scenario, level: str) -> Principal:
         now = self._clock.now()
         return Principal.model_validate({
-            "type": "customer", "id": scenario.principal.id, "attrs": dict(scenario.principal.attrs),
+            "type": scenario.principal.type, "id": scenario.principal.id,
+            "attrs": dict(scenario.principal.attrs),
             "auth": {"level": level, "at": now}, "exp": now + timedelta(hours=1)})
+
+    def _on_behalf_of(self, scenario: Scenario) -> tuple[OnBehalfOf | None, SubjectRef | None]:
+        """An advisor scenario acts on a subject through a synthetic delegation; a customer one has none."""
+        who = scenario.principal
+        if who.type != "advisor" or who.subject is None:
+            return None, None
+        subject = SubjectRef(kind=who.subject.kind, ref=who.subject.ref)
+        obo = OnBehalfOf(subject=subject, grant_ref="eval",
+                         grantee=PrincipalKey(type=PrincipalType.advisor, id=who.id),
+                         exp=self._clock.now() + timedelta(hours=1))
+        return obo, subject
 
     def run(self, target: EvalTarget, agent_id: str, scenario: Scenario,
             tools: ToolExecutor) -> list[EngineEvent]:
+        return self.run_with_suggestions(target, agent_id, scenario, tools).events
+
+    def run_with_suggestions(self, target: EvalTarget, agent_id: str, scenario: Scenario,
+                             tools: ToolExecutor) -> ScenarioRun:
+        """The events of the run and, for a task agent, the `suggestions` of its `RunResult` (ADR 0026)."""
         storage = self._storage()
         # La base de evaluación es persistente: una clave derivada solo del escenario devolvería los eventos
         # del primer run sin ejecutar nada. Cada ejecución (etiqueta, escenario, repetición) lleva su id.
         idempotency_key = f"eval-{self._ids.new_id(IdKind.eval_run)}-{target.label}-{scenario.id}"
-        probe = _ProbingGateway(self._gateway if self._bind_gateway is None
-                                else self._bind_gateway(target.registry))
+        if self._gateway_for is not None:
+            gateway = self._gateway_for(scenario.id)
+        elif self._bind_gateway is not None:
+            gateway = self._bind_gateway(target.registry)
+        else:
+            gateway = self._gateway
+        probe = _ProbingGateway(gateway)
         provider_failures: list[str] = []
         providers = {name: _ProbingProvider(p, provider_failures)
                      for name, p in self._providers(scenario.id).items()}
@@ -121,6 +153,8 @@ class EngineScenarioHarness:
         run_id: str | None = None
         session_id: str | None = None
         token: str | None = None
+        obo, subject = self._on_behalf_of(scenario)
+        suggestions: list[Suggestion] = []
         for n, step in enumerate(scenario.steps):
             principal = self._principal(scenario, step.auth)
             if step.op == "start":
@@ -128,14 +162,19 @@ class EngineScenarioHarness:
                                         "idempotency_key": idempotency_key}
                 if step.lang is not None:
                     data["lang"] = step.lang
-                result = engine.start_run(principal, None, RunInput.model_validate(data))
+                if subject is not None:
+                    data["subject"] = subject
+                if step.input is not None:
+                    data["input"] = step.input
+                result = engine.start_run(principal, obo, RunInput.model_validate(data))
                 run_id, session_id, turn = result.run_id, result.session_id, result.first_turn
+                suggestions = list(result.suggestions)
             else:
                 if session_id is None:
                     break  # modo task: el run ya terminó en start
                 confirm = (ConfirmAnswer(token=token or "", answer=step.answer)  # type: ignore[arg-type]
                            if step.op == "confirm" else None)
-                turn = engine.handle_turn(principal, None, TurnInput(
+                turn = engine.handle_turn(principal, obo, TurnInput(
                     session_id=session_id, text=step.text or "", channel="web", client_turn_id=f"c-{n}",
                     confirm=confirm))
             token = turn.confirmation.token if turn is not None and turn.confirmation is not None else None
@@ -146,4 +185,4 @@ class EngineScenarioHarness:
                                      f"{sorted(set(provider_failures))}")
         if run_id is None:
             raise HarnessUnavailable("el escenario no inició ningún run")
-        return storage.audit.read(run_id)
+        return ScenarioRun(events=storage.audit.read(run_id), suggestions=suggestions)

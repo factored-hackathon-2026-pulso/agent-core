@@ -6,7 +6,8 @@ import sys
 import agent_core.response as response
 
 PUBLIC = [
-    "CHECKS", "Draft", "Failure", "NumberFormat", "Responder", "ResponderContext", "TemplateUnavailable",
+    "CHECKS", "SUGGESTIONS_SCHEMA", "Draft", "Failure", "NumberFormat", "Responder", "ResponderContext",
+    "SuggestOutcome", "Suggester", "SuggesterContext", "TemplateUnavailable", "ToolEntry",
     "ValidationContext", "ValidationResult", "parse_draft", "validate",
 ]
 FORBIDDEN = [

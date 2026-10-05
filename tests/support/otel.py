@@ -25,16 +25,16 @@ _SDK_LOGGERS = ("httpx", "httpcore")
 def otel() -> Iterator[InMemorySpanExporter]:
     # A provider left behind by another test would make this one export to the wrong place: fail loudly.
     assert tel_setup._PROVIDER is None, "a previous test leaked an agent_telemetry provider"
-    settings = (tel_spans._capture_content, tel_spans._strict)
+    settings = (tel_spans._capture_content, tel_spans._strict, tel_spans._langfuse_attributes)
     warned = set(tel_spans._warned)
     exporter = InMemorySpanExporter()
     tel.setup_tracing(exporter=exporter)
-    tel.configure(capture_content=False, strict=True)
+    tel.configure(capture_content=False, strict=True, langfuse_attributes=False)
     try:
         yield exporter
     finally:
         tel.shutdown_tracing()
-        tel.configure(capture_content=settings[0], strict=settings[1])
+        tel.configure(capture_content=settings[0], strict=settings[1], langfuse_attributes=settings[2])
         tel_spans._warned.clear()
         tel_spans._warned.update(warned)
 

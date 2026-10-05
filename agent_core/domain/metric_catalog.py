@@ -35,6 +35,10 @@ METRIC_EVENT_CATALOG: Mapping[str, Mapping[str, FieldKind]] = MappingProxyType({
     "engine.run_closed": _engine(outcome="str", closed_by="str"),
     "engine.tool_called": _engine(status="str", latency_ms="int", attempt="int"),
     "engine.agent_step": _engine(kind="str", status="str", step="int", latency_ms="int"),
+    "engine.suggestions_produced": _engine(
+        {"llm.calls": "int", "llm.tokens_in": "int", "llm.tokens_out": "int", "llm.cost_usd": "decimal"},
+        result="str", count="int", reply="int", tool="int", action="int", escalate="int", regenerations="int",
+    ),
     "engine.action_verified": _engine(result="str"),
     "engine.response_emitted": _engine(
         {

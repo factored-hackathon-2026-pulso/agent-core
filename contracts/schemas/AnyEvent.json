@@ -840,6 +840,19 @@
           ],
           "default": null
         },
+        "tokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tokens"
+        },
         "tool": {
           "anyOf": [
             {
@@ -3658,6 +3671,200 @@
       "title": "StepUpRequestedPayload",
       "type": "object"
     },
+    "SuggestionsProduced": {
+      "additionalProperties": false,
+      "description": "Evento `suggestions_produced` de la cadena de auditoría (M0 §2.10, ADR 0026).",
+      "properties": {
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash"
+        },
+        "payload": {
+          "$ref": "#/$defs/SuggestionsProducedPayload"
+        },
+        "prev_hash": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prev Hash"
+        },
+        "release": {
+          "title": "Release",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "seq": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seq"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "turn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Turn Id"
+        },
+        "type": {
+          "const": "suggestions_produced",
+          "default": "suggestions_produced",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "run_id",
+        "release",
+        "ts",
+        "payload"
+      ],
+      "title": "SuggestionsProduced",
+      "type": "object"
+    },
+    "SuggestionsProducedPayload": {
+      "additionalProperties": false,
+      "description": "Payload del evento `suggestions_produced` (vista audit, M0 §2.10, ADR 0026).\n\nUn nodo `suggest` terminó. Solo contadores, tipos y una huella con clave de la lista: nunca el texto de\nuna sugerencia (puede resumir lo que dijo el cliente). `result = \"failed\"`: ninguna lista pasó la\nvalidación (o el gateway falló) y el nodo terminó en `gave_up`; `failures` son los ids de las\ncomprobaciones, sin datos.",
+      "properties": {
+        "action": {
+          "minimum": 0,
+          "title": "Action",
+          "type": "integer"
+        },
+        "count": {
+          "minimum": 0,
+          "title": "Count",
+          "type": "integer"
+        },
+        "escalate": {
+          "minimum": 0,
+          "title": "Escalate",
+          "type": "integer"
+        },
+        "failures": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Failures",
+          "type": "array"
+        },
+        "llm": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LlmUsage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "node_id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Node Id",
+          "type": "string"
+        },
+        "regenerations": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Regenerations",
+          "type": "integer"
+        },
+        "reply": {
+          "minimum": 0,
+          "title": "Reply",
+          "type": "integer"
+        },
+        "result": {
+          "enum": [
+            "ok",
+            "failed"
+          ],
+          "title": "Result",
+          "type": "string"
+        },
+        "text_fp": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Fingerprint"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tool": {
+          "minimum": 0,
+          "title": "Tool",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "node_id",
+        "result",
+        "count",
+        "reply",
+        "tool",
+        "action",
+        "escalate"
+      ],
+      "title": "SuggestionsProducedPayload",
+      "type": "object"
+    },
     "ToolCalled": {
       "additionalProperties": false,
       "description": "Evento `tool_called` de la cadena de auditoría (M0 §2.10).",
@@ -3837,6 +4044,18 @@
         },
         "tool": {
           "$ref": "#/$defs/EntityRef"
+        },
+        "tool_source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool Source"
         }
       },
       "required": [
@@ -4564,6 +4783,7 @@
       "run_started": "#/$defs/RunStarted",
       "run_transferred": "#/$defs/RunTransferred",
       "step_up_requested": "#/$defs/StepUpRequested",
+      "suggestions_produced": "#/$defs/SuggestionsProduced",
       "tool_called": "#/$defs/ToolCalled",
       "transfer_received": "#/$defs/TransferReceived",
       "transfer_rejected": "#/$defs/TransferRejected",
@@ -4596,6 +4816,9 @@
     },
     {
       "$ref": "#/$defs/AgentStep"
+    },
+    {
+      "$ref": "#/$defs/SuggestionsProduced"
     },
     {
       "$ref": "#/$defs/KnowledgeRead"

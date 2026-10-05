@@ -13,6 +13,7 @@ from agent_core.domain import (
     Release,
     RunState,
     StepUpPrompt,
+    Suggestion,
     TurnInput,
 )
 from agent_core.interpreter import NO_RESUME, Resume, Stop, TransferRequest
@@ -55,6 +56,7 @@ class TurnFrame:
     tokens_expired: bool = False  # el paso 6 canceló propuestas por token vencido
     advanced: bool = False  # `advance` corrió en este turno
     output: dict[str, JsonValue] | None = None  # `end.output_map` (modo task)
+    suggestions: list[Suggestion] = field(default_factory=list)  # nodos `suggest` (modo task, ADR 0026)
     pending_transfer: TransferRequest | None = None  # a `transfer` node stopped the flow; M4 resolves it
     transfer_plan: "TransferPlan | None" = None  # validated transfer: the origin closed, the target opens
     span: TurnSpan = NO_SPAN  # telemetry of this turn (m04 §3.9): it reads the chained events, never writes

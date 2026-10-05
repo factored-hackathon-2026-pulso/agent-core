@@ -337,3 +337,33 @@ def test_header_patterns_match_the_sdk() -> None:  # C1: our grammar must be the
 
     assert observability._HEADER_PATTERN.pattern == sdk_re._HEADER_PATTERN.pattern
     assert observability._LIBERAL_HEADER_PATTERN.pattern == sdk_re._LIBERAL_HEADER_PATTERN.pattern
+
+
+def test_trace_flags_default_to_off_and_follow_the_agentcore_env(root_logging: None) -> None:
+    from agent_telemetry import spans as tel_spans
+
+    before = (tel_spans._capture_content, tel_spans._langfuse_attributes)
+    off = setup_observability({}, version="1", stream=io.StringIO())
+    try:
+        assert (tel_spans._capture_content, tel_spans._langfuse_attributes) == (False, False)
+    finally:
+        off.shutdown()
+    env = {"AGENTCORE_TRACE_CONTENT": "1", "AGENTCORE_TRACE_LANGFUSE": "1"}
+    on = setup_observability(env, version="1", stream=io.StringIO())
+    try:
+        assert (tel_spans._capture_content, tel_spans._langfuse_attributes) == (True, True)
+    finally:
+        on.shutdown()
+    assert (tel_spans._capture_content, tel_spans._langfuse_attributes) == (False, False)
+    tel.configure(capture_content=before[0], langfuse_attributes=before[1])
+
+
+@pytest.mark.parametrize("value", ["true", "yes", "0", ""])
+def test_only_the_value_1_enables_content(value: str, root_logging: None) -> None:
+    from agent_telemetry import spans as tel_spans
+
+    observability = setup_observability({"AGENTCORE_TRACE_CONTENT": value}, version="1", stream=io.StringIO())
+    try:
+        assert tel_spans._capture_content is False
+    finally:
+        observability.shutdown()

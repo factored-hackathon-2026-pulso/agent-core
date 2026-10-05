@@ -1,4 +1,4 @@
-"""Puertos de `agentcore serve`: piezas reales por defecto; dobles por ruta solo con ALLOW_DEMO=1."""
+"""Puertos de `agentcore serve`: piezas reales por defecto; dobles por ruta solo con ALLOW_DOUBLES=1."""
 
 import argparse
 import importlib
@@ -21,6 +21,8 @@ from agent_core.adapters.llm.http_gateway import LLM_GATEWAY_TOKEN_ENV, LLM_GATE
 from agent_core.adapters.postgres_uow import PostgresStore
 from agent_core.composition.blobs import blob_factory_from_env
 from agent_core.composition.engine_tools import fx_rates_from_env
+from agent_core.composition.readiness import build_readiness
+from agent_core.composition.schema_version import schema_is_current
 from agent_core.decision import DecisionConfigError, DecisionProvider, HttpJevTransport, JevProvider
 from agent_core.decision.calibration.artifact import CalibrationSource
 from agent_core.domain import Release, SchemaError, loads
@@ -44,7 +46,8 @@ from agent_core.ports import (
 from agent_core.registry import PgRegistryStore, PostgresRegistry, RegistryDirectory, RegistryStore
 from agent_core.views import FieldClassifier
 
-DEMO_ENV = "AGENTCORE_ALLOW_DEMO"
+DOUBLES_ENV = "AGENTCORE_ALLOW_DOUBLES"
+LEGACY_DOUBLES_ENV = "AGENTCORE_ALLOW_DEMO"  # nombre anterior del mismo interruptor; sigue valiendo
 JEV_KEY_ENV = "AGENTCORE_JEV_API_KEY"
 DSN_ENV = "AGENTCORE_REGISTRY_DSN"
 EVAL_DSN_ENV = "AGENTCORE_EVAL_DSN"
@@ -64,6 +67,11 @@ _DOUBLES: tuple[tuple[str, str, str], ...] = (
     ("field_classifier", "field-classifier", "testing.serve_demo:field_classifier"),
     ("grant_active", "grant-active", "testing.serve_demo:grant_active"),
 )
+
+
+def doubles_allowed(env: Mapping[str, str]) -> bool:
+    """`True` si el entorno permite dobles de demo: `AGENTCORE_ALLOW_DOUBLES=1` o el nombre heredado."""
+    return env.get(DOUBLES_ENV) == "1" or env.get(LEGACY_DOUBLES_ENV) == "1"
 
 
 class ServeConfigError(Exception):
@@ -118,6 +126,8 @@ class ServePorts:
     registry_api: RegistryApiPorts | None = None  # solo con --registry-api
     directory: AgentDirectory | None = None  # ADR 0021: directorio de especialistas (sobre el registry)
     readiness: tuple[tuple[str, Callable[[], bool]], ...] = ()  # comprobaciones de `/readyz`
+    optional_readiness: frozenset[str] = frozenset()  # las de `readiness` que solo se informan
+    migrate: Callable[[], list[str]] | None = None  # lleva las bases a la versión esperada (candado asesor)
     run_export: RunExport | None = None  # N-08: lectura paginada de runs y eventos (con --registry-api)
     lang_thresholds: Mapping[str, LangThresholds] = field(default_factory=dict)  # por `thresholds_from`
     # Tabla FIJA de tasas de `convertir_moneda` (AGENTCORE_FX_RATES_FILE); None: la tool falla cerrada.
@@ -173,7 +183,7 @@ def _load(path: str) -> Any:
 
 
 def _is_test_double(path: str) -> bool:
-    """Las rutas bajo `testing` son dobles de prueba: no se aceptan sin AGENTCORE_ALLOW_DEMO=1."""
+    """Las rutas bajo `testing` son dobles de prueba: no se aceptan sin AGENTCORE_ALLOW_DOUBLES=1."""
     module = path.partition(":")[0]
     return module == "testing" or module.startswith("testing.")
 
@@ -246,7 +256,7 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
     """`tracer` is kept for the stable composition surface (ADR 0022) and is unused: the `chat` span is
     emitted by the llm-gateway service (ADR 0024)."""
     problems: list[str] = []
-    demo = env.get(DEMO_ENV) == "1"
+    demo = doubles_allowed(env)
 
     dsn = args.dsn or env.get(DSN_ENV)
     if not dsn:
@@ -272,9 +282,9 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
             chosen[name] = given or default
         elif given is None:
             problems.append(f"falta {name}: pasa {_flag(attr)} con una pieza real; "
-                            f"los dobles de demo solo se usan con {DEMO_ENV}=1")
+                            f"los dobles de demo solo se usan con {DOUBLES_ENV}=1")
         elif _is_test_double(given):
-            problems.append(f"{name}: `{given}` es un doble de prueba; solo se usa con {DEMO_ENV}=1")
+            problems.append(f"{name}: `{given}` es un doble de prueba; solo se usa con {DOUBLES_ENV}=1")
         else:
             chosen[name] = given
     if not demo and args.identity_keys is None:
@@ -293,6 +303,8 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
                 args.identity_keys, lambda ref, now: grant_active[0](ref, now), clock, reload_every)
         except SchemaError as exc:
             problems.append(str(exc))
+    if not demo and not (env.get(JEV_KEY_ENV) or "").strip():
+        problems.append(f"falta {JEV_KEY_ENV}: sin ella el proveedor jev falla en el primer turno")
     llm_url, llm_token = _llm_gateway_config(env, problems)
     lang_thresholds = _lang_thresholds(args, env, problems)
     fx_rates: dict[str, Decimal] | None = None
@@ -340,7 +352,7 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
     if problems:
         raise ServeConfigError(problems)
 
-    doubles = list(built) if demo else []
+    doubles = [name for name, path in chosen.items() if _is_test_double(path)]
     grant_active.append(built["grant-active"])
     if verifier is None:  # sin archivo de claves solo se llega aquí en demo (arriba se exigió lo contrario)
         verifier = _load(DEMO_VERIFIER)()
@@ -359,6 +371,12 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
     gateway: LLMGateway = (HttpLLMGateway(pg_registry, llm_url, llm_token)
                            if llm_url is not None and llm_token is not None else UnconfiguredLLMGateway())
     jev = JevProvider(HttpJevTransport(lambda: _jev_key(env), clock))
+    from agent_core.composition.migrate import migrate_databases  # local: migrate importa este módulo
+
+    scopes = [(dsn, "main")] + ([(eval_dsn, "eval")] if args.registry_api and eval_dsn else [])
+    readiness, optional_readiness = build_readiness(
+        env, postgres=store.ping, verifiers=[v for v in (verifier, staff_verifier) if v is not None],
+        schema=lambda: all(schema_is_current(d, scope, timeout_s=1) for d, scope in scopes))
     return ServePorts(
         clock=clock, ids=ids, keys=keys, uow_factory=store.uow, audit=store.audit(), counters=store.costs(),
         registry=pg_registry, releases=pg_registry.release, gateway=gateway,
@@ -368,5 +386,8 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         doubles=tuple(doubles), agents=_agents(args, env), llm_gateway_url=llm_url,
         registry_api=registry_api,
         directory=RegistryDirectory(registry_store, pg_registry, pg_registry.release),
-        readiness=(("postgres", store.ping),), run_export=store.run_export(), lang_thresholds=lang_thresholds,
+        readiness=readiness, optional_readiness=optional_readiness,
+        migrate=lambda: migrate_databases(dsn, scopes[1][0] if len(scopes) > 1 else None, env),
+        run_export=store.run_export(),
+        lang_thresholds=lang_thresholds,
         fx_rates=fx_rates, engine_tools=not demo)

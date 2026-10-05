@@ -22,10 +22,23 @@ from agent_telemetry.semconv import SEMCONV_VERSION
 from agent_telemetry.setup import tracer as _tracer
 
 __all__ = [
-    "ALLOWED_ATTRIBUTES", "CHAT", "DECIDE", "EXECUTE_TOOL", "INVOKE_AGENT", "RULE", "SEMCONV_VERSION",
+    "ALLOWED_ATTRIBUTES",
+    "CHAT",
+    "CONTENT_ATTRIBUTES",
+    "DECIDE",
+    "EXECUTE_TOOL",
+    "INVOKE_AGENT",
+    "RULE",
+    "SEMCONV_VERSION",
     "TRANSFER",
-    "MissingTelemetryContext", "configure", "current_trace_id", "mark_error", "record_span", "set_attributes",
-    "set_content", "span",
+    "MissingTelemetryContext",
+    "configure",
+    "current_trace_id",
+    "mark_error",
+    "record_span",
+    "set_attributes",
+    "set_content",
+    "span",
 ]
 
 INVOKE_AGENT, DECIDE, RULE, EXECUTE_TOOL, CHAT, TRANSFER = (
@@ -59,8 +72,20 @@ ALLOWED_ATTRIBUTES: frozenset[str] = frozenset({
     # transfer (ADR 0021 D9): ids and enums only. `from_agent` / `to_agent` are agent ids without version.
     "agentcore.transfer.id", "agentcore.transfer.from_agent", "agentcore.transfer.to_agent",
     "agentcore.transfer.to_release_id", "agentcore.transfer.outcome", "agentcore.transfer.reason_code",
+    # Langfuse trace-level and observation fields (ids, tags and enums; no payload). They are inert for any
+    # other OTLP backend. Derived from `bind` only when `configure(langfuse_attributes=True)`.
+    "langfuse.session.id", "langfuse.user.id", "langfuse.trace.tags", "langfuse.trace.name",
+    "langfuse.release", "langfuse.environment", "langfuse.observation.type",
+    "agentcore.agent_step.tokens", "agentcore.agent_step.kind",
 })
+# Content (prompts and completions): allowed only while `configure(capture_content=True)` (rule 6,
+# ADR 0003 #4). Off, they are dropped silently, never an error. The caller passes the `audit` view (M7).
+CONTENT_ATTRIBUTES: frozenset[str] = frozenset({
+    "gen_ai.prompt", "gen_ai.completion", "langfuse.observation.input", "langfuse.observation.output",
+})
+_OBSERVATION_TYPES = {INVOKE_AGENT: "agent", EXECUTE_TOOL: "tool"}
 _capture_content = False
+_langfuse_attributes = False
 _strict = False
 _warned: set[str] = set()
 
@@ -70,12 +95,16 @@ class MissingTelemetryContext(RuntimeError):
     only."""
 
 
-def configure(*, capture_content: bool | None = None, strict: bool | None = None) -> None:
+def configure(*, capture_content: bool | None = None, strict: bool | None = None,
+              langfuse_attributes: bool | None = None) -> None:
     """`None` leaves a setting as it is. `strict=True` is for tests: missing context and attributes outside
-    the closed list raise instead of degrading."""
-    global _capture_content, _strict
+    the closed list raise instead of degrading. `capture_content` admits `CONTENT_ATTRIBUTES`;
+    `langfuse_attributes` derives the `langfuse.*` set from the bound context (default off)."""
+    global _capture_content, _strict, _langfuse_attributes
     if capture_content is not None:
         _capture_content = capture_content
+    if langfuse_attributes is not None:
+        _langfuse_attributes = langfuse_attributes
     if strict is not None:
         _strict = strict
 
@@ -88,11 +117,28 @@ def _key(name: str) -> str:
     return name
 
 
+def _langfuse_derived(name: str, bound: Mapping[str, str]) -> dict[str, Any]:
+    """The `langfuse.*` attributes of a span, from the bound correlation context; empty unless enabled."""
+    if not _langfuse_attributes:
+        return {}
+    derived: dict[str, Any] = {}
+    if (session := bound.get("session_id")) is not None:
+        derived["langfuse.session.id"] = session
+    if (release := bound.get("agentcore.release")) is not None:
+        derived["langfuse.release"] = release
+    if (agent := bound.get("agentcore.agent")) is not None:  # `id@version`: the tag is low-cardinality
+        derived["langfuse.trace.tags"] = (f"agent:{agent.split('@', 1)[0]}",)
+    if (kind := _OBSERVATION_TYPES.get(name)) is not None:
+        derived["langfuse.observation.type"] = kind
+    return derived
+
+
 def _allowed(name: str, attrs: Mapping[str, Any]) -> dict[str, Any]:
-    unknown = sorted(k for k in attrs if k not in ALLOWED_ATTRIBUTES)
+    permitted = ALLOWED_ATTRIBUTES | CONTENT_ATTRIBUTES if _capture_content else ALLOWED_ATTRIBUTES
+    unknown = sorted(k for k in attrs if k not in permitted and k not in CONTENT_ATTRIBUTES)
     if unknown and _strict:
         raise ValueError(f"span {name!r}: atributos fuera de la lista cerrada: {', '.join(unknown)}")
-    return {k: v for k, v in attrs.items() if k in ALLOWED_ATTRIBUTES and v is not None}
+    return {k: v for k, v in attrs.items() if k in permitted and v is not None}
 
 
 def _missing_context(name: str, merged: Mapping[str, Any]) -> bool:
@@ -119,7 +165,8 @@ def span(name: str, *, attributes: Mapping[str, Any] | None = None, links: Seque
          context: Context | None = None, **attrs: Any) -> Iterator[Span]:
     """A live span under `context` (default: the current one). The bound context (`bind`) wins over
     `attributes` and kwargs: a span cannot change its run_id or release."""
-    merged = _allowed(name, {**{_key(k): v for k, v in attrs.items()}, **(attributes or {}), **current()})
+    merged = _allowed(name, {**{_key(k): v for k, v in attrs.items()}, **(attributes or {}), **current(),
+                             **_langfuse_derived(name, current())})
     if _missing_context(name, merged):
         yield trace.INVALID_SPAN
         return
@@ -140,7 +187,7 @@ def record_span(name: str, *, parent: Span, start_ns: int, end_ns: int,
     (strict mode raises without it)."""
     if not parent.is_recording():
         return
-    merged = _allowed(name, {**attributes, **current()})
+    merged = _allowed(name, {**attributes, **current(), **_langfuse_derived(name, current())})
     if _missing_context(name, merged):
         return
     child = _tracer(_SCOPE).start_span(name, context=trace.set_span_in_context(parent), attributes=merged,

@@ -1,6 +1,6 @@
 # M1 — Esquema de flows y validación estática
 
-- Estado: **rev. 5 · implementado** · Fase 1 (carga, G0-01 a G0-06, `derive_claims`, CLI) y fase 5 (G0-07 a G0-16, chequeos por agente)
+- Estado: **rev. 6 · implementado** · Fase 1 (carga, G0-01 a G0-06, `derive_claims`, CLI) y fase 5 (G0-07 a G0-16, chequeos por agente)
 - Paquete: `agent_core.flows`
 - Origen: spec general §5 (catálogo y reclamos), §6.1, §6.2 (chequeos por agente), §13.1, §13.3
 - ADRs: 0004 (catálogo cerrado, G0), 0007 (acción congelada, reclamos), 0009 (políticas, literales), 0011 (`compute`), 0016 (G0-15). ADR 0015 (conocimiento, rev. 4: G0-17 a G0-21; M12).
@@ -8,6 +8,8 @@
 - **Requisito para empezar:** M0 terminado hasta sus tareas 4 (nodos), 5 (entidades, con `ModelProfile` y `Prompt.model_profile` de la rev. 5), 10 (`InMemoryRegistry`) y 12 (CLI).
 
 **Changelog**
+
+- rev. 6 (2026-10-05), sugerencias del copiloto (ADR 0026; M0 `SCHEMA_VERSION` 1.6.0): nodo `suggest` (§3.13). **G0-28** nueva; G0-07, G0-10, G0-15, G0-22, G0-24 y G0-25 alcanzan al nodo; G0-06 trata `gave_up` como rama de fallo; `reads`, `optional_reads` y `escalate.evidence_from` son rutas (G0-01) con los espacios `slots`/`facts` (G0-10).
 
 - rev. 2 (2026-09-29), revisión de M1:
   - **G0-04** se calcula quitando los nodos que esperan y exigiendo un grafo acíclico. La versión con SCC dejaba pasar bucles que esquivaban el nodo que espera.
@@ -199,12 +201,13 @@ campo   := [A-Za-z0-9_]+
 | G0-19 | Página fija de un nodo `customer_answer` que no es `public` + `approved` | Sobre `snapshot.pages`; solo en `validate_flow_for_release` | 5 |
 | G0-20 | `navigate` con selector que no cubre el scope | `output_schema.properties.path.enum` del selector == rutas del snapshot bajo `scope/` (sin `index.md`), sin repetidos; sin snapshot no se puede verificar. Solo en `validate_flow_for_release` | 5 |
 | G0-21 | `knowledge_from` sin un nodo `knowledge` que domine al `respond` | Cada nombre es el `save_as` de algún nodo `knowledge`, y quitando las aristas de salida de esos nodos el `respond` no es alcanzable desde la entrada | 5 |
-| G0-24 | Tool de un nodo `agent` sin documentar | Toda tool de `tools_allowed` de un nodo `agent` lleva `description` y un `args_schema` dentro del subconjunto cerrado (`domain.schema`); el mensaje nombra la tool y la palabra clave fuera del subconjunto (§3.13) | 5 |
+| G0-24 | Tool de un nodo `agent` o `suggest` sin documentar | Toda tool de `tools_allowed` de un nodo `agent` o `suggest` lleva `description` y un `args_schema` dentro del subconjunto cerrado (`domain.schema`); el mensaje nombra la tool y la palabra clave fuera del subconjunto (§3.13) | 5 |
+| G0-28 | Nodo `suggest` mal formado (ADR 0026) | Solo en flows task; el flow no escribe (`confirm`, escritura `draft`), no escala ni transfiere (`escalate`, `transfer`); `suggested` va directo a un `end`; `actions_allowed` son escrituras y no repiten `tools_allowed`; con `escalate`, toda ruta desde la entrada pasa por la rama `true` de una `rule` (§3.13) | 8 |
 | G0-26 | `transfer` sin origen de destino o de directorio que lo domine | `target_from` (`decisions.<save_as>.choice`) nombra un `decide` con `choices_from` y `directory_from` es el `save_as` de un nodo `tool` de `directory/list`; quitando la arista `chosen` del `decide` (`none` y `low_confidence` no producen `choice`) y todas las aristas de salida del `tool`, el `transfer` no es alcanzable desde la entrada (ADR 0021, spec de transferencia §6) | 7 |
 | G0-27 | Slot del paquete de transferencia no recolectado | Cada `packet.slots[i]` es el `slot` de algún `collect` del flow | 7 |
 | G0-29 | `capture_start` fuera de la entrada | Un `collect` con `capture_start` es el nodo de entrada del flow o sigue por `ok` a otro con `capture_start` que lo es (M2 D16) | 1 |
 | G0-23 | Escritura `draft` sin `confirm` mal formada | La tool es `write_draft` con `readback_by: idempotency_key`; `ok` y `uncertain` van al mismo `verify` con `by: idempotency_key`, que ningún otro nodo de escritura comparte; el flow solo vuelve al nodo desde `verified` (§3.13) | 5 |
-| G0-25 | Prompt de un nodo `agent` en modo nativo | El `model_profile` del prompt del `agent` es `structured: prompted` (§3.13) | 5 |
+| G0-25 | Prompt de un nodo `agent` o `suggest` en modo nativo | El `model_profile` del prompt del `agent` o `suggest` es `structured: prompted` (§3.13) | 5 |
 | G0-26 | `transfer` sin origen de destino o de directorio que lo domine | `target_from` (`decisions.<save_as>.choice`) nombra un `decide` con `choices_from` y `directory_from` es el `save_as` de un nodo `tool` de `directory/list`; quitando la arista `chosen` del `decide` (`none` y `low_confidence` no producen `choice`) y todas las aristas de salida del `tool`, el `transfer` no es alcanzable desde la entrada (ADR 0021, spec de transferencia §6) | 7 |
 | G0-27 | Slot del paquete de transferencia no recolectado | Cada `packet.slots[i]` es el `slot` de algún `collect` del flow | 7 |
 
@@ -463,6 +466,18 @@ Cualquier error de `load_yaml` es una sola `Violation` G0-01 con la ruta del arc
 - **G0-06** no cambia: `transfer` no cuenta como salida segura, pero el `transfer` de un flow de recepción se alcanza por el resultado `chosen` de un `decide` (no una rama de fallo) y su `rejected` va a un `escalate`.
 - **AG-03** (`validate_flow_for_agent` y `validate_agent`): un flow con `transfer` exige `agent.mode == conversational`; un agente con `accepts` exige `routing`, `understand` y modo conversacional.
 - Pruebas: `tests/m01/test_transfer_rules.py` (T-M1-47).
+
+**Nodo `suggest` (ADR 0026, rev. 6):**
+- **Referencias:** `prompt_ref`, `tools_allowed` y `actions_allowed` son sitios de referencia (G0-02) y `pin_release` los fija a la versión exacta.
+- **G0-07, G0-24 y G0-25** alcanzan a `tools_allowed` y al prompt igual que al nodo `agent`: solo lecturas o cálculos, documentadas para el modelo (`description` y `args_schema` en el subconjunto cerrado), y el prompt va en `structured: prompted`. **G0-15** cubre su `prompt_ref`; **G0-06** trata `gave_up` como rama de fallo (a un fin seguro: en un flow task, `failed`).
+- **G0-10 / G0-01:** `reads`, `optional_reads` y `escalate.evidence_from` solo admiten rutas, solo `slots` y `facts` con `.value`.
+- **G0-22:** `reads` y `optional_reads` alimentan a un modelo y son un sitio permitido para la salida de un nodo `agent` (como el `input_view`). `escalate.evidence_from` **no** lo es: la evidencia llega a la salida tal cual, así que no puede salir de lo que generó un modelo. La salida del nodo `suggest` no es un hecho (va a `RunResult.suggestions`), así que ninguna regla de G0-22 se relaja.
+- **G0-28** (nueva):
+  1. un nodo `suggest` solo va en un flow de modo task (la salida es de `RunResult`, que una conversación no tiene);
+  2. un flow con `suggest` no escribe, no escala ni transfiere (`escalate`, `transfer`) y la rama `suggested` va directo a un `end` (la lista vive solo en el resultado del turno que cierra el run, no en el estado): ningún `confirm` ni escritura `draft` (el copiloto recomienda, ADR 0019 §7; una lista no puede afirmar lo que nadie verificó);
+  3. `actions_allowed` son escrituras (nunca una lectura) y no repiten `tools_allowed`;
+  4. con `escalate`, **toda ruta desde la entrada pasa por la rama `true` de una `rule`**: quitando las aristas `true` de los nodos `rule`, el nodo no es alcanzable. La recomendación de escalar la decide una política, no el modelo.
+- Pruebas: `tests/m01/test_suggest_node.py`.
 
 ## 4. Invariantes
 

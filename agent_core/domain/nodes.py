@@ -219,6 +219,37 @@ class AgentNodeConfig(Model):
     input_view: list[str] = Field(default_factory=list)
 
 
+class SuggestEscalate(Model):
+    """Recomendación de escalar que un nodo `suggest` puede emitir (ADR 0026 §2 y §5).
+
+    El `reason_code` y la evidencia los fija el flow, no el modelo. M1 (G0-28) exige que el nodo solo se
+    alcance por la rama `true` de una `rule`: la regla decide, el nodo solo la expone. `evidence_from` son
+    rutas `slots.*`/`facts.*` de valor escalar; cada una pasa como `nombre: valor`."""
+
+    reason_code: ReasonCodeStr
+    evidence_from: Annotated[list[str], Field(min_length=1, max_length=5)]
+
+
+class SuggestConfig(Model):
+    """Configuración del nodo `suggest` (M0 §2.5, ADR 0026): lista tipada de sugerencias, posiblemente vacía.
+
+    `reads` son las rutas (`slots`, `facts`) que ve el modelo en la vista `model` (si falta una, el nodo se
+    rinde); `optional_reads` son las que se incluyen solo si existen (un slot opcional del `input_schema`).
+    Los hechos que aparecen en una u otra son los únicos que un borrador puede citar. `tools_allowed` son
+    lecturas que el modelo puede *recomendar*
+    (el nodo no las ejecuta). `actions_allowed` son las escrituras que puede *preparar* (vacío en esta etapa:
+    ninguna `action` es ejecutable). `max_items` acota la lista (Abierto 2)."""
+
+    prompt_ref: RefSpec
+    goal: str
+    reads: list[str] = Field(default_factory=list)
+    optional_reads: list[str] = Field(default_factory=list)
+    tools_allowed: list[RefSpec] = Field(default_factory=list)
+    actions_allowed: list[RefSpec] = Field(default_factory=list)
+    escalate: SuggestEscalate | None = None
+    max_items: Annotated[int, Field(ge=1, le=8)] = 3
+
+
 class SubflowConfig(Model):
     """Configuración del nodo `subflow` (M0 §2.5)."""
     flow: RefSpec
@@ -316,6 +347,12 @@ class AgentNode(_NodeBase):
     config: AgentNodeConfig
 
 
+class SuggestNode(_NodeBase):
+    """Nodo `suggest` de un flow (M0 §2.5, ADR 0026). Solo en flows task: va a `RunResult.suggestions`."""
+    type: Literal["suggest"]
+    config: SuggestConfig
+
+
 class SubflowNode(_NodeBase):
     """Nodo `subflow` de un flow (M0 §2.5)."""
     type: Literal["subflow"]
@@ -377,6 +414,7 @@ Node = Annotated[
     | Annotated[EndNode, Tag("end")]
     | Annotated[KnowledgeNode, Tag("knowledge")]
     | Annotated[AgentNode, Tag("agent")]
+    | Annotated[SuggestNode, Tag("suggest")]
     | Annotated[SubflowNode, Tag("subflow")]
     | Annotated[AwaitApprovalNode, Tag("await_approval")]
     | Annotated[TransferNode, Tag("transfer")],
@@ -398,6 +436,7 @@ RESULTS: Mapping[str, frozenset[str]] = MappingProxyType(
         # `low_confidence` es solo de `navigate`; un `read` cablea ok, not_found y denied (M1 G0-03)
         "knowledge": frozenset({"ok", "not_found", "denied", "low_confidence"}),
         "agent": frozenset({"answered", "gave_up"}),
+        "suggest": frozenset({"suggested", "gave_up"}),  # `suggested` también con la lista vacía (ADR 0026)
         "subflow": frozenset(),  # los declara el subflow
         "await_approval": frozenset({"approved", "rejected", "timeout"}),
         "transfer": frozenset({"rejected"}),  # success closes the run; not in TERMINAL (ruling R2)

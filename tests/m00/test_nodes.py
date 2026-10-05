@@ -205,8 +205,8 @@ def test_config_is_stored_as_data_not_evaluated() -> None:
 def test_results_cover_mvp_kinds() -> None:
     assert frozenset(
         {"decide", "rule", "collect", "tool", "tool_write", "confirm", "verify", "respond", "escalate", "end",
-         # `agent` (ADR 0019), `knowledge` (M12) y `transfer` (ADR 0021); los otros, producción
-         "agent", "knowledge", "transfer"}
+         # `agent` (ADR 0019), `knowledge` (M12), `transfer` (ADR 0021), `suggest` (ADR 0026); el resto, prod.
+         "agent", "knowledge", "transfer", "suggest"}
     ) == MVP_NODE_KINDS
     assert PRODUCTION_NODE_KINDS == frozenset({"subflow", "await_approval"})
     assert MVP_NODE_KINDS | PRODUCTION_NODE_KINDS == frozenset(RESULTS)

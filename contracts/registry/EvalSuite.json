@@ -102,6 +102,7 @@
     },
     "Expect": {
       "additionalProperties": false,
+      "description": "`suggestion_count` is the exact length of the list (0: the empty list is the expected result);\n`suggestions` are items it must (or must not) hold. Both come from `RunResult`, not from the events.",
       "properties": {
         "actions_verified": {
           "items": {
@@ -132,6 +133,28 @@
             }
           ],
           "default": null
+        },
+        "suggestion_count": {
+          "anyOf": [
+            {
+              "maximum": 8,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Suggestion Count"
+        },
+        "suggestions": {
+          "items": {
+            "$ref": "#/$defs/SuggestionExpect"
+          },
+          "maxItems": 20,
+          "title": "Suggestions",
+          "type": "array"
         }
       },
       "title": "Expect",
@@ -394,6 +417,7 @@
     },
     "ScenarioPrincipal": {
       "additionalProperties": false,
+      "description": "Who runs the scenario. Default: a `customer`. An `advisor` needs the `subject` it acts on behalf of:\nthe evaluator builds a synthetic delegation for it (agents invocable by advisors). The new fields are\nomitted from the serialisation at their defaults, so published suites keep their hash.",
       "properties": {
         "attrs": {
           "additionalProperties": {
@@ -406,6 +430,26 @@
           "minLength": 1,
           "title": "Id",
           "type": "string"
+        },
+        "subject": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScenarioSubject"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "type": {
+          "default": "customer",
+          "enum": [
+            "customer",
+            "advisor"
+          ],
+          "title": "Type",
+          "type": "string"
         }
       },
       "required": [
@@ -414,8 +458,31 @@
       "title": "ScenarioPrincipal",
       "type": "object"
     },
+    "ScenarioSubject": {
+      "additionalProperties": false,
+      "description": "The subject an advisor acts on behalf of in a scenario (maps to the engine `SubjectRef`).",
+      "properties": {
+        "kind": {
+          "minLength": 1,
+          "title": "Kind",
+          "type": "string"
+        },
+        "ref": {
+          "minLength": 1,
+          "title": "Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "ref"
+      ],
+      "title": "ScenarioSubject",
+      "type": "object"
+    },
     "Step": {
       "additionalProperties": false,
+      "description": "`input` (ADR 0026, solo en `start`) es el `RunInput.input` de un agente `task` con `input_schema`.",
       "properties": {
         "answer": {
           "anyOf": [
@@ -442,6 +509,21 @@
           ],
           "title": "Auth",
           "type": "string"
+        },
+        "input": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input"
         },
         "lang": {
           "anyOf": [
@@ -482,6 +564,106 @@
         "op"
       ],
       "title": "Step",
+      "type": "object"
+    },
+    "SuggestionExpect": {
+      "additionalProperties": false,
+      "description": "One expected (or forbidden) item of `RunResult.suggestions` (ADR 0026). All the fields given must hold\non the SAME suggestion. `text_contains` looks for each fragment in the texts of the item; `text_excludes`\nasks that none appears.",
+      "properties": {
+        "citations_min": {
+          "anyOf": [
+            {
+              "maximum": 10,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Citations Min"
+        },
+        "expect": {
+          "default": "at_least_one",
+          "enum": [
+            "at_least_one",
+            "none"
+          ],
+          "title": "Expect",
+          "type": "string"
+        },
+        "language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Language"
+        },
+        "reason_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason Code"
+        },
+        "text_contains": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Text Contains",
+          "type": "array"
+        },
+        "text_excludes": {
+          "items": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Text Excludes",
+          "type": "array"
+        },
+        "tool": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool"
+        },
+        "type": {
+          "enum": [
+            "reply",
+            "tool",
+            "action",
+            "escalate"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "SuggestionExpect",
       "type": "object"
     },
     "ToolReply": {

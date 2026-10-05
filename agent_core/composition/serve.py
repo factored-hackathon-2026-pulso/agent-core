@@ -1,9 +1,10 @@
 """Raíz de composición del servidor: `ServePorts` -> `ApiDeps` (motor real + API M9 + registry opcional)."""
 
 import argparse
+import logging
 import sys
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from decimal import Decimal
 
@@ -17,7 +18,14 @@ from agent_core.composition.builder_tools import BuilderToolExecutor, RoutedTool
 from agent_core.composition.engine import EngineConfig, EngineDeps, EngineTools, build_engine
 from agent_core.composition.export_http import export_extension
 from agent_core.composition.observability import ObservabilityConfigError, setup_observability
-from agent_core.composition.serve_ports import ServeConfigError, ServePorts, resolve_ports
+from agent_core.composition.schema_version import SchemaBootstrap
+from agent_core.composition.serve_ports import (
+    DOUBLES_ENV,
+    LEGACY_DOUBLES_ENV,
+    ServeConfigError,
+    ServePorts,
+    resolve_ports,
+)
 from agent_core.composition.serve_registry import build_registry_service_for_serve
 from agent_core.composition.telemetry import OtelTurnTelemetry
 from agent_core.domain import (
@@ -44,6 +52,17 @@ def _extensions(ports: ServePorts, registry_service: RegistryService | None) -> 
     return tuple(found)
 
 
+_LOG = logging.getLogger("agent_core.serve")
+AUTO_MIGRATE_ENV = "AGENTCORE_AUTO_MIGRATE"  # "0": no migrar al arrancar (el rol sin DDL)
+
+
+def mode_line(ports: ServePorts) -> str:
+    """The startup mode: `production` when no piece is a double, else `demo` with the doubles named."""
+    if not ports.doubles:
+        return "serve mode=production"
+    return "serve mode=demo doubles=" + ",".join(ports.doubles)
+
+
 RATE_MAX_HITS_ENV = "AGENTCORE_RATE_MAX_HITS"
 RATE_WINDOW_ENV = "AGENTCORE_RATE_WINDOW_SECONDS"
 DAILY_BUDGET_ENV = "AGENTCORE_DAILY_BUDGET_USD"
@@ -65,9 +84,44 @@ def rate_limits_from_env(env: Mapping[str, str]) -> RateLimitConfig:
                          f"{DAILY_BUDGET_ENV}, {SERVICE_MULTIPLIER_ENV})") from exc
 
 
+MAX_INFLIGHT_ENV = "AGENTCORE_MAX_INFLIGHT"
+WORKER_THREADS_ENV = "AGENTCORE_WORKER_THREADS"
+SHUTDOWN_GRACE_ENV = "AGENTCORE_SHUTDOWN_GRACE_SECONDS"
+
+
+@dataclass(frozen=True)
+class OpsConfig:
+    max_inflight: int = 0  # 0 = sin tope
+    worker_threads: int = 40  # hilos de las rutas síncronas (el valor por defecto de anyio)
+    shutdown_grace_s: float = 25.0  # plazo de uvicorn para las peticiones en curso al recibir SIGTERM
+
+
+def ops_from_env(env: Mapping[str, str]) -> OpsConfig:
+    """Topes de carga y plazo de apagado; lo no definido conserva el valor por defecto. `ValueError` con el
+    nombre de la variable inválida (el arranque lo informa y sale)."""
+    defaults = OpsConfig()
+
+    def number(name: str, default: float, cast: Callable[[str], float], minimum: float) -> float:
+        raw = env.get(name)
+        if not raw:
+            return default
+        try:
+            value = cast(raw)
+        except ValueError:
+            raise ValueError(f"{name} debe ser un número") from None
+        if value < minimum:
+            raise ValueError(f"{name} debe ser >= {minimum:g}")
+        return value
+
+    return OpsConfig(
+        max_inflight=int(number(MAX_INFLIGHT_ENV, defaults.max_inflight, int, 0)),
+        worker_threads=int(number(WORKER_THREADS_ENV, defaults.worker_threads, int, 1)),
+        shutdown_grace_s=number(SHUTDOWN_GRACE_ENV, defaults.shutdown_grace_s, float, 0))
+
+
 def build_api_deps(ports: ServePorts, *, registry_service: RegistryService | None = None,
                    telemetry: TurnTelemetry | None = None, build_sha: str | None = None,
-                   limits: RateLimitConfig | None = None) -> ApiDeps:
+                   limits: RateLimitConfig | None = None, max_inflight: int = 0) -> ApiDeps:
     built = build_engine(EngineDeps(
         clock=ports.clock, ids=ports.ids, keys=ports.keys, uow_factory=ports.uow_factory, audit=ports.audit,
         registry=ports.registry, releases=ports.releases, tools=ports.tools, gateway=ports.gateway,
@@ -81,7 +135,8 @@ def build_api_deps(ports: ServePorts, *, registry_service: RegistryService | Non
         counters=ports.counters, clock=ports.clock, ids=ports.ids, turns=built.turns,
         handoffs=built.handoffs, transcripts=built.transcripts,
         denials=AuditLog(ports.audit, ports.uow_factory), security=OtelSecurityLog(),
-        readiness=ports.readiness, build_sha=build_sha, limits=limits or RateLimitConfig(),
+        readiness=ports.readiness, optional_checks=ports.optional_readiness, build_sha=build_sha,
+        max_inflight=max_inflight, limits=limits or RateLimitConfig(),
         extensions=_extensions(ports, registry_service))
 
 
@@ -117,6 +172,13 @@ def gateway_warnings(url: str | None) -> list[str]:
     return []
 
 
+async def _set_worker_threads(total: int) -> None:
+    """Hilos de las rutas síncronas: el límite por defecto de anyio (40) acota la concurrencia."""
+    from anyio import to_thread
+
+    to_thread.current_default_thread_limiter().total_tokens = total
+
+
 def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Mapping[str, str],
               serve: Callable[..., None] | None = None) -> int:
     """Configura la observabilidad, resuelve los puertos, avisa de los dobles y arranca uvicorn. `serve` se
@@ -130,11 +192,13 @@ def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Map
         return 2
     try:
         limits = rate_limits_from_env(env)
+        ops = ops_from_env(env)
     except ValueError as exc:
         print("agentcore serve no puede arrancar:", file=sys.stderr)
         print(f"  - {exc}", file=sys.stderr)
         observability.shutdown()
         return 2
+    bootstrap: SchemaBootstrap | None = None
     try:
         try:
             ports = resolve_ports(args, env, clock, ids)
@@ -143,12 +207,21 @@ def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Map
             for problem in exc.problems:
                 print(f"  - {problem}", file=sys.stderr)
             return 2
+        _LOG.info(mode_line(ports))
+        if env.get(LEGACY_DOUBLES_ENV) == "1" and env.get(DOUBLES_ENV) != "1":
+            print(f"AVISO: {LEGACY_DOUBLES_ENV} está en desuso; usa {DOUBLES_ENV}=1", file=sys.stderr)
         if ports.doubles:
             print("AVISO: piezas que son DOBLES de demo (no producción): " + ", ".join(ports.doubles),
                   file=sys.stderr)
         for warning in (*release_warnings(ports.registry, ports.agents, ports.clock),
                         *gateway_warnings(ports.llm_gateway_url)):
             print(f"AVISO: {warning}", file=sys.stderr)
+        if ports.migrate is not None and env.get(AUTO_MIGRATE_ENV) != "0":
+            # En segundo plano y con reintentos: sin base `serve` arranca igual y `/readyz` dice 503.
+            migrate = ports.migrate
+            bootstrap = SchemaBootstrap(
+                lambda: _LOG.info("schema migrated=%s", ",".join(migrate()) or "none"))
+            bootstrap.start()
         registry_service = build_registry_service_for_serve(ports) if ports.registry_api is not None else None
         # Always the real turn telemetry: without an exporter its spans are no-ops, but `bind` still
         # correlates the turn's logs (m04 §3.9).
@@ -157,7 +230,9 @@ def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Map
                 BuilderToolExecutor(registry_service, constructor_bot(ports.clock), ports.ids), ports.tools))
         app = create_app(
             build_api_deps(ports, registry_service=registry_service, telemetry=OtelTurnTelemetry(),
-                           build_sha=env.get("AGENTCORE_GIT_SHA") or None, limits=limits))
+                           build_sha=env.get("AGENTCORE_GIT_SHA") or None, limits=limits,
+                           max_inflight=ops.max_inflight))
+        app.router.on_startup.append(lambda: _set_worker_threads(ops.worker_threads))
         if serve is None:
             import uvicorn
 
@@ -166,7 +241,10 @@ def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Map
         # message and stack (Starlette re-raises after the 500 handler); with `log_config=None` it reaches the
         # root JSON formatter, which keeps only `exc_type`. The access log would print client IPs and id
         # paths.
-        serve(app, host=args.host, port=args.port, log_config=None, access_log=False)
+        serve(app, host=args.host, port=args.port, log_config=None, access_log=False,
+              timeout_graceful_shutdown=int(ops.shutdown_grace_s))
         return 0
     finally:
+        if bootstrap is not None:
+            bootstrap.stop()
         observability.shutdown()  # I6: flush the batch exporter on exit

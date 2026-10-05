@@ -1,6 +1,6 @@
 # Calibración de `understand-turno` (sintética)
 
-- Artefacto: `cal-49e0da2c384f3dec` · método `isotonic` · `split_hash` `52329d6510ef…`
+- Artefacto: `cal-02942767f4c10da2` · método `isotonic` · `split_hash` `52329d6510ef…`
 - Proveedor `jev`, modelo fijado en la definición. Muestras dev: {'es': 417, 'pt': 121}. Muestras test: {'es': 166, 'pt': 53}.
 - Objetivos: `command` precision ≥ 0.95, `flow` precision ≥ 0.95, `interrupt` recall ≥ 0.9
 

@@ -14,6 +14,7 @@ from fastapi.telemetry import TelemetryConfig
 from agent_core.api.authorization import RunAuthorizer
 from agent_core.api.body_limit import DEFAULT_MAX_BODY_BYTES, BodyLimit
 from agent_core.api.gate import ANON_SESSION_ATTR, AccessGate, Admitted
+from agent_core.api.inflight import InflightLimit
 from agent_core.api.limits import LimitGuard, RateLimitConfig
 from agent_core.api.problems import install_error_handlers
 from agent_core.api.protocols import (
@@ -23,6 +24,7 @@ from agent_core.api.protocols import (
     TranscriptService,
     TurnService,
 )
+from agent_core.api.readiness import run_checks
 from agent_core.api.routing import DecimalJsonRoute, JsonResponse
 from agent_core.api.schemas import (
     CreateRunBody,
@@ -104,6 +106,10 @@ class ApiDeps:
     extensions: tuple[ApiExtension, ...] = ()  # rutas de otros paquetes; vacío = comportamiento previo
     # Comprobaciones de `/readyz` (nombre, función). Vacío = siempre listo. Las inyecta el cableado.
     readiness: tuple[tuple[str, Callable[[], bool]], ...] = ()
+    # Nombres de `readiness` que solo se informan (`degraded`): su caída no vuelve el servicio no listo.
+    optional_checks: frozenset[str] = frozenset()
+    max_inflight: int = 0  # tope de peticiones `/v1` simultáneas del proceso; 0 = sin tope
+    readiness_timeout_s: float = 1.0  # plazo de todas las comprobaciones juntas; una lenta falla
     build_sha: str | None = None  # commit de la imagen (`AGENTCORE_GIT_SHA`); lo informa `/version` (N-04)
 
 
@@ -112,20 +118,6 @@ def _package_version() -> str:
         return package_version("agent-core")
     except PackageNotFoundError:
         return "0+unknown"
-
-
-def _failed_checks(checks: tuple[tuple[str, Callable[[], bool]], ...]) -> list[str]:
-    """Nombres de las comprobaciones que no pasan. Una que lanza cuenta como fallida y su mensaje se descarta:
-    puede traer hosts o credenciales."""
-    failed: list[str] = []
-    for name, check in checks:
-        try:
-            ok = check()
-        except Exception:
-            ok = False
-        if not ok:
-            failed.append(name)
-    return failed
 
 
 def _idempotency_key(raw: str | None, principal: Principal) -> str:
@@ -156,6 +148,8 @@ def create_app(deps: ApiDeps) -> FastAPI:
     app = FastAPI(title="agent-core", version=SCHEMA_VERSION, telemetry=FASTAPI_TELEMETRY_OFF)
     # Antes que el tracing: Starlette deja interno el primer middleware, así el 413 ya lleva `trace_id`.
     app.add_middleware(BodyLimit, max_bytes=deps.max_body_bytes)
+    if deps.max_inflight > 0:
+        app.add_middleware(InflightLimit, max_inflight=deps.max_inflight)
     install_tracing(app, deps.ids)
     install_error_handlers(app)
 
@@ -172,10 +166,15 @@ def create_app(deps: ApiDeps) -> FastAPI:
     @app.get("/readyz", include_in_schema=False, response_model=None)
     def readyz() -> JSONResponse:
         """Readiness: todas las comprobaciones inyectadas pasan. Sin credencial y sin detalle de errores."""
-        failed = _failed_checks(deps.readiness)
-        if failed:
-            return JSONResponse({"status": "unavailable", "failed": failed}, status_code=503)
-        return JSONResponse({"status": "ready"})
+        report = run_checks(deps.readiness, deps.optional_checks, deps.readiness_timeout_s)
+        body: dict[str, object] = {"status": "ready" if report.ready else "unavailable"}
+        if report.failed:
+            body["failed"] = report.failed
+        if report.checks:
+            body["checks"] = report.checks
+        if report.degraded:
+            body["degraded"] = report.degraded
+        return JSONResponse(body, status_code=200 if report.ready else 503)
 
     gate = AccessGate(deps.verifier, deps.clock, deps.ids, deps.denials, deps.security)
     guard = LimitGuard(deps.counters, deps.clock, deps.limits)

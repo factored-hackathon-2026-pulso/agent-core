@@ -446,6 +446,26 @@
             ],
             "title": "Reason"
           },
+          "reason_code": {
+            "anyOf": [
+              {
+                "enum": [
+                  "insufficient_evidence",
+                  "wrong_target",
+                  "risk",
+                  "duplicate",
+                  "policy_conflict",
+                  "wording",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          },
           "yardstick_loosened": {
             "items": {
               "$ref": "#/components/schemas/YardstickChange"
@@ -480,6 +500,13 @@
               "$ref": "#/components/schemas/GateItem"
             },
             "title": "Gate",
+            "type": "array"
+          },
+          "guardrail_changes": {
+            "items": {
+              "$ref": "#/components/schemas/GuardrailChange"
+            },
+            "title": "Guardrail Changes",
             "type": "array"
           },
           "release_changes": {
@@ -1575,6 +1602,13 @@
             ],
             "title": "Detail"
           },
+          "guardrail_changes": {
+            "items": {
+              "$ref": "#/components/schemas/GuardrailChange"
+            },
+            "title": "Guardrail Changes",
+            "type": "array"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/GateItem"
@@ -1749,6 +1783,7 @@
       },
       "Expect": {
         "additionalProperties": false,
+        "description": "`suggestion_count` is the exact length of the list (0: the empty list is the expected result);\n`suggestions` are items it must (or must not) hold. Both come from `RunResult`, not from the events.",
         "properties": {
           "actions_verified": {
             "items": {
@@ -1777,6 +1812,27 @@
                 "type": "null"
               }
             ]
+          },
+          "suggestion_count": {
+            "anyOf": [
+              {
+                "maximum": 8.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggestion Count"
+          },
+          "suggestions": {
+            "items": {
+              "$ref": "#/components/schemas/SuggestionExpect"
+            },
+            "maxItems": 20,
+            "title": "Suggestions",
+            "type": "array"
           }
         },
         "title": "Expect",
@@ -1829,6 +1885,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/AgentNode"
+                },
+                {
+                  "$ref": "#/components/schemas/SuggestNode"
                 },
                 {
                   "$ref": "#/components/schemas/SubflowNode"
@@ -2038,6 +2097,64 @@
           "fallback_template_ref"
         ],
         "title": "GenerateConfig",
+        "type": "object"
+      },
+      "GuardrailChange": {
+        "additionalProperties": false,
+        "description": "A policy, flow, tool or agent-tool link the candidate adds, removes or changes against the base. The\ngate does NOT evaluate these artifacts: the list tells the reviewer what to read (names and ids only).\n`kind` is `policy`, `flow`, `tool` or `tool_link` (`id` is `<agent>/<tool>`, from\n`Agent.tools_allowed`).",
+        "properties": {
+          "base_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Version"
+          },
+          "candidate_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Version"
+          },
+          "change": {
+            "enum": [
+              "added",
+              "removed",
+              "changed"
+            ],
+            "title": "Change",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "policy",
+              "flow",
+              "tool",
+              "tool_link"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "change"
+        ],
+        "title": "GuardrailChange",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -2605,6 +2722,57 @@
         "title": "LanguageDetection",
         "type": "object"
       },
+      "LastDecision": {
+        "additionalProperties": false,
+        "description": "The last human decision on a proposal. Deliberately without the free-text reason (it may hold personal\ndata) and without the actor id: only the closed-vocabulary code and the role that decided.",
+        "properties": {
+          "decided_at": {
+            "format": "date-time",
+            "title": "Decided At",
+            "type": "string"
+          },
+          "decided_by_role": {
+            "const": "approver",
+            "default": "approver",
+            "title": "Decided By Role",
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "approved",
+              "rejected"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "enum": [
+                  "insufficient_evidence",
+                  "wrong_target",
+                  "risk",
+                  "duplicate",
+                  "policy_conflict",
+                  "wording",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          }
+        },
+        "required": [
+          "decision",
+          "decided_at"
+        ],
+        "title": "LastDecision",
+        "type": "object"
+      },
       "MetricDef": {
         "additionalProperties": false,
         "description": "One agent metric, with the role it plays in the gate and in production.",
@@ -2914,39 +3082,7 @@
         "type": "string"
       },
       "Policy": {
-        "additionalProperties": false,
-        "description": "Política versionada: expresión, responsable y justificación (M0 §2.4).",
-        "properties": {
-          "expr": {
-            "$ref": "#/components/schemas/JsonValue-Output"
-          },
-          "id": {
-            "pattern": "^[a-z0-9][a-z0-9_/-]*$",
-            "title": "Id",
-            "type": "string"
-          },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
-          "rationale": {
-            "title": "Rationale",
-            "type": "string"
-          },
-          "version": {
-            "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
-            "title": "Version",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "version",
-          "owner",
-          "expr",
-          "rationale"
-        ],
-        "title": "Policy",
+        "additionalProperties": true,
         "type": "object"
       },
       "Predicate": {
@@ -3231,6 +3367,16 @@
             },
             "title": "Changes",
             "type": "array"
+          },
+          "last_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LastDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "last_eval": {
             "anyOf": [
@@ -3693,6 +3839,22 @@
           "field": {
             "title": "Field",
             "type": "string"
+          },
+          "inherited": {
+            "default": false,
+            "title": "Inherited",
+            "type": "boolean"
+          },
+          "inherited_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inherited From"
           }
         },
         "required": [
@@ -4108,25 +4270,7 @@
         "type": "object"
       },
       "ScenarioPrincipal": {
-        "additionalProperties": false,
-        "properties": {
-          "attrs": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "title": "Attrs",
-            "type": "object"
-          },
-          "id": {
-            "minLength": 1,
-            "title": "Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id"
-        ],
-        "title": "ScenarioPrincipal",
+        "additionalProperties": true,
         "type": "object"
       },
       "ScenarioResult": {
@@ -4219,6 +4363,7 @@
       },
       "Step": {
         "additionalProperties": false,
+        "description": "`input` (ADR 0026, solo en `start`) es el `RunInput.input` de un agente `task` con `input_schema`.",
         "properties": {
           "answer": {
             "anyOf": [
@@ -4244,6 +4389,20 @@
             ],
             "title": "Auth",
             "type": "string"
+          },
+          "input": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue-Output"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input"
           },
           "lang": {
             "anyOf": [
@@ -4353,6 +4512,225 @@
           "config"
         ],
         "title": "SubflowNode",
+        "type": "object"
+      },
+      "SuggestConfig": {
+        "additionalProperties": false,
+        "description": "Configuración del nodo `suggest` (M0 §2.5, ADR 0026): lista tipada de sugerencias, posiblemente vacía.\n\n`reads` son las rutas (`slots`, `facts`) que ve el modelo en la vista `model` (si falta una, el nodo se\nrinde); `optional_reads` son las que se incluyen solo si existen (un slot opcional del `input_schema`).\nLos hechos que aparecen en una u otra son los únicos que un borrador puede citar. `tools_allowed` son\nlecturas que el modelo puede *recomendar*\n(el nodo no las ejecuta). `actions_allowed` son las escrituras que puede *preparar* (vacío en esta etapa:\nninguna `action` es ejecutable). `max_items` acota la lista (Abierto 2).",
+        "properties": {
+          "actions_allowed": {
+            "items": {
+              "$ref": "#/components/schemas/RefSpec"
+            },
+            "title": "Actions Allowed",
+            "type": "array"
+          },
+          "escalate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SuggestEscalate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "goal": {
+            "title": "Goal",
+            "type": "string"
+          },
+          "max_items": {
+            "default": 3,
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Max Items",
+            "type": "integer"
+          },
+          "optional_reads": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Optional Reads",
+            "type": "array"
+          },
+          "prompt_ref": {
+            "$ref": "#/components/schemas/RefSpec"
+          },
+          "reads": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reads",
+            "type": "array"
+          },
+          "tools_allowed": {
+            "items": {
+              "$ref": "#/components/schemas/RefSpec"
+            },
+            "title": "Tools Allowed",
+            "type": "array"
+          }
+        },
+        "required": [
+          "prompt_ref",
+          "goal"
+        ],
+        "title": "SuggestConfig",
+        "type": "object"
+      },
+      "SuggestEscalate": {
+        "additionalProperties": false,
+        "description": "Recomendación de escalar que un nodo `suggest` puede emitir (ADR 0026 §2 y §5).\n\nEl `reason_code` y la evidencia los fija el flow, no el modelo. M1 (G0-28) exige que el nodo solo se\nalcance por la rama `true` de una `rule`: la regla decide, el nodo solo la expone. `evidence_from` son\nrutas `slots.*`/`facts.*` de valor escalar; cada una pasa como `nombre: valor`.",
+        "properties": {
+          "evidence_from": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "title": "Evidence From",
+            "type": "array"
+          },
+          "reason_code": {
+            "title": "Reason Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason_code",
+          "evidence_from"
+        ],
+        "title": "SuggestEscalate",
+        "type": "object"
+      },
+      "SuggestNode": {
+        "additionalProperties": false,
+        "description": "Nodo `suggest` de un flow (M0 §2.5, ADR 0026). Solo en flows task: va a `RunResult.suggestions`.",
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/SuggestConfig"
+          },
+          "id": {
+            "pattern": "^[a-z0-9][a-z0-9_]*$",
+            "title": "Id",
+            "type": "string"
+          },
+          "next": {
+            "additionalProperties": {
+              "pattern": "^[a-z0-9][a-z0-9_]*$",
+              "type": "string"
+            },
+            "title": "Next",
+            "type": "object"
+          },
+          "type": {
+            "const": "suggest",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "config"
+        ],
+        "title": "SuggestNode",
+        "type": "object"
+      },
+      "SuggestionExpect": {
+        "additionalProperties": false,
+        "description": "One expected (or forbidden) item of `RunResult.suggestions` (ADR 0026). All the fields given must hold\non the SAME suggestion. `text_contains` looks for each fragment in the texts of the item; `text_excludes`\nasks that none appears.",
+        "properties": {
+          "citations_min": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Citations Min"
+          },
+          "expect": {
+            "default": "at_least_one",
+            "enum": [
+              "at_least_one",
+              "none"
+            ],
+            "title": "Expect",
+            "type": "string"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          },
+          "text_contains": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Text Contains",
+            "type": "array"
+          },
+          "text_excludes": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Text Excludes",
+            "type": "array"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool"
+          },
+          "type": {
+            "enum": [
+              "reply",
+              "tool",
+              "action",
+              "escalate"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "SuggestionExpect",
         "type": "object"
       },
       "SuiteMeasurement": {
@@ -5256,6 +5634,26 @@
           "reason": {
             "title": "Reason",
             "type": "string"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "enum": [
+                  "insufficient_evidence",
+                  "wrong_target",
+                  "risk",
+                  "duplicate",
+                  "policy_conflict",
+                  "wording",
+                  "other"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
           }
         },
         "required": [

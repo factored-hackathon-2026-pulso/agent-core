@@ -1,0 +1,11 @@
+id: leer_productos
+version: 1.0.0
+risk_class: read
+min_auth_level: session
+idempotent: true
+source: productos
+description: "Lista los productos del cliente atendido (tarjeta, saldo adeudado, cupo, pago mínimo)."
+args_schema:
+  type: object
+  additionalProperties: false
+  properties: {}

@@ -1,0 +1,75 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "$defs": {
+    "JsonValue": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "description": "Una lectura que conviene mirar. `tool` ∈ `suggest.tools_allowed`; el sujeto nunca es argumento.",
+  "properties": {
+    "args": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Args",
+      "type": "object"
+    },
+    "tool": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Tool",
+      "type": "string"
+    },
+    "type": {
+      "const": "tool",
+      "default": "tool",
+      "title": "Type",
+      "type": "string"
+    },
+    "why": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Why",
+      "type": "string"
+    }
+  },
+  "required": [
+    "tool",
+    "why"
+  ],
+  "title": "ToolSuggestion",
+  "type": "object"
+}

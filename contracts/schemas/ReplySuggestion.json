@@ -1,0 +1,40 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "additionalProperties": false,
+  "description": "Borrador para el cliente. Lo redacta el modelo; M8 valida cifras y fechas contra los hechos citados.",
+  "properties": {
+    "citations": {
+      "items": {
+        "maxLength": 120,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 10,
+      "title": "Citations",
+      "type": "array"
+    },
+    "language": {
+      "pattern": "^[a-z]{2}$",
+      "title": "Language",
+      "type": "string"
+    },
+    "text": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+    },
+    "type": {
+      "const": "reply",
+      "default": "reply",
+      "title": "Type",
+      "type": "string"
+    }
+  },
+  "required": [
+    "text",
+    "language"
+  ],
+  "title": "ReplySuggestion",
+  "type": "object"
+}

@@ -159,6 +159,17 @@ class ToolCalledPayload(Model):
     attempt: PositiveInt = 1
     action_id: str | None = None
     latency_ms: NonNegativeInt
+    # `ToolDef.source` of the tool called (its source class, e.g. the origin table): lets tool-usage signals
+    # group calls without reading the registry. Omitted from the serialisation when absent, so events
+    # recorded before this field existed re-serialise to the same bytes (hash chain).
+    tool_source: str | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_source(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.tool_source is None:
+            data.pop("tool_source", None)
+        return data
 
 
 class AgentStepPayload(Model):
@@ -175,6 +186,7 @@ class AgentStepPayload(Model):
     status: ToolStatus | None = None
     text_fp: Fingerprint | None = None
     error_kind: GatewayErrorKind | None = None  # solo con `kind = "failed"`: la falla del gateway
+    tokens: NonNegativeInt | None = None  # tokens (entrada + salida) que el proveedor informó en el paso
     latency_ms: NonNegativeInt
 
 
@@ -277,6 +289,26 @@ class ResponseFailedPayload(Model):
     reason_code: Literal["validation_failed"]
     validator: ValidatorOutcome
     claims: list[str] = Field(default_factory=list)
+    llm: LlmUsage | None = None
+
+
+class SuggestionsProducedPayload(Model):
+    """Payload del evento `suggestions_produced` (vista audit, M0 §2.10, ADR 0026).
+
+    Un nodo `suggest` terminó. Solo contadores, tipos y una huella con clave de la lista: nunca el texto de
+    una sugerencia (puede resumir lo que dijo el cliente). `result = "failed"`: ninguna lista pasó la
+    validación (o el gateway falló) y el nodo terminó en `gave_up`; `failures` son los ids de las
+    comprobaciones, sin datos."""
+    node_id: NodeId
+    result: Literal["ok", "failed"]
+    count: NonNegativeInt
+    reply: NonNegativeInt
+    tool: NonNegativeInt
+    action: NonNegativeInt
+    escalate: NonNegativeInt
+    regenerations: NonNegativeInt = 0
+    failures: list[str] = Field(default_factory=list)
+    text_fp: Fingerprint | None = None
     llm: LlmUsage | None = None
 
 
@@ -440,6 +472,12 @@ class AgentStep(EngineEvent):
     payload: AgentStepPayload
 
 
+class SuggestionsProduced(EngineEvent):
+    """Evento `suggestions_produced` de la cadena de auditoría (M0 §2.10, ADR 0026)."""
+    type: Literal["suggestions_produced"] = "suggestions_produced"
+    payload: SuggestionsProducedPayload
+
+
 class KnowledgeRead(EngineEvent):
     """Evento `knowledge_read` de la cadena de auditoría (M12 §6)."""
     type: Literal["knowledge_read"] = "knowledge_read"
@@ -557,6 +595,7 @@ AnyEvent = Annotated[
     | RuleEvaluated
     | ToolCalled
     | AgentStep
+    | SuggestionsProduced
     | KnowledgeRead
     | StepUpRequested
     | ActionConfirmed
@@ -580,7 +619,8 @@ AnyEvent = Annotated[
 
 _EVENT_CLASSES: tuple[type[EngineEvent], ...] = (
     RunStarted, TurnStarted, CommandEmitted, NodeEntered, DecisionMade, RuleEvaluated, ToolCalled,
-    AgentStep, KnowledgeRead, StepUpRequested, ActionConfirmed, ActionCancelled, ActionDispatched,
+    AgentStep, SuggestionsProduced, KnowledgeRead, StepUpRequested, ActionConfirmed, ActionCancelled,
+    ActionDispatched,
     ActionVerified,
     ExpiryEvaluated, ResponseEmitted, ResponseFailed, TurnCompleted, InjectionFlagged, AccessDenied,
     Escalated, HandoffResolved, RunClosed, RunTransferred, TransferReceived, TransferRejected,
@@ -603,6 +643,7 @@ EVENT_EMITTERS: Mapping[str, frozenset[str]] = MappingProxyType(
         "step_up_requested": frozenset({"M2"}),
         "tool_called": frozenset({"M2", "M3"}),
         "agent_step": frozenset({"M2"}),
+        "suggestions_produced": frozenset({"M2"}),
         "knowledge_read": frozenset({"M12"}),
         "decision_made": frozenset({"M5"}),
         "action_confirmed": frozenset({"M3"}),
@@ -625,7 +666,8 @@ MEASURED_FIELDS: Mapping[str, frozenset[str]] = MappingProxyType(
     {
         "decision_made": frozenset({"latency_ms"}),
         "tool_called": frozenset({"latency_ms"}),
-        "agent_step": frozenset({"latency_ms"}),
+        "agent_step": frozenset({"latency_ms", "tokens"}),
+        "suggestions_produced": frozenset({"llm"}),
         "response_emitted": frozenset({"llm"}),
         "response_failed": frozenset({"llm"}),
         "turn_completed": frozenset({"duration_ms", "stages"}),

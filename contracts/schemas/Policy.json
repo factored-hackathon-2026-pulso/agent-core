@@ -48,6 +48,11 @@
       "title": "Id",
       "type": "string"
     },
+    "locked": {
+      "default": false,
+      "title": "Locked",
+      "type": "boolean"
+    },
     "owner": {
       "title": "Owner",
       "type": "string"
