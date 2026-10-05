@@ -350,6 +350,30 @@ def test_a_tool_call_carries_ids_and_status_never_args_result_or_error(tool_call
     assert set(span.attributes) <= tel.ALLOWED_ATTRIBUTES
 
 
+def _agent_step(**payload: Any) -> EngineEvent:
+    from pydantic import TypeAdapter
+
+    from agent_core.domain import AgentStep
+    from tests.m00.samples import SAMPLE_PAYLOADS, make_event
+
+    raw = make_event("agent_step", {**SAMPLE_PAYLOADS["agent_step"], "latency_ms": 40, **payload})
+    return TypeAdapter(AgentStep).validate_python(raw)
+
+
+def test_an_agent_step_with_tokens_becomes_a_child_with_its_usage() -> None:
+    event = _agent_step(tokens=30)
+    (span,) = derived_spans([event])
+    assert span.name == "agentcore.agent_step" and span.end_ns == _ns(event.ts)
+    assert span.end_ns - span.start_ns == 40 * 1_000_000
+    assert span.attributes == {"agentcore.node": "investigar", "agentcore.agent_step.kind": "tool",
+                               "agentcore.agent_step.tokens": 30}
+    assert set(span.attributes) <= tel.ALLOWED_ATTRIBUTES
+
+
+def test_an_agent_step_without_tokens_produces_no_child() -> None:  # events recorded before the field
+    assert derived_spans([_agent_step()]) == []
+
+
 def test_other_events_produce_no_children(recorded: dict[str, list[EngineEvent]]) -> None:
     others = [e for e in recorded["resuelto"] if not isinstance(e, DecisionMade | RuleEvaluated | ToolCalled)]
     assert {e.type for e in others} >= {"turn_started", "turn_completed", "run_started"}

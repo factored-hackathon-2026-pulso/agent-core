@@ -73,7 +73,7 @@ def test_each_step_emits_agent_step_and_tool_calls_keep_their_own_event() -> Non
     assert steps[0].payload.tool == BUSCAR and steps[0].payload.status is ToolStatus.ok
     assert steps[0].payload.call_id == _types(out, "tool_called")[0].payload.call_id
     assert steps[1].payload.text_fp is not None and steps[1].payload.tool is None
-    assert "ok" not in steps[1].model_dump_json().replace('"ok"', "")  # el texto final no va en el evento
+    assert "resumen" not in steps[1].model_dump_json()  # el texto final no va en el evento
 
 
 def test_model_calls_tokens_and_cost_are_charged_per_step() -> None:
@@ -265,3 +265,18 @@ def test_t_u5_17_any_other_exception_still_goes_up() -> None:
     w, _, state = _world()
     with pytest.raises(RuntimeError):
         w.step(state, agents=FailingAgent(RuntimeError("error de programación")))
+
+
+def test_each_agent_step_reports_the_tokens_the_model_used() -> None:
+    w, port, state = _world(_call(q="x"), _final())
+    steps = _types(w.step(state, agents=port), "agent_step")
+    assert [s.payload.tokens for s in steps] == [10, 20]
+
+
+def test_a_failed_agent_step_reports_the_tokens_the_provider_informed() -> None:
+    error = GatewayError(GatewayErrorKind.invalid_output, tokens_in=7, tokens_out=3,
+                         cost_usd=Decimal("0.004"))
+    w, _, state = _world()
+    out = w.step(state, agents=FailingAgent(error))
+    (step,) = _types(out, "agent_step")
+    assert step.payload.kind == "failed" and step.payload.tokens == 10

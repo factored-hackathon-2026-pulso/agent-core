@@ -175,6 +175,7 @@ class AgentStepPayload(Model):
     status: ToolStatus | None = None
     text_fp: Fingerprint | None = None
     error_kind: GatewayErrorKind | None = None  # solo con `kind = "failed"`: la falla del gateway
+    tokens: NonNegativeInt | None = None  # tokens (entrada + salida) que el proveedor informó en el paso
     latency_ms: NonNegativeInt
 
 
@@ -625,7 +626,7 @@ MEASURED_FIELDS: Mapping[str, frozenset[str]] = MappingProxyType(
     {
         "decision_made": frozenset({"latency_ms"}),
         "tool_called": frozenset({"latency_ms"}),
-        "agent_step": frozenset({"latency_ms"}),
+        "agent_step": frozenset({"latency_ms", "tokens"}),
         "response_emitted": frozenset({"llm"}),
         "response_failed": frozenset({"llm"}),
         "turn_completed": frozenset({"duration_ms", "stages"}),
