@@ -1,0 +1,5 @@
+id: t/propuesta_creada
+version: 1.0.0
+locales:
+  es: "Abrí la propuesta {{facts.propuesta.value.proposal_id}}. Ahora escribo el borrador."
+  pt: "Abri a proposta {{facts.propuesta.value.proposal_id}}. Agora escrevo o rascunho."

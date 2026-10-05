@@ -7,6 +7,10 @@ nodes:
   config:
     slot: agente
     prompt_ref: t/pedir_agente
+    capture_start: true
+    validator:
+      kind: extract
+      value: '^\s*(?i:agente\s*:\s*)?([a-z0-9][a-z0-9_-]{0,63})\s*(?:[.;,\n]|$)'
     max_attempts: 3
   next:
     ok: pedir_objetivo
@@ -16,6 +20,10 @@ nodes:
   config:
     slot: objetivo
     prompt_ref: t/pedir_objetivo
+    capture_start: true
+    validator:
+      kind: extract
+      value: '^(?:.*?(?i:objetivo)\s*:\s*)?(?!(?i:agente)\s*:\s*[a-z0-9_-]+\s*[.;,]?\s*$)(\S.*)$'
     max_attempts: 3
   next:
     ok: redactar
@@ -95,8 +103,14 @@ nodes:
       - create_proposal
     save_as: crear_ok
   next:
-    verified: guardar
+    verified: creada
     failed: esc
+- id: creada
+  type: respond
+  config:
+    template_ref: t/propuesta_creada
+  next:
+    next: guardar
 - id: guardar
   type: tool
   config:
@@ -139,13 +153,7 @@ nodes:
 - id: responder
   type: respond
   config:
-    generate:
-      prompt_ref: p/resumen_construccion@1
-      allowed_facts:
-      - facts.propuesta
-      - facts.validacion
-      purpose: agent_guidance
-      fallback_template_ref: t/propuesta_lista@1
+    template_ref: t/propuesta_lista
   next:
     next: fin
 - id: fin

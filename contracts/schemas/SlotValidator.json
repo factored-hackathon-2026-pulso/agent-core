@@ -45,7 +45,8 @@
         "type",
         "regex",
         "enum",
-        "decide"
+        "decide",
+        "extract"
       ],
       "title": "Kind",
       "type": "string"

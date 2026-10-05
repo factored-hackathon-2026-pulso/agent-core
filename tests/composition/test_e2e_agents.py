@@ -11,7 +11,7 @@ from agent_core.composition import EngineConfig
 from agent_core.composition.serve_ports import DemoContext
 from agent_core.decision import ProviderError
 from agent_core.decision.providers.jev import JevProvider, JevTransportError
-from agent_core.domain import ActionState, DecisionModelDef, EntityRef, JsonValue, Message, Outcome, ToolDef
+from agent_core.domain import ActionState, DecisionModelDef, EntityRef, JsonValue, Outcome, ToolDef
 from agent_core.guards import LangThresholds
 from agent_core.ports import GenerationResult
 from agent_core.views import FieldClassifier
@@ -144,37 +144,62 @@ def _demo_context() -> DemoContext:
     return DemoContext(clock=FakeClock(), ids=FakeIds(), registry=registry)
 
 
-def test_the_constructor_flow_writes_a_draft_proposal_and_validates_it_without_approving() -> None:
+def _constructor_world():  # type: ignore[no-untyped-def]
+    """El flow `construir` real contra el servicio del registry; cada test guiona el agente de `redactar`."""
     import yaml
 
     from agent_core.composition.builder_tools import BUILDER_TOOL_DEFS, BuilderToolExecutor
+    from agent_core.composition.classification import load_catalog
     from agent_core.domain import Flow
-    from agent_core.interpreter import AgentFinal, AgentStepResult, GenerateResult, Stop
-    from testing.builders import principal
-    from testing.fakes.agent import ScriptedAgent
+    from agent_core.views import ViewService
+    from testing.fakes.keys import FakeKeyProvider
+    from tests.m02.harness import CATALOG as CATALOG_M02
+    from tests.m02.harness import AllowAllAuthz, template
     from tests.m02.harness import World as FlowWorld
-    from tests.m02.harness import slot
-    from tests.registry.helpers import bot, prompt_draft
+    from tests.registry.helpers import bot
     from tests.registry.service_world import World as RegistryWorld
 
     registry = RegistryWorld()
     w = FlowWorld()
+    # el id de la propuesta se muestra: el overlay lo clasifica `public` (si no, M7 lo tokeniza)
+    overlay = load_catalog([Path(__file__).parents[2] / "scripts" / "e2e" / "field-overlay.json"])
+    w.views = ViewService(FakeKeyProvider.default(), AllowAllAuthz(), w.clock,
+                          FieldClassifier({**CATALOG_M02, **overlay}))  # type: ignore[arg-type]
     w.add(*BUILDER_TOOL_DEFS.values())
+    names = ("pedir_agente", "pedir_objetivo", "propuesta_creada", "propuesta_lista",
+             "constructor_sin_borrador")
+    for name in names:
+        data = yaml.safe_load((E2E / "templates" / "t" / f"{name}@1.0.0.yaml").read_text("utf-8"))
+        w.add(template(data["id"], data["locales"]["es"], data["locales"]["pt"]))
     executor = BuilderToolExecutor(registry.service, bot(), w.ids)
     raw = (E2E / "flows" / "construir@1.0.0.yaml").read_text("utf-8")
     raw = re.sub(r"([a-z_/]+)@1(?!\.)", r"\g<1>@1.0.0", raw)  # el motor solo corre referencias exactas
     raw = re.sub(r"(prompt_ref|template_ref): (t/[a-z_]+)$", r"\g<1>: \g<2>@1.0.0", raw, flags=re.M)
     flow = Flow.model_validate(yaml.safe_load(raw))
-    draft = prompt_draft().model_dump(mode="json")
-    agent = ScriptedAgent([AgentStepResult(AgentFinal(output={"changes": [draft]}), tokens=10,
+    return registry, w, flow, executor
+
+
+def _run_constructor(changes: list[dict[str, JsonValue]]):  # type: ignore[no-untyped-def]
+    from agent_core.interpreter import AgentFinal, AgentStepResult
+    from testing.builders import principal
+    from testing.fakes.agent import ScriptedAgent
+    from tests.m02.harness import slot
+
+    registry, w, flow, executor = _constructor_world()
+    agent = ScriptedAgent([AgentStepResult(AgentFinal(output={"changes": changes}), tokens=10,
                                            cost_usd=Decimal("0.001"))])
     supervisor = principal(type="builder", id="ana", roles=["constructor", "aprobador"],
                            attrs={"actor": "human"})
     state = w.persist(w.state(flow, node_id="redactar", principal=supervisor,
                               slots={"agente": slot("atencion"), "objetivo": slot("acortar el resumen")}))
-    draft_ready = Message(kind="generated", text="Propuesta en borrador.", locale="es")
-    w.responder.push(GenerateResult(message=draft_ready))
-    done = w.step(state, tools=executor, agents=agent)
+    return registry, w.step(state, tools=executor, agents=agent)
+
+
+def test_the_constructor_flow_writes_a_draft_proposal_and_validates_it_without_approving() -> None:
+    from agent_core.interpreter import Stop
+    from tests.registry.helpers import prompt_draft
+
+    registry, done = _run_constructor([prompt_draft().model_dump(mode="json")])
 
     assert done.stop is Stop.terminal and done.end_outcome is Outcome.resolved
     assert [a.state for a in done.state.actions] == [ActionState.verified, ActionState.verified]
@@ -185,6 +210,40 @@ def test_the_constructor_flow_writes_a_draft_proposal_and_validates_it_without_a
     assert detail.proposal.origin.value == "builder_chat"
     assert detail.proposal.state.value == "draft"  # el agente nunca aprueba ni publica
     assert done.state.facts["validacion"].value["valid"] is True  # type: ignore[index]
+    # la respuesta nombra la propuesta (la plataforma la rastrea por su id)
+    texts = [m.text for m in done.messages]
+    assert len(texts) == 2 and all(str(pid) in text for text in texts), texts
+
+
+def test_the_proposal_is_named_even_when_a_later_step_fails() -> None:
+    from agent_core.interpreter import Stop
+
+    broken = {"kind": "flow", "content": {"nodes": []}, "docs": {"description": "d", "rationale": "r",
+                                                                     "changelog": "c"}}  # sin id ni version
+    registry, done = _run_constructor([broken])
+
+    assert done.stop is Stop.terminal and done.escalation is not None
+    assert done.escalation.reason_code == "tool_failure"
+    pid = done.state.facts["propuesta"].value["proposal_id"]  # type: ignore[index]
+    assert registry.service.get_proposal(str(pid)).proposal.state.value == "draft"
+    assert any(str(pid) in m.text for m in done.messages)  # "Abrí la propuesta …" salió antes del fallo
+
+
+def test_the_agent_slot_takes_an_id_and_not_a_sentence() -> None:
+    import yaml
+
+    from agent_core.domain import SlotValidator
+    from agent_core.interpreter.handlers.collect import validate_slot
+
+    flow = yaml.safe_load((E2E / "flows" / "construir@1.0.0.yaml").read_text("utf-8"))
+    config = next(n for n in flow["nodes"] if n["id"] == "pedir_agente")["config"]
+    validator = SlotValidator.model_validate(config["validator"])
+
+    assert validate_slot(validator, "cobros") == (True, "cobros")
+    assert validate_slot(validator, "Agente: cobros. Objetivo: un agente nuevo para cobro indebido") == (
+        True, "cobros")  # la frase con la que la plataforma abre el chat
+    assert validate_slot(validator, "quiero cambiar el agente de cobros por favor") == (False, None)
+    assert validate_slot(validator, "Cobros") == (False, None)
 
 
 class _Refuse:
@@ -244,3 +303,18 @@ def test_the_run_switches_between_spanish_and_portuguese_when_the_thresholds_are
     switching = run(EngineConfig(lang_thresholds={"lang-cal-demo": LangThresholds(
         switch_threshold=0.9, unsupported_threshold=0.9, min_distance=0.2)}))
     assert switching == [("switched", "pt"), ("switched", "es")]
+
+
+def test_the_seeded_agents_that_serve_customers_have_an_eval_suite() -> None:
+    """Sin `eval_suite` una propuesta no se puede probar, aprobar, publicar ni activar (ADR 0018 §4)."""
+    from agent_core.registry.yaml_io import load_seed
+
+    pinned, suites = load_seed(E2E)
+    by_agent = {s.agent_id: s for s in suites}
+    assert {"disputas", "recepcion"} <= set(by_agent)
+    agents = {e.id: e for p in pinned for e in p.entities if getattr(e, "tools_allowed", None) is not None}
+    for agent_id, suite in by_agent.items():
+        allowed = {str(t).split("@")[0] for t in agents[agent_id].tools_allowed}
+        for scenario in suite.scenarios:
+            # el sandbox solo siembra las tools del agente
+            assert set(scenario.seed.tools) <= allowed, (agent_id, scenario.id)

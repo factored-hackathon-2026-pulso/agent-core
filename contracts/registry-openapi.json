@@ -883,6 +883,11 @@
         "additionalProperties": false,
         "description": "Configuración del nodo `collect` (M0 §2.5).",
         "properties": {
+          "capture_start": {
+            "default": false,
+            "title": "Capture Start",
+            "type": "boolean"
+          },
           "max_attempts": {
             "default": 2,
             "exclusiveMinimum": 0.0,
@@ -3076,6 +3081,61 @@
         "title": "Outcome",
         "type": "string"
       },
+      "PauseState": {
+        "additionalProperties": false,
+        "description": "Whether an agent is paused (ADR platform 0009 §2): out of `recepcion`'s directory, `prod` untouched.",
+        "properties": {
+          "actor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor"
+          },
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "paused": {
+            "title": "Paused",
+            "type": "boolean"
+          },
+          "release_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Release Id"
+          }
+        },
+        "required": [
+          "agent_id",
+          "paused",
+          "release_id"
+        ],
+        "title": "PauseState",
+        "type": "object"
+      },
       "Policy": {
         "additionalProperties": true,
         "type": "object"
@@ -4319,7 +4379,8 @@
               "type",
               "regex",
               "enum",
-              "decide"
+              "decide",
+              "extract"
             ],
             "title": "Kind",
             "type": "string"
@@ -5672,6 +5733,307 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/v1/registry/agents/{agent_id}/pause": {
+      "get": {
+        "operationId": "pause_state_v1_registry_agents__agent_id__pause_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PauseState"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              }
+            },
+            "description": "credencial ausente, inválida o vencida"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              }
+            },
+            "description": "rol insuficiente o step-up requerido"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Pause State"
+      },
+      "post": {
+        "description": "Saca al agente del directorio de `recepcion`; `prod` no cambia y los casos abiertos siguen.",
+        "operationId": "pause_v1_registry_agents__agent_id__pause_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_Reason"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PauseState"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              }
+            },
+            "description": "credencial ausente, inválida o vencida"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              }
+            },
+            "description": "rol insuficiente o step-up requerido"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              }
+            },
+            "description": "no existe"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              }
+            },
+            "description": "conflicto de estado, de revisión o de idempotencia"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Pause"
+      }
+    },
+    "/v1/registry/agents/{agent_id}/resume": {
+      "post": {
+        "operationId": "resume_v1_registry_agents__agent_id__resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/_Reason"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PauseState"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              }
+            },
+            "description": "credencial ausente, inválida o vencida"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              }
+            },
+            "description": "rol insuficiente o step-up requerido"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              }
+            },
+            "description": "no existe"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              },
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDoc"
+                }
+              }
+            },
+            "description": "conflicto de estado, de revisión o de idempotencia"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Resume"
+      }
+    },
     "/v1/registry/aliases/{agent_id}/{alias}": {
       "get": {
         "operationId": "alias_state_v1_registry_aliases__agent_id___alias__get",

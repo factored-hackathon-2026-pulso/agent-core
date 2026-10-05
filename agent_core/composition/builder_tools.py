@@ -103,6 +103,30 @@ def _number(args: Args, name: str) -> int:
     return value
 
 
+_TITLE_MAX = 200
+
+
+def _title(raw: str) -> str:
+    """El título cabe en el registry (200): una frase larga del supervisor se recorta, no falla."""
+    text = " ".join(raw.split())
+    if not text:
+        raise ValueError("title")
+    return text if len(text) <= _TITLE_MAX else text[:_TITLE_MAX - 1].rstrip() + "…"
+
+
+def _merged(base: Mapping[str, JsonValue], patch: Mapping[str, JsonValue]) -> dict[str, JsonValue]:
+    out = dict(base)
+    for key, value in patch.items():
+        current = out.get(key)
+        out[key] = _merged(current, value) if isinstance(current, dict) and isinstance(value, dict) else value
+    return out
+
+
+def _next_patch(version: str) -> str:
+    major, minor, patch = (int(part) for part in version.split("."))
+    return f"{major}.{minor}.{patch + 1}"
+
+
 def _proposal(p: Proposal) -> dict[str, JsonValue]:
     return {"proposal_id": p.proposal_id, "rev": p.rev, "state": p.state.value,
             "base_release_id": p.base_release_id}
@@ -151,7 +175,8 @@ class BuilderToolExecutor:
         origin = Origin(_text(args, "origin"))
         if origin not in _ORIGINS:
             raise ValueError("origin")
-        p = self._service.create_proposal(self._actor, _text(args, "agent_id"), origin, _text(args, "title"),
+        title = _title(_text(args, "title"))
+        p = self._service.create_proposal(self._actor, _text(args, "agent_id"), origin, title,
                                           idempotency_key=key, audit=audit)
         return _proposal(p)
 
@@ -159,10 +184,34 @@ class BuilderToolExecutor:
         raw = args["changes"]
         if not isinstance(raw, list):
             raise TypeError("changes")
-        changes = [EntityDraft.model_validate(item) for item in raw]
-        p = self._service.put_draft(self._actor, _text(args, "proposal_id"), changes,
+        proposal_id = _text(args, "proposal_id")
+        agent_id = self._service.get_proposal(proposal_id).proposal.agent_id
+        changes = [EntityDraft.model_validate(self._complete(item, agent_id)) for item in raw]
+        p = self._service.put_draft(self._actor, proposal_id, changes,
                                     _number(args, "expected_rev"), idempotency_key=key, audit=audit)
         return _proposal(p)
+
+    def _complete(self, raw: JsonValue, agent_id: str) -> JsonValue:
+        """Un cambio sin `version` sobre una entidad que ya existe es un parche: se funde sobre la versión
+        vigente y sube el parche. Sin `id`, un cambio de kind `agent` es del agente de la propuesta. Lo que
+        no se puede completar queda tal cual: `put_draft` lo rechaza (`invalid_args`), nunca se inventa."""
+        if not isinstance(raw, dict) or raw.get("kind") == "release_settings":
+            return raw
+        content = raw.get("content")
+        if not isinstance(content, dict):
+            return raw
+        ident = content.get("id")
+        if not isinstance(ident, str) and raw.get("kind") == "agent":
+            ident = agent_id
+        if not isinstance(ident, str) or isinstance(content.get("version"), str):
+            return raw
+        try:
+            current = self._service.get_entity(str(raw.get("kind")), ident)
+        except RegistryError:
+            return raw  # una entidad nueva debe venir completa
+        merged = _merged(current.content, {**content, "id": ident})
+        merged["version"] = _next_patch(current.ref.version)
+        return {**raw, "content": merged}
 
     def _freeze(self, args: Args, key: str | None, audit: AuditContext | None) -> JsonValue:
         view = self._service.freeze(self._actor, _text(args, "proposal_id"), idempotency_key=key, audit=audit)

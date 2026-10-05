@@ -1,0 +1,58 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "additionalProperties": false,
+  "description": "Whether an agent is paused (ADR platform 0009 §2): out of `recepcion`'s directory, `prod` untouched.",
+  "properties": {
+    "actor": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Actor"
+    },
+    "agent_id": {
+      "title": "Agent Id",
+      "type": "string"
+    },
+    "at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "At"
+    },
+    "paused": {
+      "title": "Paused",
+      "type": "boolean"
+    },
+    "release_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Release Id"
+    }
+  },
+  "required": [
+    "agent_id",
+    "paused",
+    "release_id"
+  ],
+  "title": "PauseState",
+  "type": "object"
+}

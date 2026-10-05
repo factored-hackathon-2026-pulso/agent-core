@@ -252,13 +252,15 @@ def validator_problems(validator: SlotValidator) -> list[str]:
             if isinstance(value, str) and value in VALIDATOR_TYPES
             else [f"tipo de validador desconocido: {clip(value)!r}"]
         )
-    if validator.kind == "regex":
+    if validator.kind in ("regex", "extract"):
         if not isinstance(value, str) or len(value) > MAX_REGEX:
             return [f"la regex debe ser un string de hasta {MAX_REGEX} caracteres"]
         try:
-            re.compile(value)
+            compiled = re.compile(value)
         except re.error as exc:
             return [f"regex inválida: {clip(str(exc))}"]
+        if validator.kind == "extract" and compiled.groups != 1:
+            return ["la regex de extract debe tener exactamente un grupo de captura"]
         return _regex_safety(value)
     if validator.kind == "enum":
         items = value if isinstance(value, list) else []

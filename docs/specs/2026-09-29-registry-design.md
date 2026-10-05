@@ -71,13 +71,14 @@ En el código cada tabla lleva el prefijo `reg_` (`reg_blobs`, `reg_aliases`, �
 | `eval_runs` | `eval_run_id` PK, `proposal_id`, `candidate_hash`, `base_release_id`, `suite_ref`, `report` (JSON, §6.4), `verdict` (`pass`, `fail` o `failed_infra`), `at` |
 | `registry_events` | bitácora de auditoría (§12) |
 
-**Mutables y controladas** (el rol de la aplicación nunca tiene `DELETE`; `release_status` y `aliases` tienen `SELECT`, `INSERT` y `UPDATE`, `publish_keys` solo `SELECT` e `INSERT`):
+**Mutables y controladas** (el rol de la aplicación nunca tiene `DELETE`; `release_status`, `aliases` y `agent_pause` tienen `SELECT`, `INSERT` y `UPDATE`, `publish_keys` solo `SELECT` e `INSERT`):
 
 | Tabla | Qué cambia |
 |---|---|
 | `release_status` | `release_id → active` o `revoked`. Está separada de `releases` para que `releases` sea estrictamente inmutable. Solo cambia por `revoke`. |
 | `aliases` | `(agent_id, alias) → release_id` (`staging`, `prod`). Solo cambia por `publish` (`staging`) y `promote`. |
 | `alias_log` | Solo inserción: cada cambio de alias con actor, motivo y release anterior. |
+| `agent_pause` | `agent_id` → `paused`, `release_id` (el de `prod` al pausar), `actor`, `at`. Una fila por agente que alguna vez se pausó; reanudar pone `paused = false` (no se borra). Solo cambia por `pause_agent` y `resume_agent` (rol aprobador, con step-up). Un agente en pausa sale del directorio de `recepcion` (`RegistryDirectory`); `prod` no cambia y los casos abiertos siguen. HTTP: `POST /v1/registry/agents/{id}/pause`, `POST …/resume`, `GET …/pause`. Eventos `paused` y `resumed` (no salen como `release.*`). |
 | `proposals` | `proposal_id`, `agent_id`, `origin`, `state`, `rev`, `base_release_id`, `title`, `candidate_hash` (null hasta `freeze`), `created_by`. |
 | `proposal_changes` | `(proposal_id, kind, id)` → contenido en borrador (JSON), `new_version`, `docs`. Se reescribe libremente mientras la propuesta está en `draft`. |
 

@@ -160,6 +160,15 @@ class AliasChange(RegModel):
     at: datetime
 
 
+class PauseState(RegModel):
+    """Whether an agent is paused (ADR platform 0009 §2): out of `recepcion`'s directory, `prod` untouched."""
+    agent_id: str
+    paused: bool
+    release_id: str | None  # the release `prod` pointed at when it was paused
+    actor: str | None = None
+    at: datetime | None = None
+
+
 class RegistryEvent(RegModel):
     type: str
     actor: str
