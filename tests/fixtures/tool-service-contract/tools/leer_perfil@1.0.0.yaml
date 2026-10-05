@@ -1,0 +1,11 @@
+id: leer_perfil
+version: 1.0.0
+risk_class: read
+min_auth_level: session
+idempotent: true
+source: customer_profile
+description: Datos básicos del cliente atendido (nombre, documento, segmento, estado, ciudad).
+args_schema:
+  type: object
+  additionalProperties: false
+  properties: {}
