@@ -86,9 +86,9 @@ Pendiente de construcción: las vistas SQL (la conexión a Phoenix queda documen
 |---|---|---|
 | `ToolExecutor` | `--tools` | unidad 3 |
 | `AuthzPort` | `--authz` | unidad 3 |
-| `TranscriptStore` persistente | `--transcript` | unidad 7 |
-| Calibración con artefactos etiquetados | `--calibration` | unidad 6 (P9) |
-| Artefactos del proveedor `classifier` | `--classifier` | unidad 6 (P9) |
+| `TranscriptStore` persistente | `--transcript agent_core.composition.transcript:transcript` (Postgres, tabla `transcript_entries`; código listo, abierta la idempotencia del reintento: m11 decisión 4) | unidad 7 |
+| Calibración con artefactos etiquetados | `--calibration agent_core.composition.artifacts:calibration` (lee `<run_id>.json` de `AGENTCORE_CALIBRATION_DIR`; código listo, faltan los artefactos reales) | unidad 6 (P9) |
+| Artefactos del proveedor `classifier` | `--classifier agent_core.composition.artifacts:classifier_provider` (lee `<ref>.json` de `AGENTCORE_CLASSIFIER_ARTIFACTS_DIR`; código listo, falta entrenar y exportar `tfidf-logreg-v1`) | unidad 6 (P9) |
 | Catálogo de `FieldClassifier` (clasificación de campos publicada por el equipo de datos, m07) | `--field-classifier` | equipo de datos (sin unidad asignada) |
 | Servicio de identidad real con `grant_active` | `--grant-active` (y `--identity-keys`) | servicio de identidad (sin unidad asignada) |
 

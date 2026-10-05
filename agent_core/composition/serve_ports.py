@@ -77,6 +77,7 @@ class DemoContext:
     clock: Clock
     ids: IdSource
     registry: RegistryPort
+    store: PostgresStore | None = None  # la base del motor, con su pool: las piezas persistentes la comparten
 
 
 @dataclass(frozen=True)
@@ -312,7 +313,7 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
     store = PostgresStore(dsn, pool_max=pool_max)
     registry_store = PgRegistryStore(_registry_connect(dsn, pool_max), blob_factory_from_env(env))
     pg_registry = PostgresRegistry(registry_store, clock)
-    ctx = DemoContext(clock=clock, ids=ids, registry=pg_registry)
+    ctx = DemoContext(clock=clock, ids=ids, registry=pg_registry, store=store)
     built: dict[str, Any] = {}
     for name, path in chosen.items():
         try:
