@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 import pytest
+from opentelemetry.sdk.trace import TracerProvider
 
 from agent_core.adapters.tools import HttpToolExecutor
 from agent_core.adapters.tools.http_executor import from_env
@@ -217,3 +218,50 @@ def test_the_factory_wants_url_and_token_together_and_valid() -> None:
                  "AGENTCORE_TOOL_SERVICE_TIMEOUT_S": "0"}):
         with pytest.raises(SchemaError):
             from_env(registry, ids, env)
+
+
+def test_a_step_up_older_than_max_auth_age_asks_again_without_calling_the_service(
+        service: Service) -> None:
+    registry = InMemoryRegistry()
+    aged = ToolDef.model_validate({"id": "radicar_pqr", "version": "1.0.0", "risk_class": "write_reversible",
+                                   "min_auth_level": "step_up", "max_auth_age": "PT5M", "idempotent": True,
+                                   "readback_by": "idempotency_key"})
+    registry.add(aged)
+    executor = HttpToolExecutor(registry, FakeIds(), BASE, TOKEN,
+                                client=httpx.Client(transport=httpx.MockTransport(service)))
+    stepped = principal(auth={"level": "step_up", "at": "2026-09-28T12:00:00Z"})
+
+    def at(instant: str | None) -> ToolCallContext:
+        return ToolCallContext(run_id="run-1", release="rel-1", principal=stepped, turn_id="turn-1",
+                               at=instant)
+
+    old = executor.execute(WRITE, {}, {}, at("2026-09-28T12:06:00Z"), idempotency_key="action-1")
+    unknown = executor.execute(WRITE, {}, {}, at(None), idempotency_key="action-1")  # fails closed
+    assert old.status is ToolStatus.step_up_required and old.required_level == "step_up"
+    assert unknown.status is ToolStatus.step_up_required and service.requests == []
+
+    fresh = executor.execute(WRITE, {}, {}, at("2026-09-28T12:04:00Z"), idempotency_key="action-1")
+    assert fresh.status is not ToolStatus.step_up_required and len(service.requests) == 1
+
+
+@pytest.mark.parametrize(("error", "kept"), [
+    ({"kind": "not_own_subject", "message": f"la cuenta {SECRET_ARG} es de otro cliente"}, "not_own_subject"),
+    ({"kind": "Nombre Apellido 123", "message": "x"}, "tool_error"),
+    ({"message": f"sin kind {SECRET_ARG}"}, "tool_error"),
+    (f"texto plano {SECRET_ARG}", "tool_error"),
+], ids=["kind", "kind-not-a-code", "no-kind", "string"])
+def test_only_the_error_kind_is_kept_never_the_service_message(executor: HttpToolExecutor, service: Service,
+                                                               error: object, kept: str) -> None:
+    service.answer = lambda r: httpx.Response(200, json={"status": "denied", "error": error})
+
+    result = executor.execute(READ, {}, {}, _ctx("session"))
+
+    assert result.status is ToolStatus.denied and result.error == kept
+
+
+def test_trace_context_is_propagated_to_the_service(executor: HttpToolExecutor, service: Service) -> None:
+    tracer = TracerProvider().get_tracer("prueba")
+    with tracer.start_as_current_span("turno") as span:
+        executor.execute(READ, {}, {}, _ctx("session"))
+        trace_id = format(span.get_span_context().trace_id, "032x")
+    assert trace_id in service.requests[0].headers["traceparent"]

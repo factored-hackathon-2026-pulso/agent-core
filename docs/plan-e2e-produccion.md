@@ -1,6 +1,13 @@
 # Plan: pruebas end-to-end reales antes de producción
 
-Fecha: 2026-10-03 · Estado: **preparación construida y verificada hasta donde no hacen falta tus keys**. Cómo ejecutarla: [`runbook-e2e.md`](runbook-e2e.md). Quedan sin probar con modelos reales (necesitan tus keys): JEV y el LLM en los tres agentes.
+Fecha: 2026-10-03 (nota de estado 2026-10-05 abajo) · Estado: **preparación construida y verificada hasta donde no hacen falta tus keys**. Cómo ejecutarla: [`runbook-e2e.md`](runbook-e2e.md). Quedan sin probar con modelos reales (necesitan tus keys): JEV y el LLM en los tres agentes.
+
+> **Estado al 2026-10-05 (revisión técnica; el resto del documento es el plan del 10-03 y no se reescribió):**
+> - **B y C ya existen**: `copiloto-asesor` y `constructor-chat` están en `tests/fixtures/registry-e2e/` (releases `copiloto-demo` y `constructor-demo`, commit 527751d). Ningún agente de demo tiene `eval_suite`, así que el ciclo constructor → publicación sigue sin ejercitarse en vivo.
+> - **Piezas reales disponibles** (hallazgo 3 superado en parte): `HttpToolExecutor` contra el `tool-service` (ADR 0025), `PolicyAuthz`, `HttpGrantActive` contra la plataforma y el catálogo de campos publicado por data-pipeline (`scripts/e2e/serve-tools.ps1`). **Siguen siendo dobles**: transcript, calibración y clasificador de Understand; `grant_active` solo es real si se definen `AGENTCORE_GRANTS_URL` y `AGENTCORE_GRANTS_TOKEN`.
+> - **PR #27 ya está en `main`** (789d6c8): el hallazgo 1 y la decisión 1 de §5 quedan cerradas.
+> - **La CI de GitHub no corre desde el 2026-10-03** (los jobs no arrancan por facturación de la cuenta): los PR #32 a #37 se integraron sin ella. Hasta resolverlo, correr en local `ruff`, `mypy`, `lint-imports`, `agentcore contracts --check`, `pytest` (con `AGENTCORE_REQUIRE_POSTGRES=1` y Postgres) y los replays de `tests/fixtures/runs/` antes de cada merge.
+> - El replay `audit` de los runs del copiloto y del constructor sigue pendiente (las salidas de los pasos del nodo `agent` no se graban; ADR 0019).
 
 Tres pruebas separadas, cada una con su agente, su identidad y su conjunto de métricas:
 

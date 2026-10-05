@@ -5,9 +5,10 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
+from opentelemetry.sdk.trace import TracerProvider
 
 from agent_core.adapters.grants import GRANTS_TOKEN_ENV, GRANTS_URL_ENV, HttpGrantActive, from_env
-from agent_core.domain import SchemaError
+from agent_core.domain import GrantCheckUnavailable, SchemaError
 
 BASE = "https://platform.test"
 TOKEN = "grants-token-SECRETO-0001"
@@ -75,15 +76,29 @@ def test_a_zero_ttl_never_caches(platform: Platform) -> None:
     httpx.Response(200, json={"active": 1}),
     httpx.Response(200, json={}),
     httpx.Response(200, json=[True]),
-    httpx.Response(200, content=b"<html>"),
-    httpx.Response(401, json={"active": True}),
     httpx.Response(404, json={"active": True}),
-    httpx.Response(500, json={"active": True}),
-], ids=["string", "int", "missing", "list", "html", "401", "404", "500"])
+], ids=["string", "int", "missing", "list", "404"])
 def test_anything_but_an_explicit_true_is_not_active(platform: Platform, answer: httpx.Response) -> None:
     platform.answer = answer
 
     assert _grants(platform)(REF, NOW) is False
+
+
+@pytest.mark.parametrize("answer", [
+    httpx.Response(200, content=b"<html>"),
+    httpx.Response(401, json={"active": True}),
+    httpx.Response(403, json={"active": True}),
+    httpx.Response(500, json={"active": True}),
+    httpx.Response(503, json={"active": True}),
+], ids=["html", "401", "403", "500", "503"])
+def test_no_answer_about_the_grant_raises_unavailable_and_is_never_cached(
+        platform: Platform, answer: httpx.Response) -> None:
+    platform.answer = answer
+    grants = _grants(platform)
+
+    with pytest.raises(GrantCheckUnavailable):
+        grants(REF, NOW)
+    assert grants._active_until == {}
 
 
 def test_an_unreachable_platform_fails_closed_and_logs_no_secret(caplog: pytest.LogCaptureFixture) -> None:
@@ -93,8 +108,9 @@ def test_an_unreachable_platform_fails_closed_and_logs_no_secret(caplog: pytest.
     grants = HttpGrantActive(BASE, TOKEN, client=httpx.Client(transport=httpx.MockTransport(boom)))
     caplog.set_level(logging.DEBUG)
 
-    assert grants(REF, NOW) is False
-    assert TOKEN not in caplog.text and REF not in caplog.text
+    with pytest.raises(GrantCheckUnavailable) as info:
+        grants(REF, NOW)
+    assert TOKEN not in caplog.text and REF not in caplog.text and TOKEN not in str(info.value)
 
 
 def test_the_cache_is_bounded(platform: Platform) -> None:
@@ -115,3 +131,11 @@ def test_the_factory_wants_url_and_token_together_and_valid() -> None:
                 {GRANTS_URL_ENV: "http://x", GRANTS_TOKEN_ENV: "t", "AGENTCORE_GRANTS_CACHE_TTL_S": "x"}):
         with pytest.raises(SchemaError):
             from_env(env)
+
+
+def test_trace_context_is_propagated_to_the_platform(platform: Platform) -> None:
+    tracer = TracerProvider().get_tracer("prueba")
+    with tracer.start_as_current_span("peticion") as span:
+        _grants(platform)(REF, NOW)
+        trace_id = format(span.get_span_context().trace_id, "032x")
+    assert trace_id in platform.requests[0].headers["traceparent"]

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_core.adapters.classification import FIELD_CLASSIFICATION_FILES_ENV, from_env, load_catalog
+from agent_core.composition.classification import FIELD_CLASSIFICATION_FILES_ENV, from_env, load_catalog
 from agent_core.domain import SchemaError
 
 OVERLAY = Path(__file__).parents[2] / "scripts" / "e2e" / "field-overlay.json"

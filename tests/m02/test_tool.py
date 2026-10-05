@@ -162,3 +162,21 @@ def test_t_m2_07_step_up_exhausted_escalates_auth_insufficient() -> None:
     assert second.stop is Stop.terminal and second.escalation is not None
     assert second.escalation.reason_code == "auth_insufficient"
     assert [e.payload.attempt for e in _events(second, "step_up_requested")] == [2]
+
+
+def test_max_auth_age_asks_for_a_fresh_step_up_with_the_turn_clock() -> None:
+    """ADR 0010: a step-up older than the tool's `max_auth_age` counts as no step-up; the instant is the
+    turn's `Clock`, carried to the executor in `ToolCallContext.at`."""
+    w = World()
+    stale = tool_def("buscar", level="step_up").model_copy(update={"max_auth_age": timedelta(minutes=5)})
+    w.add_tool(stale, handler=lambda a: {"ok": True})
+    f = flow(_tool({"step_up_max_attempts": 2}), *TAIL)
+    state = w.state(f).model_copy(  # type: ignore[arg-type]
+        update={"principal": principal(auth={"level": "step_up", "at": NOW})})
+    w.clock.advance(timedelta(minutes=10))
+    first = w.step(state)
+    assert first.stop is Stop.awaiting_step_up and w.tools.calls[0].status is ToolStatus.step_up_required
+    fresh = first.state.model_copy(
+        update={"principal": principal(auth={"level": "step_up", "at": w.clock.now()})})
+    second = w.step(fresh, Resume("step_up_retry"))
+    assert second.stop is Stop.terminal and _node(second) == "fin" and "res" in second.state.facts

@@ -58,9 +58,11 @@ create_app(deps: ApiDeps) -> FastAPI   # ApiDeps agrupa puertos, servicios inyec
 | # | Chequeo | Fallo | Registro |
 |---|---|---|---|
 | 0 | Límites por IP/canal (gateway, fuera del motor) | 429 | — |
+| 0b | Tamaño del body (`BodyLimit`, `ApiDeps.max_body_bytes`, 1 MiB por defecto; con o sin `Content-Length`; rev. 2026-10-05) | `413 payload_too_large` | — |
 | 1 | Firma del principal y de `on_behalf_of` (`IdentityVerifier`) | `401 credentials_invalid` | solo log de seguridad; **nada** en la cadena del run |
 | 2 | Vigencia con el `Clock`: `principal.exp <= now` | `401 principal_expired` | `access_denied` |
 | 3 | Delegación vencida (`exp <= now`) o `grant_ref` revocado | `403 delegation_expired` | `access_denied` |
+| 3b | El servicio de asignaciones no responde (`grant_active` lanza `GrantCheckUnavailable`; rev. 2026-10-05) | `503 identity_unavailable` con `Retry-After: 5` | solo log de seguridad (no hay decisión sobre la delegación) |
 | 3b | `on_behalf_of.grantee` distinto de `principal.key` (ADR 0006, M0 rev. 2) | `403 delegation_mismatch` | `access_denied` |
 | 4 | Run existente: identidad distinta del snapshot | `403 principal_mismatch` | `access_denied` |
 | 5 | Tasa y costo diario **por principal ya validado** (`CostCounters`) | `429 rate_limited` / `cost_budget_exceeded` | — |
@@ -71,6 +73,7 @@ Un rechazo en 1–5 **no procesa el turno**: sin Understand, modelos, tools ni t
 - **Registro.** Todo rechazo va al log de seguridad (`SecurityLog`; implementación `OtelSecurityLog`: evento en el span activo y línea de log, con motivo, tipo de principal y `trace_id`; nunca la credencial, el `principal.id` ni el body). Para 2–4 (y `subject_forbidden`/`agent_forbidden` de §3.2), si el run existe, M9 pide a M11 un append mínimo fuera del turno (`AuditLog.append_standalone`) con `access_denied`. Sin run (p. ej. `POST /v1/runs`) o con firma inválida, solo log de seguridad. Si la escritura en la cadena falla, la denegación se mantiene y se registra `audit_write_failed`.
 - **Identidad de un principal anónimo** (decisión 2026-09-29). Un anónimo no tiene `id`, así que `(type, id)` no lo distingue: su identidad es `attrs["anon_session"]`, un id de sesión firmado en la credencial. El chequeo 4 lo compara además de `(type, id)`. Sin él, cualquier anónimo pasaría el chequeo sobre el run de otro.
 - **`principal_mismatch` con lectura previa.** Comparar con el snapshot exige leer el run. Se lee (solo lectura, sin lease) después de validar la firma y antes de cargar el turno en M4; ninguna otra lectura ni escritura precede a la firma.
+- **Tamaños** (rev. 2026-10-05): además del tope del body, `text` del turno ≤ 32 000 caracteres (techo de transporte; el límite de producto sigue siendo `max_input_chars` de la release, que M6 responde con `input_too_large`), `client_turn_id`, `channel` y `resolution_code` ≤ 255 y `notes` ≤ 4000; pasarse es `422 invalid_request` (el detalle nombra el campo, nunca el valor). `input` de un run queda acotado por el tope del body.
 - **Límites** (`RateLimitConfig`, valores de demo ajustables): 30 turnos por ventana de 60 s y USD 5.00 por día UTC, por principal. Solo cuenta lo que M4 registra con `add_usage`: un rechazo no consume cuota, así que un exceso con firma inválida no toca la del principal suplantado. Un principal anónimo no se cuenta aquí (sus contadores serían los de todos los anónimos); su límite es el del gateway.
 
 ### 3.2 Autorización (§4.2)
@@ -189,7 +192,7 @@ Con `TestClient` de FastAPI, `StubVerifier` (tokens opacos sintéticos), `TableA
 | T-M9-05 | Anónimo no accede a datos personales | 5 | `test_api`, `test_authorization` |
 | T-M9-06 | Firma inválida → `401`, sin llamadas a modelos, tools ni transcript, sin eventos en la cadena | 5 | `test_api` (las 6 rutas), `test_gate` |
 | T-M9-07 | Principal vencido → `401`; reintento renovado con el mismo `client_turn_id` se procesa una vez | 5 | `test_api`, `test_gate` |
-| T-M9-08 | Delegación revocada → `403 delegation_expired` | 5 | `test_api`, `test_gate` |
+| T-M9-08 | Delegación revocada → `403 delegation_expired`; servicio de asignaciones sin respuesta → `503 identity_unavailable`, sin `access_denied` (2026-10-05) | 5 | `test_api`, `test_gate` |
 | T-M9-09 | Otro asesor con delegación vigente sobre el mismo subject → `403 principal_mismatch` | 5 | `test_api`, `test_gate`, `test_m9_postgres` |
 | T-M9-10 | Exceso de tasa con firma inválida no consume la cuota del suplantado | 5 | `test_api` |
 | T-M9-11 | `Idempotency-Key` repetida devuelve el mismo run | 12 | `test_idempotency`, `test_m9_postgres`, `tests/m04/test_start_run_idempotency` |

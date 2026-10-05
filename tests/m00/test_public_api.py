@@ -15,7 +15,7 @@ def test_domain_exports() -> None:
                  "GatewayError", "GatewayErrorKind", "KnowledgePage", "KnowledgeSnapshot", "KnowledgeNode",
                  "KnowledgeView", "PageMeta", "PageView", "PageRecord", "Purpose", "KnowledgeRead"]:
         assert hasattr(domain, name), name
-    assert domain.SCHEMA_VERSION == "1.3.0"
+    assert domain.SCHEMA_VERSION == "1.4.0"
 
 
 def test_ports_exports() -> None:
@@ -124,7 +124,7 @@ def test_tool_result_fields_match_spec() -> None:
     assert set(ports.ToolResult.model_fields) == {
         "status", "result_full", "source", "call_id", "error", "required_level"}
     assert set(ports.ToolCallContext.model_fields) == {
-        "run_id", "release", "principal", "on_behalf_of", "subject", "turn_id"}
+        "run_id", "release", "principal", "on_behalf_of", "subject", "turn_id", "at"}
 
 
 def test_id_kinds_match_spec() -> None:

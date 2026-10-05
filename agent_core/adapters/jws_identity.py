@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-from agent_core.domain import CredentialsInvalid, OnBehalfOf, Principal, loads
+from agent_core.domain import CredentialsInvalid, GrantCheckUnavailable, OnBehalfOf, Principal, loads
 
 PRINCIPAL_TYP = "principal+jws"
 DELEGATION_TYP = "delegation+jws"
@@ -68,9 +68,11 @@ class JwsIdentityVerifier:
             raise _invalid() from None
 
     def grant_active(self, grant_ref: str, now: datetime) -> bool:
-        """Falla cerrado: si el servicio de asignaciones no responde, el permiso no está activo."""
+        """Falla cerrado: `GrantCheckUnavailable` pasa tal cual (M9 da 503); otra falla es "no activo"."""
         try:
             return bool(self._grant_active(grant_ref, now))
+        except GrantCheckUnavailable:
+            raise
         except Exception:
             return False
 

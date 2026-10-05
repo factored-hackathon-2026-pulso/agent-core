@@ -151,3 +151,16 @@ def test_task_input_that_breaks_the_schema_is_422_and_releases_the_key() -> None
             w.engine.start_run(w.principal, None, run_input(agent="tarea", input=bad))
         assert info.value.code is ProblemCode.invalid_request
     assert w.store.runs == {} and w.store.idempotency_reserved == {}
+
+
+def test_task_input_with_a_list_of_turns_enters_as_validated() -> None:
+    """The copilot's suggestions run (ADR 0026) receives the conversation as a bounded list of turns."""
+    w = _world_with_schema({"turnos": {"type": "list", "required": True, "max_items": 12,
+                                       "items": {"rol": {"type": "string", "required": True},
+                                                 "texto": {"type": "string", "required": True}}}})
+    turns = [{"rol": "cliente", "texto": "no reconozco un cargo"}, {"rol": "analista", "texto": "reviso"}]
+    result = w.engine.start_run(w.principal, None, run_input(agent="tarea", input={"turnos": turns}))
+    assert w.store.runs[result.run_id].slots["turnos"].status == "validated"
+    with pytest.raises(EngineError) as info:
+        w.engine.start_run(w.principal, None, run_input("key-2", agent="tarea", input={"turnos": "suelto"}))
+    assert info.value.code is ProblemCode.invalid_request

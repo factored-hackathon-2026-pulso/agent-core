@@ -29,7 +29,7 @@
    **Cambio respecto al borrador de la plataforma:** el servicio recibe los *claims ya verificados* y no el JWS, porque el motor no lo conserva y reenviarlo obligaría a cambiar M9 y el estado del run. La confianza entre servicios es el bearer (red privada, TLS delante); el servicio compara `bound_params` con `context` (sujeto/delegación) y responde `denied` si no concuerdan.
 4. **Mapeo de errores sin lanzar al motor.** Lectura: transporte caído, 5xx, cuerpo ilegible, 401/403 o estado fuera de contrato → `error` (timeout del cliente → `timeout`). **Escritura: cualquier fallo de transporte o respuesta no válida → `uncertain`, nunca `error`** (ADR 0007: el motor verifica por `idempotency_key` en vez de reintentar a ciegas). Un estado `uncertain` en una lectura es fuera de contrato.
 5. **`step_up_required` antes de cualquier efecto.** Si el nivel del principal es menor que `min_auth_level`, el ejecutor responde `step_up_required` sin llamar al servicio; el servicio también puede pedirlo.
-6. **Sin datos sensibles en logs ni errores.** Solo `call_id`, nombre de la tool, estado y causa corta; nunca args, resultados, claims ni texto de excepción. El mensaje de error del servicio se trunca a 200 caracteres y solo se conserva si el estado no es `ok`.
+6. **Sin datos sensibles en logs ni errores.** Solo `call_id`, nombre de la tool, estado y causa corta; nunca args, resultados, claims ni texto de excepción. Del error del servicio solo se conserva `error.kind` si es un código (`[a-z][a-z0-9_]{0,39}`; si no, `tool_error`) y solo si el estado no es `ok`; `error.message` se descarta (enmienda 2026-10-05).
 7. Los dobles de demo siguen tras `AGENTCORE_ALLOW_DEMO=1`.
 
 ## Consecuencias
@@ -40,3 +40,6 @@
 ## Abierto
 - Si `GET /v1/tools` debe publicar los nombres y la versión del `args_schema` que implementa el servicio, para que `publish` de una release falle si falta una tool.
 - Pruebas contra un servicio real: llegan con T2.
+
+## Enmienda 2026-10-05 (revisión técnica)
+- §6 conservaba `error.message` (hasta 200 caracteres). Ese texto libre llegaba sin pasar por las vistas a los eventos `tool_called` y, en el nodo `agent`, al prompt del modelo, en contra del ADR 0008 y de la regla 6. Decisión del usuario: solo se conserva `error.kind`. El contrato `tool-provider` no cambia (el servicio puede seguir enviando `message`; el motor lo ignora).

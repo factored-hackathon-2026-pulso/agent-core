@@ -36,6 +36,8 @@ PROBLEM_TITLES: dict[ProblemCode, str] = {
     ProblemCode.rate_limited: "Límite de tasa excedido",
     ProblemCode.cost_budget_exceeded: "Tope de costo diario excedido",
     ProblemCode.internal_error: "Error interno",
+    ProblemCode.identity_unavailable: "No se pudo verificar la delegación; reintenta",
+    ProblemCode.payload_too_large: "Cuerpo de la petición demasiado grande",
 }
 
 
