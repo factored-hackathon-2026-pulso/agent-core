@@ -1,7 +1,8 @@
 """`calibrate`: corre los proveedores sobre el split de desarrollo y produce el `CalibrationArtifact` (§3.4).
 
 Función pura del contenido: sin reloj ni `IdSource`; el mismo split (en cualquier orden) y las mismas salidas
-de proveedor dan el mismo artefacto, con `split_hash` y `run_id` derivados por hash."""
+de proveedor dan el mismo artefacto, con `split_hash` y `run_id` derivados por hash. El `run_id` cubre la
+cadena completa de `ProviderSpec` (proveedor y `config`, en el orden declarado)."""
 
 import math
 from collections.abc import Mapping, Sequence
@@ -109,7 +110,7 @@ def calibrate(model_def: DecisionModelDef, dev_split: Sequence[DevExample],
         for e in examples]))
     run_id = "cal-" + sha256_hex(canonical_bytes({
         "model": f"{model_def.id}@{model_def.version}", "split_hash": split_hash, "method": method,
-        "providers": sorted(spec.provider for spec in model_def.providers),
+        "providers": [{"provider": spec.provider, "config": spec.config} for spec in model_def.providers],
         "targets": {name: {"metric": targets[name].metric, "value": targets[name].value} for name in fields},
         "min_samples": dict(min_samples), "min_support": min_support,
     }))[:16]
