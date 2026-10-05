@@ -140,7 +140,7 @@ ReAct acotado de **solo lectura y cálculo**. Lo usan el copiloto del asesor y e
 
 **Presupuestos.** El nodo cuenta como un nodo (`max_nodes_per_turn`).
 
-**Eventos.** Cada tool ejecutada emite su `tool_called` (argumentos y resultado en vista `audit`), y cada paso un `agent_step` (M0): `node_id`, `step`, `kind` (`tool`/`final`/`failed`), `tool`, `call_id` (enlaza con su `tool_called`), `status`, `text_fp` (huella con clave de la respuesta final), `error_kind` (solo con `failed`: el `GatewayErrorKind` que llevó a `gave_up`) y `latency_ms`. Nunca el razonamiento intermedio.
+**Eventos.** Cada tool ejecutada emite su `tool_called` (argumentos y resultado en vista `audit`), y cada paso un `agent_step` (M0): `node_id`, `step`, `kind` (`tool`/`final`/`failed`), `tool`, `call_id` (enlaza con su `tool_called`), `status`, `text_fp` (huella con clave de la respuesta final), `error_kind` (solo con `failed`: el `GatewayErrorKind` que llevó a `gave_up`), `tokens` (opcional: tokens que el proveedor informó en el paso; campo de medición) y `latency_ms`. Nunca el razonamiento intermedio.
 
 **Determinismo y replay.** El bucle usa solo puertos inyectados: con un `AgentPort` guionado produce los mismos eventos. El replay `audit` verifica la cadena de `agent_step` sin volver a llamar al modelo.
 

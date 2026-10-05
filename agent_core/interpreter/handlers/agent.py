@@ -80,6 +80,7 @@ class _Loop:
         self.emitted: list[EngineEvent] = []
         self.observations: list[AgentObservation] = []
         self.call_ids: list[str] = []
+        self.step_tokens: int | None = None  # tokens the model reported for the step in flight
         self.read_ids = _read_fact_ids(node, state)
         self.allowed = {exact_ref(ctx, EntityKind.tool, ref) for ref in node.config.tools_allowed}
 
@@ -87,7 +88,8 @@ class _Loop:
         return (self.ctx.clock.monotonic_ns() - started) // _NS_PER_MS
 
     def _step_event(self, step: int, started: int, **fields: Any) -> None:
-        payload = AgentStepPayload(node_id=self.node.id, step=step, latency_ms=self._ms(started), **fields)
+        payload = AgentStepPayload(node_id=self.node.id, step=step, latency_ms=self._ms(started),
+                                   tokens=self.step_tokens, **fields)
         self.emitted.append(self.events.agent_step(self.state, payload))
 
     def failed(self, step: int, started: int, kind: GatewayErrorKind) -> None:
@@ -174,11 +176,13 @@ def handle_agent(node: AgentNode, state: RunState, ctx: StepContext, resume: Res
             loop.state = charge_model(
                 loop.state, calls=1, tokens=(failure.tokens_in or 0) + (failure.tokens_out or 0),
                 cost=failure.cost_usd or Decimal("0"))
+            loop.step_tokens = (failure.tokens_in or 0) + (failure.tokens_out or 0)
             loop.failed(step, started, failure.kind)
             break
         loop.state = charge_model(loop.state, calls=result.model_calls, tokens=result.tokens,
                                   cost=result.cost_usd)
         feedback = None
+        loop.step_tokens = result.tokens
         if isinstance(result.action, AgentFinal):
             error = loop.final(step, started, result.action.output)
             if error is None:

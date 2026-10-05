@@ -136,7 +136,7 @@ Cuando M4 devuelve `awaiting: step_up`, M9 responde `200` con `step_up: {require
 
 ### 3.7 Observabilidad (ADR 0003)
 
-Un span `agentcore.api.request` por request (OpenTelemetry, provider de `agent_telemetry`), con una lista cerrada de atributos (método y status). El `trace_id` de la respuesta es el de la traza si hay una activa; si no, uno del `IdSource`. `agent_telemetry.span()` exige `run_id` y `agentcore.release`, que no existen en un 401, por eso la puerta usa la API de OTel directamente. Nada de credenciales, `principal.id` ni body en atributos.
+Un span `agentcore.api.request` por request (OpenTelemetry, provider de `agent_telemetry`), con una lista cerrada de atributos (método y status). El `trace_id` de la respuesta es el de la traza si hay una activa; si no, uno del `IdSource`. `agent_telemetry.span()` exige `run_id` y `agentcore.release`, que no existen en un 401, por eso la puerta usa la API de OTel directamente. Nada de credenciales, `principal.id` ni body en atributos. Un `traceparent` W3C entrante (propagador privado, no el global) hace del span un hijo de la traza del llamador y el `trace_id` de la respuesta es el de esa traza; ausente o malformado, el request abre su propia traza.
 
 - La telemetría nativa de FastAPI está apagada (`FASTAPI_TELEMETRY_OFF` en `agent_core/api/app.py`: trazas, métricas, logs, spans de operación y autoconfiguración desde `OTEL_*`), así que `agentcore.api.request` es el único span de servidor y no hay `url.path` ni `url.query`.
 - En un error, el span lleva `error.type` y `http.response.status_code`, y nunca el evento `exception` ni una descripción de estado.

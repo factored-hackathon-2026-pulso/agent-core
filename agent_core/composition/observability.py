@@ -188,6 +188,7 @@ class Observability:
         if _ACTIVE is not self:
             return
         tel.shutdown_tracing()
+        tel.configure(capture_content=False, langfuse_attributes=False)
         saved, _ACTIVE, _SAVED = _SAVED, None, None
         if saved is not None:
             root = logging.getLogger()
@@ -246,6 +247,10 @@ def setup_observability(env: Mapping[str, str], *, version: str | None = None,
         root = logging.getLogger()
         _SAVED = _SavedLogging(handlers=tuple(root.handlers),
                                levels={name: logging.getLogger(name).level for name in ("", *_SDK_LOGGERS)})
+    # Env-only switches (default off): `AGENTCORE_TRACE_CONTENT=1` admits prompt/completion attributes on
+    # spans (the `audit` view, rule 6); `AGENTCORE_TRACE_LANGFUSE=1` derives the `langfuse.*` attributes.
+    tel.configure(capture_content=env.get("AGENTCORE_TRACE_CONTENT", "").strip() == "1",
+                  langfuse_attributes=env.get("AGENTCORE_TRACE_LANGFUSE", "").strip() == "1")
     handler = install_json_logging(stream or sys.stderr)
     quiet_sdk_loggers()
     _ACTIVE = Observability(tracing=config is not None or exporter is not None, _handler=handler)
