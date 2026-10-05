@@ -14,7 +14,7 @@ from agent_core.api.limits import RateLimitConfig
 from agent_core.api.security_log import OtelSecurityLog
 from agent_core.audit import AuditLog
 from agent_core.composition.builder_tools import BuilderToolExecutor, RoutedTools
-from agent_core.composition.engine import EngineConfig, EngineDeps, build_engine
+from agent_core.composition.engine import EngineConfig, EngineDeps, EngineTools, build_engine
 from agent_core.composition.export_http import export_extension
 from agent_core.composition.observability import ObservabilityConfigError, setup_observability
 from agent_core.composition.serve_ports import ServeConfigError, ServePorts, resolve_ports
@@ -73,7 +73,9 @@ def build_api_deps(ports: ServePorts, *, registry_service: RegistryService | Non
         registry=ports.registry, releases=ports.releases, tools=ports.tools, gateway=ports.gateway,
         providers=ports.providers, calibrations=ports.calibrations, transcript=ports.transcript,
         authz=ports.authz, classifier=ports.classifier, directory=ports.directory, telemetry=telemetry,
-        config=EngineConfig(lang_thresholds=ports.lang_thresholds)))
+        config=EngineConfig(lang_thresholds=ports.lang_thresholds),
+        # Fuera de demo el motor sirve sus propias tools; los dobles de demo ya las traen guionadas.
+        engine_tools=EngineTools(fx_rates=ports.fx_rates) if ports.engine_tools else None))
     return ApiDeps(
         verifier=ports.verifier, authz=ports.authz, registry=ports.registry, uow_factory=ports.uow_factory,
         counters=ports.counters, clock=ports.clock, ids=ports.ids, turns=built.turns,

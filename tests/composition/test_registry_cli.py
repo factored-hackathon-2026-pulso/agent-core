@@ -3,13 +3,15 @@ import json
 from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from agent_core.cli import main
-from agent_core.composition.registry import add_registry_parser, run_registry_cli
+from agent_core.composition.registry import STAFF_KEYS_ENV, add_registry_parser, run_registry_cli
 from agent_core.registry import InMemoryRegistryStore, RegistryStore
 from testing.fakes.clock import FakeClock
+from testing.fakes.identity import b64
 from testing.fakes.ids import FakeIds
-from testing.registry_demo import demo_suite, issue
+from testing.registry_demo import _ISSUER, demo_suite, issue
 from tests.registry.helpers import AGENT, REGISTRY_DEMO, docs, prompt_draft
 
 
@@ -142,13 +144,48 @@ def test_missing_dsn_or_credential_is_exit_2(capsys: pytest.CaptureFixture[str])
     assert code == 2 and "--dsn" in capsys.readouterr().err
 
 
-def test_verifier_and_harness_are_required_without_allow_demo(capsys: pytest.CaptureFixture[str]) -> None:
+def test_verifier_is_required_without_allow_demo(capsys: pytest.CaptureFixture[str]) -> None:
     cli = Cli(capsys)
     code, out, err = cli.run("show", "p", env={})
     assert code == 2 and out == "" and "AGENTCORE_ALLOW_DEMO=1" in err
     code, _, err = cli.run("show", "p", env={"AGENTCORE_ALLOW_DEMO": "0"})
     assert code == 2
     assert cli.store._state.proposals == {}  # type: ignore[attr-defined]  # nada se ejecutó
+
+
+def test_the_harness_is_required_only_to_evaluate(capsys: pytest.CaptureFixture[str]) -> None:
+    cli = Cli(capsys)
+    code, _, err = cli.run("--verifier", "testing.registry_demo:demo_verifier", "show", "no-existe", env={})
+    assert code == 1 and json.loads(err)["code"] == "not_found"  # llegó al servicio sin harness
+    code, out, err = cli.run("--verifier", "testing.registry_demo:demo_verifier",
+                             "evaluate", "p", "s", env={})
+    assert code == 2 and out == "" and "--harness" in err
+
+
+def _staff_keys_file(tmp_path: Path) -> Path:
+    public = _ISSUER.principal_key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    path = tmp_path / "staff-keys.json"
+    path.write_text(json.dumps({"principal_keys": {_ISSUER.principal_kid: b64(public)}}), encoding="utf-8")
+    return path
+
+
+def test_the_real_staff_verifier_imports_a_seed_with_an_admin_credential(
+        tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(STAFF_KEYS_ENV, str(_staff_keys_file(tmp_path)))
+    cli = Cli(capsys)
+    verifier = ("--verifier", "agent_core.composition.registry:staff_verifier")
+    code, _, err = cli.run(*verifier, "import", str(REGISTRY_DEMO), actor="human", env={})
+    assert code == 1 and json.loads(err)["code"] == "forbidden_role"  # solo una persona admin importa
+    details = cli.ok(*verifier, "import", str(REGISTRY_DEMO), actor="admin", env={})
+    assert isinstance(details, list) and details
+
+
+def test_the_real_staff_verifier_needs_its_keys_file(capsys: pytest.CaptureFixture[str],
+                                                     monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(STAFF_KEYS_ENV, raising=False)
+    code, out, err = Cli(capsys).run("--verifier", "agent_core.composition.registry:staff_verifier",
+                                     "show", "p", env={})
+    assert code == 2 and out == "" and "ValueError" in err
 
 
 def test_explicit_verifier_and_harness_work_without_allow_demo(capsys: pytest.CaptureFixture[str]) -> None:
