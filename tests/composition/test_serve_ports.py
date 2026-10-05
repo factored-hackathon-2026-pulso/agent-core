@@ -278,7 +278,7 @@ def test_serve_registers_a_postgres_readiness_check_that_fails_closed_when_unrea
 
     check = dict(ports.readiness)["postgres"]
 
-    assert set(dict(ports.readiness)) == {"postgres", "keys"}
+    assert set(dict(ports.readiness)) == {"postgres", "keys", "schema"}
     assert check() is False  # nada escucha en el puerto 1: falla cerrado, sin lanzar
 
 

@@ -18,6 +18,7 @@ from agent_core.composition.builder_tools import BuilderToolExecutor, RoutedTool
 from agent_core.composition.engine import EngineConfig, EngineDeps, EngineTools, build_engine
 from agent_core.composition.export_http import export_extension
 from agent_core.composition.observability import ObservabilityConfigError, setup_observability
+from agent_core.composition.schema_version import SchemaBootstrap
 from agent_core.composition.serve_ports import (
     DOUBLES_ENV,
     LEGACY_DOUBLES_ENV,
@@ -52,6 +53,7 @@ def _extensions(ports: ServePorts, registry_service: RegistryService | None) -> 
 
 
 _LOG = logging.getLogger("agent_core.serve")
+AUTO_MIGRATE_ENV = "AGENTCORE_AUTO_MIGRATE"  # "0": no migrar al arrancar (el rol sin DDL)
 
 
 def mode_line(ports: ServePorts) -> str:
@@ -153,6 +155,7 @@ def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Map
         print(f"  - {exc}", file=sys.stderr)
         observability.shutdown()
         return 2
+    bootstrap: SchemaBootstrap | None = None
     try:
         try:
             ports = resolve_ports(args, env, clock, ids)
@@ -170,6 +173,12 @@ def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Map
         for warning in (*release_warnings(ports.registry, ports.agents, ports.clock),
                         *gateway_warnings(ports.llm_gateway_url)):
             print(f"AVISO: {warning}", file=sys.stderr)
+        if ports.migrate is not None and env.get(AUTO_MIGRATE_ENV) != "0":
+            # En segundo plano y con reintentos: sin base `serve` arranca igual y `/readyz` dice 503.
+            migrate = ports.migrate
+            bootstrap = SchemaBootstrap(
+                lambda: _LOG.info("schema migrated=%s", ",".join(migrate()) or "none"))
+            bootstrap.start()
         registry_service = build_registry_service_for_serve(ports) if ports.registry_api is not None else None
         # Always the real turn telemetry: without an exporter its spans are no-ops, but `bind` still
         # correlates the turn's logs (m04 §3.9).
@@ -190,4 +199,6 @@ def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Map
         serve(app, host=args.host, port=args.port, log_config=None, access_log=False)
         return 0
     finally:
+        if bootstrap is not None:
+            bootstrap.stop()
         observability.shutdown()  # I6: flush the batch exporter on exit

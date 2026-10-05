@@ -41,8 +41,11 @@ def _answers(probe: Probe, url: str) -> bool:
 
 
 def build_readiness(env: Mapping[str, str], *, postgres: Callable[[], bool], verifiers: Iterable[Any],
-                    probe: Probe = http_probe) -> tuple[tuple[Check, ...], frozenset[str]]:
+                    probe: Probe = http_probe,
+                    schema: Callable[[], bool] | None = None) -> tuple[tuple[Check, ...], frozenset[str]]:
     checks: list[Check] = [("postgres", postgres), ("keys", lambda: _keys_loaded(list(verifiers)))]
+    if schema is not None:
+        checks.append(("schema", schema))
     optional: set[str] = set()
     gateway = (env.get(LLM_GATEWAY_URL_ENV) or "").strip()
     if gateway:
