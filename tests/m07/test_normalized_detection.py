@@ -60,6 +60,15 @@ PAN_VARIANTS = [
     "tarjeta ４１１１ １１１１－１１１１－１１１１ vence",  # ancho completo con guion de ancho completo
     "tarjeta 4111 1111 1111 1111 vence",  # espacios no separables, de cifra y fino
     "tarjeta 4111 ‒ 1111 ‒ 1111 ‒ 1111 vence",
+    "tarjeta 4111\n1111\n1111\n1111 vence",  # un grupo por línea
+    "tarjeta 4111\r\n1111\r\n1111\r\n1111 vence",
+    "tarjeta 4111     1111          1111      1111 vence",  # 4+ espacios entre grupos
+    "tarjeta 4111 \n 1111 \t\n  1111\n\n1111 vence",
+    "tarjeta 4111\u31641111\u28001111\u20651111 vence",  # relleno hangul, braille en blanco, sin asignar
+    "tarjeta 4111\u20281111\u20291111 1111 vence",  # separadores de línea y de párrafo
+    "tarjeta 4111\u16801111\u16801111\u16801111 vence",  # espacio ogham
+    "tarjeta 4111\U000e0020\U000e00211111\ue0001111\ufff91111 vence",  # etiquetas, uso privado, anotaciones
+    "tarjeta 4111\u03011111\u03081111\u20e31111 vence",  # marcas combinantes entre grupos
 ]
 
 
@@ -75,6 +84,10 @@ PHONE_VARIANTS = [
     "llama al (300) 123 4567 ya",
     "llama al (300)123-4567 ya",
     "llama al 300 123 4567 ya",
+    f"llama al (3{ZW}00) 12{ZW}3 4567 ya",  # U+200B dentro de un grupo
+    f"llama al (300) 123{ZW} 4567 ya",
+    f"llama al (300){ZW}123{ZW}-{ZW}4567 ya",
+    "llama al (300)\n123\n4567 ya",
     f"llama al 300{ZW} 123{ZW} 4567 ya",
     "llama al ٣٠٠ ١٢٣ ٤٥٦٧ ya",
     "llama al ３００　１２３　４５６７ ya",
@@ -111,6 +124,24 @@ EMAIL_VARIANTS = [
     f"escribe a usu{ZW}ario@dom{ZW}inio.com ya",
     f"escribe a usuario{ZW}@{ZW}dominio.com ya",
     "escribe a ｕｓｕａｒｉｏ＠ｄｏｍｉｎｉｏ．ｃｏｍ ya",
+    f"escribe a usuario@exam{ZW}ple.test ya",
+    "escribe a usuario arroba example.test ya",
+    "escribe a usuario ARROBA example punto test ya",
+    "escribe a usuario [at] example.test ya",
+    "escribe a usuario @ example.test ya",
+    "escribe a usuario@example punto test ya",
+    "escribe a usuario@example dot test ya",
+    "escribe a usuario@dominio[.]com ya",
+    "escribe a usuario[at]dominio[.]com ya",
+    "escribe a usuario(at)dominio(.)com ya",
+    "escribe a usuario@dominio{.}com ya",
+    "escribe a usuario@dominio。com ya",
+    "escribe a usuarió@dominio.com ya",  # letra acentuada: NFKC la compone, el detector la lleva a su base
+    "escribe a usuario@dominio.cóm ya",
+    "escribe a josé@dominio.com ya",
+    "escribe a muñoz@dominio.com ya",
+    "escribe a maría.lópez@dominio.com ya",
+    "escribe a usuario@dominio\u200d。\u2060com ya",
 ]
 
 
@@ -134,7 +165,8 @@ def test_t_m7_12_equivalent_variants_share_one_token() -> None:
 
 
 def test_t_m7_12_document_variants() -> None:
-    for variant in (DOC, f"1023{ZW}456{ZW}789", "١٠٢٣٤٥٦٧٨٩", CIRCLED_DOC, "1023_456_789", "1023/456/789"):
+    for variant in (DOC, f"1023{ZW}456{ZW}789", "١٠٢٣٤٥٦٧٨٩", CIRCLED_DOC, "1023_456_789", "1023/456/789",
+                    "102_345_678", "1023\n456\n789", "1023       456 789"):
         out, tokens = _model(f"CC {variant} ok")
         assert tokens == 1 and out.startswith("CC ⟦") and out.endswith("⟧ ok"), (variant, out)
         _no_digits_left(out, "1023", "456789")
@@ -162,13 +194,25 @@ def test_t_m7_12_zero_width_inside_text_without_pii_is_preserved() -> None:
     assert _model(text) == (text, 0)
 
 
+def test_t_m7_12_find_clear_pii_normalizes_text_needles_too() -> None:
+    service = make_service()
+    facts = {"cliente": {"first_name": "María Pérez", "address": "Calle 12 # 34-56"}}
+    assert service.find_clear_pii(f"hola Mar{ZW}ía Pérez", facts) == ["cliente.first_name"]
+    assert service.find_clear_pii("hola María    Pérez", facts) == ["cliente.first_name"]
+    assert service.find_clear_pii(f"vive en Calle 12 #{ZW} 34-56", facts) == ["cliente.address"]
+    assert service.find_clear_pii("hola Ana", facts) == []
+
+
 def test_t_m7_12_find_clear_pii_sees_the_same_variants() -> None:
     service = make_service()
     facts = {"cliente": {"document_number": DOC, "email": "usuario@dominio.com"}}
     assert service.find_clear_pii(f"doc 1023{ZW}456{ZW}789", facts) == ["cliente.document_number"]
     assert service.find_clear_pii("doc ١٠٢٣٤٥٦٧٨٩", facts) == ["cliente.document_number"]
-    assert service.find_clear_pii("mail usuario [at] dominio.com", facts) == ["pattern:email"]
-    assert service.find_clear_pii("mail usuario ( @ ) dominio.com", facts) == ["pattern:email"]
+    both = ["cliente.email", "pattern:email"]
+    for variant in ("usuario [at] dominio.com", "usuario ( @ ) dominio.com", "usuario@dominio[.]com",
+                    "usuario arroba dominio punto com"):
+        assert service.find_clear_pii(f"mail {variant}", facts) == both
+    assert service.find_clear_pii("doc 1023\n456\n789", facts) == ["cliente.document_number"]
 
 
 # T-M7-13: controles negativos. Lo que no es PII no cambia, ni siquiera con variantes de formato.
@@ -192,6 +236,20 @@ NEGATIVES = [
     "ref_12_34 y a_b_c",
     "texto normal con acentos: ñandú, camión, ¿qué tal? ¡hola!",
     "emoji 😀 y combinados 👨‍👩‍👧",  # el ZWJ de los emojis no es un separador de dígitos
+    "vence 09/2026 y 03/2027 ok",
+    "periodo 2026/09",
+    "ley 100/1993 y Ley 1581/2012 de datos, decreto 2555/2010, resolución 123/2020",
+    "radicado 2026/0912, proporción 120/80/60 y 1000/2000",
+    "del 15/09/2026 - 20/09/2026 y del 01/09/2026-30/09/2026 y 12/09/2026, 13/09/2026",
+    "el 15 / 09 / 2026 y el 15 /09/ 2026 y fecha 12_09_2026 y 15·09·2026",
+    "31/12/1999 23:59:59 fue la hora",
+    "file_2026_09_15.csv y date_2026_09_15",
+    "tel (601) 234 y (555) 1234 y (123) (456) (789) y (15)/(09)/(2026)",
+    "lista 1) uno 2) dos 3) tres",
+    "https://ejemplo.test/items/123/456 ok",
+    "10\n20\n30\n40 son cuatro líneas cortas",
+    "paso 1\n\npaso 2\n\npaso 3",
+    "ho\u3164la \u2800mundo \ue000 café ñandú MARÍA",  # invisibles sin PII se conservan
     "",
 ]
 
