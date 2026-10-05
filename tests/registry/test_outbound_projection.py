@@ -42,7 +42,7 @@ def test_no_actor_reason_or_hash_leaks() -> None:
 
 
 def test_release_events_carry_the_agent_and_the_alias_they_touch() -> None:
-    events, out = _events()
+    _, out = _events()
     published, promoted, _, revoked = (to_jsonable(p)["data"] for _, p in out)
     assert (published["agent_id"], published["alias"]) == (AGENT, "staging")
     assert (promoted["agent_id"], promoted["alias"], promoted["before"]) == (AGENT, "prod", "rel-demo")
