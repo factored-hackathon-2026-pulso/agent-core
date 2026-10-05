@@ -64,7 +64,7 @@ pasar nada) y rechaza cualquier ruta bajo `testing.`. Cada fábrica se puede cam
 | `AGENTCORE_AUTO_MIGRATE` | O | `1` | `0`: `serve` no migra al arrancar (rol sin DDL). Entonces corre `agentcore migrate` con el rol dueño antes. |
 | `AGENTCORE_READY_REQUIRE_LLM_GATEWAY` | O | `1` | `0`: el llm-gateway solo se informa en `/readyz` (`degraded`). |
 | `AGENTCORE_READY_REQUIRE_TOOL_SERVICE` | O | `0` | `1`: el tool-service bloquea `/readyz`. |
-| `AGENTCORE_MAX_INFLIGHT` | O | `0` | Tope de peticiones `/v1` simultáneas del proceso; pasado el tope, 503 con `Retry-After: 1`. 0 = sin tope. Las sondas nunca cuentan. |
+| `AGENTCORE_MAX_INFLIGHT` | O | `AGENTCORE_DB_POOL_MAX // 2` (0 sin pool) | Tope de peticiones `/v1` simultáneas del proceso; pasado el tope, 503 con `Retry-After: 1`. Un turno retiene una conexión y pide otra, así que más turnos simultáneos que la mitad del pool agotan el pool (`PoolTimeout`). Dimensiona: conexiones de Postgres ≥ 2 pools × `AGENTCORE_DB_POOL_MAX`. Las sondas nunca cuentan. |
 | `AGENTCORE_WORKER_THREADS` | O | `40` | Hilos para las rutas síncronas; acota la concurrencia real del proceso. |
 | `AGENTCORE_SHUTDOWN_GRACE_SECONDS` | O | `25` | Plazo de apagado ordenado tras SIGTERM (uvicorn espera las peticiones en curso). Debe ser menor que el `stop_grace_period` del orquestador. |
 | `AGENTCORE_RATE_MAX_HITS` / `_RATE_WINDOW_SECONDS` / `_RATE_SERVICE_MULTIPLIER` | O | demo | Límite por principal (ventana deslizante). |

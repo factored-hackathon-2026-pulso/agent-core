@@ -115,8 +115,13 @@ def ops_from_env(env: Mapping[str, str]) -> OpsConfig:
             raise ValueError(f"{name} debe ser >= {minimum:g}")
         return value
 
+    raw_pool = env.get("AGENTCORE_DB_POOL_MAX") or ""
+    pool = int(raw_pool) if raw_pool.isdigit() else 0  # un valor inválido lo rechaza `resolve_ports`
+    # Un turno retiene una conexión y pide otra (UoW + auditoría): con más turnos simultáneos que la mitad del
+    # pool se agota (`PoolTimeout`, 30 s). Sin tope explícito, el tope sigue al pool.
+    derived = max(1, pool // 2) if pool > 0 else defaults.max_inflight
     return OpsConfig(
-        max_inflight=int(number(MAX_INFLIGHT_ENV, defaults.max_inflight, int, 0)),
+        max_inflight=int(number(MAX_INFLIGHT_ENV, derived, int, 0)),
         worker_threads=int(number(WORKER_THREADS_ENV, defaults.worker_threads, int, 1)),
         shutdown_grace_s=number(SHUTDOWN_GRACE_ENV, defaults.shutdown_grace_s, float, 0))
 
