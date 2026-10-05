@@ -4,13 +4,13 @@ M2, M3, M4, M6, M7, M8 y M10 son los reales (`build_turn_engine`); las tools, el
 salen de `RecordedPorts`, y las decisiones de M5 de los `decision_made` grabados. Herramienta de desarrollo:
 usa el almacén en memoria de `testing`."""
 
+from copy import deepcopy
 from pathlib import Path
 
 from agent_core.audit import RecordedPorts, ReplayCase
 from agent_core.composition import EngineDeps, build_turn_engine
 from agent_core.decision.calibration.artifact import InMemoryCalibrationSource
 from agent_core.domain import (
-    AgentSelector,
     DecisionModelDef,
     EngineEvent,
     EntityKind,
@@ -22,7 +22,7 @@ from agent_core.domain import (
 from agent_core.flows import load_registry
 from agent_core.ports import IdKind, IdSource, KeyProvider
 from agent_core.views import FieldClassifier
-from testing.engine_world import CATALOG, Driver, SyntheticAuthz, principal_at
+from testing.engine_world import CATALOG, Driver, SyntheticAuthz
 from testing.fakes.ids import FakeIds
 from testing.fakes.keys import FakeKeyProvider
 from testing.fakes.registry import InMemoryRegistry
@@ -100,16 +100,19 @@ class RecordedEngineRunner:
     def run(self, case: ReplayCase, ports: RecordedPorts) -> list[EngineEvent]:
         """The events of every run of the session, in creation order (the `EngineRunner` contract)."""
         try:
-            self._registry.resolve_release_by_id(case.release)
+            release = self._registry.resolve_release_by_id(case.release)
         except KeyError:
             raise ValueError(f"el registro no tiene la release {case.release}") from None
         started = case.recorded[0]
         if not isinstance(started, RunStarted):
             raise ValueError("el fixture no empieza con run_started")
         agent = started.payload.agent.id
-        entry = self._registry.resolve_release(AgentSelector(id=agent, alias="prod"), principal_at("step_up"))
-        if entry.id != case.release:
-            raise ValueError(f"el alias prod de {agent} es la release {entry.id}, no {case.release}")
+        if agent not in release.entities.get(EntityKind.agent, {}):
+            raise ValueError(f"la release {case.release} no es del agente de entrada {agent}")
+        # The run is replayed on the release it recorded, whatever `prod` points to today: a copy of the
+        # registry with the entry agent's alias pinned to it (the run started through that alias).
+        registry = deepcopy(self._registry)
+        registry.add_release(release, agent, alias="prod")
         decisions = decisions_of(list(case.recorded))
         synthesized = synthesized_thresholds(decisions, "replay")
         calibrations = InMemoryCalibrationSource(
@@ -118,8 +121,8 @@ class RecordedEngineRunner:
         audit = InMemoryAuditSink(store)
         deps = EngineDeps(
             clock=ports.clock, ids=_ReplayIds(ports.ids), keys=self._keys or FakeKeyProvider.default(),
-            uow_factory=store.uow, audit=audit, registry=self._registry,
-            releases=self._registry.resolve_release_by_id, tools=ports.tools, gateway=ports.llm,
+            uow_factory=store.uow, audit=audit, registry=registry,
+            releases=registry.resolve_release_by_id, tools=ports.tools, gateway=ports.llm,
             providers=dict(providers_from(decisions)), calibrations=calibrations,
             transcript=InMemoryTranscript(), authz=SyntheticAuthz(),
             classifier=self._field_classifier or FieldClassifier(CATALOG))
