@@ -43,6 +43,11 @@ def changes_interrupts(drafts: Sequence[EntityDraft]) -> bool:
     return any(d.kind == RELEASE_SETTINGS and d.content.get("interrupts") is not None for d in drafts)
 
 
+def sets_locked_policy(drafts: Sequence[EntityDraft]) -> bool:
+    """`True` if a policy draft sets `locked` (a platform guardrail: only an admin can)."""
+    return any(d.kind == "policy" and d.content.get("locked") is True for d in drafts)
+
+
 def platform_edits(drafts: Sequence[EntityDraft]) -> list[str]:
     """Paths in the draft that declare or set thresholds for a platform guardrail (evaluation spec section 7).
 

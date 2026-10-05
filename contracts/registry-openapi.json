@@ -482,6 +482,13 @@
             "title": "Gate",
             "type": "array"
           },
+          "guardrail_changes": {
+            "items": {
+              "$ref": "#/components/schemas/GuardrailChange"
+            },
+            "title": "Guardrail Changes",
+            "type": "array"
+          },
           "release_changes": {
             "items": {
               "$ref": "#/components/schemas/ReleaseSettingChange"
@@ -1570,6 +1577,13 @@
             ],
             "title": "Detail"
           },
+          "guardrail_changes": {
+            "items": {
+              "$ref": "#/components/schemas/GuardrailChange"
+            },
+            "title": "Guardrail Changes",
+            "type": "array"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/GateItem"
@@ -2033,6 +2047,64 @@
           "fallback_template_ref"
         ],
         "title": "GenerateConfig",
+        "type": "object"
+      },
+      "GuardrailChange": {
+        "additionalProperties": false,
+        "description": "A policy, flow, tool or agent-tool link the candidate adds, removes or changes against the base. The\ngate does NOT evaluate these artifacts: the list tells the reviewer what to read (names and ids only).\n`kind` is `policy`, `flow`, `tool` or `tool_link` (`id` is `<agent>/<tool>`, from\n`Agent.tools_allowed`).",
+        "properties": {
+          "base_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Version"
+          },
+          "candidate_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Version"
+          },
+          "change": {
+            "enum": [
+              "added",
+              "removed",
+              "changed"
+            ],
+            "title": "Change",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "policy",
+              "flow",
+              "tool",
+              "tool_link"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "change"
+        ],
+        "title": "GuardrailChange",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -2909,39 +2981,7 @@
         "type": "string"
       },
       "Policy": {
-        "additionalProperties": false,
-        "description": "Política versionada: expresión, responsable y justificación (M0 §2.4).",
-        "properties": {
-          "expr": {
-            "$ref": "#/components/schemas/JsonValue-Output"
-          },
-          "id": {
-            "pattern": "^[a-z0-9][a-z0-9_/-]*$",
-            "title": "Id",
-            "type": "string"
-          },
-          "owner": {
-            "title": "Owner",
-            "type": "string"
-          },
-          "rationale": {
-            "title": "Rationale",
-            "type": "string"
-          },
-          "version": {
-            "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$",
-            "title": "Version",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "version",
-          "owner",
-          "expr",
-          "rationale"
-        ],
-        "title": "Policy",
+        "additionalProperties": true,
         "type": "object"
       },
       "Predicate": {

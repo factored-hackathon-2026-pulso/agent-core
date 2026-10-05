@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from agent_core.domain import (
     EntityKind,
     Interrupt,
+    Policy,
     RefSpec,
     RegistryEntity,
     Release,
@@ -250,6 +251,24 @@ def locked_interrupt_violations(base: Release | None, wanted: Sequence[Interrupt
     return found
 
 
+def locked_policy_violations(base: Sequence[Policy], candidate: Sequence[Policy]) -> list[Violation]:
+    """REG-LOCKED for policies: every `locked` policy of the base must stay in the candidate's closure, still
+    `locked` and with the same expression and owner. Weakening cannot be decided from an arbitrary expression,
+    so any change is refused; the base closure only (a new agent has none)."""
+    now = {p.id: p for p in candidate}
+    found: list[Violation] = []
+    for locked in (p for p in base if p.locked):
+        kept = now.get(locked.id)
+        where = _key_text("policy", locked.id)
+        if kept is None:
+            found.append(_v("REG-LOCKED", f"policy {locked.id[:80]} is a platform guardrail: it cannot be "
+                            "removed from the release", where))
+        elif not kept.locked or kept.expr != locked.expr or kept.owner != locked.owner:
+            found.append(_v("REG-LOCKED", f"policy {locked.id[:80]} is a platform guardrail: it cannot be "
+                            "changed or unlocked", where))
+    return found
+
+
 def _interrupts(interrupts: Sequence[Interrupt], merged: Mapping[Key, RegistryEntity]) -> list[Interrupt]:
     """Interrupciones (las de la base o las de `release_settings`) apuntando a las versiones de flows y
     policies de la candidata."""
@@ -333,6 +352,8 @@ def build_candidate(*, agent_id: str, base: Release | None, base_entities: Seque
     except SchemaError as exc:
         raise CandidateError([_v("REG-PIN", str(exc))]) from None
 
+    problems.extend(locked_policy_violations([e for e in base_entities if isinstance(e, Policy)],
+                                             [e for e in pinned.entities if isinstance(e, Policy)]))
     closure = {(kind_of(e), e.id) for e in pinned.entities}
     for key in _sorted_keys(set(drafted) - closure):
         problems.append(_v("REG-UNREFERENCED", "la entidad del borrador no queda en la release: nada la "

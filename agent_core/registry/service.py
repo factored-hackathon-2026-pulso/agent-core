@@ -37,8 +37,9 @@ from agent_core.registry.entities import (
     version_ref,
 )
 from agent_core.registry.errors import IntegrityError, RegistryError, RegistryErrorCode
+from agent_core.registry.evaluation.guardrails import guardrail_changes
 from agent_core.registry.evaluation.ports import EvalPort, EvalRequest, EvalTarget
-from agent_core.registry.evaluation.report import EvalReport, GateItem
+from agent_core.registry.evaluation.report import EvalReport, GateItem, GuardrailChange
 from agent_core.registry.evaluation.yardstick import Yardstick, YardstickChange, classify_yardstick_change
 from agent_core.registry.models import (
     RELEASE_SETTINGS,
@@ -86,6 +87,7 @@ from agent_core.registry.validation import (
     changes_interrupts,
     check_draft_limits,
     platform_edits,
+    sets_locked_policy,
     suite_violations,
     validate_candidate,
 )
@@ -134,6 +136,7 @@ class ApprovalReview(_V):
     suite_changes: list[EntityDraft]
     gate: list[GateItem]
     yardstick_loosened: list[YardstickChange]
+    guardrail_changes: list[GuardrailChange] = Field(default_factory=list)  # policies, flows, tool links
 
 
 MAX_PAGE = 200
@@ -359,6 +362,9 @@ class RegistryService:
         if changes_interrupts(changes) and ADMIN not in actor.roles:
             raise RegistryError(RegistryErrorCode.forbidden_role,
                                 "cambiar las interrupciones de la release exige el rol admin")
+        if sets_locked_policy(changes) and ADMIN not in actor.roles:
+            raise RegistryError(RegistryErrorCode.forbidden_role,
+                                "fijar una policy como `locked` exige el rol admin")
         request = _request_hash("put_draft", {"proposal_id": proposal_id, "expected_rev": expected_rev,
                                               "changes": [c.model_dump(mode="json") for c in changes]})
         with self._store.transaction() as tx:
@@ -440,7 +446,8 @@ class RegistryService:
                 functional_changes=[d for d in changes if d.kind != SUITE_KIND],
                 release_changes=self._release_changes(tx, p, changes), suite=last.suite,
                 suite_changes=[d for d in changes if d.kind == SUITE_KIND], gate=list(last.report.items),
-                yardstick_loosened=list(last.report.yardstick_changes))
+                yardstick_loosened=list(last.report.yardstick_changes),
+                guardrail_changes=list(last.report.guardrail_changes))
             return ProposalDetail(proposal=p, changes=changes, last_eval=last, review=review)
 
     def _release_changes(self, tx: RegistryTx, p: Proposal, changes: Sequence[EntityDraft]
@@ -566,7 +573,11 @@ class RegistryService:
         new = Yardstick(metrics=_agent_metrics(cand.entities, cand.agent_id), suite=suite)
         report = self._evaluator.run(EvalRequest(candidate=candidate_target, new=new, base=base_target,
                                                  old=old))  # outside the transaction
-        report = report.model_copy(update={"yardstick_changes": classify_yardstick_change(old, new)})
+        report = report.model_copy(update={
+            "yardstick_changes": classify_yardstick_change(old, new),
+            "guardrail_changes": guardrail_changes(
+                base_entities, cand.entities, cand.agent_id,
+                {(r.kind, r.id) for r in cand.auto_bumped})})
 
         with self._store.transaction() as tx:
             p = self._proposal(tx, proposal_id)
