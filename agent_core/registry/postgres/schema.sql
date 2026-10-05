@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS reg_release_status (
 CREATE TABLE IF NOT EXISTS reg_aliases (
     agent_id text NOT NULL, alias text NOT NULL, release_id text NOT NULL REFERENCES reg_releases(release_id),
     PRIMARY KEY (agent_id, alias));
+CREATE TABLE IF NOT EXISTS reg_agent_pause (
+    agent_id text PRIMARY KEY, paused boolean NOT NULL, release_id text, actor text, at timestamptz);
 CREATE TABLE IF NOT EXISTS reg_proposals (proposal_id text PRIMARY KEY, proposal_json text NOT NULL);
 CREATE TABLE IF NOT EXISTS reg_proposal_changes (proposal_id text PRIMARY KEY, drafts_json text NOT NULL);
 CREATE TABLE IF NOT EXISTS reg_publish_keys (

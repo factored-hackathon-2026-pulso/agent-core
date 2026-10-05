@@ -19,6 +19,7 @@ from agent_core.registry.models import (
     EntityDraft,
     EntityVersion,
     Origin,
+    PauseState,
     Proposal,
     ProposalState,
     ReasonCode,
@@ -263,6 +264,20 @@ def registry_extension(service: RegistryService, verifier: IdentityVerifier | No
         ) -> Response:
             actor = who(request, authorization)
             return _json(service.promote(actor, agent_id, alias, body.release_id, body.reason))
+
+        @router.post("/agents/{agent_id}/pause", **_doc(PauseState, 200, 404, 409))
+        def pause(request: Request, agent_id: str, body: _Reason, authorization: Auth = None) -> Response:
+            """Saca al agente del directorio de `recepcion`; `prod` no cambia y los casos abiertos siguen."""
+            return _json(service.pause_agent(who(request, authorization), agent_id, body.reason))
+
+        @router.post("/agents/{agent_id}/resume", **_doc(PauseState, 200, 404, 409))
+        def resume(request: Request, agent_id: str, body: _Reason, authorization: Auth = None) -> Response:
+            return _json(service.resume_agent(who(request, authorization), agent_id, body.reason))
+
+        @router.get("/agents/{agent_id}/pause", **_doc(PauseState, 200))
+        def pause_state(request: Request, agent_id: str, authorization: Auth = None) -> Response:
+            who(request, authorization)
+            return _json(service.get_pause(agent_id))
 
         @router.get("/aliases/{agent_id}/{alias}", **_doc(AliasState, 200, 404))
         def alias_state(request: Request, agent_id: str, alias: str, authorization: Auth = None) -> Response:

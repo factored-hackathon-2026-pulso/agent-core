@@ -16,8 +16,11 @@ class RegistryDirectory:
     def members(self, directory: str) -> list[DirectoryMember]:
         with self._store.transaction() as tx:
             pairs = tx.aliases_named("prod")
+            paused = tx.paused_agents()
         found: list[DirectoryMember] = []
         for agent_id, release_id in pairs:
+            if agent_id in paused:  # en pausa: no recibe casos nuevos (el alias `prod` no se toca)
+                continue
             if self._registry.release_status(release_id) != "active":
                 continue
             version = self._releases(release_id).entities.get(EntityKind.agent, {}).get(agent_id)

@@ -21,6 +21,7 @@ from agent_core.registry.models import (
     DraftWrite,
     EntityDraft,
     EvalRun,
+    PauseState,
     Proposal,
     RegistryEvent,
     StoredRelease,
@@ -38,6 +39,7 @@ _INSERT_ONLY = ("reg_blobs", "reg_entity_versions", "reg_releases", "reg_release
 _GRANTS_MUTABLE = {
     "reg_release_status": "SELECT, INSERT, UPDATE",   # alta al publicar, `revoke`
     "reg_aliases": "SELECT, INSERT, UPDATE",          # `publish` (staging) y `promote`
+    "reg_agent_pause": "SELECT, INSERT, UPDATE",      # pausa: se actualiza, no se borra
     "reg_publish_keys": "SELECT, INSERT",             # idempotencia: solo se escribe una vez
     "reg_proposals": "SELECT, INSERT, UPDATE",
     "reg_proposal_changes": "SELECT, INSERT, UPDATE",
@@ -248,6 +250,24 @@ class _PgTx:
                         "ON CONFLICT (agent_id, alias) DO UPDATE SET release_id = EXCLUDED.release_id",
                         (change.agent_id, change.alias, change.after))
         self._c.execute("INSERT INTO reg_alias_log (change_json) VALUES (%s)", (dumps(change),))
+
+    def get_pause(self, agent_id: str, *, for_update: bool = False) -> PauseState | None:
+        lock = " FOR UPDATE" if for_update else ""
+        query = "SELECT paused, release_id, actor, at FROM reg_agent_pause WHERE agent_id = %s"
+        row = self._one(query + lock, (agent_id,))
+        return None if row is None else PauseState(agent_id=agent_id, paused=row[0], release_id=row[1],
+                                                   actor=row[2], at=row[3])
+
+    def set_pause(self, state: PauseState) -> None:
+        self._c.execute("INSERT INTO reg_agent_pause (agent_id, paused, release_id, actor, at) "
+                        "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (agent_id) DO UPDATE SET "
+                        "paused = EXCLUDED.paused, release_id = EXCLUDED.release_id, "
+                        "actor = EXCLUDED.actor, at = EXCLUDED.at",
+                        (state.agent_id, state.paused, state.release_id, state.actor, state.at))
+
+    def paused_agents(self) -> set[str]:
+        rows = self._c.execute("SELECT agent_id FROM reg_agent_pause WHERE paused").fetchall()
+        return {r[0] for r in rows}
 
     def aliases_to(self, release_id: str) -> list[tuple[str, str]]:
         rows = self._c.execute("SELECT agent_id, alias FROM reg_aliases WHERE release_id = %s ORDER BY 1, 2",
