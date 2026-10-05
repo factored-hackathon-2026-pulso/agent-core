@@ -1,0 +1,52 @@
+# Agente `copiloto-sugerencias` (ADR 0026 §1). SOLO LA PARTE QUE NO DEPENDE DE LOS ABIERTOS.
+#
+# Pendiente, y por qué no está aquí (ver docs/specs/copiloto-sugerencias-brecha.md):
+#  - `entry_flow` apunta a `sugerir@1`, un flow que NO existe: necesita el nodo `suggest` o un modo de
+#    `respond` (ADR 0026 Abierto 1) y `RunResult.suggestions` (cambio de M0). Por eso este agente no se
+#    puede publicar ni hay `release`: se valida solo como entidad (`Agent`) en las pruebas.
+#  - `budgets` copia los del copiloto-asesor: PROVISIONAL hasta el Abierto 4 (tope de costo por run).
+#  - No hay campo `actions_allowed` (Abierto 6): `tools_allowed` son solo lecturas.
+id: copiloto-sugerencias
+version: 1.0.0
+mode: task
+entry_flow: sugerir@1
+invocable_by: [advisor]
+min_auth_level: session
+subject_kinds: [customer]
+supported_locales: [es, pt]
+default_locale: es
+tools_allowed: [leer_movimientos@1, leer_productos@1, leer_pqr_cliente@1]
+budgets: {max_nodes_per_turn: 40, max_model_calls_per_turn: 8, max_tokens_per_run: 60000, max_cost_per_run: 1.00, max_wall_ms_per_turn: 60000}
+templates:
+  clarify: t/aclarar
+  abstain: t/abstencion
+  handoff: t/traspaso
+  pending_ack: t/acuse
+  pending_offer: t/oferta
+  unsupported_language: t/idioma_no_soportado
+  input_too_large: t/mensaje_largo
+max_clarifications: 0
+on_clarify_exhausted: end
+default_target_queue: general
+# Contrato de `input` del run (ADR 0026 §1). Forma PROPUESTA: aplanada respecto de lo que hoy envía la
+# plataforma (`sla` y `sugerencia_anterior` son objetos, `motivo_llegada` puede ser null; el motor solo
+# acepta escalares y una lista plana, y rechaza un slot no declarado). Ver la brecha, discrepancia D1.
+input_schema:
+  turnos:
+    type: list
+    required: true
+    max_items: 12            # la plataforma envía los últimos 12 (CONTEXT_TURNS)
+    items:
+      rol: {type: string, required: true}     # cliente | analista | asistente
+      texto: {type: string, required: true}   # texto del cliente: untrusted_text (ADR 0026 §6)
+      hora: {type: string, required: true}    # ISO 8601 con zona (no es `date`)
+  idioma: {type: string, required: true}
+  canal: {type: string, required: true}
+  prioridad: {type: string, required: true}
+  sla_estado: {type: string, required: true}  # respondida | vencido | en_riesgo | a_tiempo
+  sla_minutos_restantes: {type: integer}      # se omite si no aplica (no se envía null)
+  espera_del_cliente_segundos: {type: integer, required: true}
+  motivo_llegada: {type: string}              # se omite si no hay
+  sugerencia_borrador: {type: string}         # estado del borrador anterior; se omite si no hubo
+  sugerencia_escalacion_aceptada: {type: boolean}
+  assistant_session_id: {type: string}        # decisión del usuario 2026-10-04; la plataforma aún no lo envía

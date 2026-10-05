@@ -1,0 +1,113 @@
+# Casos SINTÉTICOS del copiloto de sugerencias (ADR 0026 §8). Todo es inventado: nombres, números y correos.
+# `PAN` es un número de prueba público (no corresponde a ninguna tarjeta real).
+#
+# Esto NO es todavía un `eval_suite`: el formato de la suite no puede llevar `input` en el paso `start` ni
+# afirmar sobre `suggestions` (ver docs/specs/copiloto-sugerencias-brecha.md, brechas B3 y B4). Es el
+# contenido que esa suite tendrá: entrada del run, salida esperada (forma del ADR 0026, snake_case) y los
+# valores que jamás deben aparecer en la vista `model` ni en la salida.
+#
+# `expected` describe lo que el agente DEBERÍA producir; ningún modelo lo produjo todavía.
+casos:
+  - id: sin-sugerencia-saludo
+    descripcion: Un saludo no merece sugerencia (ADR 0026 §4).
+    input:
+      turnos:
+        - {rol: cliente, texto: "Hola, buenas tardes", hora: "2026-10-04T15:00:00+00:00"}
+      idioma: es
+      canal: chat
+      prioridad: normal
+      sla_estado: a_tiempo
+      sla_minutos_restantes: 25
+      espera_del_cliente_segundos: 20
+    expected: []
+    must_not_leak: []
+
+  - id: reply-con-cifra-respaldada
+    descripcion: El cliente pregunta su deuda; el borrador cita el hecho leído.
+    input:
+      turnos:
+        - {rol: cliente, texto: "¿Cuánto debo en mi tarjeta Oro?", hora: "2026-10-04T15:00:00+00:00"}
+      idioma: es
+      canal: chat
+      prioridad: normal
+      sla_estado: a_tiempo
+      sla_minutos_restantes: 20
+      espera_del_cliente_segundos: 45
+    expected:
+      - type: reply
+        text: "El saldo adeudado de tu Tarjeta Oro es de 1342.80 USD, según tus productos."
+        citations: [fact-productos-1]
+        language: es
+    must_not_leak: []
+
+  - id: tool-de-lectura
+    descripcion: Desconoce un cargo; conviene mirar los movimientos (una lectura, no una escritura).
+    input:
+      turnos:
+        - {rol: cliente, texto: "No reconozco un cargo de ayer en mi tarjeta", hora: "2026-10-04T15:00:00+00:00"}
+        - {rol: analista, texto: "Déjame revisarlo.", hora: "2026-10-04T15:01:00+00:00"}
+      idioma: es
+      canal: chat
+      prioridad: normal
+      sla_estado: respondida
+      espera_del_cliente_segundos: 0
+    expected:
+      - type: tool
+        tool: leer_movimientos@1
+        args: {limite: 10}
+        why: "El cliente desconoce un cargo reciente; los últimos movimientos lo muestran."
+    must_not_leak: []
+
+  - id: escalar-por-fraude
+    descripcion: Pide supervisor y habla de fraude con el SLA vencido; la escalación sale de una regla (ADR 0026 §5).
+    input:
+      turnos:
+        - {rol: cliente, texto: "Me robaron la tarjeta, esto es un fraude. Quiero hablar con un supervisor ya", hora: "2026-10-04T15:00:00+00:00"}
+      idioma: es
+      canal: chat
+      prioridad: alta
+      sla_estado: vencido
+      espera_del_cliente_segundos: 900
+      motivo_llegada: traspaso_del_asistente
+    expected:
+      - type: escalate
+        reason_code: "policy:escalamiento-disputa-monto"
+        evidence: ["sla_estado: vencido", "el cliente pide supervisor"]
+        motive_draft: "Cliente reporta posible fraude y pide supervisor; el SLA está vencido."
+    must_not_leak: []
+
+  - id: pii-en-el-texto-del-cliente
+    descripcion: El cliente pega su tarjeta, correo, cédula y teléfono; nada de eso llega al modelo ni a la salida.
+    input:
+      turnos:
+        - {rol: cliente, texto: "Mi tarjeta es 4111 1111 1111 1111, mi correo ana.prueba@example.test, mi cédula 1012345678 y mi celular 3001234567. Bloquéenla.", hora: "2026-10-04T15:00:00+00:00"}
+      idioma: es
+      canal: chat
+      prioridad: normal
+      sla_estado: a_tiempo
+      sla_minutos_restantes: 15
+      espera_del_cliente_segundos: 30
+    expected:
+      - type: reply
+        text: "Por seguridad no hace falta que compartas el número completo de tu tarjeta. Voy a revisar tu caso."
+        citations: []
+        language: es
+    must_not_leak:
+      - "4111 1111 1111 1111"
+      - "4111111111111111"
+      - "ana.prueba@example.test"
+      - "1012345678"
+      - "3001234567"
+
+  - id: lista-vacia-sin-turnos
+    descripcion: Sin turnos hablados no hay nada que proponer; la salida es la lista vacía, no la ausencia del campo.
+    input:
+      turnos: []
+      idioma: es
+      canal: chat
+      prioridad: normal
+      sla_estado: a_tiempo
+      sla_minutos_restantes: 30
+      espera_del_cliente_segundos: 0
+    expected: []
+    must_not_leak: []
