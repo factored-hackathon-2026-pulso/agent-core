@@ -4,7 +4,7 @@ priority: 50
 nodes:
   - {id: pedir_cargo, type: collect, config: {slot: descripcion_cargo, prompt_ref: t/pedir_cargo, max_attempts: 2},
      next: {ok: buscar_tx, max_attempts: esc_sin_datos}}
-  - {id: buscar_tx, type: tool, config: {tool: buscar_transacciones@1, args: {texto: slots.descripcion_cargo}, save_as: candidatas},
+  - {id: buscar_tx, type: tool, config: {tool: buscar_transacciones@1, args: {limite: 50}, save_as: candidatas},
      next: {ok: coincide, error: esc_tool, timeout: esc_tool, denied: esc_tool}}
   - {id: coincide, type: decide, config: {model: match-cargo@2, branch_on: match, save_as: coincide},
      next: {unica: elegir, ninguna: aclarar, varias: aclarar, low_confidence: aclarar}}

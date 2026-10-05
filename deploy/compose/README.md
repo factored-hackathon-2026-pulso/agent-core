@@ -15,6 +15,7 @@ docker compose -f deploy/compose/docker-compose.yml --env-file deploy/compose/.e
 | `calibration/` | un `<id>.json` por artefacto de calibración (lo exporta el equipo de datos) |
 | `classifier/` | `<ref>.json` en formato `tfidf-logreg-v1` |
 | `field-classification.json` | catálogo de clasificación de campos (`field_classification.json` de data-pipeline más el overlay propio) |
+| `fx-rates.json` | `{"USD":"1","MXN":"0.055",...}`: tasas FIJAS (USD por unidad) de `convertir_moneda`; sin él la tool falla cerrada |
 | `field-grants.json` | `[["campo","purpose"], ...]`; sin él nadie lee campos de clientes |
 
 La imagen: multi-etapa, usuario no root (uid 10001), bases fijadas por digest, `HEALTHCHECK` sobre `/healthz`,

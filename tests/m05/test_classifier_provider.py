@@ -125,3 +125,37 @@ def test_classifier_inside_the_service_after_a_timeout() -> None:
     out = service.decide_output(ref(definition), {"text": "cancela"}, "es", rig.vault)
     assert out.provider_used == "classifier" and out.fallback_depth == 1
     assert out.value == {"command": "cancel"} and out.p_cal["command"] == out.p_raw["command"]
+
+
+# --- `text_from`: el texto sale de otra clave de la entrada (el `input_view` no se llama `text`) --
+
+
+def _predict_from(config: dict[str, JsonValue], inputs: dict[str, JsonValue]):  # type: ignore[no-untyped-def]
+    spec = ProviderSpec(provider="classifier", config={"artifact": "clf-tiny", **config})
+    return _provider().predict(spec, inputs, {}, "es")
+
+
+def test_text_from_reads_the_named_input_key() -> None:
+    raw = _predict_from({"text_from": "slots.respuesta"}, {"slots.respuesta": "no quiero"})
+    assert raw.value == {"command": "deny"}
+
+
+def test_text_from_accepts_a_wrapped_untrusted_value() -> None:
+    wrapped = '<datos_no_confiables fuente="slot">cancela por favor</datos_no_confiables>'
+    assert _predict_from({"text_from": "slots.x"}, {"slots.x": wrapped}).value == {"command": "cancel"}
+
+
+def test_text_from_a_list_joins_the_texts_in_order() -> None:
+    raw = _predict_from({"text_from": ["a", "b"]}, {"a": "sí", "b": "claro"})
+    assert raw.value == {"command": "affirm"}
+
+
+def test_text_from_missing_key_is_a_provider_error() -> None:
+    with pytest.raises(ProviderError):
+        _predict_from({"text_from": "slots.x"}, {"text": "sí"})
+
+
+@pytest.mark.parametrize("bad", [1, [], [1], {"a": 1}, ""])
+def test_malformed_text_from_is_a_config_error(bad: JsonValue) -> None:
+    with pytest.raises(DecisionConfigError):
+        _predict_from({"text_from": bad}, {"text": "sí"})

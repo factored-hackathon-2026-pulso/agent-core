@@ -25,6 +25,7 @@ from agent_core.composition.readiness import build_readiness
 from agent_core.composition.schema_version import schema_is_current
 from agent_core.decision import DecisionConfigError, DecisionProvider, HttpJevTransport, JevProvider
 from agent_core.decision.calibration.artifact import CalibrationSource
+from agent_core.decision.providers.rule import RuleProvider
 from agent_core.domain import Release, SchemaError, loads
 from agent_core.guards import LangThresholds
 from agent_core.ports import (
@@ -408,7 +409,7 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
     return ServePorts(
         clock=clock, ids=ids, keys=keys, uow_factory=store.uow, audit=store.audit(), counters=store.costs(),
         registry=pg_registry, releases=pg_registry.release, gateway=gateway,
-        providers={"jev": jev, "classifier": built["classifier"]},
+        providers={"jev": jev, "classifier": built["classifier"], "rule": RuleProvider()},
         tools=built["tools"], authz=built["authz"], transcript=built["transcript"],
         calibrations=built["calibration"], classifier=built["field-classifier"], verifier=verifier,
         doubles=tuple(doubles), agents=_agents(args, env), llm_gateway_url=llm_url,
