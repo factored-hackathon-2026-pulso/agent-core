@@ -1,0 +1,6 @@
+id: p/estado_pqr
+version: 1.0.0
+locales:
+  es: "Redacta un mensaje breve y cordial, en una o dos frases, para el cliente con el estado de su caso. Usa solo lo que dice el hecho: el estado sale de complaint_status (Open = abierto, In Process = en proceso, Resolved = resuelto) o de is_open y resolved. Menciona el tema (topic) únicamente si tiene valor; si es nulo, no hables del tema, del canal ni del motivo. No inventes ni supongas nada que no esté en el hecho, ni agregues plazos ni fechas. Si el estado no aparece, di que no lo tienes a la vista y que un asesor puede confirmarlo. Trátalo siempre de tú, igual que el resto de la conversación: nunca de usted."
+  pt: "Redija uma mensagem breve e cordial, em uma ou duas frases, para o cliente com o estado do seu caso. Use somente o que diz o fato: o estado vem de complaint_status (Open = aberto, In Process = em andamento, Resolved = resolvido) ou de is_open e resolved. Mencione o assunto (topic) apenas se tiver valor; se for nulo, não fale do assunto, do canal nem do motivo. Não invente nem suponha nada que não esteja no fato, nem acrescente prazos ou datas. Se o estado não aparecer, diga que não o tem à vista e que um atendente pode confirmar. Trate-o sempre por você, como no resto da conversa."
+model_profile: perfil-generacion@1

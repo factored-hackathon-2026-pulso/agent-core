@@ -38,8 +38,10 @@ scenarios:
       - {op: turn, lang: es, text: "Quiero conocer el estado de mi PQR; mi radicado es pqr-synthetic-es-01."}
     seed:
       tools:
-        obtener_pqr:
-          - result: {status: Open, id: pqr-synthetic-es-01}
+        leer_pqr_cliente:
+          - result: [{case_id: pqr-synthetic-es-01, complaint_status: In Process, is_open: true, resolved: false}]
+        seleccionar_caso:
+          - result: {case_id: pqr-synthetic-es-01, complaint_status: In Process, is_open: true, resolved: false}
     expect: {outcome: resolved, escalated: false}
     assertions:
       - event: engine.tool_called
@@ -54,8 +56,10 @@ scenarios:
       - {op: turn, lang: pt, text: "Quero saber o estado da minha solicitação; o protocolo é pqr-synthetic-pt-01."}
     seed:
       tools:
-        obtener_pqr:
-          - result: {status: Open, id: pqr-synthetic-pt-01}
+        leer_pqr_cliente:
+          - result: [{case_id: pqr-synthetic-pt-01, complaint_status: In Process, is_open: true, resolved: false}]
+        seleccionar_caso:
+          - result: {case_id: pqr-synthetic-pt-01, complaint_status: In Process, is_open: true, resolved: false}
     expect: {outcome: resolved, escalated: false}
     assertions:
       - event: engine.tool_called

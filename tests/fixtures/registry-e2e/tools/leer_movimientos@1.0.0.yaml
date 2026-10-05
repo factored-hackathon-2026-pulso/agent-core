@@ -5,7 +5,7 @@ min_auth_level: session
 idempotent: true
 source: customer_transactions
 description: Lista los últimos movimientos del cliente atendido, del más reciente al más antiguo (monto, comercio,
-  fecha, estado).
+  fecha, estado). amount_usd es aproximado cuando amount_usd_source es 'derived_fx'; 'reported' es el valor original.
 args_schema:
   type: object
   additionalProperties: false

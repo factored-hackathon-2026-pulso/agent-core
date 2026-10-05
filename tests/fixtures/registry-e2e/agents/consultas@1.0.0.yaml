@@ -7,7 +7,7 @@ min_auth_level: session
 subject_kinds: [customer]
 supported_locales: [es, pt]
 default_locale: es
-tools_allowed: [obtener_pqr@1]
+tools_allowed: [leer_pqr_cliente@1, seleccionar_caso@1]
 budgets: {max_nodes_per_turn: 40, max_model_calls_per_turn: 3, max_tokens_per_run: 20000, max_cost_per_run: 0.50, max_wall_ms_per_turn: 8000}
 templates:
   clarify: t/aclarar

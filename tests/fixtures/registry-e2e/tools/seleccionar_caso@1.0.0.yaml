@@ -1,0 +1,6 @@
+id: seleccionar_caso
+version: 1.0.0
+risk_class: compute
+min_auth_level: session
+idempotent: true
+source: customer_cases

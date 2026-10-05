@@ -5,7 +5,7 @@ min_auth_level: session
 idempotent: true
 source: customer_transactions
 description: Busca movimientos del cliente atendido por texto (comercio o categoría), rango de fechas o monto, del
-  más reciente al más antiguo.
+  más reciente al más antiguo. amount_usd es aproximado cuando amount_usd_source es 'derived_fx'.
 args_schema:
   type: object
   additionalProperties: false

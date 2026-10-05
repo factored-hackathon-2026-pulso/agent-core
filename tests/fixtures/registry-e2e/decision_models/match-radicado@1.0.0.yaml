@@ -1,0 +1,23 @@
+id: match-radicado
+version: 1.0.0
+output_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    match: {enum: [unica, ninguna]}
+    case_id: {type: string}
+calibrated_fields: [match]
+input_view: [slots.radicado, facts.casos.value]
+providers:
+  - provider: rule
+    config:
+      cases:
+        - when:
+            path: facts.casos.value
+            count: 1
+            narrow: {text_from: slots.radicado, fields: [case_id]}
+          value: {match: unica}
+          value_from: {case_id: {path: facts.casos.value, at: [0, case_id]}}
+      default: {match: ninguna}
+calibration: {method: none}
+thresholds_from: cal-transfer-demo

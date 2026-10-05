@@ -1,0 +1,5 @@
+id: t/radicado_no_encontrado
+version: 1.0.0
+locales:
+  es: "No encontré ese radicado entre tus casos. ¿Puedes revisarlo y escribirlo de nuevo?"
+  pt: "Não encontrei esse protocolo entre os seus casos. Pode conferir e escrever de novo?"
