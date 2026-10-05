@@ -179,6 +179,7 @@ docs/                 ADR, specs y planes
 
 ## Diseño
 
+- [`docs/technical-documentation.md`](docs/technical-documentation.md): documentación técnica completa del servicio (en inglés): arquitectura, ciclo del turno, registry, contratos, integraciones, configuración, despliegue y límites conocidos.
 - [`docs/specs/motor/00-indice.md`](docs/specs/motor/00-indice.md): **empieza aquí**. Mapa de módulos, dependencias, puertos, dueños del estado y eventos.
 - [`docs/specs/motor/`](docs/specs/motor/): un spec por módulo, con interfaz, comportamiento, invariantes y pruebas.
 - [`docs/specs/2026-09-28-motor-de-decision-design.md`](docs/specs/2026-09-28-motor-de-decision-design.md): visión integrada del motor.
