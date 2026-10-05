@@ -78,6 +78,7 @@ PAN_VARIANTS = [
     f"tarjeta 4111-{ZW}\n1111-{ZW}\n1111-{ZW}\n1111 vence",
     "tarjeta 4111–\n1111–\n1111–\n1111 vence",
     "tarjeta 4111 1111\n1111 1111 vence",  # separador normal en un grupo y salto en otro
+    "tarjeta 41/1111/1111/1111 vence",  # no es una lista de fechas parciales
 ]
 
 
@@ -298,6 +299,13 @@ def test_t_m7_13_numbers_next_to_pii_do_not_leak_into_neighbours() -> None:
     assert tokens == 2 and out == "tel ⟦doc:1⟧ y total 500 y ⟦prod:1⟧ fin"
 
 
+def test_t_m7_13_one_identifier_per_line_stays_one_token_each() -> None:
+    for text in (f"{PHONE}\n{PHONE[:-1]}8", "4111 1111 1111 1111\n4222 2222 2222 2222",
+                 "300 123 4567\n300 123 4568", "4111-1111-1111-1111\n\n4222-2222-2222-2222"):
+        _, tokens = _model(text)
+        assert tokens == 2, text
+
+
 def test_t_m7_13_a_digit_long_number_that_is_not_a_card_is_still_one_masked_span() -> None:
     out, tokens = _model(f"id {'7' * 30} fin")  # 30 dígitos: no es PAN, la regla conservadora lo tokeniza
     assert tokens == 1 and out == "id ⟦prod:1⟧ fin"
@@ -340,6 +348,12 @@ MB = 1024 * 1024
     lambda: "_" * MB,
     lambda: "(1)" * (MB // 3),
     lambda: ("é1" * 100 + "\n") * (MB // 201),
+    lambda: "1/1111" + "/1111" * 4000 + "1",  # backtracking de las listas de fechas parciales
+    lambda: "1/1 " * (MB // 4),
+    lambda: "1/1111 " * (MB // 7),
+    lambda: ("1" + " " * 3000 + "1") * (MB // 3002),  # corridas largas de espacios entre números
+    lambda: "123" + " " * MB + "456",
+    lambda: "123" + "\t" * MB + "456",
 ])
 def test_t_m7_14_detector_is_linear_on_one_megabyte_hostile_inputs(make: Callable[[], str]) -> None:
     assert _timed(make()) < 8.0

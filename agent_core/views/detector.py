@@ -34,7 +34,7 @@ _DIGITS_RE = re.compile(
 _ISO_DATE_RE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 _WEAK_CHARS_RE = re.compile(r"[/_·()]")
 # Listas o rangos de `d/m` y `m/aaaa` (`15/09 - 20/09`, `09/2026, 10/2026`): fechas parciales.
-_PARTIAL_DATES_RE = re.compile(r"(?:[0-9]{1,2}/[0-9]{1,4}[ 	,‐-―-]{0,3})+")
+_PARTIAL_DATES_RE = re.compile(r"(?:[0-9]{1,2}/[0-9]{1,4}(?:[ \t,\u2010-\u2015-]{1,3}|$))+")
 _GROUPS_RE = re.compile(r"[0-9]+")
 _DASHES = "-‐‑‒–—―"
 _SEPARATORS = str.maketrans("", "", " \t.,/_·()" + _DASHES)
@@ -43,6 +43,7 @@ _TRAILING = " \t.,/_·()" + _DASHES
 MIN_DIGITS = 6
 _PHONE_DIGITS = 10
 _ACCOUNT_DIGITS = 12
+_MAX_PAN_DIGITS = 19  # una cadena unida por saltos de línea no pasa de un PAN
 
 # Fuera de ASCII imprimible (más tab, salto de línea y retorno): ahí viven los caracteres que se normalizan.
 _SPECIAL_RE = re.compile(r"[^\x20-\x7e\t\n\r]+")
@@ -55,7 +56,8 @@ _NO_DECOMPOSITION = {"ø": "o", "Ø": "O", "ł": "l", "Ł": "L", "đ": "d", "Đ"
                      "ı": "i", "ß": "s", "æ": "a", "Æ": "A", "œ": "o", "Œ": "O", "þ": "t", "Þ": "T"}
 # Un grupo de 3+ dígitos, un salto de línea o 4+ espacios, y otro grupo de 3+ dígitos: un solo espacio.
 _GAP_ONLY_RE = re.compile(
-    r"\)?[ \t]*[-.,/_·‐-―]?[ \t]*[\r\n][ \t\r\n]*[-.,/_·(‐-―]?[ \t]*|[ \t]{4,}"
+    r"\)?+[ \t]*+[-.,/_\u00b7\u2010-\u2015]?+[ \t]*+[\r\n][ \t\r\n]*+[-.,/_\u00b7(\u2010-\u2015]?+[ \t]*+"
+    r"|[ \t]{4,}+"
 )
 # Ofuscaciones de `@` y `.`; todo acotado a 3 espacios, sin backtracking.
 _BRACKET_AT_RE = re.compile(
@@ -168,7 +170,7 @@ def _gap_spans(text: str) -> list[tuple[int, int]]:
     previous_end = -1
 
     def flush() -> None:
-        if chain and digits >= _PHONE_DIGITS:
+        if chain and _PHONE_DIGITS <= digits <= _MAX_PAN_DIGITS:
             spans.extend(chain)
         chain.clear()
 
