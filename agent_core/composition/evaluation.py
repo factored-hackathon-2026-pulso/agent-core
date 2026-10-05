@@ -11,6 +11,7 @@ from agent_core.decision.calibration.artifact import CalibrationSource
 from agent_core.domain import (
     AgentSelector,
     ConfirmAnswer,
+    EngineError,
     EngineEvent,
     EntityRef,
     GatewayError,
@@ -20,6 +21,7 @@ from agent_core.domain import (
     Principal,
     PrincipalKey,
     PrincipalType,
+    ProblemCode,
     ProviderSpec,
     RunInput,
     SubjectRef,
@@ -174,9 +176,14 @@ class EngineScenarioHarness:
                     break  # modo task: el run ya terminó en start
                 confirm = (ConfirmAnswer(token=token or "", answer=step.answer)  # type: ignore[arg-type]
                            if step.op == "confirm" else None)
-                turn = engine.handle_turn(principal, obo, TurnInput(
-                    session_id=session_id, text=step.text or "", channel="web", client_turn_id=f"c-{n}",
-                    confirm=confirm))
+                try:
+                    turn = engine.handle_turn(principal, obo, TurnInput(
+                        session_id=session_id, text=step.text or "", channel="web", client_turn_id=f"c-{n}",
+                        confirm=confirm))
+                except EngineError as exc:
+                    if exc.code is not ProblemCode.run_closed:
+                        raise
+                    break  # the agent closed the run before the scenario's last step: score what happened
             token = turn.confirmation.token if turn is not None and turn.confirmation is not None else None
         if probe.failed:
             raise HarnessUnavailable("el gateway falló durante el escenario")
