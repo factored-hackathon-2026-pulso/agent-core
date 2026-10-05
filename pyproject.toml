@@ -105,5 +105,6 @@ ignore = ["RUF001", "RUF002", "RUF003"]  # textos en español y delimitadores �
 "secrets".msg = "Usa IdSource.secret_token() (M0 §2.9)."
 
 [tool.ruff.lint.per-file-ignores]
+"testing/calibration/understand_turno_phrases.py" = ["E501"]  # datos: una frase por elemento
 "agent_core/adapters/system_clock.py" = ["TID251"]
 "agent_core/adapters/system_ids.py" = ["TID251"]
