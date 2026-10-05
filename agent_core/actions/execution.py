@@ -200,5 +200,6 @@ class Executions:
             attempt=attempt,
             action_id=action_id,
             latency_ms=call.latency_ms,
+            tool_source=tool_def.source,
         )
         return self._events.tool_called(state, ctx.turn_id, payload)
