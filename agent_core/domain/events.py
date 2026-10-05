@@ -159,6 +159,17 @@ class ToolCalledPayload(Model):
     attempt: PositiveInt = 1
     action_id: str | None = None
     latency_ms: NonNegativeInt
+    # `ToolDef.source` of the tool called (its source class, e.g. the origin table): lets tool-usage signals
+    # group calls without reading the registry. Omitted from the serialisation when absent, so events
+    # recorded before this field existed re-serialise to the same bytes (hash chain).
+    tool_source: str | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_source(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.tool_source is None:
+            data.pop("tool_source", None)
+        return data
 
 
 class AgentStepPayload(Model):

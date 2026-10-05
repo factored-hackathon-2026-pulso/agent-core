@@ -159,3 +159,12 @@ def test_event_canonical_hash_survives_persist_reload(event_type: str) -> None:
     event = EVENTS.validate_python(make_event(event_type))
     reloaded = EVENTS.validate_python(loads(dumps(event)))
     assert canonical_bytes(event) == canonical_bytes(reloaded)
+
+
+def test_tool_called_without_a_source_serialises_exactly_as_before() -> None:
+    """Hash-chain safety: an event recorded before `tool_source` existed re-serialises to the same bytes."""
+    from agent_core.domain import EntityRef, ToolCalledPayload, ToolStatus, to_jsonable
+    base = {"node_id": "n1", "tool": EntityRef(id="get_charge", version="1.0.0"), "call_id": "c1",
+            "status": ToolStatus.ok, "args": {}, "latency_ms": 3}
+    assert "tool_source" not in to_jsonable(ToolCalledPayload(**base))
+    assert to_jsonable(ToolCalledPayload(**base, tool_source="pqr"))["tool_source"] == "pqr"

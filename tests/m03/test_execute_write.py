@@ -4,7 +4,7 @@ from datetime import timedelta
 
 import pytest
 
-from agent_core.domain import ActionState, IllegalTransition, ToolStatus
+from agent_core.domain import ActionState, IllegalTransition, ToolStatus, to_jsonable
 from testing.fakes.tools import Scripted
 from tests.m03.harness import (
     ARGS,
@@ -39,6 +39,10 @@ def test_ok_executes_saves_fact_and_commits_twice() -> None:
     assert not hasattr(dispatched.payload, "args_hash")  # ADR 0008: sin hash sin clave en el evento
     assert (called.payload.status, called.payload.action_id, called.payload.node_id) == (
         ToolStatus.ok, action.action_id, "radicar")
+    # the tool id and its source class travel in the event (tool-usage signals), also in the JSON export
+    assert (called.payload.tool.id, called.payload.tool_source) == ("radicar_pqr", "pqr")
+    exported = to_jsonable(called)["payload"]
+    assert exported["tool"]["id"] == "radicar_pqr" and exported["tool_source"] == "pqr"
     committed = reload(w)
     assert committed.actions[0].state is ActionState.executed
     assert committed.facts["pqr"] == fact
