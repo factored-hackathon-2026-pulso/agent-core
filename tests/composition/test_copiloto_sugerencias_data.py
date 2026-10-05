@@ -380,7 +380,7 @@ def test_every_branch_of_the_validator_can_fail(items: object, fragment: str) ->
     ("escribe a ana.prueba@exam​ple.test", "ana.prueba"),
 ])
 def test_m7_normalization_masks_obfuscated_pii_before_it_reaches_the_model(text: str, leaked: str) -> None:
-    """Antes era `test_known_gap_…`: M7 normaliza antes de detectar y estas variantes ya no llegan en claro."""
+    """Antes era `test_known_gap_…`: M7 normaliza antes de detectar y ya no llegan en claro."""
     hostile = {"turnos": [{"rol": "cliente", "hora": "2026-10-04T15:00:00+00:00", "texto": text}]}
     model, _ = _model_and_audit(hostile, FieldClassifier())
     assert leaked not in model and "⟦" in model
