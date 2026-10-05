@@ -159,6 +159,36 @@ def test_optional_reads_follow_the_same_rules_as_reads() -> None:
     assert rules(check(suggest_flow(optional_reads=["decisions.d.campo"]))) == {"G0-10"}
 
 
+def test_suggested_must_go_straight_to_an_end_g0_28() -> None:
+    d = suggest_flow()
+    d["nodes"].insert(
+        1,
+        {
+            "id": "paso",
+            "type": "tool",
+            "config": {"tool": "leer@1", "args": {}, "save_as": "x"},
+            "next": {"ok": "fin_ok", "error": "fin_fallo", "timeout": "fin_fallo", "denied": "fin_fallo"},
+        },
+    )
+    node(d, "sug")["next"]["suggested"] = "paso"
+    assert "G0-28" in rules(check(d))
+
+
+def test_a_waiting_node_after_suggest_is_still_rejected_in_a_task_flow_g0_16() -> None:
+    d = suggest_flow()
+    d["nodes"].insert(
+        1,
+        {
+            "id": "espera",
+            "type": "collect",
+            "config": {"slot": "x", "prompt_ref": "t/pedir"},
+            "next": {"ok": "fin_ok", "max_attempts": "fin_fallo"},
+        },
+    )
+    node(d, "sug")["next"]["suggested"] = "espera"
+    assert {"G0-16", "G0-28"} <= rules(check(d))
+
+
 def test_gave_up_must_reach_a_safe_exit_g0_06() -> None:
     d = suggest_flow()
     node(d, "sug")["next"]["gave_up"] = "fin_ok"  # `completed` is not a safe exit for a failure
@@ -204,3 +234,15 @@ def test_escalate_evidence_cannot_come_from_an_agent_output_g0_22() -> None:
     """The evidence reaches the output as it is: it must not carry what a model generated."""
     d = _with_agent_fact(suggest_flow(), reads=["slots.q"], evidence=["facts.hallazgo.value.texto"])
     assert [v.rule for v in check(d) if v.rule == "G0-22"] == ["G0-22"]
+
+
+def test_a_flow_with_suggest_does_not_escalate_g0_28() -> None:
+    d = suggest_flow()
+    d["nodes"].append({"id": "esc", "type": "escalate", "config": {"reason_code": "tool_failure"}})
+    node(d, "sug")["next"]["gave_up"] = "esc"
+    assert "G0-28" in rules(check(d))
+
+
+def test_a_read_in_actions_allowed_is_g0_28_with_its_own_message() -> None:
+    found = [v for v in check(suggest_flow(actions_allowed=["leer@1"])) if v.rule == "G0-28"]
+    assert any("lectura" in v.message for v in found)

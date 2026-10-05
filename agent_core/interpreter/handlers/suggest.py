@@ -62,7 +62,10 @@ def _evidence_line(raw: str, state: RunState, ctx: StepContext) -> str:
     if ctx.views.tokenize_text(text, ctx.vault) != text or _TOKEN.search(text):
         raise _Unfit
     label = ".".join([path.name or "", *(part for part in path.rest if part != "value")])
-    return f"{label}: {text}"
+    line = f"{label}: {text}"
+    if not text.strip() or len(line) > 300:  # el tipo de M0 admite hasta 300 caracteres
+        raise _Unfit
+    return line
 
 
 def _escalation(node: SuggestNode, state: RunState, ctx: StepContext) -> SuggestEscalation | None:

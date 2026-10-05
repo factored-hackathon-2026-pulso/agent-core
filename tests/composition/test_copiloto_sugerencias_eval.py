@@ -49,6 +49,7 @@ SCENARIOS = {
     "escalar-por-fraude",
     "pii-en-el-texto-del-cliente",
     "lista-vacia-sin-turnos",
+    "inyeccion-en-el-texto-del-cliente",
 }
 
 
@@ -92,8 +93,11 @@ def test_the_suite_asserts_on_something_for_every_scenario() -> None:
 def test_the_suite_passes_with_the_scripted_model_and_every_run_completes() -> None:
     report = evaluate()
     assert report.verdict == "pass", report.detail
-    assert len(report.results) == 12 and failed_scenarios(report) == set()  # 6 escenarios x 2 repeticiones
-    assert {r.score.outcome for r in report.results} == {"completed"}
+    assert len(report.results) == 14 and failed_scenarios(report) == set()  # 7 escenarios x 2 repeticiones
+    outcomes = {r.scenario_id: r.score.outcome for r in report.results}
+    # la inyección la contiene el núcleo: el run falla (nada se entrega); todos los demás completan
+    assert outcomes.pop("inyeccion-en-el-texto-del-cliente") == "failed"
+    assert set(outcomes.values()) == {"completed"}
     assert all(r.score.escalated is False for r in report.results)  # el copiloto recomienda, no escala
 
 
@@ -366,12 +370,9 @@ def test_a_run_that_escalates_after_suggesting_delivers_no_suggestions(tmp_path:
     """ADR 0026: la lista es el resultado de un run que terminó `completed`; si el run escala, lo que el nodo
     alcanzó a producir (el evento sí queda) no se entrega."""
     root = _copy_fixture(tmp_path)
-    _edit(
-        root,
-        FLOW,
-        "{id: fin_ok, type: end, config: {outcome: completed}}",
-        "{id: fin_ok, type: escalate, config: {reason_code: tool_failure}}",
-    )
+    # con 3 nodos por turno, el run agota el presupuesto al entrar al `end` y escala (G0-28 impide cablear
+    # un nodo que escale entre `suggest` y el `end`)
+    _edit(root, "agents/copiloto-sugerencias@1.0.0.yaml", "max_nodes_per_turn: 20", "max_nodes_per_turn: 3")
     target, suite = eval_target(root), load_suite(root)
     scenario = next(s for s in suite.scripted() if s.id == "reply-con-cifra-respaldada")
     sandbox = LocalSandbox(FakeIds())
@@ -406,3 +407,63 @@ def test_every_run_closes_and_the_unmutated_events_carry_no_sensitive_value() ->
 
 def test_the_suite_object_is_the_one_on_disk() -> None:
     assert isinstance(load_suite(), EvalSuite) and load_suite().agent_id == AGENT
+
+
+# ------------------------------------------------------- huecos de mutación cerrados (ronda de correcciones)
+def first_with(output: dict[str, JsonValue], **changes: JsonValue) -> dict[str, JsonValue]:
+    items = output["suggestions"]
+    assert isinstance(items, list) and isinstance(items[0], dict)
+    return {"suggestions": [{**items[0], **changes}]}
+
+
+def failures_of(scenario_id: str, **harness: Any) -> list[str]:
+    """Los `failures` de `suggestions_produced` de un escenario con el modelo o el clasificador deformados."""
+    target, suite = eval_target(), load_suite()
+    scenario = next(s for s in suite.scripted() if s.id == scenario_id)
+    sandbox = LocalSandbox(FakeIds())
+    run = build_harness(**harness).run_with_suggestions(
+        target, AGENT, scenario, sandbox.tools(sandbox.provision(scenario.seed, target))
+    )
+    (event,) = [e for e in run.events if e.type == "suggestions_produced"]
+    return list(event.payload.failures)  # type: ignore[union-attr]
+
+
+def test_only_the_echo_wiring_catches_the_card_the_customer_pasted() -> None:
+    """La tarjeta vuelve en el borrador con cifras que `numbers` ya rechaza, pero `tokens_pii` solo sale del
+    cierre `find_tokenized_echo` de la composición (los hechos no la contienen y no hay `@`)."""
+    leaky = only(
+        "pii-en-el-texto-del-cliente",
+        lambda c, o: {
+            "suggestions": [{**o["suggestions"][0], "text": "Recibí la tarjeta 4111 1111 1111 1111."}]
+        },  # type: ignore[index]
+    )
+    assert "tokens_pii" in failures_of("pii-en-el-texto-del-cliente", tamper_model=leaky)
+
+
+def test_an_oversized_arg_is_rejected_by_the_tool_schema() -> None:
+    huge = only(
+        "tool-de-lectura",
+        lambda c, o: first_with(o, args={"limite": 999999999}),
+    )
+    assert "args_invalid" in failures_of("tool-de-lectura", tamper_model=huge)
+
+
+def test_the_obedient_model_is_contained_by_the_core_not_by_the_model() -> None:
+    failed = failures_of("inyeccion-en-el-texto-del-cliente")
+    assert "escalate_not_allowed" in failed and "url" in failed
+
+
+def test_suite_problems_reject_an_empty_expectation_and_a_count_without_outcome() -> None:
+    agent = eval_target().registry.get(EntityRef(id=AGENT, version="1.0.0"), Agent)
+    base = load_suite().model_dump(mode="json")
+    first = base["scenarios"][0]
+
+    def codes(expect: dict[str, Any], assertions: list[Any] | None = None) -> set[str]:
+        scenario = {**first, "expect": expect, "assertions": assertions or []}
+        suite = EvalSuite.model_validate({**base, "scenarios": [scenario]})
+        return {p.code.value for p in suite_problems(agent, suite)}
+
+    assert "empty_expectation" in codes({})
+    assert "count_without_outcome" in codes({"suggestion_count": 0})
+    assert "count_without_outcome" in codes({"suggestions": [{"type": "escalate", "expect": "none"}]})
+    assert codes({"outcome": "completed", "suggestion_count": 0}) == set()

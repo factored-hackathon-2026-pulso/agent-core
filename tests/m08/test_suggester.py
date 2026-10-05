@@ -4,6 +4,8 @@ from dataclasses import replace
 from decimal import Decimal
 from typing import Any
 
+import pytest
+
 from agent_core.domain import (
     EntityRef,
     EscalateSuggestion,
@@ -269,9 +271,136 @@ def test_pii_in_the_args_of_a_tool_is_rejected() -> None:
     def pii(text: str) -> list[str]:
         return ["pattern:email"] if "@" in text else []
 
-    schema_free = ToolEntry(ref="buscar@1", exact="buscar@1.0.0", description="Busca.",
-                            args_schema={"type": "object", "properties": {"q": {"type": "string"}}})
+    schema_free = ToolEntry(
+        ref="buscar@1",
+        exact="buscar@1.0.0",
+        description="Busca.",
+        args_schema={"type": "object", "properties": {"q": {"type": "string"}}},
+    )
     leaky = {"type": "tool", "tool": "buscar@1", "args": {"q": "ana@example.test"}, "why": "Buscar."}
     s, ctx, _ = world(out(leaky), out(leaky), find_clear_pii=pii)
     ctx = replace(ctx, tools=(schema_free,))
     assert "tokens_pii" in s.generate(ctx).failures
+
+
+STRING_TOOL = ToolEntry(
+    ref="buscar@1",
+    exact="buscar@1.0.0",
+    description="Busca.",
+    args_schema={"type": "object", "additionalProperties": False, "properties": {"q": {"type": "string"}}},
+)
+
+
+def with_string_tool(*script: Any, **kw: Any) -> tuple[Suggester, SuggesterContext, ScriptedGateway]:
+    s, ctx, gateway = world(*script, **kw)
+    return s, replace(ctx, tools=(STRING_TOOL,)), gateway
+
+
+def test_a_pii_token_in_a_string_arg_is_rejected() -> None:
+    leaky = {"type": "tool", "tool": "buscar@1", "args": {"q": "⟦pii:1⟧"}, "why": "Buscar."}
+    s, ctx, _ = with_string_tool(out(leaky), out(leaky))
+    assert "tokens_pii" in s.generate(ctx).failures
+    clean = {**leaky, "args": {"q": "movimientos"}}
+    s, ctx, _ = with_string_tool(out(clean))
+    assert s.generate(ctx).failures == []
+
+
+@pytest.mark.parametrize(
+    "text", ["Entra a http://malo.example/x", "mira https://x.test", "ve a www.malo.test", "abre ftp://a.b/c"]
+)
+def test_links_are_rejected_in_every_text_of_a_suggestion_and_in_args(text: str) -> None:
+    for item in (
+        {**REPLY, "text": text},
+        {**TOOL, "why": text},
+        {"type": "tool", "tool": "buscar@1", "args": {"q": text}, "why": "Buscar."},
+    ):
+        s, ctx, _ = with_string_tool(out(item), out(item))
+        outcome = s.generate(ctx)
+        assert "url" in outcome.failures or "tool_not_allowed" in outcome.failures, item
+    s, ctx, _ = world(out({**TOOL, "why": text}), out({**TOOL, "why": text}))
+    assert "url" in s.generate(ctx).failures
+    s, ctx, _ = world(
+        out({**ESC, "motive_draft": text}), out({**ESC, "motive_draft": text}), escalation=ESCALATION
+    )
+    assert "url" in s.generate(ctx).failures
+
+
+def test_a_tool_cannot_name_an_action_and_an_action_cannot_name_a_read() -> None:
+    as_tool = {**TOOL, "tool": "radicar_pqr@1", "args": {}}
+    s, ctx, _ = world(out(as_tool), out(as_tool), actions=(WRITE,))
+    assert "tool_not_allowed" in s.generate(ctx).failures
+    as_action = {"type": "action", "tool": "leer_movimientos@1", "args": {}, "summary": "Leer."}
+    s, ctx, _ = world(out(as_action), out(as_action), actions=(WRITE,))
+    assert "action_not_allowed" in s.generate(ctx).failures
+
+
+@pytest.mark.parametrize(
+    "item",
+    [
+        {**REPLY, "why": "x"},
+        {**REPLY, "tool": "leer_movimientos@1"},
+        {**TOOL, "text": "x"},
+        {**TOOL, "motive_draft": "x"},
+        {"type": "action", "tool": "radicar_pqr@1", "args": {}, "summary": "s", "why": "x"},
+        {**ESC, "text": "x"},
+        {**ESC, "summary": "x"},
+    ],
+)
+def test_a_field_of_another_type_is_a_format_failure(item: dict[str, Any]) -> None:
+    s, ctx, _ = world(out(item), out(item), escalation=ESCALATION, actions=(WRITE,))
+    assert "format" in s.generate(ctx).failures
+
+
+def test_a_token_that_exists_in_the_vault_is_still_rejected_everywhere() -> None:
+    """`⟦pii:1⟧` inexistente lo mata `tokens_pii` de M8; uno REAL del vault solo lo frena `_no_token`."""
+    s, ctx, _ = with_string_tool(out())
+    token = ctx.validation.vault.tokenize("valor", "campo", "pii")
+    assert ctx.validation.vault.exists(token)
+    cases = [
+        {**REPLY, "text": f"Hola {token}, tu saldo es de 1342.80 USD."},
+        {"type": "tool", "tool": "buscar@1", "args": {"q": token}, "why": "Buscar."},
+        {"type": "tool", "tool": "buscar@1", "args": {"q": "x"}, "why": f"Mira {token}."},
+    ]
+    for item in cases:
+        s, ctx2, _ = with_string_tool(out(item), out(item))
+        ctx2 = replace(ctx2, validation=replace(ctx2.validation, vault=ctx.validation.vault))
+        assert "tokens_pii" in s.generate(ctx2).failures, item
+    esc = {**ESC, "motive_draft": f"Contactar {token}"}
+    s, ctx3, _ = world(out(esc), out(esc), escalation=ESCALATION)
+    ctx3 = replace(ctx3, validation=replace(ctx3.validation, vault=ctx.validation.vault))
+    assert "tokens_pii" in s.generate(ctx3).failures
+
+
+def test_an_oversized_motive_or_arg_never_raises_a_pydantic_error() -> None:
+    long_motive = {**ESC, "motive_draft": "x" * 501}
+    s, ctx, _ = world(out(long_motive), out(long_motive), escalation=ESCALATION)
+    assert "format" in s.generate(ctx).failures
+
+
+def test_an_undeclared_arg_is_rejected_even_when_the_tool_schema_is_open() -> None:
+    open_tool = ToolEntry(
+        ref="buscar@1",
+        exact="buscar@1.0.0",
+        description="Busca.",
+        args_schema={"type": "object", "properties": {"q": {"type": "string"}}},
+    )
+    item = {
+        "type": "tool",
+        "tool": "buscar@1",
+        "args": {"q": "x", "customer_id": "cust-001"},
+        "why": "Buscar.",
+    }
+    s, ctx, _ = world(out(item), out(item))
+    ctx = replace(ctx, tools=(open_tool,))
+    assert "args_invalid" in s.generate(ctx).failures
+
+
+def test_a_feedback_never_echoes_a_property_name_written_by_the_model() -> None:
+    bad = {**TOOL, "args": {"limite": 1, "ana@example.test": 1}}
+    s, ctx, gateway = world(out(bad), out(bad))
+    s.generate(ctx)
+    assert "ana@example" not in str(gateway.calls[1].inputs["validation_feedback"])
+    extra = {"type": "reply", "ana@example.test": "x"}
+    s, ctx, gateway = world(out(extra), out(extra))
+    s.generate(ctx)
+    assert "ana@example" not in str(gateway.calls[1].inputs["validation_feedback"])

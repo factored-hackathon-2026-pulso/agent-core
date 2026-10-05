@@ -1,3 +1,4 @@
+# NOTA: editado en sitio sin subir versión: es PROVISIONAL y no tiene release publicada (no hay hash publicado que cambie).
 # Agente `copiloto-sugerencias` (ADR 0026 §1): un run `task` por sugerencia, con la delegación del asesor.
 # Entra por `sugerir@1` (flow con el nodo `suggest`) y sale por `RunResult.suggestions`.
 #

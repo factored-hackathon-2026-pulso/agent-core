@@ -15,6 +15,7 @@ La salida es una lista plana que se valida elemento por elemento y se convierte 
 Ninguna falla repite el texto del modelo: el detalle lleva la posición, nunca el contenido.
 """
 
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import partial
@@ -179,7 +180,8 @@ def _inputs(ctx: SuggesterContext, failures: list[_Fail]) -> dict[str, JsonValue
 def _check(output: JsonValue, ctx: SuggesterContext) -> tuple[list[Suggestion], list[_Fail]]:
     error = check_output(SUGGESTIONS_SCHEMA, output)
     if error is not None:
-        return [], [_Fail("format", error)]  # ruta y regla, nunca el valor
+        del error  # su mensaje puede traer un nombre de propiedad escrito por el modelo
+        return [], [_Fail("format", "la salida no cumple el esquema")]
     assert isinstance(output, dict)
     items = output["suggestions"]
     assert isinstance(items, list)
@@ -215,8 +217,11 @@ def _check(output: JsonValue, ctx: SuggesterContext) -> tuple[list[Suggestion], 
     if failures:
         return [], failures
     if ctx.escalation is not None and motive is not None:
-        built.append(EscalateSuggestion(reason_code=ctx.escalation.reason_code,
-                                        evidence=list(ctx.escalation.evidence), motive_draft=motive))
+        try:
+            built.append(EscalateSuggestion(reason_code=ctx.escalation.reason_code,
+                                            evidence=list(ctx.escalation.evidence), motive_draft=motive))
+        except ValidationError:  # p. ej. un motivo de más de 500 caracteres: nunca se propaga con el valor
+            return [], [_Fail("format", "el motivo de la escalación no cumple el tipo")]
     return sorted(built, key=lambda s: _ORDER[s.type]), []
 
 
@@ -252,9 +257,8 @@ def _typed(kind: str, item: dict[str, Any], position: int, ctx: SuggesterContext
     if entry is None:
         return None, [_Fail(absent, f"sugerencia {position}: tool fuera del catálogo del nodo")]
     args = item.get("args", {})
-    problem = check_output(entry.args_schema, args)
-    if problem is not None:
-        return None, [_Fail("args_invalid", f"sugerencia {position}: {problem}")]
+    if check_output(entry.args_schema, args) is not None or _unknown_args(entry, args):
+        return None, [_Fail("args_invalid", f"sugerencia {position}: args no cumple el esquema de la tool")]
     leaked = _args_problems(args, position, ctx)
     if leaked:
         return None, leaked
@@ -285,6 +289,13 @@ def _reply(item: dict[str, Any], position: int,
     return ReplySuggestion(text=text, citations=list(citations), language=language), []
 
 
+def _unknown_args(entry: ToolEntry, args: object) -> bool:
+    """Un argumento que el esquema de la tool no declara (aunque no ponga `additionalProperties: false`): el
+    sujeto nunca es argumento y nada se cuela por una tool con esquema abierto."""
+    props = entry.args_schema.get("properties")
+    return isinstance(args, dict) and not set(args) <= set(props if isinstance(props, dict) else {})
+
+
 def _args_problems(args: object, position: int, ctx: SuggesterContext) -> list[_Fail]:
     """Los `args` también salen hacia la plataforma: ni tokens ni PII en claro (un entero o un texto)."""
     text = dumps(args)
@@ -294,11 +305,19 @@ def _args_problems(args: object, position: int, ctx: SuggesterContext) -> list[_
     return failures
 
 
+_URL = re.compile(r"(?i)(?:[a-z][a-z0-9+.-]{1,15}://|www\.)")
+
+
 def _no_token(text: str, position: int) -> list[_Fail]:
-    """Una sugerencia no lleva tokens: se mostraría `⟦pii:1⟧` o, peor, el dato que el token oculta."""
+    """Una sugerencia no lleva tokens (se mostraría `⟦pii:1⟧` o, peor, el dato que el token oculta) ni
+    enlaces: un texto escrito por un modelo a partir de datos del cliente no debe llevar al asesor a una URL
+    (`http://`, `https://`, cualquier `esquema://` o `www.`). Diseño mínimo; ADR 0026 §6."""
+    failures: list[_Fail] = []
     if TOKEN_RE.search(text):
-        return [_Fail("tokens_pii", f"sugerencia {position}: token en el texto")]
-    return []
+        failures.append(_Fail("tokens_pii", f"sugerencia {position}: token en el texto"))
+    if _URL.search(text):
+        failures.append(_Fail("url", f"sugerencia {position}: enlace en el texto"))
+    return failures
 
 
 def _text_problems(text: str, position: int, ctx: SuggesterContext) -> list[_Fail]:

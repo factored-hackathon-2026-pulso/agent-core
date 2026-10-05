@@ -1777,7 +1777,60 @@
         "type": "object"
       },
       "Expect": {
-        "additionalProperties": true,
+        "additionalProperties": false,
+        "description": "`suggestion_count` is the exact length of the list (0: the empty list is the expected result);\n`suggestions` are items it must (or must not) hold. Both come from `RunResult`, not from the events.",
+        "properties": {
+          "actions_verified": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Actions Verified",
+            "type": "array"
+          },
+          "escalated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Escalated"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Outcome"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "suggestion_count": {
+            "anyOf": [
+              {
+                "maximum": 8.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggestion Count"
+          },
+          "suggestions": {
+            "items": {
+              "$ref": "#/components/schemas/SuggestionExpect"
+            },
+            "maxItems": 20,
+            "title": "Suggestions",
+            "type": "array"
+          }
+        },
+        "title": "Expect",
         "type": "object"
       },
       "Flow": {
@@ -4303,7 +4356,85 @@
         "type": "object"
       },
       "Step": {
-        "additionalProperties": true,
+        "additionalProperties": false,
+        "description": "`input` (ADR 0026, solo en `start`) es el `RunInput.input` de un agente `task` con `input_schema`.",
+        "properties": {
+          "answer": {
+            "anyOf": [
+              {
+                "enum": [
+                  "yes",
+                  "no"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer"
+          },
+          "auth": {
+            "default": "step_up",
+            "enum": [
+              "anonymous",
+              "session",
+              "step_up"
+            ],
+            "title": "Auth",
+            "type": "string"
+          },
+          "input": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue-Output"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input"
+          },
+          "lang": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lang"
+          },
+          "op": {
+            "enum": [
+              "start",
+              "turn",
+              "confirm"
+            ],
+            "title": "Op",
+            "type": "string"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "required": [
+          "op"
+        ],
+        "title": "Step",
         "type": "object"
       },
       "StructuredMode": {
@@ -4498,6 +4629,102 @@
           "config"
         ],
         "title": "SuggestNode",
+        "type": "object"
+      },
+      "SuggestionExpect": {
+        "additionalProperties": false,
+        "description": "One expected (or forbidden) item of `RunResult.suggestions` (ADR 0026). All the fields given must hold\non the SAME suggestion. `text_contains` looks for each fragment in the texts of the item; `text_excludes`\nasks that none appears.",
+        "properties": {
+          "citations_min": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Citations Min"
+          },
+          "expect": {
+            "default": "at_least_one",
+            "enum": [
+              "at_least_one",
+              "none"
+            ],
+            "title": "Expect",
+            "type": "string"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Code"
+          },
+          "text_contains": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Text Contains",
+            "type": "array"
+          },
+          "text_excludes": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 8,
+            "title": "Text Excludes",
+            "type": "array"
+          },
+          "tool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool"
+          },
+          "type": {
+            "enum": [
+              "reply",
+              "tool",
+              "action",
+              "escalate"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "SuggestionExpect",
         "type": "object"
       },
       "SuiteMeasurement": {

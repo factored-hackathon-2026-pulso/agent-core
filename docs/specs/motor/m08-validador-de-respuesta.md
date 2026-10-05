@@ -125,9 +125,11 @@ Generar → validar → regenerar una vez → fallar. Una llamada por intento (s
 | `action_not_allowed` | una `action` solo si el nodo declara `actions_allowed`; hoy vacío, así que nunca |
 | `escalate_not_allowed`, `escalate_missing` | **el modelo no crea la escalación.** Solo existe si el flow la declaró; entonces el modelo redacta únicamente `motive_draft` y debe haber exactamente una. El `reason_code` y la evidencia son los del flow (un elemento que los traiga falla `format`) |
 | `duplicate` | a lo sumo una `reply` y una `escalate` (la plataforma conserva una de cada una: un segundo borrador se perdería sin aviso) |
+| `args_invalid` (también) | un argumento que el esquema de la tool no declara se rechaza aunque el esquema no ponga `additionalProperties: false`; `args` sin tokens, sin PII en claro y sin enlaces. Las cotas salen del esquema (`enum`; el subconjunto no tiene `maximum`) |
+| `url` | ningún texto de sugerencia ni `args` lleva `esquema://` ni `www.` (diseño mínimo, ADR 0026 §6) |
 | texto libre (`why`, `summary`, `motive_draft`) | `format`, `numbers` (toda cifra respaldada por algún hecho de `reads`) y `tokens_pii`; ningún texto de sugerencia lleva un token (`⟦…⟧`) |
 
-El resultado va ordenado (`escalate`, `reply`, `tool`, `action`). Un `GatewayError` distinto de `invalid_output` termina sin regenerar (`gateway_<kind>`); `invalid_output` regenera. **Ninguna falla repite el texto del modelo:** `detail` lleva la posición. `degraded` no llama al modelo (`degraded`). Sin PII en claro: `find_clear_pii` del contexto (hechos `pii_direct`) más `ViewService.find_tokenized_echo` (lo que M7 ocultó del texto del cliente, m07 §3.7.1) —el cierre lo arma la composición.
+El resultado va ordenado (`escalate`, `reply`, `tool`, `action`). Un `GatewayError` distinto de `invalid_output` termina sin regenerar (`gateway_<kind>`); `invalid_output` regenera. **Ninguna falla repite el texto del modelo:** `detail` lleva la posición (los mensajes del esquema, que pueden traer un nombre de propiedad, se reemplazan por uno genérico). `degraded` no llama al modelo (`degraded`). Sin PII en claro: `find_clear_pii` del contexto (hechos `pii_direct`) más `ViewService.find_tokenized_echo` (lo que M7 ocultó del texto del cliente, m07 §3.7.1) —el cierre lo arma la composición.
 
 Pruebas: `tests/m08/test_suggester.py`.
 

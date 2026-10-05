@@ -16,9 +16,7 @@ from pydantic import (
     Discriminator,
     Field,
     PositiveInt,
-    SerializerFunctionWrapHandler,
     Tag,
-    model_serializer,
     model_validator,
 )
 
@@ -53,7 +51,9 @@ class Step(_M):
     answer: Literal["yes", "no"] | None = None
     lang: str | None = None
     auth: Literal["anonymous", "session", "step_up"] = "step_up"
-    input: dict[str, JsonValue] | None = None
+    # `exclude_if` (no un model_serializer, que vuelve `additionalProperties: true` el esquema OpenAPI): un
+    # `input` ausente no entra al volcado y los hashes de las suites ya publicadas no cambian.
+    input: dict[str, JsonValue] | None = Field(default=None, exclude_if=lambda v: v is None)
 
     @model_validator(mode="after")
     def _shape(self) -> "Step":
@@ -65,13 +65,6 @@ class Step(_M):
             raise ValueError("`input` es solo de un paso `start`")
         return self
 
-    @model_serializer(mode="wrap")
-    def _omit_absent_input(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
-        """Hashes come from the dump: a suite published before 1.5.0 must serialize as it did."""
-        data: dict[str, Any] = handler(self)
-        if data.get("input") is None:
-            data.pop("input", None)
-        return data
 
 
 class ToolReply(_M):
@@ -108,18 +101,11 @@ class Expect(_M):
     outcome: Outcome | None = None
     actions_verified: list[str] = Field(default_factory=list)
     escalated: bool | None = None
-    suggestion_count: int | None = Field(default=None, ge=0, le=8)
-    suggestions: list[SuggestionExpect] = Field(default_factory=list, max_length=20)
+    suggestion_count: int | None = Field(default=None, ge=0, le=8, exclude_if=lambda v: v is None)
+    suggestions: list[SuggestionExpect] = Field(
+        default_factory=list, max_length=20, exclude_if=lambda v: not v
+    )
 
-    @model_serializer(mode="wrap")
-    def _omit_absent_suggestions(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
-        """Hashes come from the dump: an `Expect` without them serializes as before 1.5.0."""
-        data: dict[str, Any] = handler(self)
-        if data.get("suggestion_count") is None:
-            data.pop("suggestion_count", None)
-        if not data.get("suggestions"):
-            data.pop("suggestions", None)
-        return data
 
 
 class ScenarioSubject(_M):
@@ -257,6 +243,8 @@ class SuiteProblemCode(StrEnum):
     invalid_assertion_filter = "invalid_assertion_filter"
     missing_threshold = "missing_threshold"
     unknown_threshold_metric = "unknown_threshold_metric"
+    empty_expectation = "empty_expectation"
+    count_without_outcome = "count_without_outcome"
 
 
 class SuiteProblem(_M):
@@ -291,6 +279,17 @@ def suite_problems(agent: Agent, suite: EvalSuite | None) -> list[SuiteProblem]:
         if isinstance(scenario, DatasetScenario):
             found.append(_problem(SuiteProblemCode.dataset_source_disabled, f"{at}/source",
                                   "la fuente `dataset` está desactivada hasta que exista su ADR"))
+        if isinstance(scenario, Scenario):
+            expect = scenario.expect
+            # Solo en escenarios de agentes `task` (con `input`): las suites ya publicadas, sin `input`, usan
+            # `expect` vacío con `assertions` y no se rompen.
+            if scenario.steps[0].input is not None and expect == Expect() and not scenario.assertions:
+                found.append(_problem(SuiteProblemCode.empty_expectation, f"{at}/expect",
+                                      "el escenario no espera nada: pasaría siempre"))
+            if (expect.suggestion_count is not None or expect.suggestions) and expect.outcome is None:
+                found.append(_problem(SuiteProblemCode.count_without_outcome, f"{at}/expect/outcome",
+                                      "una expectativa sobre sugerencias exige `outcome` (una lista "
+                                      "vacía no distingue un resultado válido de un run fallido)"))
         for j, assertion in enumerate(scenario.assertions):
             if catalog_fields(assertion.event) is None:
                 found.append(_problem(SuiteProblemCode.unknown_assertion_event, f"{at}/assertions/{j}/event",

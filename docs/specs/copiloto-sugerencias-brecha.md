@@ -15,7 +15,7 @@ Fecha: 2026-10-05 · Estado: **núcleo implementado (B1 a B4 resueltas); datos y
 | `Step.input` en `start` del `eval_suite` y el arnés arma `RunInput` con `input` (B3) | **Hecho** |
 | `Expect` con aserciones sobre `suggestions` (B4) | **Hecho** (`suggestion_count`, `suggestions: [SuggestionExpect]`; el arnés devuelve `ScenarioRun`) |
 | Flow `sugerir@1`, modelo `sin-sugerencia`, prompt `p/sugerir`, política de escalamiento, calibración, release `sugerencias-demo` (B5) | **Hecho, PROVISIONAL** (`tests/fixtures/copiloto-sugerencias/`) |
-| `eval_suite` cargable y ejecutable con modelo y clasificador guionados (B3, B4, B5) | **Hecho**: 6 escenarios; **faltan** inyección, otro cliente fuera de la delegación y portugués |
+| `eval_suite` cargable y ejecutable con modelo y clasificador guionados (B3, B4, B5) | **Hecho**: 6 escenarios; **faltan** otro cliente fuera de la delegación y portugués (la inyección ya está: 7 escenarios) |
 | Agente probado con un modelo REAL, calibración con datos reales, política real de escalamiento | **No hecho** |
 
 Lo que **no** se probó: ningún modelo real produjo estas sugerencias. En la suite, el «modelo» y el clasificador son dobles que devuelven la salida esperada de cada caso: la suite prueba el flow, la política y la validación de M8, no la calidad de un modelo. Lo "esperado" sigue siendo una especificación, no una medición.
@@ -69,6 +69,17 @@ Coinciden: nombres snake_case en el HTTP de agent-core (`reason_code`, `motive_d
 - No se verificó con un modelo real que no repita PII: la suite usa un modelo guionado.
 - Reglas del validador independiente de `test_copiloto_sugerencias_data.py` que el ADR no fija (copiadas de la plataforma o supuestas): `text` ≤ 4000, `language` ∈ locales del agente, `evidence` ≥ 1, `why` no vacío.
 - `assistant_session_id`: la plataforma podría enviarlo en una rama que no pude leer; D2 vale para su código principal.
+
+### Pendientes de M7 (huecos hallados por la revisión; no se tocó el detector)
+PAN con U+00AD, U+2060, saltos de línea y 4+ espacios; dígitos árabe-índicos y fullwidth; celular con paréntesis + U+200B parcialmente tokenizado; correo ofuscado (`arroba`, `[at]`, ` @ `, `punto`, U+200B en el dominio) que llega a una sugerencia con `result=ok`; dígitos escritos con palabras. Hoy la única defensa contra cifras con separadores es el chequeo `numbers` (los `args` no lo tienen). **El agente de M7 (rama aparte) cubre la normalización antes de detectar; al fusionarse hay que re-correr la suite del copiloto.**
+
+### Cambios de la ronda de correcciones (2026-10-05)
+- Esquema OpenAPI de `Step`/`Expect` conservado (`exclude_if` en vez de `model_serializer`; prueba `test_openapi_keeps_suite_schemas`).
+- G0-28 exige `suggested` → `end` y prohíbe `escalate`/`transfer`; las sugerencias solo viven en el turno que cierra el run (un flow task no espera, G0-16).
+- M8: rechazo de enlaces, argumentos no declarados, tokens existentes en `args`/textos; el motivo largo ya no lanza.
+- `suite_problems`: `empty_expectation` y `count_without_outcome` (solo escenarios con `input`).
+- Escenario de inyección con modelo obediente. «Otro cliente fuera de la delegación» sigue sin cubrir (el arnés usa autorización permisiva).
+- Replay de un run con `suggest` y guard de inyección sobre `input.turnos`: pendientes (ver ADR §Pendientes).
 
 ## 4. Cómo ejecutar y qué prueban las pruebas nuevas
 - `uv run pytest tests/composition/test_copiloto_sugerencias_eval.py`: el agente corre en el motor real; la suite pasa con todo sano (6 escenarios × 2 repeticiones) y **falla** al romper el modelo guionado (cifra inventada, tool fuera del catálogo, escalación creada por el modelo, PII repetida…), el clasificador o los datos del agente (política, motivo, evidencia, `tools_allowed`, hecho citable, resultado del fin vacío). Hay una copia sin mutar como control.

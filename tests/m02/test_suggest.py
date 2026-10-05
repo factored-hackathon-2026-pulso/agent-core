@@ -214,3 +214,19 @@ def test_without_a_suggester_port_it_is_a_wiring_error() -> None:
     w, _, state = _world(_ok())
     with pytest.raises(IllegalTransition):
         w.step(state)
+
+
+def test_evidence_longer_than_the_type_allows_fails_closed_instead_of_raising() -> None:
+    w = World()
+    port = ScriptedSuggester([_ok()])
+    state = w.state(
+        flow(
+            _suggest(
+                reads=["slots.estado"], escalate={"reason_code": "rule:x", "evidence_from": ["slots.estado"]}
+            ),
+            *TAIL,
+        ),
+        slots={"estado": slot("v" * 400)},
+    )
+    out = w.step(state, suggester=port)
+    assert _node(out) == "fallo" and port.calls == []

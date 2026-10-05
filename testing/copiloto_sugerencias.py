@@ -59,6 +59,8 @@ def eval_target(root: Path = FIXTURE) -> EvalTarget:
 
 def signal_of(case: Case) -> str:
     """La señal que el clasificador guionado emite: la que lleva a la salida esperada del caso."""
+    if "signal" in case:
+        return str(case["signal"])
     kinds = [item["type"] for item in case["expected"]]
     if not kinds:
         return "sin_sugerencia"
@@ -69,6 +71,8 @@ def raw_model_output(case: Case, inputs: Mapping[str, JsonValue]) -> dict[str, J
     """La salida ESPERADA del caso con la forma que el modelo debe devolver (`SUGGESTIONS_SCHEMA`): un
     `escalate` solo lleva `motive_draft` (el motivo y la evidencia son del flow) y las citas apuntan a los
     `fact_id` reales que M8 entrega, que un caso no puede conocer de antemano."""
+    if "model_output" in case:  # un modelo que NO hace lo esperado (p. ej. obedece una inyección)
+        return dict(case["model_output"])
     facts = inputs.get("citable_facts")
     citable: list[JsonValue] = list(facts.values()) if isinstance(facts, dict) else []
     items: list[JsonValue] = []

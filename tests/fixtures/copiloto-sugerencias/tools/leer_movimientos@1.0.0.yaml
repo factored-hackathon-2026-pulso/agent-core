@@ -9,4 +9,4 @@ args_schema:
   type: object
   additionalProperties: false
   properties:
-    limite: {type: integer}
+    limite: {type: integer, enum: [5, 10, 20, 50]}   # cota: el subconjunto de esquema no tiene `maximum`
