@@ -597,7 +597,7 @@ def test_a_body_under_the_limit_is_served() -> None:
     assert w.create_run().status_code == 201
 
 
-@pytest.mark.parametrize(("field", "size"), [("text", 8001), ("client_turn_id", 256), ("channel", 256)])
+@pytest.mark.parametrize(("field", "size"), [("text", 32_001), ("client_turn_id", 256), ("channel", 256)])
 def test_turn_text_fields_have_a_maximum_length(field: str, size: int) -> None:
     w = World()
     body = {"text": "hola", "channel": "web", "client_turn_id": "t-1", field: "a" * size}
