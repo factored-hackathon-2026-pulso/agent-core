@@ -1,6 +1,7 @@
 """Raíz de composición del servidor: `ServePorts` -> `ApiDeps` (motor real + API M9 + registry opcional)."""
 
 import argparse
+import logging
 import sys
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import replace
@@ -17,7 +18,13 @@ from agent_core.composition.builder_tools import BuilderToolExecutor, RoutedTool
 from agent_core.composition.engine import EngineConfig, EngineDeps, EngineTools, build_engine
 from agent_core.composition.export_http import export_extension
 from agent_core.composition.observability import ObservabilityConfigError, setup_observability
-from agent_core.composition.serve_ports import ServeConfigError, ServePorts, resolve_ports
+from agent_core.composition.serve_ports import (
+    DOUBLES_ENV,
+    LEGACY_DOUBLES_ENV,
+    ServeConfigError,
+    ServePorts,
+    resolve_ports,
+)
 from agent_core.composition.serve_registry import build_registry_service_for_serve
 from agent_core.composition.telemetry import OtelTurnTelemetry
 from agent_core.domain import (
@@ -42,6 +49,16 @@ def _extensions(ports: ServePorts, registry_service: RegistryService | None) -> 
     if staff is not None and ports.run_export is not None:
         found.append(export_extension(ports.run_export, registry_service, staff, ports.clock))
     return tuple(found)
+
+
+_LOG = logging.getLogger("agent_core.serve")
+
+
+def mode_line(ports: ServePorts) -> str:
+    """The startup mode: `production` when no piece is a double, else `demo` with the doubles named."""
+    if not ports.doubles:
+        return "serve mode=production"
+    return "serve mode=demo doubles=" + ",".join(ports.doubles)
 
 
 RATE_MAX_HITS_ENV = "AGENTCORE_RATE_MAX_HITS"
@@ -143,6 +160,9 @@ def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Map
             for problem in exc.problems:
                 print(f"  - {problem}", file=sys.stderr)
             return 2
+        _LOG.info(mode_line(ports))
+        if env.get(LEGACY_DOUBLES_ENV) == "1" and env.get(DOUBLES_ENV) != "1":
+            print(f"AVISO: {LEGACY_DOUBLES_ENV} está en desuso; usa {DOUBLES_ENV}=1", file=sys.stderr)
         if ports.doubles:
             print("AVISO: piezas que son DOBLES de demo (no producción): " + ", ".join(ports.doubles),
                   file=sys.stderr)
