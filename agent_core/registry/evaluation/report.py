@@ -19,6 +19,19 @@ class _M(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class GuardrailChange(_M):
+    """A policy, flow, tool or agent-tool link the candidate adds, removes or changes against the base. The
+    gate does NOT evaluate these artifacts: the list tells the reviewer what to read (names and ids only).
+    `kind` is `policy`, `flow`, `tool` or `tool_link` (`id` is `<agent>/<tool>`, from
+    `Agent.tools_allowed`)."""
+
+    kind: Literal["policy", "flow", "tool", "tool_link"]
+    id: str
+    change: Literal["added", "removed", "changed"]
+    base_version: str | None = None
+    candidate_version: str | None = None
+
+
 class GateItem(_M):
     """One element of the verdict: a metric, a scenario (`scenario/<id>`) or a platform guardrail.
 
@@ -87,4 +100,6 @@ class EvalReport(_M):
     results: list[ScenarioResult] = Field(default_factory=list)
     judge_notes: list[JudgeNote] = Field(default_factory=list)
     yardstick_changes: list[YardstickChange] = Field(default_factory=list)
+    # Policies, flows and tool links the candidate changes; not covered by the gate (additive, default empty).
+    guardrail_changes: list[GuardrailChange] = Field(default_factory=list)
     detail: str | None = None
