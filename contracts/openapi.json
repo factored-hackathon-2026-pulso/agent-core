@@ -288,7 +288,7 @@
           },
           "text": {
             "default": "",
-            "maxLength": 8000,
+            "maxLength": 32000,
             "title": "Text",
             "type": "string"
           }

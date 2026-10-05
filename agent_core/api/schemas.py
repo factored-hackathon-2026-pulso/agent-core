@@ -24,7 +24,7 @@ AgentText = Annotated[AgentSelector, WithJsonSchema({"type": "string", "examples
 
 
 # Topes de los campos de texto (M9 §3.1); el body completo lo acota `BodyLimit`.
-MAX_TURN_TEXT = 8000
+MAX_TURN_TEXT = 32_000  # techo de transporte; el límite de producto es `max_input_chars` de M6
 MAX_SHORT_TEXT = 255
 MAX_NOTES = 4000
 
