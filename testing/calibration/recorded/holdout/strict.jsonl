@@ -1,0 +1,42 @@
+{"banking": true, "expected": "out_of_scope", "p": "0.97", "predicted": "out_of_scope", "text": "quiero solicitar una tarjeta de crédito nueva"}
+{"banking": true, "expected": "out_of_scope", "p": "1.0", "predicted": "out_of_scope", "text": "¿cuál es la tasa de interés de un CDT a 90 días?"}
+{"banking": true, "expected": "out_of_scope", "p": "0.97", "predicted": "out_of_scope", "text": "necesito una constancia laboral de mi cuenta de nómina"}
+{"banking": true, "expected": "out_of_scope", "p": "0.98", "predicted": "out_of_scope", "text": "quiero subir el límite de retiro de mi cajero"}
+{"banking": true, "error": "ProviderTimeout", "expected": "out_of_scope", "text": "quiero transferir dinero a mi hermano"}
+{"banking": true, "expected": "out_of_scope", "p": "0.96", "predicted": "out_of_scope", "text": "¿cómo cambio el celular registrado en mi cuenta?"}
+{"banking": true, "expected": "out_of_scope", "p": "0.98", "predicted": "out_of_scope", "text": "necesito un certificado de saldo para una visa"}
+{"banking": true, "expected": "out_of_scope", "p": "0.97", "predicted": "out_of_scope", "text": "quiero domiciliar el pago de mi luz"}
+{"banking": true, "expected": "out_of_scope", "p": "0.96", "predicted": "out_of_scope", "text": "¿cuánto cobran por enviar dinero al extranjero?"}
+{"banking": true, "expected": "out_of_scope", "p": "0.98", "predicted": "out_of_scope", "text": "quiero cerrar mi cuenta de ahorros"}
+{"banking": true, "expected": "out_of_scope", "p": "0.98", "predicted": "out_of_scope", "text": "me interesa un crédito hipotecario"}
+{"banking": true, "expected": "out_of_scope", "p": "0.97", "predicted": "out_of_scope", "text": "necesito el extracto del mes pasado en PDF"}
+{"banking": true, "expected": "out_of_scope", "p": "0.97", "predicted": "out_of_scope", "text": "¿cómo activo mi tarjeta nueva?"}
+{"banking": true, "expected": "out_of_scope", "p": "0.97", "predicted": "out_of_scope", "text": "quiero cambiar el nombre que aparece en mi tarjeta"}
+{"banking": true, "expected": "out_of_scope", "p": "0.98", "predicted": "out_of_scope", "text": "¿cuál es el cupo de mi tarjeta?"}
+{"banking": true, "expected": "out_of_scope", "p": "0.98", "predicted": "out_of_scope", "text": "quiero pagar mi tarjeta desde otra cuenta"}
+{"banking": true, "expected": "out_of_scope", "p": "0.99", "predicted": "out_of_scope", "text": "quero aumentar o limite do meu cartão"}
+{"banking": true, "expected": "out_of_scope", "p": "0.97", "predicted": "out_of_scope", "text": "preciso de um comprovante de renda do banco"}
+{"banking": true, "expected": "out_of_scope", "p": "0.93", "predicted": "out_of_scope", "text": "quero pedir uma segunda via do cartão"}
+{"banking": true, "expected": "out_of_scope", "p": "0.95", "predicted": "out_of_scope", "text": "como faço para abrir uma conta conjunta?"}
+{"banking": true, "expected": "out_of_scope", "p": "0.95", "predicted": "out_of_scope", "text": "quiero un seguro para mi auto"}
+{"banking": true, "expected": "out_of_scope", "p": "0.98", "predicted": "out_of_scope", "text": "¿me ayudan a programar un pago recurrente?"}
+{"banking": true, "expected": "out_of_scope", "p": "0.95", "predicted": "out_of_scope", "text": "necesito actualizar mis datos de contacto"}
+{"banking": true, "expected": "out_of_scope", "p": "0.98", "predicted": "out_of_scope", "text": "quiero un adelanto de nómina"}
+{"banking": true, "expected": "out_of_scope", "p": "0.99", "predicted": "out_of_scope", "text": "¿qué requisitos hay para una cuenta empresarial?"}
+{"banking": false, "expected": "out_of_scope", "p": "0.99", "predicted": "out_of_scope", "text": "¿puedes recomendarme un libro?"}
+{"banking": false, "expected": "out_of_scope", "p": "1.0", "predicted": "out_of_scope", "text": "dime cómo está el tráfico hoy"}
+{"banking": false, "expected": "out_of_scope", "p": "0.98", "predicted": "out_of_scope", "text": "¿cuál es tu color favorito?"}
+{"banking": false, "expected": "out_of_scope", "p": "0.95", "predicted": "out_of_scope", "text": "ayúdame a escribir un correo para mi jefe"}
+{"banking": false, "expected": "out_of_scope", "p": "0.99", "predicted": "out_of_scope", "text": "¿cuánto es 15 por 12?"}
+{"banking": false, "expected": "start_flow", "p": "0.98", "predicted": "start_flow", "text": "aparece una compra que yo no hice en mi tarjeta"}
+{"banking": false, "expected": "start_flow", "p": "1.0", "predicted": "start_flow", "text": "hay un descuento en mi cuenta que no autoricé"}
+{"banking": false, "expected": "start_flow", "p": "1.0", "predicted": "start_flow", "text": "me facturaron dos veces el mismo pedido"}
+{"banking": false, "expected": "start_flow", "p": "1.0", "predicted": "start_flow", "text": "necesito objetar un consumo de mi tarjeta"}
+{"banking": false, "expected": "start_flow", "p": "1.0", "predicted": "start_flow", "text": "no estoy de acuerdo con un cobro que me hicieron"}
+{"banking": false, "expected": "start_flow", "p": "1.0", "predicted": "start_flow", "text": "quiero que revisen un débito raro de mi cuenta"}
+{"banking": false, "expected": "start_flow", "p": "1.0", "predicted": "start_flow", "text": "¿ya respondieron la queja que radiqué hace un mes?"}
+{"banking": false, "expected": "start_flow", "p": "1.0", "predicted": "start_flow", "text": "estoy esperando la respuesta de mi reclamo"}
+{"banking": false, "expected": "start_flow", "p": "1.0", "predicted": "start_flow", "text": "quisiera saber en qué estado está mi solicitud de reembolso"}
+{"banking": false, "expected": "start_flow", "p": "1.0", "predicted": "start_flow", "text": "me cobraron una comisión por una cuenta que cerré"}
+{"banking": false, "expected": "start_flow", "p": "1.0", "predicted": "start_flow", "text": "quero contestar uma compra que não reconheço"}
+{"banking": false, "expected": "start_flow", "p": "1.0", "predicted": "start_flow", "text": "como anda a reclamação que abri semana passada?"}
