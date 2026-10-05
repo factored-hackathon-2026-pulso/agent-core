@@ -88,3 +88,28 @@ def test_model_call_budget_escalates_before_calling() -> None:
     out = advance(state, w.ctx(), Resume())  # sin `w.step`: `begin_turn` reiniciaría turn_model_calls
     assert out.stop is Stop.terminal and out.escalation is not None
     assert out.escalation.reason_code == "budget_exceeded" and w.decisions.calls == []
+
+
+# --- ADR 0027: la vista `full` solo se calcula y se pasa si algún proveedor del modelo la pide -------------
+
+COMPARES_ON_FULL = DecisionModelDef.model_validate({
+    "id": "match", "version": "2.0.0", "output_schema": {"type": "object"}, "calibrated_fields": ["match"],
+    "input_view": ["slots.q"], "providers": [{"provider": "rule", "config": {"compare_on": "full"}}],
+    "calibration": {"method": "none"}})
+
+
+def test_a_model_that_compares_on_full_also_gets_the_full_view() -> None:
+    w = World()
+    w.add(COMPARES_ON_FULL)
+    w.decisions.push(make_decision({"match": "unica"}, {"match": True}))
+    w.step(w.state(flow(_decide(), *TAIL), slots={"q": slot("cargo raro 344456.72")}))
+    assert w.decisions.full_inputs == [{"slots.q": "cargo raro 344456.72"}]  # el texto original, en claro
+    text = w.decisions.calls[0][1]["slots.q"]
+    assert isinstance(text, str) and text.startswith("<datos_no_confiables")  # la vista `model`, envuelta
+
+
+def test_a_model_without_the_opt_in_never_gets_the_full_view() -> None:
+    w = _world()
+    w.decisions.push(make_decision({"match": "unica"}, {"match": True}))
+    w.step(w.state(flow(_decide(), *TAIL), slots={"q": slot("cargo raro 344456.72")}))
+    assert w.decisions.full_inputs == [None]

@@ -11,6 +11,7 @@ input_view: [slots.radicado, facts.casos.value]
 providers:
   - provider: rule
     config:
+      compare_on: full   # ADR 0027: el radicado puede llevar 6+ dígitos
       cases:
         - when:
             path: facts.casos.value

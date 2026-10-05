@@ -24,9 +24,9 @@ class DecisionAdapter:
         self._scope = scope
 
     def decide(self, model: EntityRef, inputs_model_view: dict[str, JsonValue],
-               locale: Locale) -> DecisionResult:
+               locale: Locale, inputs_full: dict[str, JsonValue] | None = None) -> DecisionResult:
         output, event = self._service.decide(model, inputs_model_view, locale, self._vault,
-                                             scope=self._scope)
+                                             scope=self._scope, inputs_full=inputs_full)
         return self._result(output, event)
 
     def decide_choice(self, model: EntityRef, inputs_model_view: dict[str, JsonValue], choices: list[str],

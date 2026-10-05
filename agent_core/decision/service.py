@@ -13,6 +13,7 @@ from agent_core.decision.types import (
     DecisionOutput,
     DecisionProvider,
     EventScope,
+    FullViewProvider,
     ProviderError,
     ProviderTimeout,
     RawPrediction,
@@ -67,17 +68,22 @@ class DecisionService:
         self._ids = ids
 
     def decide_output(self, model_ref: EntityRef, inputs_model_view: dict[str, JsonValue], locale: Locale,
-                      token_vault: TokenVault) -> DecisionOutput:
+                      token_vault: TokenVault, *,
+                      inputs_full: dict[str, JsonValue] | None = None) -> DecisionOutput:
         """Corre la cadena y devuelve la salida (sin armar el evento)."""
         definition = self._registry.get(model_ref, DecisionModelDef)
-        return self._decide_with(definition, definition.output_schema, inputs_model_view, locale, token_vault)
+        return self._decide_with(definition, definition.output_schema, inputs_model_view, locale, token_vault,
+                                 inputs_full)
 
     def decide(self, model_ref: EntityRef, inputs_model_view: dict[str, JsonValue], locale: Locale,
-               token_vault: TokenVault, *, scope: EventScope) -> tuple[DecisionOutput, DecisionMade]:
-        """Corre la cadena y arma `decision_made` (vista audit: valores con tokens, nunca `full`)."""
+               token_vault: TokenVault, *, scope: EventScope,
+               inputs_full: dict[str, JsonValue] | None = None) -> tuple[DecisionOutput, DecisionMade]:
+        """Corre la cadena y arma `decision_made` (vista audit: valores con tokens, nunca `full`).
+
+        `inputs_full` solo llega a un proveedor `rule` con `compare_on: full` (ADR 0027): a ningún otro."""
         definition = self._registry.get(model_ref, DecisionModelDef)
         output = self._decide_with(definition, definition.output_schema, inputs_model_view, locale,
-                                   token_vault)
+                                   token_vault, inputs_full)
         return output, self._event(model_ref, output, locale, scope)
 
     def decide_with_schema(self, model_ref: EntityRef, schema: dict[str, JsonValue],
@@ -104,10 +110,13 @@ class DecisionService:
 
     def _decide_with(self, definition: DecisionModelDef, schema: dict[str, JsonValue],
                      inputs_model_view: dict[str, JsonValue], locale: Locale,
-                     token_vault: TokenVault) -> DecisionOutput:
+                     token_vault: TokenVault,
+                     inputs_full: dict[str, JsonValue] | None = None) -> DecisionOutput:
         """Igual que `decide_output` con un esquema efectivo (Understand lo arma por release)."""
         started = self._clock.monotonic_ns()
         self._check_inputs(definition, inputs_model_view)
+        if inputs_full is not None:
+            self._check_inputs(definition, inputs_full)
         check_schema_supported(schema)
         for spec in definition.providers:
             if spec.provider not in self._providers:
@@ -116,7 +125,7 @@ class DecisionService:
         chosen: tuple[int, str, RawPrediction] | None = None
         for depth, spec in enumerate(definition.providers):
             provider = self._providers[spec.provider]
-            raw = self._attempt(provider, spec, inputs_model_view, schema, locale, usage)
+            raw = self._attempt(provider, spec, inputs_model_view, schema, locale, usage, inputs_full)
             if raw is not None:
                 chosen = (depth, spec.provider, raw)
                 break
@@ -185,12 +194,19 @@ class DecisionService:
 
     @staticmethod
     def _attempt(provider: DecisionProvider, spec: ProviderSpec, inputs: dict[str, JsonValue],
-                 schema: dict[str, JsonValue], locale: Locale, usage: _Usage) -> RawPrediction | None:
+                 schema: dict[str, JsonValue], locale: Locale, usage: _Usage,
+                 inputs_full: dict[str, JsonValue] | None = None) -> RawPrediction | None:
         """Una salida válida del proveedor o `None` (timeout, error o fuera de esquema dos veces)."""
+        # ADR 0027: la vista `full` solo va a `rule` con `compare_on: full`; jamás a JEV, classifier ni LLM.
+        full_provider = (provider if inputs_full is not None and spec.compares_on_full_view
+                         and isinstance(provider, FullViewProvider) else None)
         for _ in range(_ATTEMPTS_PER_PROVIDER):
             usage.calls += 1
             try:
-                raw = provider.predict(spec, inputs, schema, locale)
+                if full_provider is not None and inputs_full is not None:
+                    raw = full_provider.predict_full(spec, inputs, inputs_full, schema, locale)
+                else:
+                    raw = provider.predict(spec, inputs, schema, locale)
             except ProviderTimeout:
                 return None
             except ProviderError as exc:

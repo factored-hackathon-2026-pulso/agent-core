@@ -4,7 +4,7 @@ from agent_core.domain import DecideNode, DecisionModelDef, EntityKind, RunState
 from agent_core.interpreter.budgets import charge_model, model_budget_exhausted
 from agent_core.interpreter.context import Resume, StepContext
 from agent_core.interpreter.handlers.base import NodeResult, escalate_now
-from agent_core.interpreter.projection import model_inputs
+from agent_core.interpreter.projection import full_inputs, model_inputs
 from agent_core.interpreter.refs import exact_ref
 from agent_core.interpreter.resolve import MissingPath
 
@@ -24,7 +24,14 @@ def handle_decide(node: DecideNode, state: RunState, ctx: StepContext, resume: R
         inputs = model_inputs(paths, state, ctx)
     except MissingPath:
         return NodeResult(state, result_key=LOW_CONFIDENCE)
-    result = ctx.decisions.decide(ref, inputs, ctx.locale)
+    if any(spec.compares_on_full_view for spec in model.providers):  # ADR 0027: solo ese modelo la pide
+        try:
+            full = full_inputs(paths, state)
+        except MissingPath:
+            return NodeResult(state, result_key=LOW_CONFIDENCE)
+        result = ctx.decisions.decide(ref, inputs, ctx.locale, inputs_full=full)
+    else:
+        result = ctx.decisions.decide(ref, inputs, ctx.locale)
     state = charge_model(state, calls=result.model_calls, tokens=result.tokens, cost=result.cost_usd)
     state = state.model_copy(update={"decisions": {**state.decisions, cfg.save_as: result.decision}})
     value = result.decision.value.get(cfg.branch_on)

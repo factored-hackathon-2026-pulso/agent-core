@@ -5,7 +5,7 @@ aquí (el contrato `decision` de `.importlinter` no permite importar `interprete
 
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from agent_core.domain import Decision, JsonValue, Locale, Probability, ProviderSpec, canonical_bytes
 
@@ -58,6 +58,18 @@ class DecisionProvider(Protocol):
 
     def predict(self, spec: ProviderSpec, inputs_model_view: dict[str, JsonValue],
                 schema: dict[str, JsonValue], locale: Locale) -> RawPrediction: ...
+
+
+@runtime_checkable
+class FullViewProvider(Protocol):
+    """Proveedor local y determinista que puede COMPARAR en la vista `full` (ADR 0027). Solo `rule`.
+
+    Recibe las dos vistas y debe devolver únicamente valores tomados de la vista `model`."""
+    name: str
+
+    def predict_full(self, spec: ProviderSpec, inputs_model_view: dict[str, JsonValue],
+                     inputs_full: dict[str, JsonValue], schema: dict[str, JsonValue],
+                     locale: Locale) -> RawPrediction: ...
 
 
 @dataclass(frozen=True, slots=True)

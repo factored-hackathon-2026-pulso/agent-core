@@ -40,10 +40,11 @@ class DecisionResult:
 
 
 class DecisionPort(Protocol):
-    """Recibe solo la vista `model` (M5 §3.1)."""
+    """Recibe la vista `model` (M5 §3.1). `inputs_full` solo se pasa a un modelo con un proveedor `rule` de
+    `compare_on: full` (ADR 0027); el puerto la entrega únicamente a ese proveedor."""
 
     def decide(self, model: EntityRef, inputs_model_view: dict[str, JsonValue],
-               locale: Locale) -> DecisionResult: ...
+               locale: Locale, inputs_full: dict[str, JsonValue] | None = None) -> DecisionResult: ...
 
     def decide_choice(self, model: EntityRef, inputs_model_view: dict[str, JsonValue], choices: list[str],
                       locale: Locale) -> DecisionResult:

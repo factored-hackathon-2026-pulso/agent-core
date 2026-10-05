@@ -357,6 +357,12 @@ class ProviderSpec(Model):
     provider: Literal["jev", "classifier", "llm_structured", "rule"]
     config: dict[str, JsonValue] = Field(default_factory=dict)
 
+    @property
+    def compares_on_full_view(self) -> bool:
+        """`rule` con `compare_on: full` (ADR 0027): compara en la vista `full` pero solo devuelve valores
+        de la vista `model`. Ningún otro proveedor lo admite."""
+        return self.provider == "rule" and self.config.get("compare_on") == "full"
+
 
 class CalibrationRef(Model):
     """Método de calibración de un modelo de decisión y la corrida que lo produjo (M0 §2.4)."""
