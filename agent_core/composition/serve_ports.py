@@ -5,6 +5,7 @@ import importlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -19,6 +20,7 @@ from agent_core.adapters.llm import HttpLLMGateway, UnconfiguredLLMGateway
 from agent_core.adapters.llm.http_gateway import LLM_GATEWAY_TOKEN_ENV, LLM_GATEWAY_URL_ENV
 from agent_core.adapters.postgres_uow import PostgresStore
 from agent_core.composition.blobs import blob_factory_from_env
+from agent_core.composition.engine_tools import fx_rates_from_env
 from agent_core.decision import DecisionConfigError, DecisionProvider, HttpJevTransport, JevProvider
 from agent_core.decision.calibration.artifact import CalibrationSource
 from agent_core.domain import Release, SchemaError, loads
@@ -118,6 +120,10 @@ class ServePorts:
     readiness: tuple[tuple[str, Callable[[], bool]], ...] = ()  # comprobaciones de `/readyz`
     run_export: RunExport | None = None  # N-08: lectura paginada de runs y eventos (con --registry-api)
     lang_thresholds: Mapping[str, LangThresholds] = field(default_factory=dict)  # por `thresholds_from`
+    # Tabla FIJA de tasas de `convertir_moneda` (AGENTCORE_FX_RATES_FILE); None: la tool falla cerrada.
+    fx_rates: Mapping[str, Decimal] | None = None
+    # El motor sirve sus tools (`composition.engine_tools`): solo fuera de demo, lo decide `resolve_ports`.
+    engine_tools: bool = False
 
 
 def _flag(attr: str) -> str:
@@ -289,6 +295,11 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
             problems.append(str(exc))
     llm_url, llm_token = _llm_gateway_config(env, problems)
     lang_thresholds = _lang_thresholds(args, env, problems)
+    fx_rates: dict[str, Decimal] | None = None
+    try:
+        fx_rates = fx_rates_from_env(env)
+    except SchemaError as exc:
+        problems.append(str(exc))
     eval_dsn: str | None = None
     staff_verifier: IdentityVerifier | None = None
     if args.registry_api:
@@ -357,4 +368,5 @@ def resolve_ports(args: argparse.Namespace, env: Mapping[str, str],
         doubles=tuple(doubles), agents=_agents(args, env), llm_gateway_url=llm_url,
         registry_api=registry_api,
         directory=RegistryDirectory(registry_store, pg_registry, pg_registry.release),
-        readiness=(("postgres", store.ping),), run_export=store.run_export(), lang_thresholds=lang_thresholds)
+        readiness=(("postgres", store.ping),), run_export=store.run_export(), lang_thresholds=lang_thresholds,
+        fx_rates=fx_rates, engine_tools=not demo)

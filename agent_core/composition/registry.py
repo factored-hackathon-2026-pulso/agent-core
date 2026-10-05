@@ -12,6 +12,7 @@ from typing import Any
 import psycopg
 from pydantic import ValidationError
 
+from agent_core.adapters.identity_keys import load_identity_verifier
 from agent_core.composition.blobs import blob_factory_from_env
 from agent_core.domain import Principal, dumps, loads
 from agent_core.flows import load_yaml
@@ -19,6 +20,8 @@ from agent_core.ports import Clock, IdentityVerifier, IdSource, UnitOfWorkFactor
 from agent_core.registry import (
     EntityDraft,
     EvalPort,
+    EvalReport,
+    EvalRequest,
     LocalSandbox,
     Origin,
     PgRegistryStore,
@@ -51,6 +54,24 @@ def build_registry_service(dsn: str, *, evaluator: EvalPort, clock: Clock, ids: 
 # Dobles de PRUEBA (claves y mundo sintéticos en el repo): solo se usan si AGENTCORE_ALLOW_DEMO=1.
 DEMO_VERIFIER = "testing.registry_demo:demo_verifier"
 DEMO_HARNESS = "testing.registry_demo:build_harness"
+STAFF_KEYS_ENV = "AGENTCORE_STAFF_KEYS_FILE"
+
+
+def staff_verifier() -> IdentityVerifier:
+    """Fábrica real de `agentcore registry --verifier agent_core.composition.registry:staff_verifier`: las
+    claves públicas del emisor del staff (el mismo archivo que `serve --staff-keys`) en
+    `AGENTCORE_STAFF_KEYS_FILE`. Sin delegaciones: en el registry nadie actúa en nombre de otro."""
+    path = (os.environ.get(STAFF_KEYS_ENV) or "").strip()
+    if not path:
+        raise ValueError(f"falta {STAFF_KEYS_ENV}")
+    return load_identity_verifier(Path(path), lambda grant_ref, now: False, delegation=False)
+
+
+class _NoEvaluation:
+    """`EvalPort` del CLI sin `--harness`: solo `evaluate` evalúa, y ese comando exige el harness."""
+
+    def run(self, request: EvalRequest) -> EvalReport:
+        raise RegistryError(RegistryErrorCode.validation_failed, "evaluar necesita --harness")
 
 
 def _load(path: str) -> Any:
@@ -141,20 +162,23 @@ def run_registry_cli(args: argparse.Namespace, *, clock: Clock, ids: IdSource,
     demo = env("AGENTCORE_ALLOW_DEMO") == "1"
     verifier_path = args.verifier or (DEMO_VERIFIER if demo else None)
     harness_path = args.harness or (DEMO_HARNESS if demo else None)
-    if verifier_path is None or harness_path is None:
-        print("agentcore registry necesita --verifier y --harness (rutas modulo:atributo). Los dobles de "
-              "prueba de testing.registry_demo solo se usan con AGENTCORE_ALLOW_DEMO=1", file=sys.stderr)
+    # El harness solo hace falta para evaluar: importar o publicar una semilla no corre escenarios.
+    if verifier_path is None or (harness_path is None and args.registry_cmd == "evaluate"):
+        print("agentcore registry necesita --verifier (y --harness para evaluate), rutas modulo:atributo. "
+              "Los dobles de prueba de testing.registry_demo solo se usan con AGENTCORE_ALLOW_DEMO=1",
+              file=sys.stderr)
         return 2
     try:
         verifier: IdentityVerifier = _load(verifier_path)()
-        harness = _load(harness_path)()
+        harness = _load(harness_path)() if harness_path is not None else None
     except (ImportError, AttributeError, ValueError) as exc:
         print(f"no se pudo cargar el verificador o el harness ({type(exc).__name__}); "
               "revisa las rutas modulo:atributo y que el módulo esté instalado", file=sys.stderr)
         return 2
     actor: Principal = verifier.verify(credential)
     # max_workers=1: el harness comparte reloj e ids (no thread-safe) entre corridas.
-    evaluator = ScenarioEvaluator(harness, LocalSandbox(ids), max_workers=1)
+    evaluator: EvalPort = (ScenarioEvaluator(harness, LocalSandbox(ids), max_workers=1)
+                           if harness is not None else _NoEvaluation())
     if store is not None:
         service = RegistryService(store, evaluator, clock, ids)
     else:

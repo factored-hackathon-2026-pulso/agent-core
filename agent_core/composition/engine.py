@@ -5,11 +5,13 @@ guionados es el motor de las pruebas y del replay `fixture`; con adaptadores rea
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from decimal import Decimal
 
 import agent_telemetry as tel
 from agent_core.actions import ActionManager
 from agent_core.audit import AuditLog, TranscriptReader, TurnRecorder
 from agent_core.composition.directory import DirectoryToolExecutor
+from agent_core.composition.engine_tools import EngineToolExecutor, UowRunLookup
 from agent_core.composition.runtime import EngineRuntimeFactory, RuntimeConfig
 from agent_core.decision import DecisionProvider, DecisionService, UnderstandService
 from agent_core.decision.calibration.artifact import CalibrationSource
@@ -50,6 +52,14 @@ class EngineConfig:
 
 
 @dataclass(frozen=True)
+class EngineTools:
+    """Las tools que sirve el motor (`seleccionar`, `convertir_moneda`, `obtener_handoff`, `leer_transcript`;
+    `composition.engine_tools`). Solo `serve` las activa; `fx_rates` None deja `convertir_moneda` cerrada."""
+
+    fx_rates: Mapping[str, Decimal] | None = None
+
+
+@dataclass(frozen=True)
 class EngineDeps:
     clock: Clock
     ids: IdSource
@@ -70,6 +80,7 @@ class EngineDeps:
     directory: AgentDirectory | None = None   # ADR 0021: con él el motor sirve `directory/list`
     telemetry: TurnTelemetry | None = None  # m04 §3.9: sin ella, no-op (pruebas, replay, evaluación)
     config: EngineConfig = field(default_factory=EngineConfig)
+    engine_tools: EngineTools | None = None  # None: replay, evaluación y pruebas usan solo `tools`
 
 
 def _tools(deps: EngineDeps) -> ToolExecutor:
@@ -102,19 +113,24 @@ def build_engine(deps: EngineDeps) -> BuiltEngine:
     views = ViewService(deps.keys, deps.authz, deps.clock, deps.classifier)
     decisions = DecisionService(deps.registry, deps.providers, deps.calibrations, deps.clock, deps.ids)
     actions = ActionManager(deps.ids, deps.clock)
-    runtimes = EngineRuntimeFactory(
-        clock=deps.clock, ids=deps.ids, keys=deps.keys, registry=deps.registry, releases=deps.releases,
-        tools=_tools(deps), gateway=deps.gateway, decisions=decisions, actions=actions, views=views,
-        uow_factory=deps.uow_factory, authz=deps.authz, breaker=CircuitBreaker(),
-        knowledge=None if deps.knowledge is None else KnowledgeService(deps.knowledge, deps.authz),
-        config=RuntimeConfig(number_format=cfg.number_format, max_regenerations=cfg.max_regenerations,
-                             priority=cfg.priority, lang_thresholds=cfg.lang_thresholds))
     audit_log = AuditLog(deps.audit)
     # `record_resolution` escribe fuera de un turno: sus eventos deben encadenarse como los del motor (el
     # recorder por defecto los agrega sin `seq`/`hash` y Postgres los rechaza con un 500).
     handoffs = HandoffService(uow_factory=deps.uow_factory, registry=deps.registry, views=views,
                               authz=deps.authz, keys=deps.keys, clock=deps.clock, ids=deps.ids,
                               record=audit_log.recorder())
+    transcripts = TranscriptReader(deps.transcript, deps.uow_factory, views, deps.keys, deps.ids)
+    tools = _tools(deps)
+    if deps.engine_tools is not None:  # M10/M11 leen para quien llama: los mismos lectores que la API
+        tools = EngineToolExecutor(tools, deps.ids, UowRunLookup(deps.uow_factory), handoffs, transcripts,
+                                   deps.engine_tools.fx_rates)
+    runtimes = EngineRuntimeFactory(
+        clock=deps.clock, ids=deps.ids, keys=deps.keys, registry=deps.registry, releases=deps.releases,
+        tools=tools, gateway=deps.gateway, decisions=decisions, actions=actions, views=views,
+        uow_factory=deps.uow_factory, authz=deps.authz, breaker=CircuitBreaker(),
+        knowledge=None if deps.knowledge is None else KnowledgeService(deps.knowledge, deps.authz),
+        config=RuntimeConfig(number_format=cfg.number_format, max_regenerations=cfg.max_regenerations,
+                             priority=cfg.priority, lang_thresholds=cfg.lang_thresholds))
     turns = TurnEngine(
         uow_factory=deps.uow_factory, registry=deps.registry, clock=deps.clock, ids=deps.ids,
         guards=GuardService(deps.registry, deps.clock, deps.ids, dict(cfg.lang_thresholds)),
@@ -124,7 +140,6 @@ def build_engine(deps: EngineDeps) -> BuiltEngine:
         recorder=TurnRecorder(deps.transcript, deps.keys), chain=audit_log,
         audit=deps.audit, runtimes=runtimes, trace=deps.trace or RequestTraceIds(), config=cfg.turn,
         authz=deps.authz, telemetry=deps.telemetry)
-    transcripts = TranscriptReader(deps.transcript, deps.uow_factory, views, deps.keys, deps.ids)
     return BuiltEngine(turns=turns, handoffs=handoffs, transcripts=transcripts)
 
 
