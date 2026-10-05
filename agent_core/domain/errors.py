@@ -96,6 +96,7 @@ class ProblemCode(StrEnum):
     cost_budget_exceeded = "cost_budget_exceeded"
     internal_error = "internal_error"
     identity_unavailable = "identity_unavailable"
+    payload_too_large = "payload_too_large"
 
 
 PROBLEM_STATUS: Mapping[ProblemCode, int] = MappingProxyType(
@@ -119,6 +120,7 @@ PROBLEM_STATUS: Mapping[ProblemCode, int] = MappingProxyType(
         ProblemCode.cost_budget_exceeded: 429,
         ProblemCode.internal_error: 500,
         ProblemCode.identity_unavailable: 503,
+        ProblemCode.payload_too_large: 413,
     }
 )
 

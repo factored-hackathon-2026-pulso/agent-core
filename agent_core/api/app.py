@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.telemetry import TelemetryConfig
 
 from agent_core.api.authorization import RunAuthorizer
+from agent_core.api.body_limit import DEFAULT_MAX_BODY_BYTES, BodyLimit
 from agent_core.api.gate import ANON_SESSION_ATTR, AccessGate, Admitted
 from agent_core.api.limits import LimitGuard, RateLimitConfig
 from agent_core.api.problems import install_error_handlers
@@ -68,6 +69,7 @@ _PROBLEMS = {
         404: "not_found",
         409: "turn_in_progress | handoff_already_resolved | idempotency_conflict | idempotency_in_progress",
         410: "run_closed",
+        413: "payload_too_large",
         422: "invalid_request",
         429: "rate_limited | cost_budget_exceeded",
         503: "identity_unavailable",
@@ -97,6 +99,7 @@ class ApiDeps:
     denials: DenialRecorder
     security: SecurityLog
     limits: RateLimitConfig = field(default_factory=RateLimitConfig)
+    max_body_bytes: int = DEFAULT_MAX_BODY_BYTES  # tope del body de toda petición (413 payload_too_large)
     step_up_simulated: bool = True  # el OTP de la demo es simulado (ADR 0010); apagar con un OTP real
     extensions: tuple[ApiExtension, ...] = ()  # rutas de otros paquetes; vacío = comportamiento previo
     # Comprobaciones de `/readyz` (nombre, función). Vacío = siempre listo. Las inyecta el cableado.
@@ -151,6 +154,8 @@ FASTAPI_TELEMETRY_OFF: Final[TelemetryConfig] = {
 
 def create_app(deps: ApiDeps) -> FastAPI:
     app = FastAPI(title="agent-core", version=SCHEMA_VERSION, telemetry=FASTAPI_TELEMETRY_OFF)
+    # Antes que el tracing: Starlette deja interno el primer middleware, así el 413 ya lleva `trace_id`.
+    app.add_middleware(BodyLimit, max_bytes=deps.max_body_bytes)
     install_tracing(app, deps.ids)
     install_error_handlers(app)
 

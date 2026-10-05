@@ -20,7 +20,8 @@
     "rate_limited",
     "cost_budget_exceeded",
     "internal_error",
-    "identity_unavailable"
+    "identity_unavailable",
+    "payload_too_large"
   ],
   "title": "ProblemCode",
   "type": "string"

@@ -207,6 +207,7 @@
           "notes": {
             "anyOf": [
               {
+                "maxLength": 4000,
                 "type": "string"
               },
               {
@@ -216,6 +217,7 @@
             "title": "Notes"
           },
           "resolution_code": {
+            "maxLength": 255,
             "title": "Resolution Code",
             "type": "string"
           }
@@ -253,10 +255,12 @@
         "additionalProperties": false,
         "properties": {
           "channel": {
+            "maxLength": 255,
             "title": "Channel",
             "type": "string"
           },
           "client_turn_id": {
+            "maxLength": 255,
             "title": "Client Turn Id",
             "type": "string"
           },
@@ -284,6 +288,7 @@
           },
           "text": {
             "default": "",
+            "maxLength": 8000,
             "title": "Text",
             "type": "string"
           }
@@ -411,6 +416,16 @@
               }
             },
             "description": "run_closed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "payload_too_large"
           },
           "422": {
             "content": {
@@ -564,6 +579,16 @@
               }
             },
             "description": "run_closed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "payload_too_large"
           },
           "422": {
             "content": {
@@ -727,6 +752,16 @@
             },
             "description": "run_closed"
           },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "payload_too_large"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -869,6 +904,16 @@
               }
             },
             "description": "run_closed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "payload_too_large"
           },
           "422": {
             "content": {
@@ -1013,6 +1058,16 @@
             },
             "description": "run_closed"
           },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "payload_too_large"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1155,6 +1210,16 @@
               }
             },
             "description": "run_closed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "payload_too_large"
           },
           "422": {
             "content": {
@@ -1308,6 +1373,16 @@
               }
             },
             "description": "run_closed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemBody"
+                }
+              }
+            },
+            "description": "payload_too_large"
           },
           "422": {
             "content": {

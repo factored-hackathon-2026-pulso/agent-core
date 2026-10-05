@@ -58,6 +58,7 @@ create_app(deps: ApiDeps) -> FastAPI   # ApiDeps agrupa puertos, servicios inyec
 | # | Chequeo | Fallo | Registro |
 |---|---|---|---|
 | 0 | Límites por IP/canal (gateway, fuera del motor) | 429 | — |
+| 0b | Tamaño del body (`BodyLimit`, `ApiDeps.max_body_bytes`, 1 MiB por defecto; con o sin `Content-Length`; rev. 2026-10-05) | `413 payload_too_large` | — |
 | 1 | Firma del principal y de `on_behalf_of` (`IdentityVerifier`) | `401 credentials_invalid` | solo log de seguridad; **nada** en la cadena del run |
 | 2 | Vigencia con el `Clock`: `principal.exp <= now` | `401 principal_expired` | `access_denied` |
 | 3 | Delegación vencida (`exp <= now`) o `grant_ref` revocado | `403 delegation_expired` | `access_denied` |
@@ -72,6 +73,7 @@ Un rechazo en 1–5 **no procesa el turno**: sin Understand, modelos, tools ni t
 - **Registro.** Todo rechazo va al log de seguridad (`SecurityLog`; implementación `OtelSecurityLog`: evento en el span activo y línea de log, con motivo, tipo de principal y `trace_id`; nunca la credencial, el `principal.id` ni el body). Para 2–4 (y `subject_forbidden`/`agent_forbidden` de §3.2), si el run existe, M9 pide a M11 un append mínimo fuera del turno (`AuditLog.append_standalone`) con `access_denied`. Sin run (p. ej. `POST /v1/runs`) o con firma inválida, solo log de seguridad. Si la escritura en la cadena falla, la denegación se mantiene y se registra `audit_write_failed`.
 - **Identidad de un principal anónimo** (decisión 2026-09-29). Un anónimo no tiene `id`, así que `(type, id)` no lo distingue: su identidad es `attrs["anon_session"]`, un id de sesión firmado en la credencial. El chequeo 4 lo compara además de `(type, id)`. Sin él, cualquier anónimo pasaría el chequeo sobre el run de otro.
 - **`principal_mismatch` con lectura previa.** Comparar con el snapshot exige leer el run. Se lee (solo lectura, sin lease) después de validar la firma y antes de cargar el turno en M4; ninguna otra lectura ni escritura precede a la firma.
+- **Tamaños** (rev. 2026-10-05): además del tope del body, `text` del turno ≤ 8000 caracteres, `client_turn_id`, `channel` y `resolution_code` ≤ 255 y `notes` ≤ 4000; pasarse es `422 invalid_request` (el detalle nombra el campo, nunca el valor). `input` de un run queda acotado por el tope del body.
 - **Límites** (`RateLimitConfig`, valores de demo ajustables): 30 turnos por ventana de 60 s y USD 5.00 por día UTC, por principal. Solo cuenta lo que M4 registra con `add_usage`: un rechazo no consume cuota, así que un exceso con firma inválida no toca la del principal suplantado. Un principal anónimo no se cuenta aquí (sus contadores serían los de todos los anónimos); su límite es el del gateway.
 
 ### 3.2 Autorización (§4.2)
