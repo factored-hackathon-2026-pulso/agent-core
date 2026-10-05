@@ -40,9 +40,9 @@ def runtime_schema(flows: list[str], interrupts: list[str]) -> dict[str, JsonVal
                            "interrupt": enum(interrupts)}}
 
 
-def provider_spec() -> ProviderSpec:
+def provider_spec(model_def: Path = MODEL_DEF) -> ProviderSpec:
     """El `ProviderSpec` de JEV tal como lo declara el modelo de decisión: preguntas y modelo fijado."""
-    model = yaml.safe_load(MODEL_DEF.read_text(encoding="utf-8"))
+    model = yaml.safe_load(model_def.read_text(encoding="utf-8"))
     spec = next(p for p in model["providers"] if p["provider"] == "jev")
     return ProviderSpec.model_validate(spec)
 
@@ -53,13 +53,13 @@ def _done(path: Path) -> set[str]:
     return {json.loads(line)["id"] for line in path.read_text(encoding="utf-8").splitlines() if line.strip()}
 
 
-def collect(out: Path, limit: int | None) -> int:
+def collect(out: Path, limit: int | None, model_def: Path = MODEL_DEF) -> int:
     key = os.environ.get("AGENTCORE_JEV_API_KEY", "")
     if not key:
         print("falta AGENTCORE_JEV_API_KEY en el entorno", file=sys.stderr)
         return 2
     provider = JevProvider(HttpJevTransport(lambda: key, SystemClock()))
-    spec, schema = provider_spec(), runtime_schema(list(FLOWS), INTERRUPTS)
+    spec, schema = provider_spec(model_def), runtime_schema(list(FLOWS), INTERRUPTS)
     seen = _done(out)
     todo = [(split, e) for split in ("dev", "test") for e in examples(split) if e.id not in seen]
     todo = todo[:limit] if limit is not None else todo
@@ -95,8 +95,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m testing.calibration.collect_jev")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--model-def", type=Path, default=MODEL_DEF,
+                        help="definición del modelo de decisión (por defecto la del fixture registry-e2e)")
     args = parser.parse_args(argv)
-    return collect(args.out, args.limit)
+    return collect(args.out, args.limit, args.model_def)
 
 
 if __name__ == "__main__":

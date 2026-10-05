@@ -28,7 +28,7 @@ from agent_core.domain import (
     canonical_bytes,
     sha256_hex,
 )
-from testing.calibration.collect_jev import INTERRUPTS, provider_spec, runtime_schema
+from testing.calibration.collect_jev import INTERRUPTS, MODEL_DEF, provider_spec, runtime_schema
 from testing.calibration.understand_turno import FLOWS, examples
 
 PROVIDER = "jev"
@@ -74,10 +74,10 @@ def load_rows(raw: Path, wanted: list[DevExample]) -> dict[str, dict[str, object
     return {_key(e.inputs): by_id[e.id] for e in wanted}
 
 
-def model_def() -> DecisionModelDef:
+def model_def(source: Path = MODEL_DEF) -> DecisionModelDef:
     return DecisionModelDef(
         id="understand-turno", version="1.0.0", output_schema=runtime_schema(list(FLOWS), INTERRUPTS),
-        calibrated_fields=list(FIELDS), providers=[provider_spec()],
+        calibrated_fields=list(FIELDS), providers=[provider_spec(source)],
         calibration=CalibrationRef(method="isotonic"))
 
 
@@ -181,11 +181,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--target-interrupt", type=Decimal, default=Decimal("0.90"))
     parser.add_argument("--min-support", type=int, default=10)
     parser.add_argument("--min-samples-pt", type=int, default=200)
+    parser.add_argument("--model-def", type=Path, default=MODEL_DEF)
     args = parser.parse_args(argv)
 
     dev, test = examples("dev"), examples("test")
     provider = RecordedJev(load_rows(args.raw, [*dev, *test]))
-    definition, spec, schema = model_def(), provider_spec(), runtime_schema(list(FLOWS), INTERRUPTS)
+    definition, spec = model_def(args.model_def), provider_spec(args.model_def)
+    schema = runtime_schema(list(FLOWS), INTERRUPTS)
     artifact = calibrate(
         definition, dev, {PROVIDER: provider},
         targets={"command": Target(metric="precision", value=float(args.target_command)),

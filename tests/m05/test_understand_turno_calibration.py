@@ -22,13 +22,16 @@ from testing.calibration.understand_turno import examples
 DATA = Path(__file__).resolve().parents[2] / "testing" / "calibration" / "data"
 RAW = DATA / "understand_turno_raw.jsonl"
 ARTIFACTS = sorted(DATA.glob("cal-*.json"))
+STRICT = DATA / "strict"
+STRICT_DEF = (Path(__file__).resolve().parents[2] / "testing" / "calibration" / "variants"
+              / "understand-turno-strict.yaml")
 
 
-def _recalibrated() -> CalibrationArtifact:
+def _recalibrated(raw: Path = RAW, source: Path | None = None) -> CalibrationArtifact:
     dev, test = examples("dev"), examples("test")
-    provider = RecordedJev(load_rows(RAW, [*dev, *test]))
+    provider = RecordedJev(load_rows(raw, [*dev, *test]))
     return calibrate(
-        model_def(), dev, {PROVIDER: provider},
+        model_def(*([source] if source else [])), dev, {PROVIDER: provider},
         targets={"command": Target(metric="precision", value=0.95),
                  "flow": Target(metric="precision", value=0.95),
                  "interrupt": Target(metric="recall", value=0.90)},
@@ -74,3 +77,11 @@ def test_the_recording_holds_only_model_outputs_and_no_secrets() -> None:
 def test_the_artifact_covers_the_three_calibrated_fields(field: str) -> None:
     artifact = CalibrationArtifact.from_json(ARTIFACTS[0].read_text(encoding="utf-8"))
     assert field in artifact.target
+
+
+def test_the_strict_prompt_experiment_is_reproducible_and_marked_as_a_variant() -> None:
+    [committed] = STRICT.glob("cal-*.json")
+    fresh = _recalibrated(STRICT / "understand_turno_raw.jsonl", STRICT_DEF)
+    assert committed.stem == fresh.run_id
+    assert CalibrationArtifact.from_json(committed.read_text(encoding="utf-8")).thresholds == fresh.thresholds
+    assert STRICT_DEF.read_text(encoding="utf-8").startswith("# VARIANTE EXPERIMENTAL")

@@ -1,0 +1,38 @@
+# VARIANTE EXPERIMENTAL de understand-turno@1.0.0 (solo cambian los criterios de start_flow y out_of_scope).
+# No es el modelo de ningún agente: sirve para medir si un criterio más estricto baja el umbral de start_flow.
+id: understand-turno
+version: 1.0.0
+output_schema:
+  type: object
+  additionalProperties: false
+  properties:
+    command: {type: string}
+calibrated_fields: [command, flow, interrupt]
+providers:
+  - provider: jev
+    config:
+      model: jev-1.13.0
+      timeout_ms: 10000
+      questions:
+        command:
+          instructions: >-
+            ¿Qué quiere hacer la persona con su último mensaje? Usa el contexto de la conversación
+            (turnos recientes, nodo actual, si hay una confirmación pendiente).
+          criteria:
+            start_flow: SOLO si current_node está vacío (no hay nodo actual) y la persona describe un trámite de disputas o reclamos (un cargo que no reconoce, un cobro indebido, el estado de un reclamo ya presentado). Pedir un producto o servicio del banco (abrir una cuenta, un préstamo, un seguro, cambiar el PIN o el correo, horarios) NO es un trámite de este asistente. Si current_node tiene un valor, nunca elijas start_flow.
+            continue: Si current_node tiene un valor (por ejemplo entender), la persona está respondiendo la pregunta que se le hizo; elige continue sin importar de qué trate su respuesta (un cargo que no reconoce, el estado de un reclamo, un cobro indebido, en cualquier idioma), salvo que pida cancelar, hablar con una persona o reporte un fraude.
+            affirm: Responde que sí o acepta lo que se le preguntó.
+            deny: Responde que no o rechaza lo que se le preguntó.
+            clarify: El mensaje es ambiguo o incompleto, no se entiende qué quiere.
+            cancel: Quiere abandonar o cancelar el trámite que está en curso.
+            handoff: Pide hablar con una persona o un agente humano.
+            out_of_scope: Pide algo sin relación con disputas de cargos o reclamos, incluidos otros trámites o productos del banco (abrir una cuenta, pedir un préstamo, contratar un seguro, cambiar el PIN o el correo, horarios de sucursales o cajeros), además de chistes, clima o deportes.
+            interrupt: Reporta un fraude o un robo, algo urgente que interrumpe lo que se estaba haciendo.
+        flow:
+          instructions: Si la persona quiere iniciar un trámite, ¿cuál es? Elige el más cercano.
+        interrupt:
+          instructions: ¿La persona reporta un fraude, robo o suplantación?
+          criteria:
+            fraude: Dice que le robaron la tarjeta, que hay un fraude o que alguien más usó sus datos.
+calibration: {method: none}
+thresholds_from: cal-transfer-demo
