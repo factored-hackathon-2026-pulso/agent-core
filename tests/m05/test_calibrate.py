@@ -79,6 +79,17 @@ def test_run_id_is_independent_of_config_key_order() -> None:
     assert a.run_id == b.run_id
 
 
+def test_run_id_distinguishes_a_second_spec_of_the_same_provider() -> None:
+    """Solo corre el primer spec por proveedor, pero el hash cubre la cadena completa (conservador)."""
+    split = _examples("es", 12)
+    one = model_def().model_copy(update={"providers": [ProviderSpec(provider="classifier")]})
+    two = model_def().model_copy(update={"providers": [
+        ProviderSpec(provider="classifier"), ProviderSpec(provider="classifier", config={"k": "v"})]})
+    a, _ = _run(split, definition=one)
+    b, _ = _run(split, definition=two)
+    assert a.run_id != b.run_id and a.thresholds == b.thresholds
+
+
 def test_calibrators_and_thresholds_are_produced_and_usable_by_decide() -> None:
     art, _ = _run(_examples("es", 12))
     assert art.method == "isotonic" and art.target == TARGETS
