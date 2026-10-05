@@ -134,7 +134,7 @@ Tools del nodo `agent`: lecturas del cliente (movimientos, productos, PQR), `obt
 **Parcial.**
 
 - (a) Pedidos del asesor: **soportado por diseño, bloqueado por T1.** Con T1 resuelto, se construye solo con datos (agente, flow, prompt y tools).
-- (b) Escuchar la conversación: **no soportado.** Exige un concepto nuevo en el motor (turno de observación, C2-2). Es el cambio de interfaz más grande de los tres casos.
+- (b) Escuchar la conversación: **no soportado.** Exige un concepto nuevo en el motor (turno de observación, C2-2). Es el cambio de interfaz más grande de los tres casos. *Actualización (2026-10-05):* el ADR 0026 cubre una forma de (b) sin turno de observación: un run `task` por sugerencia (nodo `suggest`, `RunResult.suggestions`), con el contexto reenviado por la plataforma en cada llamada; la proactividad la pone la plataforma.
 
 ## 3. Caso 3 — Agente constructor
 

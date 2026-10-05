@@ -26,6 +26,7 @@ from agent_core.domain import (
     RiskClass,
     RuleNode,
     StructuredMode,
+    SuggestNode,
     ToolNode,
     VerifyNode,
     WriteToolNode,
@@ -52,15 +53,17 @@ DEEP_MESSAGE = f"la expresión excede la profundidad máxima ({MAX_DEPTH}): no s
 
 
 def g0_07(ctx: Ctx) -> Iterator[Violation]:
+    """Un nodo `agent` y un nodo `suggest` solo ven tools de lectura o cálculo (las acciones de `suggest` son
+    escrituras *preparadas*, G0-28, y nunca se ejecutan)."""
     for node in ctx.flow.nodes:
-        if isinstance(node, AgentNode):
+        if isinstance(node, AgentNode | SuggestNode):
             for i, ref in enumerate(node.config.tools_allowed):
                 tool = ctx.tool(ref)
                 if tool is not None and tool.risk_class not in READ_CLASSES:
                     yield ctx.v(
                         "G0-07",
                         node.id,
-                        f"el nodo agent solo usa tools read o compute; {clip(ref.id)} no lo es",
+                        f"el nodo {node.type} solo usa tools read o compute; {clip(ref.id)} no lo es",
                         f"/config/tools_allowed/{i}",
                     )
 
@@ -171,6 +174,12 @@ def _read_sites(ctx: Ctx, node: object) -> Iterator[_Site]:
         )
     elif isinstance(node, DecideNode | AgentNode) and node.config.input_view:
         yield _Site("/config/input_view", _parsed(node.config.input_view), SLOTS_FACTS)
+    elif isinstance(node, SuggestNode):
+        yield _Site("/config/reads", _parsed(node.config.reads), SLOTS_FACTS)
+        yield _Site("/config/optional_reads", _parsed(node.config.optional_reads), SLOTS_FACTS)
+        if node.config.escalate is not None:
+            evidence = _parsed(node.config.escalate.evidence_from)
+            yield _Site("/config/escalate/evidence_from", evidence, SLOTS_FACTS)
     elif isinstance(node, CollectNode):
         yield _Site("/config/prompt_ref", _template_paths(ctx, node.config.prompt_ref), SLOTS_FACTS)
     elif isinstance(node, RespondNode):
@@ -259,10 +268,10 @@ def g0_14(ctx: Ctx) -> Iterator[Violation]:
 
 
 def _prompt_sites(node: object) -> Iterator[tuple[RefSpec, str]]:
-    """Los prompts que un nodo envía a un modelo: `respond.generate` y `agent`."""
+    """Los prompts que un nodo envía a un modelo: `respond.generate`, `agent` y `suggest`."""
     if isinstance(node, RespondNode) and node.config.generate is not None:
         yield node.config.generate.prompt_ref, "/config/generate/prompt_ref"
-    elif isinstance(node, AgentNode):
+    elif isinstance(node, AgentNode | SuggestNode):
         yield node.config.prompt_ref, "/config/prompt_ref"
 
 
@@ -281,10 +290,10 @@ def g0_15(ctx: Ctx) -> Iterator[Violation]:
 
 
 def g0_25(ctx: Ctx) -> Iterator[Violation]:
-    """El prompt de un nodo `agent` va en modo `prompted`: el paso del agente tiene propiedades opcionales y
-    el modo `native` estricto de OpenAI lo rechaza (gateway §3.8)."""
+    """El prompt de un nodo `agent` o `suggest` va en modo `prompted`: su esquema tiene propiedades opcionales
+    y el modo `native` estricto de OpenAI lo rechaza (gateway §3.8)."""
     for node in ctx.flow.nodes:
-        if not isinstance(node, AgentNode):
+        if not isinstance(node, AgentNode | SuggestNode):
             continue
         prompt = ctx.prompt(node.config.prompt_ref)
         if prompt is None:
@@ -294,7 +303,7 @@ def g0_25(ctx: Ctx) -> Iterator[Violation]:
             yield ctx.v(
                 "G0-25",
                 node.id,
-                f"el model_profile {clip(prompt.model_profile.id)} del prompt del agente debe ser "
+                f"el model_profile {clip(prompt.model_profile.id)} del prompt del nodo {node.type} debe ser "
                 "structured: prompted",
                 "/config/prompt_ref",
             )
@@ -316,13 +325,16 @@ _AGENT_OUTPUT_SITES = frozenset({
     "/config/generate/allowed_facts",
     "/config/generate/fallback_template_ref",
     "/config/input_view",
+    "/config/reads",  # `suggest`: alimenta al modelo; su salida no es un hecho
+    "/config/optional_reads",
 })
 
 
 def g0_24(ctx: Ctx) -> Iterator[Violation]:
-    """Toda tool de un nodo `agent` se documenta para el modelo: `description` y un `args_schema` válido."""
+    """Toda tool de un nodo `agent` o `suggest` se documenta para el modelo: `description` y un `args_schema`
+    válido."""
     for node in ctx.flow.nodes:
-        if not isinstance(node, AgentNode):
+        if not isinstance(node, AgentNode | SuggestNode):
             continue
         for i, ref in enumerate(node.config.tools_allowed):
             tool = ctx.tool(ref)
@@ -330,7 +342,7 @@ def g0_24(ctx: Ctx) -> Iterator[Violation]:
                 continue
             sub = f"/config/tools_allowed/{i}"
             if not (tool.description or "").strip() or tool.args_schema is None:
-                text = f"la tool {clip(ref.id)} de un nodo agent necesita description y args_schema"
+                text = f"la tool {clip(ref.id)} de un nodo {node.type} necesita description y args_schema"
                 yield ctx.v("G0-24", node.id, text, sub)
                 continue
             problem = unsupported_keyword(tool.args_schema)

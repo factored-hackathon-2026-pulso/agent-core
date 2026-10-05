@@ -87,6 +87,11 @@ class TokenVault:
     def lookup(self, token: str) -> TokenEntry | None:
         return self._by_token.get(token)
 
+    def entries(self) -> tuple[TokenEntry, ...]:
+        """Cada entrada del vault, en orden de creación. Solo para comprobar que un valor ocultado no vuelve
+        en claro (`ViewService.find_tokenized_echo`): el `repr` de una entrada no muestra el valor."""
+        return tuple(self._by_token.values())
+
     def __len__(self) -> int:
         return len(self._by_token)
 

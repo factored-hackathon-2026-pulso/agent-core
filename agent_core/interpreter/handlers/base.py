@@ -15,6 +15,7 @@ from agent_core.domain import (
     RejectedDraft,
     RunState,
     StepUpPrompt,
+    Suggestion,
 )
 from agent_core.interpreter.context import Resume, StepContext, Stop, TransferRequest
 from agent_core.interpreter.events import Events
@@ -38,6 +39,7 @@ class NodeResult:
     output: dict[str, JsonValue] | None = None
     rejected: list[RejectedDraft] = field(default_factory=list)
     transfer: TransferRequest | None = None
+    suggestions: list[Suggestion] = field(default_factory=list)  # solo el nodo `suggest`
 
 
 NodeHandler = Callable[[Any, RunState, StepContext, Resume], NodeResult]

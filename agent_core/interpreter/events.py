@@ -18,6 +18,8 @@ from agent_core.domain import (
     RunState,
     StepUpRequested,
     StepUpRequestedPayload,
+    SuggestionsProduced,
+    SuggestionsProducedPayload,
     ToolCalled,
     ToolCalledPayload,
     ValidatorOutcome,
@@ -57,6 +59,10 @@ class Events:
 
     def agent_step(self, state: RunState, payload: AgentStepPayload) -> AgentStep:
         return AgentStep.model_validate({**self._envelope(state), "payload": payload})
+
+    def suggestions_produced(self, state: RunState,
+                             payload: SuggestionsProducedPayload) -> SuggestionsProduced:
+        return SuggestionsProduced.model_validate({**self._envelope(state), "payload": payload})
 
     def step_up_requested(self, state: RunState, node_id: str, required_level: AuthLevel,
                           attempt: int) -> StepUpRequested:

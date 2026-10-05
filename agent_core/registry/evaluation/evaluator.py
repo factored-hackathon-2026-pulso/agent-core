@@ -18,6 +18,7 @@ from agent_core.registry.evaluation.ports import (
     SandboxPort,
     ScenarioHarness,
     ScenarioTranscript,
+    SuggestionAwareHarness,
 )
 from agent_core.registry.evaluation.report import (
     EvalReport,
@@ -63,11 +64,16 @@ class ScenarioEvaluator:
             tools = self._sandbox.tools(handle)
             if getattr(tools, "is_sandbox", False) is not True:
                 raise PermissionError("the evaluator only runs against a sandbox")
-            events = self._harness.run(job.target, job.suite.agent_id, job.scenario, tools)
+            if isinstance(self._harness, SuggestionAwareHarness):
+                run = self._harness.run_with_suggestions(job.target, job.suite.agent_id, job.scenario, tools)
+                events, suggestions = run.events, run.suggestions
+            else:
+                events = self._harness.run(job.target, job.suite.agent_id, job.scenario, tools)
+                suggestions = None
         finally:
             self._sandbox.teardown(handle)
         score = score_run(events, job.scenario.expect, job.scenario.sensitive_values,
-                          job.scenario.assertions)
+                          job.scenario.assertions, suggestions=suggestions)
         return ScenarioResult(scenario_id=job.scenario.id, label=job.target.label, run=job.run,
                               repetition=job.repetition, score=score), events
 

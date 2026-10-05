@@ -1,0 +1,75 @@
+# Flow `sugerir@1` del agente `copiloto-sugerencias` (ADR 0026). PROVISIONAL: la estructura sale del ADR; el
+# criterio de cada rama (señal del modelo, política de escalamiento, umbrales) está sin calibrar ni validar con
+# datos reales (Abierto 5).
+#
+#   clasificar (decide)  ->  sin_sugerencia: fin sin lista (resultado válido, ADR §4)
+#                        ->  sugerir:        lee los productos y sugiere
+#                        ->  escalar:        una `rule` decide si se RECOMIENDA escalar; el modelo no la crea
+#                        ->  low_confidence: el run falla (G0-06: una rama de fallo termina en un fin seguro)
+#
+# El copiloto solo RECOMIENDA escalar: ningún nodo `escalate` ni política que dispare un traspaso. La política
+# real de escalamiento la define el equipo de supervisión (plataforma ADR 0005, abierto 3); esta es un
+# marcador. `assistant_session_id` es un slot de trazabilidad (correlación de logs/auditoría): NINGÚN nodo lo
+# lee, así que no es memoria (ADR §1; lo fija una prueba).
+id: sugerir
+version: 1.0.0
+priority: 50
+nodes:
+  - id: clasificar
+    type: decide
+    config:
+      model: sin-sugerencia@1
+      branch_on: senal
+      save_as: senal_cliente
+      input_view: [slots.turnos, slots.sla_estado, slots.prioridad]
+    next: {sin_sugerencia: fin_vacio, sugerir: leer_productos, escalar: evaluar, low_confidence: fin_incierto}
+
+  - id: evaluar
+    type: rule
+    config: {policy: sugerir-escalamiento@1}
+    next: {true: sugerir_escalando, false: leer_productos}
+
+  - id: leer_productos
+    type: tool
+    config: {tool: leer_productos@1, args: {}, save_as: productos}
+    next: {ok: sugerir, error: fin_fallo, timeout: fin_fallo, denied: fin_fallo}
+
+  - id: sugerir
+    type: suggest
+    config:
+      prompt_ref: p/sugerir@1
+      goal: >-
+        Proponer al asesor, como máximo tres sugerencias: un borrador de respuesta al cliente (reply), una
+        lectura que convenga mirar (tool) o ninguna si no hay nada útil que decir.
+      reads: [slots.turnos, slots.idioma, slots.canal, slots.prioridad, slots.sla_estado,
+              slots.espera_del_cliente_segundos, facts.productos.value]
+      optional_reads: [slots.sla_minutos_restantes, slots.motivo_llegada, slots.sugerencia_borrador,
+                       slots.sugerencia_escalacion_aceptada]
+      tools_allowed: [leer_movimientos@1, leer_productos@1, leer_pqr_cliente@1]
+      actions_allowed: []   # ADR 0026 Abierto 6, decidido: vacío; una `action` no es ejecutable en esta etapa
+      max_items: 3          # Abierto 2, decidido
+    next: {suggested: fin_ok, gave_up: fin_fallo}
+
+  - id: sugerir_escalando
+    type: suggest
+    config:
+      prompt_ref: p/sugerir@1
+      goal: >-
+        Proponer al asesor, como máximo tres sugerencias. El flow ya decidió recomendar escalar: redacta el
+        borrador del motivo (escalate) y, si sirve, un borrador de respuesta al cliente (reply).
+      reads: [slots.turnos, slots.idioma, slots.canal, slots.prioridad, slots.sla_estado,
+              slots.espera_del_cliente_segundos]
+      optional_reads: [slots.sla_minutos_restantes, slots.motivo_llegada, slots.sugerencia_borrador,
+                       slots.sugerencia_escalacion_aceptada]
+      tools_allowed: [leer_movimientos@1, leer_productos@1, leer_pqr_cliente@1]
+      actions_allowed: []
+      max_items: 3
+      escalate:
+        reason_code: "rule:sugerir-escalamiento"
+        evidence_from: [slots.sla_estado, slots.prioridad]
+    next: {suggested: fin_ok, gave_up: fin_fallo}
+
+  - {id: fin_ok, type: end, config: {outcome: completed}}
+  - {id: fin_vacio, type: end, config: {outcome: completed}}
+  - {id: fin_incierto, type: end, config: {outcome: failed}}
+  - {id: fin_fallo, type: end, config: {outcome: failed}}

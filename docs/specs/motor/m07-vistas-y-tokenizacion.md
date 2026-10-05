@@ -1,6 +1,6 @@
 # M7 — Vistas de datos y tokenización
 
-- Estado: rev. 4 (2026-10-05) · Fase 3
+- Estado: rev. 5 (2026-10-05) · Fase 3
 - Paquete: `agent_core.views`
 - Origen: spec general §8.1, §8.1.1, §4.8 (renderer), §12 (fugas), §13.6
 - ADRs: 0008 (vistas, `untrusted_text`, huellas con clave), 0003 (huellas del transcript)
@@ -45,6 +45,7 @@ class ViewService:
     def render(self, text_model_view: str, vault: TokenVault, reader: Principal, purpose: str,
                on_behalf_of: OnBehalfOf | None = None) -> Rendered
     def find_clear_pii(self, text: str, facts_full: Mapping[str, JsonValue]) -> list[str]  # M8, check 4
+    def find_tokenized_echo(self, text: str, vault: TokenVault) -> list[str]  # M8 `suggest` (ADR 0026): tokens, nunca valores
 def fingerprint(data: Any, keys: KeyProvider) -> Fingerprint              # {alg, kid, value}
 def verify_fingerprint(data: Any, fp: Fingerprint, keys: KeyProvider) -> bool
 ```
@@ -116,6 +117,14 @@ Sobre el texto sin tokens (NFKC, y con la normalización previa del detector par
 
 **Límites:** los valores de menos de 4 caracteres (p. ej. `"Ana"`) y las cadenas de 1 a 3 dígitos nunca se buscan; un needle de varias palabras solo coincide con un único espacio entre ellas; los booleanos o enteros cortos sin clasificar pueden buscar palabras como `"true"`/`"2026"` (falsos positivos conservadores). `find_clear_pii` ve solo `hecho.campo` (sin la tabla de origen), mientras `project` clasifica por `tabla.campo`: las reglas de ruta exacta del catálogo no deben contradecir las reglas por nombre de campo; es responsabilidad del dueño de `FieldClassification` (unidad 3).
 
+### 3.7.1 Eco de un valor tokenizado (`find_tokenized_echo`, para M8; ADR 0026)
+
+`find_clear_pii` solo ve los hechos. La PII que el cliente pega en un mensaje (tarjeta, documento, teléfono, correo) entra por un slot, así que la salida de un nodo `suggest` podría repetirla sin que M8 lo note. `find_tokenized_echo(text, vault)` devuelve los **tokens** del vault cuyo valor en claro aparece en `text` (mismos criterios que `find_clear_pii`: NFKC, mayúsculas, límites de palabra y un número de 6+ dígitos por sus dígitos sin separadores). `TokenVault.entries()` lista las entradas (su `repr` no muestra valores).
+
+- Solo cuentan las entradas que halló el detector de texto libre (`DETECTOR_TAGS`: `email`, `tel`, `prod`, `doc`). El `pii` de un campo sin clasificar puede ser una palabra de negocio (`vencido`, que M7 tokeniza por defecto) y decirla no es una fuga.
+- Una cifra de un hecho no se confunde con PII: el detector no corre sobre el texto de salida (marcaría `1342.80`), solo se compara contra lo que ya se ocultó.
+- **Hueco conocido (no corregido aquí):** lo que el detector no halla (un PAN con U+200B, `/` o `_` entre grupos, dígitos árabe-índicos, un celular con paréntesis, un correo con `@` separado) nunca llega al vault y por tanto no se detecta como eco.
+
 ## 4. Invariantes
 
 - Ningún valor `pii_direct` en claro en la vista `model` ni en `audit`.
@@ -179,6 +188,7 @@ Ninguno. Resueltos en rev. 2 (2026-09-29): formato del token (§3.2) y generaliz
 
 ## Cambios
 
+- rev. 5 (2026-10-05): `TokenVault.entries()` y `ViewService.find_tokenized_echo(text, vault)` (§3.7.1), pedidos por el nodo `suggest` (ADR 0026). Aditivo; la refactorización de `find_clear_pii` conserva su comportamiento (mismas pruebas).
 - rev. 4 (2026-10-05): el detector normaliza antes de detectar (§3.2): quita controles/formato/marcas/invisibles, dígitos Unicode a ASCII, acentos a su base, junta grupos partidos por saltos de línea o muchos espacios, reconstruye `@`/`.` ofuscados y mapea los hits al span original; separadores nuevos `/`, `_`, `·` y paréntesis con reglas para no tokenizar fechas, leyes ni nombres de archivo; `find_clear_pii` usa la misma normalización también para nombres y direcciones y encuentra un valor fundido con dígitos vecinos; T-M7-12…15. Sin cambios de interfaz pública. Corrige un costo cuadrático al solapar números con emails.
 - rev. 3 (2026-09-29): `ViewService.tokenize_text(text, vault)` (T-M7-11), pedido por el cableado del motor: `TurnRuntime.model_text` no tenía API pública en M7 (el detector solo se usaba dentro de `untrusted_text`).
 - rev. 2 (2026-09-29): formato `⟦tag:n⟧` adoptado; `pii_quasi` como regla de datos (`QuasiRule`, por defecto `drop`); catálogo por defecto solo §8.1 + override; `TokenVault(run_id, keys, ids)`, `tokenize(value, field, tag)`, `lookup`, `open(blob, run_id, keys, ids)`; `Views.fingerprint`; `render(..., on_behalf_of) -> Rendered`; `find_clear_pii` definido (§3.7); detector definido (§3.2); AES-GCM con HKDF y AAD por run (§3.4).

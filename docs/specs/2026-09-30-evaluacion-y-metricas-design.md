@@ -103,11 +103,24 @@ class Scenario(_M):                          # `source = "scripted"`: habilitada
     source: Literal["scripted"] = "scripted"
     principal: ScenarioPrincipal             # sintético
     steps: list[Step]                        # `start` (uno, primero), `turn`, `confirm`; 1..50
+                                             # `Step.input: dict[str, JsonValue] | None` (solo `start`; ADR 0026): el `RunInput.input`
+                                             # de un agente `task` con `input_schema`; ausente, no entra al volcado (los hashes no cambian)
     seed: SandboxSeed                        # respuestas sembradas por tool
     sensitive_values: list[str] = []         # valores cuya aparición en un evento es una fuga de PII
-    expect: Expect                           # outcome, actions_verified, escalated
+    expect: Expect                           # outcome, actions_verified, escalated, suggestion_count, suggestions
     assertions: list[Assertion] = []         # máximo 20
     repetitions: int | None = None           # 1..10; None = las de la suite; de ahí se estima el ruido
+
+
+class Expect(_M):                            # ADR 0026: las dos últimas leen `RunResult.suggestions`, no los eventos
+    outcome: Outcome | None; actions_verified: list[str] = []; escalated: bool | None
+    suggestion_count: int | None = None      # largo exacto de la lista (0: la lista vacía es el resultado esperado)
+    suggestions: list[SuggestionExpect] = [] # máximo 20; ausentes, no entran al volcado
+class SuggestionExpect(_M):                  # todos los campos dados valen sobre LA MISMA sugerencia
+    type: reply|tool|action|escalate; expect: at_least_one|none = at_least_one
+    tool, reason_code, language: str | None; citations_min: int | None
+    text_contains: list[str] = []            # cada fragmento aparece en algún texto de la sugerencia
+    text_excludes: list[str] = []            # ninguno aparece en ningún texto de la sugerencia
 
 
 class DatasetScenario(_M):                   # `source = "dataset"`: DISEÑADA, DESACTIVADA (§9)
@@ -132,6 +145,8 @@ class MetricThreshold(_M):
     floor: Decimal | None = None             # exigido a toda métrica gate/guardrail nueva o cambiada, con o sin base
 ```
 
+- **Sugerencias (ADR 0026, 2026-10-05).** Las sugerencias son texto para una persona: no van a los eventos (`suggestions_produced` solo lleva contadores y una huella). Para afirmar sobre ellas el arnés devuelve además `ScenarioRun(events, suggestions)` (`SuggestionAwareHarness.run_with_suggestions`; el evaluador lo usa si el arnés lo tiene). Un arnés que solo devuelve eventos sigue valiendo, pero una expectativa sobre sugerencias **falla cerrada** (no recibió la lista). Un valor de `sensitive_values` que aparece en una sugerencia cuenta como fuga de PII (`platform_pii_leak`). Las `assertions` sobre `engine.suggestions_produced` (`count`, `reply`, `tool`, `action`, `escalate`, `result`) siguen disponibles.
+- `suite_problems` añade `empty_expectation` (un escenario con `input` sin `expect` ni `assertions` pasaría siempre) y `count_without_outcome` (una expectativa sobre sugerencias exige `outcome`: una lista vacía no distingue un resultado válido de un run fallido). Solo alcanzan a escenarios con `input`: las suites ya publicadas no se rompen.
 - Un escenario sin `source` es `scripted` (las suites del registry anteriores siguen siendo válidas). El guion es el de `steps` (`start`/`turn`/`confirm`); `signal` para agentes `task` y `clock_start` no existen todavía (abierto 12).
 - `noise_margin` y `floor` ya no son campos de la suite entera: viven por métrica en `thresholds` (decisión D1 de la integración; formato sin migración, las bases de desarrollo con suites del formato anterior se recrean).
 - `suite_problems(agent, suite)` devuelve lo que impide publicar: `missing_suite`, `agent_mismatch`, `duplicate_scenario` (solo aparece con instancias sin validar: `EvalSuite` rechaza ids repetidos al parsear), `dataset_source_disabled`, `unknown_assertion_event`, `invalid_assertion_filter` (el `where` de una aserción usa un campo que no existe en el evento, un valor de otro tipo o un operador de orden sobre un campo no numérico; misma comprobación que `MT-02`, función `predicate_problems` de M0; sin ella un filtro mal escrito con `expect: none` pasaría siempre), `missing_threshold` (métrica `gate`/`guardrail` sin umbral) y `unknown_threshold_metric`.

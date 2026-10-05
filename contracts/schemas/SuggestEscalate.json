@@ -1,0 +1,26 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "additionalProperties": false,
+  "description": "Recomendación de escalar que un nodo `suggest` puede emitir (ADR 0026 §2 y §5).\n\nEl `reason_code` y la evidencia los fija el flow, no el modelo. M1 (G0-28) exige que el nodo solo se\nalcance por la rama `true` de una `rule`: la regla decide, el nodo solo la expone. `evidence_from` son\nrutas `slots.*`/`facts.*` de valor escalar; cada una pasa como `nombre: valor`.",
+  "properties": {
+    "evidence_from": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 5,
+      "minItems": 1,
+      "title": "Evidence From",
+      "type": "array"
+    },
+    "reason_code": {
+      "title": "Reason Code",
+      "type": "string"
+    }
+  },
+  "required": [
+    "reason_code",
+    "evidence_from"
+  ],
+  "title": "SuggestEscalate",
+  "type": "object"
+}

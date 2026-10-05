@@ -1,0 +1,6 @@
+id: sugerencias-demo
+agents:
+  - {agent: "copiloto-sugerencias@^1", aliases: [prod]}
+flows: ["sugerir@^1"]
+language_detection: "lang-es-pt@1"
+injection_ruleset: "injection-rules@1"

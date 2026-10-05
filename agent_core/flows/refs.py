@@ -17,6 +17,7 @@ from agent_core.domain import (
     RegistryEntity,
     RespondNode,
     RuleNode,
+    SuggestNode,
     ToolNode,
     VerifyNode,
     WriteToolNode,
@@ -89,6 +90,12 @@ def node_ref_sites(node: Node, index: int) -> list[RefSite]:
         case AgentNode():
             for i, ref in enumerate(node.config.tools_allowed):
                 sites.append(RefSite(EntityKind.tool, ref, (*base, "tools_allowed", i), node.id))
+            add(EntityKind.prompt, node.config.prompt_ref, "prompt_ref")
+        case SuggestNode():
+            for i, ref in enumerate(node.config.tools_allowed):
+                sites.append(RefSite(EntityKind.tool, ref, (*base, "tools_allowed", i), node.id))
+            for i, ref in enumerate(node.config.actions_allowed):
+                sites.append(RefSite(EntityKind.tool, ref, (*base, "actions_allowed", i), node.id))
             add(EntityKind.prompt, node.config.prompt_ref, "prompt_ref")
         case _:
             pass

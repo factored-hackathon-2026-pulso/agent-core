@@ -20,6 +20,7 @@ from agent_core.domain import (
     RespondNode,
     RuleNode,
     SlotValidator,
+    SuggestNode,
     ToolNode,
     VerifyNode,
     WriteToolNode,
@@ -154,6 +155,14 @@ def _required_paths(node: Node) -> Iterator[tuple[str, str]]:
     if isinstance(node, DecideNode | AgentNode) and node.config.input_view:
         for i, text in enumerate(node.config.input_view):
             yield (f"/config/input_view/{i}", text)
+    if isinstance(node, SuggestNode):
+        for i, text in enumerate(node.config.reads):
+            yield (f"/config/reads/{i}", text)
+        for i, text in enumerate(node.config.optional_reads):
+            yield (f"/config/optional_reads/{i}", text)
+        if node.config.escalate is not None:
+            for i, text in enumerate(node.config.escalate.evidence_from):
+                yield (f"/config/escalate/evidence_from/{i}", text)
     if isinstance(node, DecideNode) and node.config.choices_from is not None:
         yield ("/config/choices_from", node.config.choices_from)
     if isinstance(node, VerifyNode) and node.config.by.startswith("fact:"):
