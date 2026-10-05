@@ -32,5 +32,5 @@ uv run agentcore serve `
     --agents "recepcion,disputas,consultas,copiloto-asesor,constructor-chat" `
     --tools agent_core.adapters.tools:http_tool_executor `
     --authz agent_core.adapters.policy_authz:policy_authz `
-    --field-classifier agent_core.adapters.classification:field_classifier `
+    --field-classifier agent_core.composition.classification:field_classifier `
     --classifier testing.e2e_demo:classifier_provider --calibration testing.e2e_demo:calibration

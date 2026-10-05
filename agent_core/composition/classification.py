@@ -6,14 +6,14 @@ small overlay for the fields that are not in a dataset (the engine's own, and wh
 are merged in order, later ones win; a field no file classifies stays `pii_direct` (the safe side).
 """
 
-import json
+
 import os
 from collections.abc import Mapping
 from pathlib import Path
 
 from pydantic import ValidationError
 
-from agent_core.domain import SchemaError
+from agent_core.domain import SchemaError, loads
 from agent_core.views import FieldClassifier, FieldRule
 
 FIELD_CLASSIFICATION_FILES_ENV = "AGENTCORE_FIELD_CLASSIFICATION_FILES"
@@ -23,7 +23,7 @@ def load_catalog(paths: list[Path]) -> dict[str, FieldRule]:
     catalog: dict[str, FieldRule] = {}
     for path in paths:
         try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
+            raw = loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             raise SchemaError(f"no se pudo leer el catálogo de clasificación {path.name}") from None
         if not isinstance(raw, dict):
@@ -44,5 +44,5 @@ def from_env(env: Mapping[str, str]) -> FieldClassifier:
 
 
 def field_classifier(ctx: object) -> FieldClassifier:
-    """Factory for `serve --field-classifier agent_core.adapters.classification:field_classifier`."""
+    """Factory for `serve --field-classifier agent_core.composition.classification:field_classifier`."""
     return from_env(os.environ)
