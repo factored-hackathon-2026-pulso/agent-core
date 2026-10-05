@@ -6,10 +6,46 @@
       "title": "Actor",
       "type": "string"
     },
+    "agent_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Agent Id"
+    },
+    "alias": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Alias"
+    },
     "at": {
       "format": "date-time",
       "title": "At",
       "type": "string"
+    },
+    "before": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Before"
     },
     "candidate_hash": {
       "anyOf": [

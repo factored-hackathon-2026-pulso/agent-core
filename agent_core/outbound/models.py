@@ -50,9 +50,14 @@ class HandoffResolvedData(Model):
 
 
 class ReleaseData(Model):
-    """Sin actor ni motivo (personas, texto libre). Tampoco el agente: el evento del registry no lo guarda."""
+    """Sin actor ni motivo (personas, texto libre). `agent_id`, `alias` y `before` son opcionales y aditivos
+    (2026-10-05): el agente y el alias que toca el evento (`staging` al publicar, el promovido, ninguno al
+    revocar) y la release a la que apuntaba el alias antes. `None` en un evento guardado antes de ellos."""
     release_id: str
     proposal_id: str | None = None
+    agent_id: str | None = None
+    alias: str | None = None
+    before: str | None = None
 
 
 class _Envelope(Model):

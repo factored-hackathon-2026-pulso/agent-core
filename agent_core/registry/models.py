@@ -158,6 +158,11 @@ class RegistryEvent(RegModel):
     proposal_id: str | None = None
     candidate_hash: str | None = None
     release_id: str | None = None
+    # Optional since 2026-10-05 (events stored before it read as `None`): the agent and the alias a release
+    # event touches, and the release the alias pointed to before (`before`).
+    agent_id: str | None = None
+    alias: str | None = None
+    before: str | None = None
     at: datetime
 
 

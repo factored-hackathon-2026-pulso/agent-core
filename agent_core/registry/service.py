@@ -210,11 +210,13 @@ class RegistryService:
         return new
 
     def _event(self, tx: RegistryTx, type_: str, actor: Principal, p: Proposal | None = None,
-               release_id: str | None = None) -> None:
+               release_id: str | None = None, *, agent_id: str | None = None, alias: str | None = None,
+               before: str | None = None) -> None:
         tx.append_event(RegistryEvent(
             type=type_, actor=actor.id or "", principal_type=actor.type.value,
             origin=p.origin.value if p else None, proposal_id=p.proposal_id if p else None,
-            candidate_hash=p.candidate_hash if p else None, release_id=release_id, at=self._clock.now()))
+            candidate_hash=p.candidate_hash if p else None, release_id=release_id, agent_id=agent_id,
+            alias=alias, before=before, at=self._clock.now()))
 
     def _load(self, tx: RegistryTx, ref: VersionRef) -> AnyEntity:
         stored = tx.get_version(ref)
@@ -674,7 +676,8 @@ class RegistryService:
         tx.set_alias(AliasChange(agent_id=p.agent_id, alias="staging", before=p.base_release_id,
                                  after=release_id, actor=who, reason=f"publica {p.proposal_id}", at=now))
         self._save(tx, p, state=ProposalState.published)
-        self._event(tx, "published", actor, p, release_id)
+        self._event(tx, "published", actor, p, release_id, agent_id=p.agent_id, alias="staging",
+                    before=p.base_release_id)
         return release_id
 
     def promote(self, actor: Principal, agent_id: str, alias: str, release_id: str,
@@ -696,13 +699,15 @@ class RegistryService:
                                  before=tx.get_alias(agent_id, alias, for_update=True), after=release_id,
                                  actor=actor_id(actor), reason=reason[:500], at=self._clock.now())
             tx.set_alias(change)
-            self._event(tx, "promoted", actor, release_id=release_id)
+            self._event(tx, "promoted", actor, release_id=release_id, agent_id=agent_id, alias=alias,
+                        before=change.before)
             return change
 
     def revoke(self, actor: Principal, release_id: str, reason: str) -> ReleaseDetail:
         require_admin(actor)
         with self._store.transaction() as tx:
-            if tx.get_release(release_id) is None:
+            stored = tx.get_release(release_id)
+            if stored is None:
                 raise RegistryError(RegistryErrorCode.not_found, "la release no existe")
             if tx.release_status(release_id) != "active":
                 raise RegistryError(RegistryErrorCode.illegal_transition, "la release ya está revocada")
@@ -710,7 +715,7 @@ class RegistryService:
                 raise RegistryError(RegistryErrorCode.illegal_transition,
                                     "prod apunta a esta release: promueve otra antes de revocarla")
             tx.set_release_status(release_id, "revoked")
-            self._event(tx, "revoked", actor, release_id=release_id)
+            self._event(tx, "revoked", actor, release_id=release_id, agent_id=stored.agent_id)
             return self._detail(tx, release_id)
 
     # --- lecturas usadas por las decisiones ---------------------------------------------------------------
