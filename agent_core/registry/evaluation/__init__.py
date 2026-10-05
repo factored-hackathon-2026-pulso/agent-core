@@ -12,7 +12,9 @@ from agent_core.registry.evaluation.ports import (
     SandboxHandle,
     SandboxPort,
     ScenarioHarness,
+    ScenarioRun,
     ScenarioTranscript,
+    SuggestionAwareHarness,
 )
 from agent_core.registry.evaluation.report import (
     EvalReport,
@@ -52,7 +54,9 @@ __all__ = [
     "ScenarioEvaluator",
     "ScenarioHarness",
     "ScenarioResult",
+    "ScenarioRun",
     "ScenarioTranscript",
+    "SuggestionAwareHarness",
     "SuiteMeasurement",
     "Verdict",
     "Yardstick",

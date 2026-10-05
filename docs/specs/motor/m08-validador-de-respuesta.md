@@ -40,6 +40,16 @@ class ValidationResult: ok: bool; failures: list[Failure]
 def parse_draft(output: JsonValue) -> Draft | Failure                            # comprobación 1
 def validate(draft: Draft, ctx: ValidationContext) -> ValidationResult          # función pura
 
+class ToolEntry:        ref: str; exact: str; description: str; args_schema: dict   # una tool del catálogo del nodo `suggest`
+class SuggesterContext: gateway; clock; prompt: EntityRef; locale; goal; inputs; citable: Mapping[str, str]
+                        tools: tuple[ToolEntry, ...]; actions: tuple[ToolEntry, ...]
+                        escalation: SuggestEscalation | None; max_items: int; validation: ValidationContext
+                        degraded: bool = False; max_regenerations: int = 1      # el repr no muestra datos del cliente
+class SuggestOutcome:   suggestions: list[Suggestion]; failures: list[str]; regenerations: int; llm: LlmUsage | None
+class Suggester:
+    def generate(self, ctx: SuggesterContext) -> SuggestOutcome                 # ADR 0026, §3.4
+SUGGESTIONS_SCHEMA: dict[str, JsonValue]                                        # la salida plana que se le pide al modelo
+
 class Responder:
     def template(self, template_ref, locale, facts_model_view) -> Message
     def generate(self, node_config, state, ctx: ResponderContext) -> tuple[Message | EscalationRequest, list[RejectedDraft], list[EngineEvent]]
@@ -102,6 +112,24 @@ M8 **no** se acopla a teléfono, canal ni `principal.attrs.country`, y no contie
 - Con `number_format`, las cifras se leen con ese formato (`1.234,56` con punto/coma; `1,234.56` con coma/punto).
 - Sin `number_format`, el parser acepta **solo lecturas inequívocas** y rechaza el resto: `1.234,56`, `1,234.56`, `1.234.567` y `12,5` se leen sin ambigüedad; `1.234` y `1,234` (un solo separador seguido de exactamente 3 dígitos) son ambiguos y se rechazan (`cifra_ambigua`).
 - **No** se implementa la mejora "aceptar una cifra ambigua si alguna lectura coincide exactamente con un hecho citado": no está aprobada.
+### 3.4 Cadena del nodo `suggest` (ADR 0026; `response/suggester.py`)
+
+Generar → validar → regenerar una vez → fallar. Una llamada por intento (sin ReAct), `schema = SUGGESTIONS_SCHEMA` (plano, sin `oneOf`; el prompt va en `prompted`). El modelo devuelve `{suggestions: [...]}` y cada elemento solo lleva los campos de su tipo. Se comprueba, en este orden y reportando todas las fallas:
+
+| Comprobación (id) | Qué exige |
+|---|---|
+| `format` | la salida cumple `SUGGESTIONS_SCHEMA`; cada elemento solo lleva los campos de su tipo; el elemento cumple el tipo de M0 (longitudes de la plataforma) |
+| `too_many` | a lo sumo `max_items` |
+| `reply` | las siete comprobaciones de §3.1 sobre el borrador (`allowed` = los hechos de `reads`); `language` es el del run |
+| `tool_not_allowed`, `args_invalid` | `tool` ∈ catálogo del nodo (se acepta `id@MAYOR` o la versión exacta; sale `id@MAYOR`) y `args` cumplen su `args_schema`. El sujeto nunca es argumento (ningún esquema lo declara y `additionalProperties` es falso) |
+| `action_not_allowed` | una `action` solo si el nodo declara `actions_allowed`; hoy vacío, así que nunca |
+| `escalate_not_allowed`, `escalate_missing` | **el modelo no crea la escalación.** Solo existe si el flow la declaró; entonces el modelo redacta únicamente `motive_draft` y debe haber exactamente una. El `reason_code` y la evidencia son los del flow (un elemento que los traiga falla `format`) |
+| `duplicate` | a lo sumo una `reply` y una `escalate` (la plataforma conserva una de cada una: un segundo borrador se perdería sin aviso) |
+| texto libre (`why`, `summary`, `motive_draft`) | `format`, `numbers` (toda cifra respaldada por algún hecho de `reads`) y `tokens_pii`; ningún texto de sugerencia lleva un token (`⟦…⟧`) |
+
+El resultado va ordenado (`escalate`, `reply`, `tool`, `action`). Un `GatewayError` distinto de `invalid_output` termina sin regenerar (`gateway_<kind>`); `invalid_output` regenera. **Ninguna falla repite el texto del modelo:** `detail` lleva la posición. `degraded` no llama al modelo (`degraded`). Sin PII en claro: `find_clear_pii` del contexto (hechos `pii_direct`) más `ViewService.find_tokenized_echo` (lo que M7 ocultó del texto del cliente, m07 §3.7.1) —el cierre lo arma la composición.
+
+Pruebas: `tests/m08/test_suggester.py`.
 
 ## 4. Invariantes
 

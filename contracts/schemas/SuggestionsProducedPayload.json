@@ -1,0 +1,179 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "$defs": {
+    "Fingerprint": {
+      "additionalProperties": false,
+      "description": "Huella con clave (ADR 0008): `value = HMAC-SHA256(k[kid], JCS(dato))`.",
+      "properties": {
+        "alg": {
+          "const": "HMAC-SHA256",
+          "title": "Alg",
+          "type": "string"
+        },
+        "kid": {
+          "title": "Kid",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "alg",
+        "kid",
+        "value"
+      ],
+      "title": "Fingerprint",
+      "type": "object"
+    },
+    "LlmUsage": {
+      "additionalProperties": false,
+      "description": "Uso agregado del LLM en una respuesta: llamadas, latencia, tokens y costo (M0 §2.10).",
+      "properties": {
+        "calls": {
+          "minimum": 0,
+          "title": "Calls",
+          "type": "integer"
+        },
+        "cost_known": {
+          "title": "Cost Known",
+          "type": "boolean"
+        },
+        "cost_usd": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            }
+          ],
+          "title": "Cost Usd"
+        },
+        "latency_ms": {
+          "minimum": 0,
+          "title": "Latency Ms",
+          "type": "integer"
+        },
+        "models": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Models",
+          "type": "array"
+        },
+        "tokens_in": {
+          "minimum": 0,
+          "title": "Tokens In",
+          "type": "integer"
+        },
+        "tokens_out": {
+          "minimum": 0,
+          "title": "Tokens Out",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "calls",
+        "latency_ms",
+        "tokens_in",
+        "tokens_out",
+        "cost_usd",
+        "cost_known"
+      ],
+      "title": "LlmUsage",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Payload del evento `suggestions_produced` (vista audit, M0 §2.10, ADR 0026).\n\nUn nodo `suggest` terminó. Solo contadores, tipos y una huella con clave de la lista: nunca el texto de\nuna sugerencia (puede resumir lo que dijo el cliente). `result = \"failed\"`: ninguna lista pasó la\nvalidación (o el gateway falló) y el nodo terminó en `gave_up`; `failures` son los ids de las\ncomprobaciones, sin datos.",
+  "properties": {
+    "action": {
+      "minimum": 0,
+      "title": "Action",
+      "type": "integer"
+    },
+    "count": {
+      "minimum": 0,
+      "title": "Count",
+      "type": "integer"
+    },
+    "escalate": {
+      "minimum": 0,
+      "title": "Escalate",
+      "type": "integer"
+    },
+    "failures": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Failures",
+      "type": "array"
+    },
+    "llm": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LlmUsage"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "node_id": {
+      "pattern": "^[a-z0-9][a-z0-9_]*$",
+      "title": "Node Id",
+      "type": "string"
+    },
+    "regenerations": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Regenerations",
+      "type": "integer"
+    },
+    "reply": {
+      "minimum": 0,
+      "title": "Reply",
+      "type": "integer"
+    },
+    "result": {
+      "enum": [
+        "ok",
+        "failed"
+      ],
+      "title": "Result",
+      "type": "string"
+    },
+    "text_fp": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Fingerprint"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "tool": {
+      "minimum": 0,
+      "title": "Tool",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "node_id",
+    "result",
+    "count",
+    "reply",
+    "tool",
+    "action",
+    "escalate"
+  ],
+  "title": "SuggestionsProducedPayload",
+  "type": "object"
+}

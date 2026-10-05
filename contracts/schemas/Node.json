@@ -997,6 +997,130 @@
       "title": "SubflowNode",
       "type": "object"
     },
+    "SuggestConfig": {
+      "additionalProperties": false,
+      "description": "Configuración del nodo `suggest` (M0 §2.5, ADR 0026): lista tipada de sugerencias, posiblemente vacía.\n\n`reads` son las rutas (`slots`, `facts`) que ve el modelo en la vista `model` (si falta una, el nodo se\nrinde); `optional_reads` son las que se incluyen solo si existen (un slot opcional del `input_schema`).\nLos hechos que aparecen en una u otra son los únicos que un borrador puede citar. `tools_allowed` son\nlecturas que el modelo puede *recomendar*\n(el nodo no las ejecuta). `actions_allowed` son las escrituras que puede *preparar* (vacío en esta etapa:\nninguna `action` es ejecutable). `max_items` acota la lista (Abierto 2).",
+      "properties": {
+        "actions_allowed": {
+          "items": {
+            "$ref": "#/$defs/RefSpec"
+          },
+          "title": "Actions Allowed",
+          "type": "array"
+        },
+        "escalate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SuggestEscalate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "goal": {
+          "title": "Goal",
+          "type": "string"
+        },
+        "max_items": {
+          "default": 3,
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Max Items",
+          "type": "integer"
+        },
+        "optional_reads": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Optional Reads",
+          "type": "array"
+        },
+        "prompt_ref": {
+          "$ref": "#/$defs/RefSpec"
+        },
+        "reads": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reads",
+          "type": "array"
+        },
+        "tools_allowed": {
+          "items": {
+            "$ref": "#/$defs/RefSpec"
+          },
+          "title": "Tools Allowed",
+          "type": "array"
+        }
+      },
+      "required": [
+        "prompt_ref",
+        "goal"
+      ],
+      "title": "SuggestConfig",
+      "type": "object"
+    },
+    "SuggestEscalate": {
+      "additionalProperties": false,
+      "description": "Recomendación de escalar que un nodo `suggest` puede emitir (ADR 0026 §2 y §5).\n\nEl `reason_code` y la evidencia los fija el flow, no el modelo. M1 (G0-28) exige que el nodo solo se\nalcance por la rama `true` de una `rule`: la regla decide, el nodo solo la expone. `evidence_from` son\nrutas `slots.*`/`facts.*` de valor escalar; cada una pasa como `nombre: valor`.",
+      "properties": {
+        "evidence_from": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 5,
+          "minItems": 1,
+          "title": "Evidence From",
+          "type": "array"
+        },
+        "reason_code": {
+          "title": "Reason Code",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason_code",
+        "evidence_from"
+      ],
+      "title": "SuggestEscalate",
+      "type": "object"
+    },
+    "SuggestNode": {
+      "additionalProperties": false,
+      "description": "Nodo `suggest` de un flow (M0 §2.5, ADR 0026). Solo en flows task: va a `RunResult.suggestions`.",
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/SuggestConfig"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "next": {
+          "additionalProperties": {
+            "pattern": "^[a-z0-9][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Next",
+          "type": "object"
+        },
+        "type": {
+          "const": "suggest",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "config"
+      ],
+      "title": "SuggestNode",
+      "type": "object"
+    },
     "ToolConfig": {
       "additionalProperties": false,
       "description": "Configuración del nodo `tool` (M0 §2.5).",
@@ -1341,6 +1465,9 @@
     },
     {
       "$ref": "#/$defs/AgentNode"
+    },
+    {
+      "$ref": "#/$defs/SuggestNode"
     },
     {
       "$ref": "#/$defs/SubflowNode"

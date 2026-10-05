@@ -1,6 +1,49 @@
 {
   "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
   "$defs": {
+    "ActionSuggestion": {
+      "additionalProperties": false,
+      "description": "Una escritura preparada y NO ejecutable (`executable` es siempre `false`, ADR 0026 §7).",
+      "properties": {
+        "args": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Args",
+          "type": "object"
+        },
+        "executable": {
+          "const": false,
+          "default": false,
+          "title": "Executable",
+          "type": "boolean"
+        },
+        "summary": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "tool": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Tool",
+          "type": "string"
+        },
+        "type": {
+          "const": "action",
+          "default": "action",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool",
+        "summary"
+      ],
+      "title": "ActionSuggestion",
+      "type": "object"
+    },
     "AuthLevel": {
       "description": "Nivel de autenticación; se compara por rango (`anonymous < session < step_up`).",
       "enum": [
@@ -73,6 +116,46 @@
         "version"
       ],
       "title": "EntityRef",
+      "type": "object"
+    },
+    "EscalateSuggestion": {
+      "additionalProperties": false,
+      "description": "Recomendación de escalar. El motivo y la evidencia los fija el flow (una `rule`), no el modelo; el\nmodelo solo redacta `motive_draft`.",
+      "properties": {
+        "evidence": {
+          "items": {
+            "maxLength": 300,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 5,
+          "minItems": 1,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "motive_draft": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Motive Draft",
+          "type": "string"
+        },
+        "reason_code": {
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "type": {
+          "const": "escalate",
+          "default": "escalate",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason_code",
+        "evidence",
+        "motive_draft"
+      ],
+      "title": "EscalateSuggestion",
       "type": "object"
     },
     "JsonValue": {
@@ -156,6 +239,45 @@
       "title": "Outcome",
       "type": "string"
     },
+    "ReplySuggestion": {
+      "additionalProperties": false,
+      "description": "Borrador para el cliente. Lo redacta el modelo; M8 valida cifras y fechas contra los hechos citados.",
+      "properties": {
+        "citations": {
+          "items": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 10,
+          "title": "Citations",
+          "type": "array"
+        },
+        "language": {
+          "pattern": "^[a-z]{2}$",
+          "title": "Language",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "type": {
+          "const": "reply",
+          "default": "reply",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text",
+        "language"
+      ],
+      "title": "ReplySuggestion",
+      "type": "object"
+    },
     "StepUpPrompt": {
       "additionalProperties": false,
       "description": "Solicitud de elevar el nivel de autenticación (M0 §2.8).",
@@ -173,6 +295,43 @@
         "reason"
       ],
       "title": "StepUpPrompt",
+      "type": "object"
+    },
+    "ToolSuggestion": {
+      "additionalProperties": false,
+      "description": "Una lectura que conviene mirar. `tool` ∈ `suggest.tools_allowed`; el sujeto nunca es argumento.",
+      "properties": {
+        "args": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Args",
+          "type": "object"
+        },
+        "tool": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Tool",
+          "type": "string"
+        },
+        "type": {
+          "const": "tool",
+          "default": "tool",
+          "title": "Type",
+          "type": "string"
+        },
+        "why": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Why",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool",
+        "why"
+      ],
+      "title": "ToolSuggestion",
       "type": "object"
     },
     "TurnResult": {
@@ -365,6 +524,35 @@
       ],
       "title": "Status",
       "type": "string"
+    },
+    "suggestions": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "action": "#/$defs/ActionSuggestion",
+            "escalate": "#/$defs/EscalateSuggestion",
+            "reply": "#/$defs/ReplySuggestion",
+            "tool": "#/$defs/ToolSuggestion"
+          },
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/ReplySuggestion"
+          },
+          {
+            "$ref": "#/$defs/ToolSuggestion"
+          },
+          {
+            "$ref": "#/$defs/ActionSuggestion"
+          },
+          {
+            "$ref": "#/$defs/EscalateSuggestion"
+          }
+        ]
+      },
+      "title": "Suggestions",
+      "type": "array"
     },
     "trace_id": {
       "title": "Trace Id",

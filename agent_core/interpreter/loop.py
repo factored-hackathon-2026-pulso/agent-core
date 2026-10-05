@@ -12,6 +12,7 @@ from agent_core.domain import (
     Node,
     RejectedDraft,
     RunState,
+    Suggestion,
     node_kind,
 )
 from agent_core.interpreter.budgets import enter_node
@@ -49,6 +50,7 @@ def advance(state: RunState, ctx: StepContext, resume: Resume) -> StepOutcome:
     pending: list[EngineEvent] = []
     messages: list[Message] = []
     rejected: list[RejectedDraft] = []
+    suggestions: list[Suggestion] = []
     factory = Events(ctx)
     real_record = ctx.record
 
@@ -80,12 +82,13 @@ def advance(state: RunState, ctx: StepContext, resume: Resume) -> StepOutcome:
         pending.extend(result.events)
         messages.extend(result.messages)
         rejected.extend(result.rejected)
+        suggestions.extend(result.suggestions)
         if result.stop is not None:
             if result.result_key is not None:
                 state = _move(state, node, result.result_key)
             return StepOutcome(state, result.stop, messages, pending, result.end_outcome, result.escalation,
                                result.confirmation, result.step_up, result.output, rejected,
-                               transfer=result.transfer)
+                               transfer=result.transfer, suggestions=suggestions)
         if result.result_key is None:
             raise IllegalTransition(f"el handler de {node.id} no devolvió rama ni detención")
         state = _move(state, node, result.result_key)

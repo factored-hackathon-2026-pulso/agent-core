@@ -1,0 +1,41 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "additionalProperties": false,
+  "description": "Recomendación de escalar. El motivo y la evidencia los fija el flow (una `rule`), no el modelo; el\nmodelo solo redacta `motive_draft`.",
+  "properties": {
+    "evidence": {
+      "items": {
+        "maxLength": 300,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 5,
+      "minItems": 1,
+      "title": "Evidence",
+      "type": "array"
+    },
+    "motive_draft": {
+      "maxLength": 500,
+      "minLength": 1,
+      "title": "Motive Draft",
+      "type": "string"
+    },
+    "reason_code": {
+      "title": "Reason Code",
+      "type": "string"
+    },
+    "type": {
+      "const": "escalate",
+      "default": "escalate",
+      "title": "Type",
+      "type": "string"
+    }
+  },
+  "required": [
+    "reason_code",
+    "evidence",
+    "motive_draft"
+  ],
+  "title": "EscalateSuggestion",
+  "type": "object"
+}

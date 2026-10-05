@@ -21,9 +21,10 @@ from agent_core.domain import (
     Release,
     RunState,
     StepUpPrompt,
+    Suggestion,
 )
 from agent_core.interpreter.breaker import CircuitBreaker
-from agent_core.interpreter.ports import AgentPort, DecisionPort, ResponderPort
+from agent_core.interpreter.ports import AgentPort, DecisionPort, ResponderPort, SuggesterPort
 from agent_core.knowledge import KnowledgeService
 from agent_core.ports import Clock, IdSource, RegistryPort, ToolExecutor, UnitOfWorkFactory
 from agent_core.views import TokenVault, ViewService
@@ -74,6 +75,7 @@ class StepContext:
     bound_params: Mapping[str, str] = field(default_factory=dict)
     agents: AgentPort | None = None  # nodo `agent` (ADR 0019); sin él, un nodo `agent` es error de cableado
     knowledge: KnowledgeService | None = None  # nodo `knowledge` (M12); sin él, es error de cableado
+    suggester: SuggesterPort | None = None  # nodo `suggest` (ADR 0026); sin él, es error de cableado
     record: EventRecorder = append_events
     turn_id: str | None = None
     breaker: CircuitBreaker = field(default_factory=CircuitBreaker)
@@ -105,3 +107,4 @@ class StepOutcome:
     output: dict[str, JsonValue] | None = None  # `end.output_map` en modo task
     rejected_drafts: list[RejectedDraft] = field(default_factory=list)
     transfer: TransferRequest | None = None  # `transfer` node: M4 validates it (ADR 0021)
+    suggestions: list[Suggestion] = field(default_factory=list)  # nodos `suggest` del flow, en orden (task)

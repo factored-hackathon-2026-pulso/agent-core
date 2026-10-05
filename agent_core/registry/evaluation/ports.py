@@ -2,10 +2,10 @@
 `agent_core.composition`."""
 
 from collections.abc import Sequence
-from dataclasses import dataclass
-from typing import Protocol
+from dataclasses import dataclass, field
+from typing import Protocol, runtime_checkable
 
-from agent_core.domain import EngineEvent, Release
+from agent_core.domain import EngineEvent, Release, Suggestion
 from agent_core.ports import RegistryPort, ToolExecutor
 from agent_core.registry.evaluation.report import EvalReport, JudgeNote, Label
 from agent_core.registry.evaluation.yardstick import Yardstick
@@ -46,6 +46,24 @@ class ScenarioHarness(Protocol):
             tools: ToolExecutor) -> list[EngineEvent]:
         """Run the scenario with the engine and return the run's events. Raises `HarnessUnavailable`."""
         ...
+
+
+@dataclass(frozen=True)
+class ScenarioRun:
+    """What a task run returned besides its events: `RunResult.suggestions` (ADR 0026). Suggestions are text
+    for a person, so they are never in the events; the scenarios that assert on them need this."""
+
+    events: list[EngineEvent]
+    suggestions: list[Suggestion] = field(default_factory=list)
+
+
+@runtime_checkable
+class SuggestionAwareHarness(Protocol):
+    """A harness that can also return the suggestions of the run. The evaluator uses it when the harness has
+    it; with a plain `ScenarioHarness`, an expectation on suggestions fails closed (nothing was returned)."""
+
+    def run_with_suggestions(self, target: EvalTarget, agent_id: str, scenario: Scenario,
+                             tools: ToolExecutor) -> ScenarioRun: ...
 
 
 @dataclass(frozen=True)

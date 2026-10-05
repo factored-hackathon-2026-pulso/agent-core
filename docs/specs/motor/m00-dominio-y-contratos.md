@@ -1,6 +1,6 @@
 # M0 — Dominio y contratos
 
-- Estado: **rev. 13 · implementado** (fase 1; `write_draft`, transferencia entre agentes y `SCHEMA_VERSION` 1.2.0, 2026-09-30; `Agent.metrics` y `SCHEMA_VERSION` 1.3.0, 2026-10-02) · Fase 1
+- Estado: **rev. 15 · implementado** (fase 1; `write_draft`, transferencia entre agentes y `SCHEMA_VERSION` 1.2.0, 2026-09-30; `Agent.metrics` y `SCHEMA_VERSION` 1.3.0, 2026-10-02; sugerencias del copiloto y `SCHEMA_VERSION` 1.5.0, 2026-10-05) · Fase 1
 - Paquetes: `agent_core.domain`, `agent_core.ports`, `testing/fakes`
 - Origen: spec general §2, §5 (esquemas de nodos), §8 (estado), §10 (códigos), §14 (dependencias)
 - ADRs: 0001 (stack), 0002 (contratos), 0006 (principal y delegación), 0007 (acciones), 0008 (vistas y claves)
@@ -97,6 +97,11 @@
   - dobles: el lease se puede tomar cuando `now == expires_at`; `put_run_idempotency` duplicado gana el primero (provisorio: M9/M4 deben fijar el conflicto antes del adaptador Postgres); id duplicado en el outbox se ignora; `spent_today` usa el día UTC; `resolve_release` devuelve releases revocadas (M4 escala con `release_revoked`);
   - `contracts/`: un esquema por cada modelo o enum exportado por `domain` y `ports` (modo validación, con alias); pendientes: forma string de las refs, `Decimal` de salida y `Node` sin `discriminator` explícito;
   - guardarraíles: todo módulo tiene prohibido importar `adapters`, `cli` y `contracts`; `domain` no importa `ports`; más APIs de tiempo y azar en `banned-api`.
+- rev. 15 (2026-10-05), sugerencias estructuradas del copiloto (ADR 0026; `SCHEMA_VERSION` 1.4.0 → **1.5.0**, menor: solo aditivos). **Cambio de interfaz para todos los módulos** (`contracts/` regenerado: `AnyEvent`, `Flow`, `Node`, `RunResult` y los tipos nuevos). Se sube de 1.4.0 y no se agrupa con ella porque no consta que 1.4.0 no se haya consumido ya fuera (decisión del implementador, a confirmar):
+  - `domain/suggestions.py`: `Suggestion` = unión discriminada por `type` de `ReplySuggestion {text, citations, language}`, `ToolSuggestion {tool, args, why}`, `ActionSuggestion {tool, args, summary, executable: Literal[False]}` y `EscalateSuggestion {reason_code, evidence, motive_draft}`, con los límites de longitud de la plataforma (no se recorta nada en silencio); `parse_suggestions`, `suggestion_counts`, `suggestion_texts` y `SuggestEscalation` (lo que el flow fija de una recomendación de escalar).
+  - `RunResult.suggestions: list[Suggestion] = []`: la lista vacía es un resultado válido. Un resultado guardado antes de 1.5.0 se sigue leyendo. Solo un run `completed` la lleva.
+  - Nodo `suggest` (`SuggestConfig`, `SuggestEscalate`, `SuggestNode`; `RESULTS["suggest"] = {suggested, gave_up}`): ver §2.5.
+  - Evento `suggestions_produced` (emisor M2; `SuggestionsProducedPayload`): contadores por tipo, `result` ok/failed, `failures` (ids de comprobaciones), `regenerations`, huella con clave de la lista y uso del LLM. **Nunca el texto.** Fila nueva `engine.suggestions_produced` en el catálogo de métricas (ADR 0020).
 
 ## 1. Propósito y límites
 
@@ -280,6 +285,13 @@ class RespondConfig:  template_ref: RefSpec | None; generate: GenerateConfig | N
                       await_: bool = False (alias "await"); claims: list[str] = []
 class EscalateConfig: reason_code: ReasonCodeStr; target_queue: str | None; priority_expr: JsonValue | None
 class EndConfig:      outcome: Outcome; output_map: dict[str, str] | None
+class SuggestConfig:  prompt_ref: RefSpec; goal: str; reads: list[str] = []; optional_reads: list[str] = []
+                      tools_allowed: list[RefSpec] = []; actions_allowed: list[RefSpec] = []
+                      escalate: SuggestEscalate | None = None; max_items: int = 3   # 1..8
+                      # rev. 15 (ADR 0026): `reads`/`optional_reads` = rutas slots/facts en vista `model` (las
+                      # opcionales solo si existen); `tools_allowed` se RECOMIENDAN, no se ejecutan;
+                      # `actions_allowed` se PREPARAN (vacío hoy: ninguna action es ejecutable)
+class SuggestEscalate: reason_code: ReasonCodeStr; evidence_from: list[str]   # 1..5 rutas escalares; las fija el flow
 class KnowledgeConfig: mode: Literal["read", "navigate"]; pages: list[str] = []   # read: "ruta" | "ruta#ancla"
                       scope: PagePath | None; selector: RefSpec | None             # navigate
                       purpose: Purpose; save_as: SaveAs
@@ -295,7 +307,7 @@ class TransferConfig: target_from: str (^decisions\.<save_as>\.choice$); directo
 
 Node = Annotated[DecideNode | RuleNode | CollectNode | ToolNode | WriteToolNode | ConfirmNode
                  | VerifyNode | RespondNode | EscalateNode | EndNode | KnowledgeNode
-                 | AgentNode | SubflowNode | AwaitApprovalNode | TransferNode, Discriminator(node_kind)]
+                 | AgentNode | SuggestNode | SubflowNode | AwaitApprovalNode | TransferNode, Discriminator(node_kind)]
 RESULTS: Mapping[str, frozenset[str]]     # por clave de nodo; "tool" y "tool_write" separados
 TERMINAL: frozenset[str] = {"escalate", "end"}      # `transfer` no entra (R2): su éxito cierra el run desde M4
 WAITING:  frozenset[str] = {"collect", "confirm"}   # más respond con await: true
@@ -307,6 +319,7 @@ WAITING:  frozenset[str] = {"collect", "confirm"}   # más respond con await: tr
 - `target_queue` None en `escalate` significa `agent.default_target_queue`.
 - **Los esquemas validan forma, no semántica del grafo.** Alcanzabilidad, dominancia, reclamos y demás son reglas G0 de M1.
 - **Nodo `knowledge` (ADR 0015, M12, rev. 10):** `RESULTS["knowledge"] = {ok, not_found, denied, low_confidence}`; un `read` cablea solo los tres primeros (M1 G0-03) y `low_confidence` es de `navigate`. No es terminal ni espera.
+- **Nodo `suggest` (ADR 0026, rev. 15):** `RESULTS["suggest"] = {suggested, gave_up}` (`suggested` también con la lista vacía). Habilitado, no es terminal ni espera. M0 valida la forma; que el flow sea de modo task, que solo se alcance por la rama `true` de una `rule` cuando declara `escalate`, que sus tools sean de lectura y que el flow no escriba son reglas de M1 (G0-28). Su salida no es un hecho: va a `RunResult.suggestions` (G0-22 sin excepción).
 - **Nodo `transfer` (ADR 0021, rev. 12):** `RESULTS["transfer"] = {rejected}`. No está en `PRODUCTION_NODE_KINDS` ni en `TERMINAL` ni en `WAITING`. M0 solo valida la forma; que el agente tenga `routing`/`accepts`, que `target_from` apunte a un `decide` con `choices_from` y que `rejected` esté cableado son reglas de M1.
 
 ### 2.6 Estado del run (`domain/state.py`)
@@ -399,6 +412,7 @@ class TurnResult:     run_id: str; turn_id: str; messages: list[Message]; locale
                       confirmation: ConfirmationPrompt | None; step_up: StepUpPrompt | None
                       status; outcome: Outcome | None; handoff_ref: str | None; trace_id: str
 class RunResult:      run_id: str; session_id: str | None; release: str; output: dict[str, JsonValue] | None
+                      suggestions: list[Suggestion] = []                  # rev. 15, ADR 0026: vacía es válida
                       status; outcome: Outcome | None; handoff_ref: str | None
                       first_turn: TurnResult | None; trace_id: str
 
@@ -554,6 +568,7 @@ Todo payload está en **vista `audit`**: sin `pii_direct` en claro, sin tokens r
 | `rule_evaluated` | `node_id, policy: EntityRef?, inputs (audit), result: bool` | M2 |
 | `tool_called` | `node_id, tool: EntityRef, call_id, status, args (audit), result (audit)?, result_fp?, error?, attempt, action_id?, latency_ms` | M2 (lectura y `compute`), M3 (escritura) |
 | `knowledge_read` | `node_id, purpose, result: ok\|not_found\|denied, refs, filtered_out: [{ref, reason}], missing, reason?: source_unavailable\|navigate_unavailable\|no_snapshot` (solo referencias y motivos, nunca texto de páginas) | M12 |
+| `suggestions_produced` | `node_id, result: ok\|failed, count, reply, tool, action, escalate, regenerations, failures: list[str], text_fp: Fingerprint?, llm: LlmUsage?` (solo contadores, ids de comprobaciones y una huella con clave de la lista; nunca el texto de una sugerencia) | M2 (nodo `suggest`; la validación es de M8) |
 | `step_up_requested` | `node_id, required_level, attempt` | M2 |
 | `action_confirmed` | `action_id, source: understand\|button` | M3 |
 | `action_cancelled` | `action_id, reason: InvalidationReason` | M3 |
@@ -577,7 +592,7 @@ Evento saliente (outbox, no va a la cadena): `handoff_created {handoff_ref, run_
 **Reglas:**
 
 - Los eventos son inmutables. Única excepción: M4 rellena `response_emitted.payload.transcript_fp` con `model_copy` después de `record_turn` y antes de pasarlos a M11. El orden del turno se mantiene.
-- **Campos de medición** (`MEASURED_FIELDS`): `decision_made.latency_ms`, `tool_called.latency_ms`, `response_emitted.llm`, `response_failed.llm`, `turn_completed.duration_ms` y `turn_completed.stages`.
+- **Campos de medición** (`MEASURED_FIELDS`): `decision_made.latency_ms`, `tool_called.latency_ms`, `response_emitted.llm`, `response_failed.llm`, `suggestions_produced.llm`, `turn_completed.duration_ms` y `turn_completed.stages`.
   - Se miden con `Clock.monotonic_ns()` (o los reporta el proveedor) y no son deterministas.
   - Ninguna decisión del motor (transición, regla, vencimiento, reintento) puede depender de ellos: solo se registran.
   - `llm` es `None` si la respuesta no llamó al gateway (plantilla o modo degradado); `calls` cuenta generación + regeneraciones.

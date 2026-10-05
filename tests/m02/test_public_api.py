@@ -9,7 +9,8 @@ def test_public_surface() -> None:
         "NO_RESUME", "AgentFinal", "AgentObservation", "AgentPort", "AgentRequest", "AgentStepResult",
         "AgentToolCall", "CircuitBreaker", "DecisionPort", "DecisionResult", "GenerateRequest",
         "GenerateResult",
-        "Projector", "ResponderPort", "Resume", "StepContext", "StepOutcome", "Stop",
+        "Projector", "ResponderPort", "Resume", "StepContext", "StepOutcome", "Stop", "SuggestRequest",
+        "SuggestResult", "SuggesterPort",
         "TransferRequest", "advance", "begin_turn", "evaluate", "start_flow", "truthy",
     }
     for name in interpreter.__all__:

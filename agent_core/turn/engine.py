@@ -853,6 +853,9 @@ class TurnEngine:
                 session_id=saved.session_id,
                 release=saved.release,
                 output=frame.output if not conversational else None,
+                # ADR 0026: la lista es el resultado de un run que terminó (`completed`); si falló o escaló,
+                # lo que alcanzó a producir no es un resultado
+                suggestions=frame.suggestions if saved.outcome is Outcome.completed else [],
                 status=saved.status,
                 outcome=saved.outcome,
                 handoff_ref=saved.handoff_ref,

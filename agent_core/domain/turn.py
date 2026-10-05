@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 
 from agent_core.domain.base import Locale, Model, UtcDatetime
 from agent_core.domain.identity import AuthLevel, SubjectRef
@@ -10,6 +10,7 @@ from agent_core.domain.json import JsonValue
 from agent_core.domain.outcomes import Awaiting, Outcome
 from agent_core.domain.refs import AgentSelector, EntityRef
 from agent_core.domain.state import RunStatus
+from agent_core.domain.suggestions import Suggestion
 
 
 class ConfirmAnswer(Model):
@@ -87,6 +88,7 @@ class RunResult(Model):
     session_id: str | None = None
     release: str
     output: dict[str, JsonValue] | None = None
+    suggestions: list[Suggestion] = Field(default_factory=list)  # ADR 0026: vacía es un resultado válido
     status: RunStatus
     outcome: Outcome | None = None
     handoff_ref: str | None = None

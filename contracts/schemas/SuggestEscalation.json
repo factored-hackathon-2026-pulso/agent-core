@@ -1,0 +1,28 @@
+{
+  "$comment": "GENERADO por `uv run agentcore contracts`; no editar a mano.",
+  "additionalProperties": false,
+  "description": "Lo que el flow fija de una recomendación de escalar: motivo y evidencia salen de la `rule`.",
+  "properties": {
+    "evidence": {
+      "items": {
+        "maxLength": 300,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 5,
+      "minItems": 1,
+      "title": "Evidence",
+      "type": "array"
+    },
+    "reason_code": {
+      "title": "Reason Code",
+      "type": "string"
+    }
+  },
+  "required": [
+    "reason_code",
+    "evidence"
+  ],
+  "title": "SuggestEscalation",
+  "type": "object"
+}

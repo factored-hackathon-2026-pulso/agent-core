@@ -14,11 +14,15 @@ from agent_core.domain import (
     EscalationRequest,
     GenerateConfig,
     JsonValue,
+    LlmUsage,
     Locale,
     Message,
     NodeId,
     RejectedDraft,
     RunState,
+    SuggestConfig,
+    SuggestEscalation,
+    Suggestion,
 )
 from agent_core.ports import ToolStatus
 
@@ -132,3 +136,34 @@ class AgentPort(Protocol):
     prompt) está abierto (m02 §11)."""
 
     def step(self, request: AgentRequest, state: RunState) -> AgentStepResult: ...
+
+
+@dataclass(frozen=True)
+class SuggestRequest:
+    """Nodo `suggest` que M8 debe resolver (m02 §3.8, ADR 0026). `inputs` son las rutas de `reads` en vista
+    `model`; `escalation` lo fijó el flow (su evidencia nunca va al modelo)."""
+
+    node_id: NodeId
+    config: SuggestConfig
+    inputs: dict[str, JsonValue]
+    escalation: SuggestEscalation | None = None
+
+
+@dataclass(frozen=True)
+class SuggestResult:
+    """La lista validada (posiblemente vacía) o los ids de las comprobaciones que fallaron (sin datos), más el
+    uso del modelo. `failures` no vacío es `gave_up`; una lista vacía sin fallas es un resultado válido."""
+
+    suggestions: list[Suggestion] = field(default_factory=list)
+    failures: list[str] = field(default_factory=list)
+    regenerations: int = 0
+    llm: LlmUsage | None = None
+    model_calls: int = 0
+    tokens: int = 0
+    cost_usd: Decimal = Decimal("0")
+
+
+class SuggesterPort(Protocol):
+    """Generar → validar → regenerar → fallar (M8). Solo recibe la vista `model`."""
+
+    def suggest(self, request: SuggestRequest, state: RunState) -> SuggestResult: ...

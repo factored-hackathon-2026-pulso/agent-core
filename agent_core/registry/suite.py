@@ -46,11 +46,14 @@ class _M(BaseModel):
 
 
 class Step(_M):
+    """`input` (ADR 0026, solo en `start`) es el `RunInput.input` de un agente `task` con `input_schema`."""
+
     op: Literal["start", "turn", "confirm"]
     text: str | None = Field(default=None, max_length=4000)
     answer: Literal["yes", "no"] | None = None
     lang: str | None = None
     auth: Literal["anonymous", "session", "step_up"] = "step_up"
+    input: dict[str, JsonValue] | None = None
 
     @model_validator(mode="after")
     def _shape(self) -> "Step":
@@ -58,7 +61,17 @@ class Step(_M):
             raise ValueError("un paso `turn` necesita `text`")
         if self.op == "confirm" and self.answer is None:
             raise ValueError("un paso `confirm` necesita `answer`")
+        if self.input is not None and self.op != "start":
+            raise ValueError("`input` es solo de un paso `start`")
         return self
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_input(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Hashes come from the dump: a suite published before 1.5.0 must serialize as it did."""
+        data: dict[str, Any] = handler(self)
+        if data.get("input") is None:
+            data.pop("input", None)
+        return data
 
 
 class ToolReply(_M):
@@ -71,10 +84,42 @@ class SandboxSeed(_M):
     tools: dict[str, list[ToolReply]] = Field(default_factory=dict)
 
 
+class SuggestionExpect(_M):
+    """One expected (or forbidden) item of `RunResult.suggestions` (ADR 0026). All the fields given must hold
+    on the SAME suggestion. `text_contains` looks for each fragment in the texts of the item; `text_excludes`
+    asks that none appears."""
+
+    type: Literal["reply", "tool", "action", "escalate"]
+    expect: Literal["at_least_one", "none"] = "at_least_one"
+    tool: str | None = None
+    reason_code: str | None = None
+    language: str | None = None
+    citations_min: int | None = Field(default=None, ge=0, le=10)
+    text_contains: list[Annotated[str, Field(min_length=1, max_length=200)]] = Field(
+        default_factory=list, max_length=8)
+    text_excludes: list[Annotated[str, Field(min_length=1, max_length=200)]] = Field(
+        default_factory=list, max_length=8)
+
+
 class Expect(_M):
+    """`suggestion_count` is the exact length of the list (0: the empty list is the expected result);
+    `suggestions` are items it must (or must not) hold. Both come from `RunResult`, not from the events."""
+
     outcome: Outcome | None = None
     actions_verified: list[str] = Field(default_factory=list)
     escalated: bool | None = None
+    suggestion_count: int | None = Field(default=None, ge=0, le=8)
+    suggestions: list[SuggestionExpect] = Field(default_factory=list, max_length=20)
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_suggestions(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Hashes come from the dump: an `Expect` without them serializes as before 1.5.0."""
+        data: dict[str, Any] = handler(self)
+        if data.get("suggestion_count") is None:
+            data.pop("suggestion_count", None)
+        if not data.get("suggestions"):
+            data.pop("suggestions", None)
+        return data
 
 
 class ScenarioSubject(_M):

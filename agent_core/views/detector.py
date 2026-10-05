@@ -21,6 +21,8 @@ _SEPARATORS = str.maketrans("", "", " \t.," + _DASHES)
 _PHONE_SEPARATORS = frozenset(" \t" + _DASHES)
 _TRAILING = " \t.," + _DASHES
 MIN_DIGITS = 6
+# Etiquetas de lo que este detector halla en un texto libre (no del `pii` de un campo sin clasificar).
+DETECTOR_TAGS = frozenset({"email", "tel", "prod", "doc"})
 _PHONE_DIGITS = 10
 _ACCOUNT_DIGITS = 12
 
