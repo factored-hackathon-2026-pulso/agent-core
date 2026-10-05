@@ -7,7 +7,7 @@ import pytest
 from agent_core.decision.calibration.artifact import Target
 from agent_core.decision.calibration.calibrate import DevExample, calibrate
 from agent_core.decision.types import DecisionConfigError, RawPrediction
-from agent_core.domain import sha256_hex
+from agent_core.domain import DecisionModelDef, JsonValue, ProviderSpec, sha256_hex
 from testing.fakes.provider import Failure, ScriptedProvider
 from tests.m05.helpers import make_service, model_def, ref, scope
 
@@ -54,6 +54,29 @@ def test_changing_one_example_changes_split_hash_and_run_id() -> None:
     other, _ = _run(changed)
     assert other.split_hash != base.split_hash and other.run_id != base.run_id
     assert base.run_id.startswith("cal-") and len(base.run_id) == 4 + 16
+
+
+def _with_config(config: dict[str, JsonValue]) -> DecisionModelDef:
+    base = model_def()
+    return base.model_copy(update={"providers": [ProviderSpec(provider="classifier", config=config)]})
+
+
+def test_t_m5_09_run_id_covers_the_provider_config() -> None:
+    split = _examples("es", 12)
+    a, _ = _run(split, definition=_with_config({"prompt": "criterio A"}))
+    b, _ = _run(split, definition=_with_config({"prompt": "criterio B"}))
+    same, _ = _run(_examples("es", 12)[::-1], definition=_with_config({"prompt": "criterio A"}))
+    assert a.split_hash == b.split_hash and a.run_id != b.run_id
+    assert a.run_id == same.run_id and a.to_json() == same.to_json()
+    empty, _ = _run(split)
+    assert empty.run_id != a.run_id
+
+
+def test_run_id_is_independent_of_config_key_order() -> None:
+    split = _examples("es", 12)
+    a, _ = _run(split, definition=_with_config({"x": 1, "y": {"b": 2, "a": 3}}))
+    b, _ = _run(split, definition=_with_config({"y": {"a": 3, "b": 2}, "x": 1}))
+    assert a.run_id == b.run_id
 
 
 def test_calibrators_and_thresholds_are_produced_and_usable_by_decide() -> None:
