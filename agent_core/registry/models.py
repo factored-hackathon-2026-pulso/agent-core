@@ -61,6 +61,10 @@ class ReleaseSettings(RegModel):
     language_detection: str | None = None  # id de una entidad `language_detection` (se fija a su versión)
     injection_ruleset: str | None = None  # id de una entidad `injection_ruleset`
     max_input_chars: Annotated[int, Field(gt=0, le=MAX_INPUT_CHARS_CEILING)] | None = None
+    # id de una release PUBLICADA de la que un agente nuevo (sin base) copia, en el servidor, interrupciones,
+    # idioma, ruleset y `max_input_chars`. Quien llama nunca escribe esos valores: por eso no exige `admin`.
+    # Los campos explícitos de arriba mandan (y `interrupts` sigue exigiendo `admin`).
+    inherit_from: str | None = None
 
 
 class EntityDraft(RegModel):

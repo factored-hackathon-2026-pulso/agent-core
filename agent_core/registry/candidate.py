@@ -266,7 +266,7 @@ def _interrupts(interrupts: Sequence[Interrupt], merged: Mapping[Key, RegistryEn
 
 
 def _decl(agent_id: str, base: Release | None, merged: Mapping[Key, RegistryEntity],
-          settings: ReleaseSettings) -> ReleaseDecl:
+          settings: ReleaseSettings, donor: Release | None = None) -> ReleaseDecl:
     """Release declarada de la candidata: los agentes de la base más `agent_id`, limitados a los que hay en
     `merged`, y todos los flows de `merged`. Lanza `CandidateError` si falta el agente."""
     def ref(kind: EntityKind, ident: str, fallback: str | None = None) -> str:
@@ -278,41 +278,48 @@ def _decl(agent_id: str, base: Release | None, merged: Mapping[Key, RegistryEnti
     if agent_id not in present:
         raise CandidateError([_v("REG-AGENT", f"la candidata no contiene al agente {agent_id[:80]}")])
     wanted = set(base.entities.get(EntityKind.agent, {})) if base is not None else set()
+    settled = base if base is not None else donor  # fuente de los ajustes; el donante no aporta agentes
     agents = sorted((wanted | {agent_id}) & present)
     flows = sorted(i for (k, i) in merged if k is EntityKind.flow)
     langs = sorted(i for (k, i) in merged if k is EntityKind.language_detection)
     if settings.language_detection is not None:  # sin destino en `merged`, `pin_release` lo reporta (REG-PIN)
         lang = ref(EntityKind.language_detection, settings.language_detection)
-    elif base is not None:
-        lang = ref(EntityKind.language_detection, base.language_detection.id, str(base.language_detection))
+    elif settled is not None:
+        lang = ref(EntityKind.language_detection, settled.language_detection.id,
+                   str(settled.language_detection))
     else:  # sin base, la del borrador; si no trae ninguna, `pin_release` lo reporta como REG-PIN
         lang = ref(EntityKind.language_detection, langs[0]) if langs else "sin-deteccion@1.0.0"
     wanted_interrupts = settings.interrupts if settings.interrupts is not None else (
-        base.interrupts if base is not None else [])
+        settled.interrupts if settled is not None else [])
     data: dict[str, Any] = {
         "id": CANDIDATE_RELEASE_ID,
         "agents": [{"agent": ref(EntityKind.agent, a), "aliases": [CANDIDATE_ALIAS]} for a in agents],
         "flows": [ref(EntityKind.flow, f) for f in flows],
         "interrupts": _interrupts(wanted_interrupts, merged),
         "language_detection": lang,
-        "max_input_chars": settings.max_input_chars or (base.max_input_chars if base is not None else 4000),
+        "max_input_chars": settings.max_input_chars or (
+            settled.max_input_chars if settled is not None else 4000),
     }
     if settings.injection_ruleset is not None:
         data["injection_ruleset"] = ref(EntityKind.injection_ruleset, settings.injection_ruleset)
-    elif base is not None and base.injection_ruleset is not None:
-        data["injection_ruleset"] = ref(EntityKind.injection_ruleset, base.injection_ruleset.id,
-                                        str(base.injection_ruleset))
+    elif settled is not None and settled.injection_ruleset is not None:
+        data["injection_ruleset"] = ref(EntityKind.injection_ruleset, settled.injection_ruleset.id,
+                                        str(settled.injection_ruleset))
     if base is not None and base.knowledge_snapshot is not None:
         data["knowledge"] = str(base.knowledge_snapshot)
     return ReleaseDecl.model_validate(data)
 
 
 def build_candidate(*, agent_id: str, base: Release | None, base_entities: Sequence[RegistryEntity],
-                    drafts: Sequence[EntityDraft], published_hash: Published) -> Candidate:
+                    drafts: Sequence[EntityDraft], published_hash: Published,
+                    donor: Release | None = None) -> Candidate:
     settings, settings_problems = _parse_settings(drafts)
+    if settings.inherit_from is not None and base is not None:
+        settings_problems.append(_v("REG-SCHEMA", "inherit_from solo vale para un agente nuevo (sin base)",
+                                    RELEASE_SETTINGS))
     drafted, suites, draft_docs, problems = _parse_drafts([d for d in drafts if d.kind != RELEASE_SETTINGS])
     problems.extend(settings_problems)
-    problems.extend(locked_interrupt_violations(base, settings.interrupts))
+    problems.extend(locked_interrupt_violations(base or donor, settings.interrupts))
     if problems:
         raise CandidateError(problems)
 
@@ -320,7 +327,7 @@ def build_candidate(*, agent_id: str, base: Release | None, base_entities: Seque
     merged.update(drafted)
     auto, notes = _cascade(drafted, merged, published_hash)
 
-    decl = _decl(agent_id, base, merged, settings)
+    decl = _decl(agent_id, base, merged, settings, donor)
     try:
         pinned = pin_release(AuthoringRegistry.from_entities(merged.values(), [decl]), CANDIDATE_RELEASE_ID)
     except SchemaError as exc:

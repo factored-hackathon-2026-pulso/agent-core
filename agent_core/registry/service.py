@@ -245,6 +245,18 @@ class RegistryService:
             raise IntegrityError(f"the suite recorded by {release_id} does not belong to agent {agent_id}")
         return suite
 
+    @staticmethod
+    def _donor(tx: RegistryTx, drafts: Sequence[EntityDraft]) -> Release | None:
+        """La release publicada que `release_settings.inherit_from` nombra (solo agentes nuevos)."""
+        for d in drafts:
+            ref = d.content.get("inherit_from") if d.kind == RELEASE_SETTINGS else None
+            if isinstance(ref, str):
+                stored = tx.get_release(ref)
+                if stored is None:
+                    raise RegistryError(RegistryErrorCode.not_found, "la release donante no existe")
+                return stored.release
+        return None
+
     def _candidate(self, tx: RegistryTx, p: Proposal) -> Candidate:
         base, entities = self._base(tx, p.base_release_id)
         drafts = tx.get_changes(p.proposal_id)
@@ -253,8 +265,9 @@ class RegistryService:
             stored = tx.get_version(ref)
             return stored.content_hash if stored else None
 
+        donor = self._donor(tx, drafts) if base is None else None
         cand = build_candidate(agent_id=p.agent_id, base=base, base_entities=entities, drafts=drafts,
-                               published_hash=published)
+                               published_hash=published, donor=donor)
         base_versions = ({(k.value, i): v for k, by in base.entities.items() for i, v in by.items()}
                          if base else {})
         problems = validate_candidate(cand, base_versions=base_versions,
