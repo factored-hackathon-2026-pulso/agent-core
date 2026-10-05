@@ -115,8 +115,13 @@ def ops_from_env(env: Mapping[str, str]) -> OpsConfig:
             raise ValueError(f"{name} debe ser >= {minimum:g}")
         return value
 
+    raw_pool = env.get("AGENTCORE_DB_POOL_MAX") or ""
+    pool = int(raw_pool) if raw_pool.isdigit() else 0  # un valor inválido lo rechaza `resolve_ports`
+    # Un turno retiene una conexión y pide otra (UoW + auditoría): con más turnos simultáneos que la mitad del
+    # pool se agota (`PoolTimeout`, 30 s). Sin tope explícito, el tope sigue al pool.
+    derived = max(1, pool // 2) if pool > 0 else defaults.max_inflight
     return OpsConfig(
-        max_inflight=int(number(MAX_INFLIGHT_ENV, defaults.max_inflight, int, 0)),
+        max_inflight=int(number(MAX_INFLIGHT_ENV, derived, int, 0)),
         worker_threads=int(number(WORKER_THREADS_ENV, defaults.worker_threads, int, 1)),
         shutdown_grace_s=number(SHUTDOWN_GRACE_ENV, defaults.shutdown_grace_s, float, 0))
 
@@ -162,6 +167,23 @@ def release_warnings(registry: RegistryPort, agents: Iterable[str], clock: Clock
         except KeyError:
             warnings.append(f"el agente `{agent}` no tiene una release `prod` activa")
     return warnings
+
+
+def startup_release_warnings(ports: ServePorts) -> list[str]:
+    """`release_warnings` that never keeps the process from starting: with Postgres down the check is skipped
+    (`/readyz` already says 503) and any other failure of the check is itself a warning naming only its type
+    (a database error can carry a host or a credential)."""
+    if not ports.agents:
+        return []
+    database = dict(ports.readiness).get("postgres")
+    if database is not None and not database():
+        return ["la base no responde: no se revisan las releases `prod` al arrancar "
+                "(`/readyz` da 503 hasta que responda)"]
+    try:
+        return release_warnings(ports.registry, ports.agents, ports.clock)
+    except Exception as exc:
+        names = ", ".join(ports.agents)
+        return [f"no se pudieron revisar las releases `prod` de {names}: {type(exc).__name__}"]
 
 
 def gateway_warnings(url: str | None) -> list[str]:
@@ -219,8 +241,7 @@ def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Map
         if ports.doubles:
             print("AVISO: piezas que son DOBLES de demo (no producción): " + ", ".join(ports.doubles),
                   file=sys.stderr)
-        for warning in (*release_warnings(ports.registry, ports.agents, ports.clock),
-                        *gateway_warnings(ports.llm_gateway_url)):
+        for warning in (*startup_release_warnings(ports), *gateway_warnings(ports.llm_gateway_url)):
             print(f"AVISO: {warning}", file=sys.stderr)
         if ports.migrate is not None and env.get(AUTO_MIGRATE_ENV) != "0":
             # En segundo plano y con reintentos: sin base `serve` arranca igual y `/readyz` dice 503.
