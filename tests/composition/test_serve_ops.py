@@ -94,3 +94,12 @@ def test_the_worker_thread_limit_is_really_applied_at_startup() -> None:
 
     with TestClient(app) as client:  # entering the context runs the startup handlers
         assert client.get("/limit").json() == {"n": 7}
+
+
+def test_without_an_explicit_cap_the_inflight_limit_follows_the_connection_pool() -> None:
+    """A turn holds a connection and asks for another: more concurrent turns than half the pool deadlock on
+    `PoolTimeout` (seen with 20 simultaneous runs on a pool of 10)."""
+    assert ops_from_env({"AGENTCORE_DB_POOL_MAX": "10"}).max_inflight == 5
+    assert ops_from_env({"AGENTCORE_DB_POOL_MAX": "1"}).max_inflight == 1
+    assert ops_from_env({"AGENTCORE_DB_POOL_MAX": "10", "AGENTCORE_MAX_INFLIGHT": "7"}).max_inflight == 7
+    assert ops_from_env({}).max_inflight == 0  # no pool: one connection per operation, nothing to exhaust
