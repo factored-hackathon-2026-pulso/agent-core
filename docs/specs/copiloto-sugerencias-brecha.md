@@ -2,14 +2,14 @@
 
 Fecha: 2026-10-05 · Estado: **núcleo implementado (B1 a B4 resueltas); datos y `eval_suite` PROVISIONALES (B5 parcial)**. Fuentes: ADR 0026 (aceptado el 2026-10-05), `support-platform/docs/platform/api/slice-15b-copilot-suggestions.md`, plataforma ADR 0005 y el código de la plataforma (`application/ai/suggestions.py`, `infrastructure/ai/http_runtime.py`, `domain/ai/suggestion.py`), leídos sin modificarlos.
 
-**Cambio de interfaz:** `SCHEMA_VERSION` 1.4.0 → **1.5.0** (menor, aditivo). `contracts/` regenerado (`AnyEvent`, `Flow`, `Node`, `RunResult` y los tipos nuevos). Avisar a todos los módulos y a la plataforma: la respuesta de `POST /v1/runs` lleva ahora `suggestions` (siempre; vacía si no hay).
+**Cambio de interfaz:** `SCHEMA_VERSION` 1.5.0 → **1.6.0** (menor, aditivo). `contracts/` regenerado (`AnyEvent`, `Flow`, `Node`, `RunResult` y los tipos nuevos). Avisar a todos los módulos y a la plataforma: la respuesta de `POST /v1/runs` lleva ahora `suggestions` (siempre; vacía si no hay).
 
 ## 0. Qué hay hecho y qué no
 
 | Pieza | Estado |
 |---|---|
 | `input` de un run `task` con lista de turnos (`list` slot, commit 601ca11) | Hecho en el núcleo |
-| Tipo `Suggestion` (`reply`, `tool`, `action`, `escalate`) y `RunResult.suggestions` (B1) | **Hecho** (M0 rev. 15, M4) |
+| Tipo `Suggestion` (`reply`, `tool`, `action`, `escalate`) y `RunResult.suggestions` (B1) | **Hecho** (M0 rev. 16, M4) |
 | Evento `suggestions_produced` (contadores, nunca texto) (B1) | **Hecho** (M0, M2); catálogo de métricas `engine.suggestions_produced` |
 | Nodo `suggest` propio (B2): M0 (esquema), M1 (G0-28 y alcance de otras reglas), M2 (manejador), M8 (`Suggester`), composición | **Hecho** |
 | `Step.input` en `start` del `eval_suite` y el arnés arma `RunInput` con `input` (B3) | **Hecho** |
@@ -56,7 +56,7 @@ Se verificó con una ejecución puntual (antes de implementar) que las salidas e
 | D6 | «Tercer contacto en 7 días»: `build_input` no envía el dato. | **Decidido:** la regla se quita por ahora (mejora futura). |
 | D7 | Tiempo: la plataforma espera 60 s como máximo y promete 5-10 s. | El presupuesto del agente es de 20 s por turno (PROVISIONAL, Abierto 4); sin medir con un modelo real. |
 | D8 | Catálogo de tools: el agente usa 3 lecturas, un subconjunto de las 5 del copiloto Q&A. | Informativo; seguro. |
-| D9 | `SCHEMA_VERSION`: 1.4.0 ya existía por los slots `list`. | Se subió a **1.5.0** (menor). **Decisión del implementador, a confirmar:** se agrupa con 1.4.0 si esta no se publicó. |
+| D9 | `SCHEMA_VERSION`: 1.4.0 (slots `list`) y 1.5.0 (`AgentStepPayload.tokens`, trazas a Langfuse) ya estaban en `main`. | Se subió a **1.6.0** (menor, aditivo sobre 1.5.0). |
 | D10 | Límites que la plataforma aplica en silencio (`evidence`, `summary`, `why`, `motive_draft`, `citations`, `tool`, `reason_code`, `language`). | **Resuelto:** los tipos de M0 usan esos mismos límites, así que lo que el núcleo acepta la plataforma lo conserva entero. |
 
 Coinciden: nombres snake_case en el HTTP de agent-core (`reason_code`, `motive_draft`); `suggestions` leído de la respuesta de `POST /v1/runs`; lista vacía como resultado normal (`status: none`); `reason_code` con los prefijos `rule:`/`policy:`/`interrupt:` o de M0; `escalate` solo recomienda; `action` no ejecutable. **Nuevo:** la referencia de `tool` sale como `id@MAYOR` (`leer_movimientos@1`); si la plataforma espera otra forma, hay que acordarla.

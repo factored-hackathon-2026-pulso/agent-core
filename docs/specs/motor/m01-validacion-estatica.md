@@ -9,7 +9,7 @@
 
 **Changelog**
 
-- rev. 6 (2026-10-05), sugerencias del copiloto (ADR 0026; M0 `SCHEMA_VERSION` 1.5.0): nodo `suggest` (§3.13). **G0-28** nueva; G0-07, G0-10, G0-15, G0-22, G0-24 y G0-25 alcanzan al nodo; G0-06 trata `gave_up` como rama de fallo; `reads`, `optional_reads` y `escalate.evidence_from` son rutas (G0-01) con los espacios `slots`/`facts` (G0-10).
+- rev. 6 (2026-10-05), sugerencias del copiloto (ADR 0026; M0 `SCHEMA_VERSION` 1.6.0): nodo `suggest` (§3.13). **G0-28** nueva; G0-07, G0-10, G0-15, G0-22, G0-24 y G0-25 alcanzan al nodo; G0-06 trata `gave_up` como rama de fallo; `reads`, `optional_reads` y `escalate.evidence_from` son rutas (G0-01) con los espacios `slots`/`facts` (G0-10).
 
 - rev. 2 (2026-09-29), revisión de M1:
   - **G0-04** se calcula quitando los nodos que esperan y exigiendo un grafo acíclico. La versión con SCC dejaba pasar bucles que esquivaban el nodo que espera.

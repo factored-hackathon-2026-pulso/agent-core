@@ -45,7 +45,7 @@ Paquete `agent_core.registry/` (unidad 2): implementado (rev. 2, entrega). Solo 
 
 **Eventos salientes (2026-10-02):** el contrato público de eventos para otros servicios (lista cerrada, sobre, proyección pura) vive fuera de M0, en `agent_core.outbound`, con spec propia en `../2026-10-02-eventos-salientes-design.md` y esquemas en `contracts/events/`. Solo importa `agent_core.domain`; la entrega es de la unidad 4 (ADR 0013).
 
-**Sugerencias del copiloto (2026-10-05):** nodo `suggest` (M0 §2.5, M1 G0-28, M2 §3.8), validación de su salida en M8 (§3.4), `RunResult.suggestions` y evento `suggestions_produced` (M0 rev. 15, `SCHEMA_VERSION` 1.5.0), y `Step.input`/`Expect` sobre sugerencias en el `eval_suite` (registry, `../2026-09-30-evaluacion-y-metricas-design.md`). ADR 0026. No cambia las dependencias entre módulos: M2 usa M8 (ya permitido) y la composición cablea el `SuggesterPort`.
+**Sugerencias del copiloto (2026-10-05):** nodo `suggest` (M0 §2.5, M1 G0-28, M2 §3.8), validación de su salida en M8 (§3.4), `RunResult.suggestions` y evento `suggestions_produced` (M0 rev. 16, `SCHEMA_VERSION` 1.6.0), y `Step.input`/`Expect` sobre sugerencias en el `eval_suite` (registry, `../2026-09-30-evaluacion-y-metricas-design.md`). ADR 0026. No cambia las dependencias entre módulos: M2 usa M8 (ya permitido) y la composición cablea el `SuggesterPort`.
 
 **Documentos relacionados:** evaluación y métricas por agente (`Agent.metrics`, `eval_suite`, gate con doble vara), en `../2026-09-30-evaluacion-y-metricas-design.md` y `../../adr/0020-evaluacion-y-metricas-por-agente.md`. Añade a M0 los tipos del DSL de métricas (`SCHEMA_VERSION` 1.2.0) y a M1 las reglas `MT-01` a `MT-06`.
 

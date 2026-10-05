@@ -16,7 +16,9 @@ from pydantic import (
     Discriminator,
     Field,
     PositiveInt,
+    SerializerFunctionWrapHandler,
     Tag,
+    model_serializer,
     model_validator,
 )
 

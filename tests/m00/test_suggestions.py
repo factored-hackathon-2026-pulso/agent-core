@@ -103,7 +103,7 @@ def test_an_action_is_not_executable_by_default() -> None:
 
 
 def test_run_result_carries_suggestions_and_defaults_to_an_empty_list() -> None:
-    assert RunResult.model_validate(RUN).suggestions == []  # a result stored before 1.5.0 still loads
+    assert RunResult.model_validate(RUN).suggestions == []  # a result stored before 1.6.0 still loads
     result = RunResult.model_validate({**RUN, "suggestions": [REPLY, ESCALATE]})
     assert [s.type for s in result.suggestions] == ["reply", "escalate"]
     again = RunResult.model_validate_json(result.model_dump_json())
@@ -111,7 +111,7 @@ def test_run_result_carries_suggestions_and_defaults_to_an_empty_list() -> None:
 
 
 def test_schema_version_is_minor_bumped() -> None:
-    assert SCHEMA_VERSION == "1.5.0"
+    assert SCHEMA_VERSION == "1.6.0"
 
 
 def test_suggest_node_parses_and_has_its_results() -> None:
