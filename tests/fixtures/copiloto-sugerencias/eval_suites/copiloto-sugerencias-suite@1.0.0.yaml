@@ -1,0 +1,148 @@
+# `eval_suite` del agente `copiloto-sugerencias` (ADR 0026 §8). PROVISIONAL y SINTÉTICA: los seis casos de
+# `casos/sinteticos.yaml` convertidos en escenarios `scripted` ejecutables con el motor real y un modelo y un
+# clasificador GUIONADOS (testing/copiloto_sugerencias.py). Mide que el flow, la política y la validación de M8
+# dejan pasar la salida esperada y rechazan lo que no debe; NO mide la calidad de ningún modelo real.
+#
+# Pendiente del ADR §8 (sin cubrir aquí): otro cliente fuera de la delegación (necesita la autorización real
+# de M9, no la permisiva del arnés), portugués e inyección en el texto del cliente. Ver la brecha B5.
+#
+# `input` de cada escenario = `input` del caso con el mismo id (una prueba comprueba que no se desvíen).
+id: copiloto-sugerencias-suite
+version: 1.0.0
+agent_id: copiloto-sugerencias
+repetitions: 2
+scenarios:
+  - id: sin-sugerencia-saludo
+    principal: {id: cust-001}
+    steps:
+      - op: start
+        input:
+          turnos:
+            - {rol: cliente, texto: "Hola, buenas tardes", hora: "2026-10-04T15:00:00+00:00"}
+          idioma: es
+          canal: chat
+          prioridad: normal
+          sla_estado: a_tiempo
+          sla_minutos_restantes: 25
+          espera_del_cliente_segundos: 20
+    expect: {outcome: completed, escalated: false, suggestion_count: 0}
+    assertions:
+      - {event: engine.suggestions_produced, expect: none}   # un saludo ni siquiera llega al nodo suggest
+
+  - id: reply-con-cifra-respaldada
+    principal: {id: cust-001}
+    steps:
+      - op: start
+        input:
+          turnos:
+            - {rol: cliente, texto: "¿Cuánto debo en mi tarjeta Oro?", hora: "2026-10-04T15:00:00+00:00"}
+          idioma: es
+          canal: chat
+          prioridad: normal
+          sla_estado: a_tiempo
+          sla_minutos_restantes: 20
+          espera_del_cliente_segundos: 45
+    seed:
+      tools:
+        leer_productos:
+          - result:
+              - {product: "Tarjeta Oro", balance_due: 1342.80, credit_limit: 5000.00, minimum_payment: 67.00, currency: USD, due_date: "2026-10-20"}
+    expect:
+      outcome: completed
+      escalated: false
+      suggestion_count: 1
+      suggestions:
+        - {type: reply, language: es, citations_min: 1, text_contains: ["1342.80"]}
+        - {type: escalate, expect: none}   # una consulta simple no se escala
+    assertions:
+      - {event: engine.suggestions_produced, where: [{field: result, op: eq, value: ok}, {field: reply, op: eq, value: 1}]}
+
+  - id: tool-de-lectura
+    principal: {id: cust-001}
+    steps:
+      - op: start
+        input:
+          turnos:
+            - {rol: cliente, texto: "No reconozco un cargo de ayer en mi tarjeta", hora: "2026-10-04T15:00:00+00:00"}
+            - {rol: analista, texto: "Déjame revisarlo.", hora: "2026-10-04T15:01:00+00:00"}
+          idioma: es
+          canal: chat
+          prioridad: normal
+          sla_estado: respondida
+          espera_del_cliente_segundos: 0
+    seed:
+      tools:
+        leer_productos:
+          - result:
+              - {product: "Tarjeta Oro", balance_due: 1342.80, credit_limit: 5000.00, minimum_payment: 67.00, currency: USD, due_date: "2026-10-20"}
+    expect:
+      outcome: completed
+      escalated: false
+      suggestion_count: 1
+      suggestions:
+        - {type: tool, tool: "leer_movimientos@1"}
+        - {type: escalate, expect: none}
+    assertions:
+      - {event: engine.suggestions_produced, where: [{field: tool, op: eq, value: 1}]}
+
+  - id: escalar-por-fraude
+    principal: {id: cust-001}
+    steps:
+      - op: start
+        input:
+          turnos:
+            - {rol: cliente, texto: "Me robaron la tarjeta, esto es un fraude. Quiero hablar con un supervisor ya", hora: "2026-10-04T15:00:00+00:00"}
+          idioma: es
+          canal: chat
+          prioridad: alta
+          sla_estado: vencido
+          espera_del_cliente_segundos: 900
+          motivo_llegada: traspaso_del_asistente
+    expect:
+      outcome: completed
+      escalated: false   # el copiloto RECOMIENDA escalar: el run no escala ni abre un traspaso
+      suggestion_count: 1
+      suggestions:
+        - {type: escalate, reason_code: "rule:sugerir-escalamiento", text_contains: ["sla_estado: vencido", "supervisor"]}
+    assertions:
+      - {event: engine.suggestions_produced, where: [{field: escalate, op: ge, value: 1}]}
+
+  - id: pii-en-el-texto-del-cliente
+    principal: {id: cust-001}
+    steps:
+      - op: start
+        input:
+          turnos:
+            - {rol: cliente, texto: "Mi tarjeta es 4111 1111 1111 1111, mi correo ana.prueba@example.test, mi cédula 1012345678 y mi celular 3001234567. Bloquéenla.", hora: "2026-10-04T15:00:00+00:00"}
+          idioma: es
+          canal: chat
+          prioridad: normal
+          sla_estado: a_tiempo
+          sla_minutos_restantes: 15
+          espera_del_cliente_segundos: 30
+    seed:
+      tools:
+        leer_productos:
+          - result:
+              - {product: "Tarjeta Oro", balance_due: 1342.80, credit_limit: 5000.00, minimum_payment: 67.00, currency: USD, due_date: "2026-10-20"}
+    sensitive_values: ["4111 1111 1111 1111", "4111111111111111", "ana.prueba@example.test", "1012345678", "3001234567"]
+    expect:
+      outcome: completed
+      suggestion_count: 1
+      suggestions:
+        - {type: reply, text_excludes: ["4111", "ana.prueba", "1012345678", "3001234567"]}
+
+  - id: lista-vacia-sin-turnos
+    principal: {id: cust-001}
+    steps:
+      - op: start
+        input:
+          turnos: []
+          idioma: es
+          canal: chat
+          prioridad: normal
+          sla_estado: a_tiempo
+          sla_minutos_restantes: 30
+          espera_del_cliente_segundos: 0
+    expect: {outcome: completed, suggestion_count: 0}   # la lista vacía, no la ausencia del campo
+thresholds: {}

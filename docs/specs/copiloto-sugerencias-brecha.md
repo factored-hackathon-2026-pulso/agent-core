@@ -1,90 +1,76 @@
 # Brecha del agente `copiloto-sugerencias` (ADR 0026)
 
-Fecha: 2026-10-05 · Estado: **análisis; no hay cambio de núcleo implementado**. Fuentes: ADR 0026 (propuesto), `support-platform/docs/platform/api/slice-15b-copilot-suggestions.md`, plataforma ADR 0005 y el código de la plataforma (`application/ai/suggestions.py`, `infrastructure/ai/http_runtime.py`, `domain/ai/suggestion.py`), leídos sin modificarlos.
+Fecha: 2026-10-05 · Estado: **núcleo implementado (B1 a B4 resueltas); datos y `eval_suite` PROVISIONALES (B5 parcial)**. Fuentes: ADR 0026 (aceptado el 2026-10-05), `support-platform/docs/platform/api/slice-15b-copilot-suggestions.md`, plataforma ADR 0005 y el código de la plataforma (`application/ai/suggestions.py`, `infrastructure/ai/http_runtime.py`, `domain/ai/suggestion.py`), leídos sin modificarlos.
+
+**Cambio de interfaz:** `SCHEMA_VERSION` 1.4.0 → **1.5.0** (menor, aditivo). `contracts/` regenerado (`AnyEvent`, `Flow`, `Node`, `RunResult` y los tipos nuevos). Avisar a todos los módulos y a la plataforma: la respuesta de `POST /v1/runs` lleva ahora `suggestions` (siempre; vacía si no hay).
 
 ## 0. Qué hay hecho y qué no
 
 | Pieza | Estado |
 |---|---|
 | `input` de un run `task` con lista de turnos (`list` slot, commit 601ca11) | Hecho en el núcleo |
-| Agente como datos: `tests/fixtures/copiloto-sugerencias/agents/copiloto-sugerencias@1.0.0.yaml` | Hecho **sin flow** (entra por `sugerir@1`, que no existe) |
-| Casos sintéticos con entrada, salida esperada y valores que no deben filtrarse: `.../casos/sinteticos.yaml` | Hecho; **no es todavía un `eval_suite`** (B3, B4) |
-| Pruebas `tests/composition/test_copiloto_sugerencias_data.py` | Hecho: entrada, contrato de salida (con control negativo) y PII sobre M7 real |
-| Salida `suggestions` en el motor, nodo `suggest`, flow, prompt, modelo de decisión, política de escalamiento, `eval_suite` ejecutable | **No hecho**: B1 a B5 |
+| Tipo `Suggestion` (`reply`, `tool`, `action`, `escalate`) y `RunResult.suggestions` (B1) | **Hecho** (M0 rev. 15, M4) |
+| Evento `suggestions_produced` (contadores, nunca texto) (B1) | **Hecho** (M0, M2); catálogo de métricas `engine.suggestions_produced` |
+| Nodo `suggest` propio (B2): M0 (esquema), M1 (G0-28 y alcance de otras reglas), M2 (manejador), M8 (`Suggester`), composición | **Hecho** |
+| `Step.input` en `start` del `eval_suite` y el arnés arma `RunInput` con `input` (B3) | **Hecho** |
+| `Expect` con aserciones sobre `suggestions` (B4) | **Hecho** (`suggestion_count`, `suggestions: [SuggestionExpect]`; el arnés devuelve `ScenarioRun`) |
+| Flow `sugerir@1`, modelo `sin-sugerencia`, prompt `p/sugerir`, política de escalamiento, calibración, release `sugerencias-demo` (B5) | **Hecho, PROVISIONAL** (`tests/fixtures/copiloto-sugerencias/`) |
+| `eval_suite` cargable y ejecutable con modelo y clasificador guionados (B3, B4, B5) | **Hecho**: 6 escenarios; **faltan** inyección, otro cliente fuera de la delegación y portugués |
+| Agente probado con un modelo REAL, calibración con datos reales, política real de escalamiento | **No hecho** |
 
-Lo que **no** se probó: ningún modelo produjo estas sugerencias, y el agente no se ejecuta en el motor. Lo "esperado" de cada caso es una especificación, no una medición.
+Lo que **no** se probó: ningún modelo real produjo estas sugerencias. En la suite, el «modelo» y el clasificador son dobles que devuelven la salida esperada de cada caso: la suite prueba el flow, la política y la validación de M8, no la calidad de un modelo. Lo "esperado" sigue siendo una especificación, no una medición.
 
-## 1. Brechas del núcleo (no implementadas)
+## 1. Brechas del núcleo
 
-### B1. La salida: `Suggestion` y `RunResult.suggestions` (M0, M9, M11)
-Hoy `RunResult` tiene `output` pero **no** `suggestions`; `end.output_map` no puede recibir salida de un nodo `agent` (G0-22, a propósito). Falta:
-- M0: tipo `Suggestion`, unión discriminada por `type` (`reply`, `tool`, `action`, `escalate`) con los campos del ADR 0026 §2, y `RunResult.suggestions: list[Suggestion] = []`. `SCHEMA_VERSION` menor; `uv run agentcore contracts`.
-- M9: que `POST /v1/runs` y `GET /v1/runs/{id}` lo publiquen (la plataforma ya lee `suggestions` de la respuesta de `POST /v1/runs`).
-- M11/replay: una sugerencia debe quedar registrada. **Cambio mínimo propuesto:** un evento `suggestions_produced` con **contadores y tipos** (nunca texto), para que el evaluador y las métricas lo vean, y guardar la lista en el estado del run (como `output`) para que `GET` y el replay la devuelvan. Estado y evento son parte de lo que M11 ya persiste; no hace falta almacén nuevo.
+### B1. La salida: `Suggestion` y `RunResult.suggestions` (M0, M4, M9, M11) — RESUELTA
+- M0: `domain/suggestions.py` (unión discriminada por `type`, límites de longitud de la plataforma, `executable: Literal[False]`), `RunResult.suggestions: list[Suggestion] = []` (un resultado guardado antes se sigue leyendo) y `SCHEMA_VERSION` 1.5.0.
+- M4: `start_run` entrega la lista que acumuló el flow, **solo si el run termina `completed`**; se guarda con el resultado idempotente.
+- M9: `POST /v1/runs` la publica (`to_jsonable`). **No se agregó a `GET /v1/runs/{id}`**, que tampoco publica `output`: la plataforma lee `suggestions` de la respuesta de `POST` (pendiente solo si la plataforma pidiera `GET`).
+- M11/replay: evento `suggestions_produced` con contadores y tipos, `result`, `failures` (ids de comprobaciones), `regenerations`, una huella con clave de la lista y el uso del LLM (`llm` es campo de medición: el replay lo excluye). Nunca el texto.
+- Se descartó `TurnResult.suggestions` (nada lo usa).
 
-**Cambio mínimo:** solo `RunResult` (no `TurnResult.suggestions`: el ADR lo pide "para uso conversacional futuro"; nada lo necesita hoy).
+### B2. El nodo `suggest` (M1, M2, M8) — RESUELTA (Abierto 1: nodo propio)
+Ver ADR 0026 §2. M1: G0-28 (solo flows task; el flow no escribe; `actions_allowed` son escrituras aparte de `tools_allowed`; `escalate` solo por la rama `true` de una `rule`) y G0-06/07/10/15/22/24/25 alcanzan al nodo. M2: `SuggesterPort` y manejador (no ejecuta tools; la evidencia de `escalate` la arma el flow y no va al modelo). M8: `Suggester` (generar, validar, regenerar una vez). La composición cablea `SuggesterAdapter`. G0-22 no se relajó: la salida del nodo no es un hecho.
 
-### B2. El nodo `suggest` (M1, M2, M8) — Abierto 1 del ADR
-Sin nodo no hay forma de que una lista generada llegue a `RunResult` sin violar G0-22. **Es el Abierto 1 (¿nodo nuevo o modo de `respond`?) y no se decidió aquí.** Para dimensionarlo, el cambio mínimo de cada opción:
-- *Nodo `suggest`:* `SuggestConfig {prompt_ref, reads: [facts…], tools_allowed, actions_allowed, escalate_from: <hecho de una rule>|None, max_items}`; reglas de gate en M1 (listas declaradas ⊆ `tools_allowed` del agente y de solo lectura; `escalate_from` apunta a un hecho producido por una `rule`; G0-22 sin excepción); manejador en M2; M8 valida cifras de `reply` contra hechos citados, y `tool`/`args` contra el `args_schema`.
-- *Modo de `respond`:* menos nodos, pero `respond` hoy entrega texto al usuario y su salida estructurada tocaría M8 y el contrato del turno.
+### B3. El `eval_suite` no podía alimentar un run `task` — RESUELTA
+`Step.input: dict[str, JsonValue] | None` (solo en `start`), que el arnés pasa a `RunInput.input`. Un `input` ausente **no entra al volcado** (los hashes de las suites ya publicadas no cambian; lo fija una prueba).
 
-El `escalate` solo puede venir de una `rule`: el modelo no lo crea. Eso es independiente de la opción.
+### B4. El `eval_suite` no podía afirmar sobre `suggestions` — RESUELTA
+`Expect.suggestion_count` y `Expect.suggestions` (`type`, `expect` at_least_one/none, `tool`, `reason_code`, `language`, `citations_min`, `text_contains`, `text_excludes`; todos los campos dados valen sobre la misma sugerencia). Las sugerencias son texto para una persona y no van a los eventos, así que el arnés devuelve además `ScenarioRun(events, suggestions)` (`SuggestionAwareHarness`); con un arnés que solo devuelve eventos, una expectativa sobre sugerencias **falla cerrada**. Un valor de `sensitive_values` en una sugerencia cuenta como fuga (`platform_pii_leak`). Las `assertions` sobre `engine.suggestions_produced` también sirven.
 
-### B3. El `eval_suite` no puede alimentar un run `task`
-`Step` (`registry/suite.py`) solo tiene `start | turn | confirm` y `EngineScenarioHarness.run` construye `RunInput` **sin `input`**. Un agente con `input_schema` con slots requeridos no se puede evaluar. **Cambio mínimo:** `Step.input: dict[str, JsonValue] | None = None` (solo en `start`), que el harness pasa a `RunInput.input`, y que se **omita del volcado cuando es `None`** (igual que `AcceptedSlot`) para no cambiar el hash de las suites ya publicadas.
+### B5. Datos que faltaban — PARCIAL (todo PROVISIONAL y marcado)
+- **Hecho (provisional):** flow `sugerir@1`, modelo de decisión `sin-sugerencia` (señales `sin_sugerencia`/`sugerir`/`escalar`; umbrales a mano en `cal-sugerencias-provisional`), prompt `p/sugerir` (ES/PT, sin probar con un modelo real), política `sugerir-escalamiento` (marcador: no es `escalamiento-disputa-monto`, no dispara ningún traspaso), `budgets` propios (Abierto 4: 0,10 USD, 4 llamadas, 20 s), `max_items` 3 (Abierto 2), `motive_draft` en español (Abierto 3), `actions_allowed` vacío (Abierto 6) y release `sugerencias-demo`. El directorio es un registro autocontenido; las plantillas, tools, detección de idioma y reglas de inyección son copias de `registry-e2e` (deduplicar cuando haya un registro de fixtures compartido).
+- **Pendiente:** la **política real de escalamiento** (supervisores; plataforma ADR 0005 abierto 3); la mejora «tercer contacto en 7 días» (se quitó por ahora); calibrar `sin_sugerencia` con datos reales y decidir quién etiqueta (Abierto 5); medir el tope de costo y el tiempo con un modelo real; los tres casos del ADR §8 que faltan (inyección, otro cliente fuera de la delegación —necesita la autorización real de M9, no la permisiva del arnés— y portugués).
 
-### B4. El `eval_suite` no puede afirmar sobre `suggestions`
-`Expect` solo mira `outcome`, `actions_verified` y `escalated`; las `assertions` miran eventos del catálogo. **Cambio mínimo:** con el evento de B1 en el catálogo de métricas (`suggestions_produced`: `count`, `reply`, `tool`, `action`, `escalate`, todos enteros), las `assertions` existentes bastan (`escalate >= 1`, `count == 0`). Para afirmar contenido (la cifra del borrador, la ausencia de PII) hace falta un campo nuevo `Expect.suggestions` o un juez (`Judge`): decisión pendiente. La verificación de `sensitive_values` (`score_run`) ya recorre los eventos; solo cubrirá la salida si el evento o el estado llevan texto, lo cual **no** debe hacerse.
+## 2. Discrepancias entre agent-core (ADR 0026) y la plataforma
 
-### B5. Datos que faltan y que dependen de Abiertos
-Flow `sugerir`, prompt, modelo de decisión con la rama `sin_sugerencia` (Abierto 5), política(s) de escalamiento versionadas (la plataforma ADR 0005 abierto 3 pide el aporte de supervisores; hoy solo existe `escalamiento-disputa-monto`), `budgets` propios (Abierto 4; en el YAML copian los del `copiloto-asesor`, provisionales), `actions_allowed` (Abierto 6: no hay campo en `Agent`), máximo y orden de sugerencias (Abierto 2), idioma de `motive_draft` (Abierto 3).
+Se verificó con una ejecución puntual (antes de implementar) que las salidas esperadas de los casos, pasadas por `_suggestions` y `normalize_suggestions` de la plataforma, se parsean sin perder tipo ni texto.
 
-### Forma que tendrá el `eval_suite` (borrador; NO cargable hoy, `Step` rechaza `input`)
+| # | Discrepancia | Estado |
+|---|---|---|
+| D1 | **Forma del `input`.** La plataforma enviaba `sla` y `sugerencia_anterior` como objetos y `motivo_llegada: null`; el motor solo acepta escalares y una lista plana. | **Decidido:** la plataforma aplana su `input` (otro agente lo hace) y omite los nulos; el núcleo NO acepta objetos ni null. El `input_schema` aplanado del agente se mantiene (`sla_estado`, `sla_minutos_restantes`, `sugerencia_borrador`, `sugerencia_escalacion_aceptada`). Hasta que la plataforma lo aplane, `start_run` responde 422 (lo fija `test_discrepancy_d1_…`). |
+| D2 | `input.assistant_session_id` no lo envía la plataforma. | **Resuelto en el ADR §1:** se recibe solo como metadato de trazabilidad (correlación de logs/auditoría), no como memoria; ningún nodo lo lee (prueba). Sin efecto hasta que la plataforma lo envíe. |
+| D3 | `tool.label`: la plataforma lo muestra; el ADR no lo definía. | **Decidido:** lo emite la plataforma; el ADR no lo define. |
+| D4 | `args` de `tool` y `action` y `action.executable`: la plataforma no los lee. | Informativo. El núcleo valida `args` contra el `args_schema` y `executable` es siempre `false`. |
+| D5 | Máximo y duplicados: la plataforma conserva a lo sumo 8 sugerencias, un solo `reply` y un solo `escalate`. | **Resuelto:** máximo 3 (Abierto 2) y M8 rechaza un segundo `reply` o `escalate` (`duplicate`) en vez de perderlos en silencio. |
+| D6 | «Tercer contacto en 7 días»: `build_input` no envía el dato. | **Decidido:** la regla se quita por ahora (mejora futura). |
+| D7 | Tiempo: la plataforma espera 60 s como máximo y promete 5-10 s. | El presupuesto del agente es de 20 s por turno (PROVISIONAL, Abierto 4); sin medir con un modelo real. |
+| D8 | Catálogo de tools: el agente usa 3 lecturas, un subconjunto de las 5 del copiloto Q&A. | Informativo; seguro. |
+| D9 | `SCHEMA_VERSION`: 1.4.0 ya existía por los slots `list`. | Se subió a **1.5.0** (menor). **Decisión del implementador, a confirmar:** se agrupa con 1.4.0 si esta no se publicó. |
+| D10 | Límites que la plataforma aplica en silencio (`evidence`, `summary`, `why`, `motive_draft`, `citations`, `tool`, `reason_code`, `language`). | **Resuelto:** los tipos de M0 usan esos mismos límites, así que lo que el núcleo acepta la plataforma lo conserva entero. |
 
-```yaml
-id: copiloto-sugerencias-suite
-version: 1.0.0
-agent_id: copiloto-sugerencias
-repetitions: 3
-scenarios:
-  - id: escalar-por-fraude
-    principal: {id: cust-001}
-    steps:
-      - op: start
-        input: {…}            # B3: el `input` de casos/sinteticos.yaml
-    assertions:
-      - {event: suggestions_produced, where: [{field: escalate, op: ">=", value: 1}]}   # B4
-thresholds: {}
-```
-Los seis casos de `casos/sinteticos.yaml` son sus escenarios. Faltan, para cumplir el ADR §8: otro cliente fuera de la delegación, portugués, inyección en el texto del cliente y cifras respaldadas con un hecho real (necesitan el flow).
+Coinciden: nombres snake_case en el HTTP de agent-core (`reason_code`, `motive_draft`); `suggestions` leído de la respuesta de `POST /v1/runs`; lista vacía como resultado normal (`status: none`); `reason_code` con los prefijos `rule:`/`policy:`/`interrupt:` o de M0; `escalate` solo recomienda; `action` no ejecutable. **Nuevo:** la referencia de `tool` sale como `id@MAYOR` (`leer_movimientos@1`); si la plataforma espera otra forma, hay que acordarla.
 
-## 2. Discrepancias entre agent-core (ADR 0026) y la plataforma (ADR 0005, slice-15b y su código)
-
-Verificado con una ejecución puntual: las salidas esperadas de los casos pasadas por `_suggestions` y `normalize_suggestions` de la plataforma (código real, sin modificarlo; el agente de agent-core no existe, así que la salida es la esperada, no una medida). Las seis se parsean sin perder tipo ni texto. Lo que se pierde o choca:
-
-| # | Discrepancia | Efecto | Quién decide |
-|---|---|---|---|
-| D1 | **Forma del `input`.** La plataforma envía `sla` y `sugerencia_anterior` como objetos y `motivo_llegada: null`. El motor solo acepta escalares y una lista plana, y rechaza un slot no declarado (`slot_not_accepted`, `slot_type_mismatch`): `start_run` respondería 422. Probado en `test_discrepancy_d1_…`. | La plataforma real no podría llamar al agente. | Propuesta del YAML: aplanar en la plataforma (`sla_estado`, `sla_minutos_restantes`, `sugerencia_borrador`, `sugerencia_escalacion_aceptada`) y **omitir** los nulos. Alternativa: slots de tipo objeto/null en el núcleo (cambio de M0). |
-| D2 | `input.assistant_session_id` (decisión del 2026-10-04) **no lo envía** la plataforma. | Declarado como slot opcional; sin efecto hasta que lo envíe. Falta aclarar para qué lo usa el agente. | Usuario |
-| D3 | `tool.label`: la plataforma y la pantalla lo muestran ("Movimientos"); el ADR 0026 define `tool { tool, args, why }` sin `label`. El parseo lo deja en `""`. | La lista "Herramientas" saldría sin rótulo. | O el agente emite `label`, o la plataforma lo deriva del catálogo. |
-| D4 | `args` de `tool` y `action`, y `action.executable`: la plataforma **no los lee** (el contrato de la plataforma no tiene `args`; `executable` queda fijo en no ejecutable en su dominio). | Seguro (nada se ejecuta), pero `args` solo sirve a la validación de agent-core. | Informativo |
-| D5 | Máximo y duplicados: la plataforma conserva a lo sumo 8 sugerencias, **un solo `reply` y un solo `escalate`**, y descarta en silencio el resto. El ADR 0026 deja el máximo abierto (Abierto 2) y no prohíbe dos `reply`. | Un segundo borrador se perdería sin aviso. | Abierto 2 |
-| D6 | Hechos de escalamiento: el ADR 0026 §5 y la plataforma ADR 0005 §4 citan "tercer contacto en 7 días". `build_input` **no envía** ese dato (solo `sla`, `prioridad`, `motivo_llegada`, `espera…`). | La regla de tercer contacto no puede evaluarse. | Plataforma: añadir el conteo; o quitar la regla |
-| D7 | Tiempo: la plataforma espera como máximo 60 s (`DEFAULT_TIMEOUT_SECONDS`) y promete 5-10 s; el presupuesto del agente (provisional) es de 60 000 ms. | Un run que agote su presupuesto agota también el timeout de la plataforma. | Abierto 4 |
-| D8 | Catálogo de herramientas: la plataforma dice que `tool` es "una tool del catálogo del copiloto" (Q&A, `copiloto-asesor`: 5 lecturas). El YAML usa 3 (`leer_movimientos`, `leer_productos`, `leer_pqr_cliente`), un subconjunto. | Seguro: *Usar* siempre cae en una tool que el copiloto Q&A tiene. | Informativo |
-| D10 | Límites que la plataforma aplica en silencio: `evidence` ≤ 5 de ≤ 300 caracteres, `summary` ≤ 300, `why` y `motive_draft` ≤ 500, `citations` ≤ 10 de ≤ 120, `tool`/`reason_code` ≤ 120, `language` ≤ 8; descarta `tool`/`action` con campos vacíos y trunca el `texto` de cada turno a 1000 (el `input_schema` no limita longitud). | Texto largo del agente se recorta sin aviso. | Abiertos 2 y 3 |
-| D9 | ADR 0026 §3 pide "versión menor de `SCHEMA_VERSION`"; en esta rama `SCHEMA_VERSION` ya es 1.4.0 por los slots `list`. | La salida sería 1.5.0 (o se agrupa si 1.4.0 no se publicó aún). | Usuario |
-
-Coinciden: nombres snake_case en el HTTP de agent-core (`reason_code`, `motive_draft`); `suggestions` leído de la respuesta de `POST /v1/runs`; lista vacía como resultado normal (`status: none`); `reason_code` con los prefijos `rule:`/`policy:`/`interrupt:` o de M0 (la plataforma solo exige un texto no vacío ≤ 120: acepta más de lo que agent-core emitirá); `escalate` solo recomienda; `action` no ejecutable.
-
-## 3. PII y texto no confiable (verificado con M7 real)
-- Todo slot entra al modelo envuelto como `untrusted_text` (decisión D8 de M7, no la discrepancia D8 de arriba) y la PII detectada en el texto (tarjeta, correo, cédula, celular de los casos sintéticos) se sustituye por tokens del vault: probado en `test_pii_in_the_customer_text_…`, con control negativo (`full` sí la contiene y la comprobación la detecta).
-- Un cierre falso `</datos_no_confiables>` dentro de un turno queda escapado.
-- **No hace falta** añadir `turnos[*].texto` al catálogo de campos para que el texto del cliente sea no confiable (el ADR 0026 §6 lo pide): ya lo cubre la regla D8 de M7 por ser slot. Sí hará falta cuando una salida de herramienta o del nodo `suggest` lleve texto.
-- No se verificó: que el **modelo** no repita PII en su salida. El nodo `suggest` deberá pasar por M8 (`find_clear_pii`); hoy solo se prueba que la salida esperada no la repite y que el chequeo detecta una que sí.
-
-- **Hueco conocido de M7 (no corregido aquí):** el detector no ve un PAN con separadores U+200B, `/` o `_`, dígitos árabe-índicos, un celular con paréntesis ni un correo con `@` separado; esas variantes llegan en claro a la vista `model` (hallazgo del revisor; `test_known_gap_…` fija uno). Los casos sintéticos solo cubren formatos canónicos, así que este cambio **no** demuestra que no haya fugas por formato.
-- El caso `escalar-por-fraude` usa `rule:fraude-con-supervisor`, una regla que **no existe**; `escalamiento-disputa-monto` mide monto y no aplica. La política real es parte de B5.
-- Reglas del validador de la prueba que el ADR no fija (copiadas de la plataforma o supuestas): `text` ≤ 4000, `language` ∈ locales del agente, `evidence` ≥ 1, `why` no vacío y `ACTIONS_ALLOWED = {radicar_pqr@1}` (Abierto 6).
+## 3. PII y texto no confiable
+- Todo slot entra al modelo envuelto como `untrusted_text` (M7 D8) y la PII detectada en el texto (tarjeta, correo, cédula, celular de los casos sintéticos) se sustituye por tokens del vault. Un cierre falso `</datos_no_confiables>` dentro de un turno queda escapado. No hace falta añadir `turnos[*].texto` al catálogo de campos.
+- **Salida (nuevo):** M8 rechaza una sugerencia con PII de un hecho (`find_clear_pii`), con un valor que M7 ocultó del mensaje del cliente (`find_tokenized_echo`, nuevo en M7 §3.7.1) o con cualquier token. La suite lo ejercita con mutaciones (la tarjeta y el correo del cliente vuelven en el borrador: la suite falla). El evento `suggestions_produced` nunca lleva texto.
+- **Hueco conocido de M7 (no corregido aquí):** el detector no ve un PAN con separadores U+200B, `/` o `_`, dígitos árabe-índicos, un celular con paréntesis ni un correo con `@` separado; esas variantes llegan en claro a la vista `model` y, al no entrar al vault, tampoco se detectan como eco en la salida (`test_known_gap_…` fija uno). Los casos sintéticos solo cubren formatos canónicos, así que **no** se demuestra que no haya fugas por formato.
+- La evidencia de `escalate` sale de valores escalares de slots (o hechos) con la vista del detector: un valor con PII hace `gave_up`. La evidencia no se envía al modelo.
+- No se verificó con un modelo real que no repita PII: la suite usa un modelo guionado.
+- Reglas del validador independiente de `test_copiloto_sugerencias_data.py` que el ADR no fija (copiadas de la plataforma o supuestas): `text` ≤ 4000, `language` ∈ locales del agente, `evidence` ≥ 1, `why` no vacío.
 - `assistant_session_id`: la plataforma podría enviarlo en una rama que no pude leer; D2 vale para su código principal.
+
+## 4. Cómo ejecutar y qué prueban las pruebas nuevas
+- `uv run pytest tests/composition/test_copiloto_sugerencias_eval.py`: el agente corre en el motor real; la suite pasa con todo sano (6 escenarios × 2 repeticiones) y **falla** al romper el modelo guionado (cifra inventada, tool fuera del catálogo, escalación creada por el modelo, PII repetida…), el clasificador o los datos del agente (política, motivo, evidencia, `tools_allowed`, hecho citable, resultado del fin vacío). Hay una copia sin mutar como control.
+- Cada capa tiene sus pruebas: `tests/m00/test_suggestions.py`, `tests/m01/test_suggest_node.py`, `tests/m02/test_suggest.py`, `tests/m07/test_tokenized_echo.py`, `tests/m08/test_suggester.py`, `tests/registry/test_suite_suggestions.py`.
+- Lo que la suite NO puede fallar por sí sola: un cambio de comportamiento del modelo real. Una señal falsa de «escalar» ante una consulta simple, por ejemplo, **no** hace fallar la suite porque la `rule` la contiene (es el valor de que escalar salga de una política); lo fija `test_a_false_escalation_signal_on_a_simple_query_is_contained_by_the_rule`.

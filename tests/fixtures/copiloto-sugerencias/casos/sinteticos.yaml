@@ -1,12 +1,12 @@
 # Casos SINTÉTICOS del copiloto de sugerencias (ADR 0026 §8). Todo es inventado: nombres, números y correos.
 # `PAN` es un número de prueba público (no corresponde a ninguna tarjeta real).
 #
-# Esto NO es todavía un `eval_suite`: el formato de la suite no puede llevar `input` en el paso `start` ni
-# afirmar sobre `suggestions` (ver docs/specs/copiloto-sugerencias-brecha.md, brechas B3 y B4). Es el
-# contenido que esa suite tendrá: entrada del run, salida esperada (forma del ADR 0026, snake_case) y los
-# valores que jamás deben aparecer en la vista `model` ni en la salida.
+# Estos casos son la fuente del `eval_suite` (`eval_suites/copiloto-sugerencias-suite@1.0.0.yaml`, mismos ids y
+# mismas entradas: una prueba lo comprueba): entrada del run, salida esperada (forma del ADR 0026, snake_case)
+# y los valores que jamás deben aparecer en la vista `model` ni en la salida. El modelo GUIONADO de la suite
+# (testing/copiloto_sugerencias.py) devuelve exactamente `expected`.
 #
-# `expected` describe lo que el agente DEBERÍA producir; ningún modelo lo produjo todavía.
+# `expected` describe lo que el agente DEBERÍA producir; ningún modelo real lo produjo todavía.
 casos:
   - id: sin-sugerencia-saludo
     descripcion: Un saludo no merece sugerencia (ADR 0026 §4).
@@ -71,8 +71,8 @@ casos:
       motivo_llegada: traspaso_del_asistente
     expected:
       - type: escalate
-        reason_code: "rule:fraude-con-supervisor"  # regla PENDIENTE (no existe; `escalamiento-disputa-monto` mide monto, no aplica)
-        evidence: ["sla_estado: vencido", "el cliente pide supervisor"]
+        reason_code: "rule:sugerir-escalamiento"  # política PROVISIONAL del flow (policies/sugerir-escalamiento)
+        evidence: ["sla_estado: vencido", "prioridad: alta"]  # los fija el flow desde los slots, no el modelo
         motive_draft: "Cliente reporta posible fraude y pide supervisor; el SLA está vencido."
     must_not_leak: []
 

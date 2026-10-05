@@ -1,16 +1,15 @@
 """Datos del agente `copiloto-sugerencias` y sus casos sintéticos (ADR 0026), sin modelo ni red.
 
-QUÉ PRUEBA Y QUÉ NO. El motor todavía no produce `suggestions` (brechas B1 y B2) ni la suite de
-evaluación puede llevar `input` ni afirmar sobre ellas (B3, B4).
-Así que aquí NO se ejecuta el agente: se prueba que
+QUÉ PRUEBA Y QUÉ NO. Aquí NO se ejecuta el agente (eso es `test_copiloto_sugerencias_eval.py`, con el motor
+real y un modelo guionado). Se prueba, sobre los DATOS, que
   1. el agente es una entidad `Agent` válida y de solo lectura;
   2. cada entrada sintética cabe en su `input_schema` con el mismo validador que usa `start_run`, y una
      entrada rota no cabe;
-  3. la salida esperada de cada caso cumple el contrato de ADR 0026 / slice-15b (validador de abajo), y un
-     catálogo de salidas rotas es rechazado (el validador puede fallar);
+  3. la salida esperada de cada caso cumple el contrato de ADR 0026 / slice-15b (validador independiente de
+     abajo, que no es el del núcleo), y un catálogo de salidas rotas es rechazado (el validador puede fallar);
   4. la PII del texto del cliente no llega a la vista `model` con el M7 real, y la comprobación detecta la
      fuga cuando se la provoca (control negativo).
-El comportamiento del agente con un modelo sigue SIN probarse.
+El comportamiento del agente con un modelo REAL sigue SIN probarse.
 """
 
 import copy
@@ -35,8 +34,8 @@ FIXTURES = Path(__file__).parents[1] / "fixtures"
 HERE = FIXTURES / "copiloto-sugerencias"
 E2E_TOOLS = FIXTURES / "registry-e2e" / "tools"
 
-# `actions_allowed` no existe como campo (ADR 0026 Abierto 6): se pasa a mano al validador.
-ACTIONS_ALLOWED = frozenset({"radicar_pqr@1"})
+# `actions_allowed` es del nodo `suggest` y está VACÍO (ADR 0026 Abierto 6, decidido): ninguna action vale.
+ACTIONS_ALLOWED: frozenset[str] = frozenset()
 SUBJECT_ARGS = {"subject", "customer_id", "cliente", "customer", "subject_id"}
 REPLY_KEYS = {"type", "text", "citations", "language"}
 TOOL_KEYS = {"type", "tool", "args", "why"}
@@ -153,7 +152,7 @@ def test_the_agent_is_a_read_only_advisor_task_with_an_input_contract() -> None:
     assert agent.input_schema["turnos"].type == "list" and agent.input_schema["turnos"].required
     for ref in agent.tools_allowed:  # el nodo agent nunca llama escrituras (ADR 0026 §2)
         assert not _tool_def(str(ref)).is_write, ref
-    assert str(agent.entry_flow) == "sugerir@1"  # el flow no existe aún: ver las brechas B1 y B2
+    assert str(agent.entry_flow) == "sugerir@1"
 
 
 # ------------------------------------------------------------------ 2. la entrada
@@ -199,9 +198,10 @@ def test_a_broken_input_does_not_fit(mutate: Callable[[dict[str, Any]], None]) -
 
 
 def test_discrepancy_d1_the_platform_input_today_is_rejected_by_agent_core() -> None:
-    """D1 (ver la brecha): `build_input` de la plataforma envía `sla` y `sugerencia_anterior` como objetos y
-    `motivo_llegada: null`. `start_run` respondería 422. Si esta prueba empieza a fallar, D1 se resolvió:
-    actualiza el documento de la brecha."""
+    """D1 (ver la brecha): `build_input` de la plataforma envía hoy `sla` y `sugerencia_anterior` como objetos
+    y `motivo_llegada: null`. `start_run` respondería 422. Decidido: la plataforma aplana su `input` (otro
+    agente lo hace) y el núcleo NO acepta objetos ni null. Esta prueba fija que el núcleo no cambia; si
+    empieza a fallar, alguien relajó el contrato: actualiza el documento de la brecha."""
     ok = copy.deepcopy(_case("reply-con-cifra-respaldada")["input"])
     assert _fits(ok) is None
     object_sla = {**ok, "sla": {"estado": "a_tiempo", "minutos_restantes": 20}}
@@ -231,7 +231,8 @@ _ESC = {"type": "escalate", "reason_code": "rule:fraude", "evidence": ["e"], "mo
 
 
 @pytest.mark.parametrize(("items", "expected_fragment"), [
-    ([_REPLY, _TOOL, _ACTION, _ESC], None),  # control: la forma sana pasa
+    ([_REPLY, _TOOL, _ESC], None),  # control: la forma sana pasa
+    ([_ACTION], "no está en la lista"),  # `actions_allowed` está vacío: ninguna action es válida
     ([{**_ACTION, "executable": True}], "executable"),
     ([{**_ACTION, "executable": "false"}], "executable"),
     ([{**_ACTION, "tool": "borrar_cuenta@1"}], "no está en la lista"),
