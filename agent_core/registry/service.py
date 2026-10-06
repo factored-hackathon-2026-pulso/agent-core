@@ -184,8 +184,19 @@ def _violations_payload(violations: Sequence[Violation]) -> list[dict[str, str |
 
 
 def _gate_payload(run: EvalRun) -> dict[str, JsonValue]:
-    """Cuerpo de `gate_failed`: el reporte y el id de la corrida que lo guardó (N-10)."""
-    return {**run.report.model_dump(mode="json"), "eval_run_id": run.eval_run_id}
+    """Cuerpo de `gate_failed`: el reporte, el id de la corrida que lo guardó (N-10) y `gate_summary`
+    (aditivo): conteos y lista de ítems y escenarios que fallan, para ver por qué sin recorrer el reporte."""
+    report = run.report
+    failed = [i for i in report.items if not i.passed]
+    bad = [r for r in report.results if not r.score.passed]
+    summary: dict[str, JsonValue] = {
+        "items_total": len(report.items), "items_failed": len(failed),
+        "scenarios_total": len(report.results), "scenarios_failed": len(bad),
+        "failed_items": [i.model_dump(mode="json", include={"metric_id", "phase", "passed", "value", "floor",
+                                                            "reason"}) for i in failed],
+        "failed_scenarios": [{"scenario_id": r.scenario_id, "label": r.label, "run": r.run,
+                              "failures": list(r.score.failures)} for r in bad]}
+    return {**report.model_dump(mode="json"), "eval_run_id": run.eval_run_id, "gate_summary": summary}
 
 
 def _agent_metrics(entities: Sequence[RegistryEntity], agent_id: str) -> list[MetricDef]:
