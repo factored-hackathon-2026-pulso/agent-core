@@ -134,3 +134,14 @@ def test_a_database_that_is_down_is_not_even_queried_for_the_release_check(
                               "readiness": (("postgres", lambda: False),)})
     assert _run_with(ports, monkeypatch, world) == 0
     assert asked == [] and "no responde" in capsys.readouterr().err
+
+
+def test_pool_warnings_flag_an_inflight_cap_the_pool_cannot_serve() -> None:
+    from agent_core.composition.serve import pool_warnings
+
+    assert pool_warnings(0, 0) == []  # sin pool: una conexión por operación
+    assert pool_warnings(40, 20) == []  # un turno retiene 2 conexiones: 2 x 20 <= 40
+    (w,) = pool_warnings(6, 40)
+    assert "AGENTCORE_DB_POOL_MAX" in w and "PoolTimeout" in w
+    (w2,) = pool_warnings(10, 0)  # con pool y sin tope de peticiones simultáneas
+    assert "AGENTCORE_MAX_INFLIGHT" in w2
