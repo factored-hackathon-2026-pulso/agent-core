@@ -174,9 +174,10 @@ class _Tx:
     def get_eval_run(self, eval_run_id: str) -> EvalRun | None:
         return next((r for r in self._s.eval_runs if r.eval_run_id == eval_run_id), None)
 
-    def count_created_after(self, origin: str, after: datetime) -> int:
+    def count_created_after(self, origin: str, after: datetime, actor: str | None = None) -> int:
         return sum(1 for e in self._s.events
-                   if e.type == "proposal_created" and e.origin == origin and e.at > after)
+                   if e.type == "proposal_created" and e.origin == origin and e.at > after
+                   and (actor is None or e.actor == actor))
 
     def count_eval_runs(self, proposal_id: str) -> int:
         return sum(1 for r in self._s.eval_runs if r.proposal_id == proposal_id)

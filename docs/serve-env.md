@@ -18,6 +18,8 @@ Leyenda: **R** requerida en producción · **C** requerida si se usa la función
 | `AGENTCORE_SERVE_AGENTS` | O | vacío | Agentes (coma) cuya release `prod` se revisa al arrancar; solo avisa. `--agents` equivale. |
 | `AGENTCORE_GIT_SHA` | O | — | Commit de la imagen; lo informa `GET /version`. El Dockerfile lo fija con `--build-arg GIT_SHA`. |
 | `AGENTCORE_DB_POOL_MAX` | O | `0` | Conexiones máximas por proceso (0 = una por operación, sin pool y sin `PoolTimeout`, pero sin tope de conexiones). Con un proxy de BD: tareas × este valor < límite del proxy. Dimensionamiento abajo. |
+| `AGENTCORE_PROPOSAL_QUOTA_PER_DAY` | O | `10` | Tope de propuestas que el constructor autónomo (`origin=auto_detect`) puede crear en 24 h (ventana móvil, global por origen); al pasarlo, `429 quota_exceeded`. Entero positivo; un valor inválido impide arrancar. |
+| `AGENTCORE_PROPOSAL_QUOTA_OVERRIDES` | O | vacío | `principal=tope,principal=tope`: tope propio de un principal (p. ej. `pulso-engine=200`). Ese principal cuenta solo sus propias propuestas; los demás conservan el defecto. Las propuestas reabiertas a `draft` siguen contando (la cuota mide creaciones). |
 | `AGENTCORE_LANG_THRESHOLDS` | O | — | Ruta de un JSON `{thresholds_from: {switch_threshold, unsupported_threshold, min_distance}}`. Sin él el idioma nunca cambia por detección. |
 | `AGENTCORE_FX_RATES_FILE` | C | — | Ruta de un JSON `{"USD":"1","MXN":"0.055"}` para `convertir_moneda`. Sin él la tool falla cerrada. |
 

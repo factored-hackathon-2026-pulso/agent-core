@@ -82,3 +82,32 @@ def test_n10_gate_failed_carries_the_eval_run_id_and_it_survives_a_replay() -> N
     with w.store.transaction() as tx:
         run = tx.get_eval_run(ids[0])
     assert run is not None and run.verdict == "fail" and run.proposal_id == pid
+
+
+def test_gate_failed_body_lists_the_failing_items_and_counts() -> None:
+    from decimal import Decimal
+
+    from agent_core.registry.evaluation.report import GateItem, RunScore, ScenarioResult
+
+    w = World()
+    items = [GateItem(metric_id="resolution_rate", phase="new_yardstick", passed=False, value=Decimal("0.5"),
+                      floor=Decimal("0.8"), reason="bajo el piso"),
+             GateItem(metric_id="scenario/s1", phase="base_yardstick", passed=True)]
+    results = [ScenarioResult(scenario_id="s1", label="candidate", run="cand_on_new", repetition=0,
+                              score=RunScore(passed=True, guardrails={})),
+               ScenarioResult(scenario_id="s2", label="candidate", run="cand_on_new", repetition=0,
+                              score=RunScore(passed=False, failures=["no_transfer"], guardrails={}))]
+    w.evaluator.reports.append(EvalReport(verdict="fail", items=items, results=results))
+    p = w.service.create_proposal(ANA, AGENT, Origin.manual, "t")
+    w.service.put_draft(ANA, p.proposal_id, [prompt_draft(), SUITE], expected_rev=0)
+    w.service.freeze(ANA, p.proposal_id)
+    with pytest.raises(RegistryError) as info:
+        w.service.evaluate(ANA, p.proposal_id, "disputas-suite")
+    payload = info.value.payload
+    assert isinstance(payload, dict) and payload["verdict"] == "fail" and "items" in payload  # kept
+    assert payload["gate_summary"] == {
+        "items_total": 2, "items_failed": 1, "scenarios_total": 2, "scenarios_failed": 1,
+        "failed_items": [{"metric_id": "resolution_rate", "phase": "new_yardstick", "passed": False,
+                          "value": "0.5", "floor": "0.8", "reason": "bajo el piso"}],
+        "failed_scenarios": [{"scenario_id": "s2", "label": "candidate", "run": "cand_on_new",
+                              "failures": ["no_transfer"]}]}

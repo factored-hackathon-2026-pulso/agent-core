@@ -367,11 +367,13 @@ class _PgTx:
                        base_release_id=row[2], suite=VersionRef.model_validate(loads(row[3])), verdict=row[4],
                        report=EvalReport.model_validate(loads(row[5])), at=row[6])
 
-    def count_created_after(self, origin: str, after: datetime) -> int:
+    def count_created_after(self, origin: str, after: datetime, actor: str | None = None) -> int:
         row = self._one("SELECT count(*) FROM reg_events "
                         "WHERE event_json::jsonb->>'type' = 'proposal_created' "
                         "AND event_json::jsonb->>'origin' = %s "
-                        "AND (event_json::jsonb->>'at')::timestamptz > %s", (origin, after))
+                        "AND (event_json::jsonb->>'at')::timestamptz > %s "
+                        "AND (%s::text IS NULL OR event_json::jsonb->>'actor' = %s)",
+                        (origin, after, actor, actor))
         return int(row[0])
 
     def count_eval_runs(self, proposal_id: str) -> int:
