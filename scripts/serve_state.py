@@ -68,6 +68,11 @@ def main(argv: list[str]) -> int:
                                                          encoding="utf-8")
     (state / "calibration" / "cal-transfer-demo.json").write_text(
         _with_portuguese(transfer.read_text(encoding="utf-8")), encoding="utf-8")
+    # umbrales PROVISIONALES de `copiloto-sugerencias` (el modelo `sin-sugerencia` los lee de este artefacto; sin él
+    # ningún umbral se cumple y todo run termina `failed` por low_confidence)
+    suggest = ROOT / "tests" / "fixtures" / "copiloto-sugerencias" / "calibrations" / "cal-sugerencias-provisional.json"
+    (state / "calibration" / "cal-sugerencias-provisional.json").write_text(suggest.read_text(encoding="utf-8"),
+                                                                            encoding="utf-8")
     (state / "classifier" / "sintetico.json").write_text(synthetic_classifier_json(), encoding="utf-8")
     write_lang_thresholds(state)
 
