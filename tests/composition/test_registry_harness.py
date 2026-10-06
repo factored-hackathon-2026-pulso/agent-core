@@ -54,6 +54,19 @@ def test_gateway_failure_becomes_harness_unavailable() -> None:
         harness.run(_target(), AGENT, scenario, sandbox.tools(sandbox.provision(scenario.seed, _target())))
 
 
+def test_an_invalid_output_is_the_agents_own_result_not_harness_unavailable() -> None:
+    """`invalid_output` is what the MODEL produced (schema violation after the agent's own regeneration):
+    the agent absorbs it by design (regenerate, then degrade); the scenario is scored on what the agent did.
+    Only a gateway that cannot answer (unavailable, timeout, rate limit) is infrastructure."""
+    harness: EngineScenarioHarness = build_harness(
+        gateway_error=GatewayError(GatewayErrorKind.invalid_output))
+    scenario = next(s for s in demo_suite().scenarios if s.id == "resuelto")
+    sandbox = LocalSandbox(FakeIds())
+    handle = sandbox.provision(scenario.seed, _target())
+    events = harness.run(_target(), AGENT, scenario, sandbox.tools(handle))
+    assert [e for e in events if isinstance(e, RunClosed)]
+
+
 @pytest.mark.parametrize("failure", [Failure("jev caído"), Timeout(after_ms=100)])
 def test_a_provider_failure_becomes_harness_unavailable(failure: Failure | Timeout) -> None:
     harness = build_harness(provider_failure=failure)
