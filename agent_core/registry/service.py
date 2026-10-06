@@ -342,9 +342,12 @@ class RegistryService:
                 return self._proposal(tx, prior.proposal_id, for_update=False)
             if origin is Origin.auto_detect:
                 since = self._clock.now() - self._quotas.window
-                if tx.count_created_after(origin.value, since) >= self._quotas.proposals_per_day:
+                me = actor_id(actor)
+                limit = self._quotas.limit_for(me)
+                own = me if me in self._quotas.overrides else None
+                if tx.count_created_after(origin.value, since, own) >= limit:
                     raise RegistryError(RegistryErrorCode.quota_exceeded,
-                                        f"el constructor autónomo ya creó {self._quotas.proposals_per_day} "
+                                        f"el constructor autónomo ya creó {limit} "
                                         "propuestas en las últimas 24 horas")
             base = tx.get_alias(agent_id, "staging")
             try:
