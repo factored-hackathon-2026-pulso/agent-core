@@ -15,6 +15,7 @@ from agent_core.domain import (
     EngineEvent,
     EntityRef,
     GatewayError,
+    GatewayErrorKind,
     JsonValue,
     Locale,
     OnBehalfOf,
@@ -64,8 +65,12 @@ class _ProbingGateway:
                  schema: dict[str, JsonValue] | None = None) -> GenerationResult:
         try:
             return self._inner.generate(prompt, inputs_model_view, locale, schema)
-        except GatewayError:
-            self.failed = True
+        except GatewayError as error:
+            # `invalid_output` es lo que PRODUJO el modelo (viola el esquema): el agente lo absorbe por diseño
+            # (regenera y luego degrada) y el escenario se puntúa con lo que el agente hizo. Solo un gateway
+            # que no puede responder (unavailable, timeout, rate_limited, refused) es infraestructura.
+            if error.kind is not GatewayErrorKind.invalid_output:
+                self.failed = True
             raise
 
 
