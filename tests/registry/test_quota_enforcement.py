@@ -81,3 +81,26 @@ def test_manual_proposals_have_no_evaluation_quota() -> None:
     service.reopen(bot(), p.proposal_id)
     service.freeze(bot(), p.proposal_id)
     service.evaluate(bot(), p.proposal_id, "disputas-suite")  # no lanza
+
+
+def test_a_principal_override_raises_only_its_own_limit() -> None:
+    w = World()
+    service = _service(w, Quotas(proposals_per_day=1, overrides={"constructor-bot": 3}))
+    for _ in range(3):
+        service.create_proposal(bot(), AGENT, Origin.auto_detect, "señal")
+    with pytest.raises(RegistryError) as info:
+        service.create_proposal(bot(), AGENT, Origin.auto_detect, "señal")
+    assert _code(info) is RegistryErrorCode.quota_exceeded
+
+
+def test_an_overridden_principal_counts_only_its_own_proposals() -> None:
+    from tests.registry.helpers import principal
+
+    w = World()
+    other = principal(type="builder", id="otro-bot", roles=["constructor"], attrs={})
+    service = _service(w, Quotas(proposals_per_day=1, overrides={"constructor-bot": 2}))
+    service.create_proposal(other, AGENT, Origin.auto_detect, "x")
+    for _ in range(2):  # la del otro principal no consume el tope del principal con override
+        service.create_proposal(bot(), AGENT, Origin.auto_detect, "señal")
+    with pytest.raises(RegistryError):
+        service.create_proposal(bot(), AGENT, Origin.auto_detect, "señal")

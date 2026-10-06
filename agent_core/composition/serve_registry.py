@@ -1,10 +1,13 @@
 """Registry en `serve` (spec 2026-09-30-serve-registry-api): servicio con evaluación real."""
 
+import os
+
 from agent_core.adapters.llm import HttpLLMGateway
 from agent_core.composition.evaluation import EngineScenarioHarness, EvalStorage
 from agent_core.composition.registry import UowRunReleases
 from agent_core.composition.serve_ports import RegistryApiPorts, ServePorts
 from agent_core.registry import LocalSandbox, RegistryService, ScenarioEvaluator
+from agent_core.registry.quotas import quotas_from_env
 
 __all__ = ["RegistryApiPorts", "build_registry_service_for_serve"]
 
@@ -25,4 +28,5 @@ def build_registry_service_for_serve(ports: ServePorts) -> RegistryService:
         bind_gateway=ports.gateway.bound_to if isinstance(ports.gateway, HttpLLMGateway) else None)
     evaluator = ScenarioEvaluator(harness, LocalSandbox(ports.ids), max_workers=1)
     runs = UowRunReleases(ports.uow_factory)
-    return RegistryService(api.store, evaluator, ports.clock, ports.ids, runs=runs)
+    return RegistryService(api.store, evaluator, ports.clock, ports.ids, runs=runs,
+                           quotas=quotas_from_env(os.environ))
