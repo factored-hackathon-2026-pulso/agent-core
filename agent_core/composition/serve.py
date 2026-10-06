@@ -196,6 +196,20 @@ def gateway_warnings(url: str | None) -> list[str]:
     return []
 
 
+def pool_warnings(pool_max: int, max_inflight: int) -> list[str]:
+    """Un turno retiene una conexión y pide otra: `max_inflight` turnos simultáneos piden 2 x `max_inflight`
+    conexiones. Si el pool es menor (o no hay tope de peticiones), bajo carga hay `PoolTimeout` (A12)."""
+    if pool_max <= 0:
+        return []
+    if max_inflight <= 0:
+        return ["AGENTCORE_DB_POOL_MAX sin AGENTCORE_MAX_INFLIGHT: con carga los turnos simultáneos pueden "
+                "agotar el pool (PoolTimeout); ver docs/serve-env.md (dimensionamiento)"]
+    if 2 * max_inflight > pool_max:
+        return [f"AGENTCORE_MAX_INFLIGHT={max_inflight} necesita {2 * max_inflight} conexiones pero "
+                f"AGENTCORE_DB_POOL_MAX={pool_max}: bajo carga habrá PoolTimeout; ver docs/serve-env.md"]
+    return []
+
+
 def install_worker_threads(app: FastAPI, total: int) -> None:
     """Hilos de las rutas síncronas: el límite por defecto de anyio (40) acota la concurrencia. Se aplica al
     arrancar la app, dentro del bucle de eventos (el manejador tiene que ser `async def`, no un lambda)."""
@@ -241,7 +255,10 @@ def run_serve(args: argparse.Namespace, *, clock: Clock, ids: IdSource, env: Map
         if ports.doubles:
             print("AVISO: piezas que son DOBLES de demo (no producción): " + ", ".join(ports.doubles),
                   file=sys.stderr)
-        for warning in (*startup_release_warnings(ports), *gateway_warnings(ports.llm_gateway_url)):
+        raw_pool = env.get("AGENTCORE_DB_POOL_MAX") or ""
+        pool_size = int(raw_pool) if raw_pool.isdigit() else 0
+        for warning in (*startup_release_warnings(ports), *gateway_warnings(ports.llm_gateway_url),
+                        *pool_warnings(pool_size, ops.max_inflight)):
             print(f"AVISO: {warning}", file=sys.stderr)
         if ports.migrate is not None and env.get(AUTO_MIGRATE_ENV) != "0":
             # En segundo plano y con reintentos: sin base `serve` arranca igual y `/readyz` dice 503.

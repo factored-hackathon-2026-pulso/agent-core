@@ -17,7 +17,7 @@ Leyenda: **R** requerida en producción · **C** requerida si se usa la función
 | `AGENTCORE_JEV_API_KEY` | R, S | — | Clave de JEV. En producción `serve` no arranca sin ella; con dobles (demo) no se exige. |
 | `AGENTCORE_SERVE_AGENTS` | O | vacío | Agentes (coma) cuya release `prod` se revisa al arrancar; solo avisa. `--agents` equivale. |
 | `AGENTCORE_GIT_SHA` | O | — | Commit de la imagen; lo informa `GET /version`. El Dockerfile lo fija con `--build-arg GIT_SHA`. |
-| `AGENTCORE_DB_POOL_MAX` | O | `0` | Conexiones máximas por proceso (0 = una por operación). Con un proxy de BD: tareas × este valor < límite del proxy. |
+| `AGENTCORE_DB_POOL_MAX` | O | `0` | Conexiones máximas por proceso (0 = una por operación, sin pool y sin `PoolTimeout`, pero sin tope de conexiones). Con un proxy de BD: tareas × este valor < límite del proxy. Dimensionamiento abajo. |
 | `AGENTCORE_PROPOSAL_QUOTA_PER_DAY` | O | `10` | Tope de propuestas que el constructor autónomo (`origin=auto_detect`) puede crear en 24 h (ventana móvil, global por origen); al pasarlo, `429 quota_exceeded`. Entero positivo; un valor inválido impide arrancar. |
 | `AGENTCORE_PROPOSAL_QUOTA_OVERRIDES` | O | vacío | `principal=tope,principal=tope`: tope propio de un principal (p. ej. `pulso-engine=200`). Ese principal cuenta solo sus propias propuestas; los demás conservan el defecto. Las propuestas reabiertas a `draft` siguen contando (la cuota mide creaciones). |
 | `AGENTCORE_LANG_THRESHOLDS` | O | — | Ruta de un JSON `{thresholds_from: {switch_threshold, unsupported_threshold, min_distance}}`. Sin él el idioma nunca cambia por detección. |
@@ -137,3 +137,17 @@ requiere reiniciar ningún servicio:** se añade la clave nueva (con su `kid`) a
 lee en ≤ `AGENTCORE_KEYS_RELOAD_SECONDS` (5 s) sin reiniciar, se emiten los tokens con el `kid` nuevo y se retira el
 viejo después (`tests/m09/test_identity_keys_reload.py`, `tests/m09/test_jws_identity.py::test_rotation_by_kid`).
 La carga es idempotente y ningún error imprime material de clave (mensajes con el nombre del mapa y el `kid`).
+
+## Dimensionar el pool de Postgres (`AGENTCORE_DB_POOL_MAX`)
+
+- El defecto de agent-core es `0` (sin pool). `PoolTimeout` y `TranscriptWriteError` solo aparecen con un pool
+  chico definido por el despliegue (el compose de infra usaba 6): en el ensayo prod-like, 20 conversaciones
+  simultáneas fallaron 12 con ese pool y 0 con 40 por pool.
+- Un turno retiene una conexión y pide otra (UoW + auditoría/transcript): turnos simultáneos de un proceso =
+  `AGENTCORE_MAX_INFLIGHT` ≤ pool ÷ 2 (el defecto de `MAX_INFLIGHT` ya es `POOL_MAX // 2`). Si defines
+  `MAX_INFLIGHT` a mano, `serve` avisa al arrancar cuando `2 × MAX_INFLIGHT > POOL_MAX` o hay pool sin tope.
+- Hay un pool por base: principal, registry y, con la API del registry, evaluaciones (hasta 3 pools por proceso).
+  Conexiones en Postgres ≈ procesos × pools × `POOL_MAX`, y debe quedar bajo `max_connections` (100 en el host
+  core) menos las conexiones de otros servicios y de mantenimiento.
+- Regla práctica: `POOL_MAX` ≈ 2 × turnos simultáneos esperados por proceso (40 para 20), y
+  `AGENTCORE_WORKER_THREADS` (40) no necesita ser menor que `MAX_INFLIGHT`.
