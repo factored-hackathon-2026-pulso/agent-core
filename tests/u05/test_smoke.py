@@ -142,14 +142,14 @@ def test_the_agent_steps_run_through_llm_agent_port_and_the_synthetic_entities()
     registry = SmokeRegistry(inner, PROFILE)
     gateway = ScriptedGateway([
         _step({"kind": "tool_call", "tool": str(SMOKE_TOOL), "args": {"consulta": "x"}}),
-        _step({"kind": "final"})])  # el segundo es un paso inválido
+        _step({"kind": "final"}), _step({"kind": "final"})])  # inválido, y también su única repetición
     port = LLMAgentPort(gateway, registry, lambda kind, ref: ref.require_exact())
     runner = _agent_step_runner(port, FakeClock())
     assert runner(1, "es").tokens == 15
     with pytest.raises(GatewayError) as caught:
         runner(2, "es")
     assert caught.value.kind is GatewayErrorKind.invalid_output
-    assert [str(c.prompt) for c in gateway.calls] == [str(SMOKE_AGENT_PROMPT)] * 2
+    assert [str(c.prompt) for c in gateway.calls] == [str(SMOKE_AGENT_PROMPT)] * 3
     assert gateway.calls[0].inputs["tools"][0]["tool"] == str(SMOKE_TOOL)  # type: ignore[index]
 
 
