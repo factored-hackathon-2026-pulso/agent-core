@@ -57,3 +57,12 @@ def test_every_classifier_decision_model_reads_a_key_of_its_input_view() -> None
             result = ClassifierProvider(_Loader()).predict(spec, inputs, {}, "es")  # type: ignore[arg-type]
             assert result.value
     assert found >= 1
+
+
+def test_serve_state_ships_the_calibration_copiloto_sugerencias_needs() -> None:
+    """Without `cal-sugerencias-provisional` no threshold is met and every suggestions run fails."""
+    source = (ROOT / "scripts" / "serve_state.py").read_text(encoding="utf-8")
+    model = ROOT / "tests" / "fixtures" / "copiloto-sugerencias" / "decision_models"
+    lines = (model / "sin-sugerencia@1.0.0.yaml").read_text(encoding="utf-8").splitlines()
+    wanted = next(x.split(":", 1)[1].strip() for x in lines if x.startswith("thresholds_from:"))
+    assert f'"{wanted}.json"' in source
