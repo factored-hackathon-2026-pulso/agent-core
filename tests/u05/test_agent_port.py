@@ -116,13 +116,32 @@ def test_a_tool_without_documentation_is_a_programming_error() -> None:  # T-U5-
     "no es un objeto",
 ])
 def test_a_malformed_step_is_invalid_output_with_the_usage(output: JsonValue) -> None:  # T-U5-15
-    port, _ = _port(_step(output, tokens_in=4, tokens_out=2))
+    port, gateway = _port(_step(output, tokens_in=4, tokens_out=2), _step(output, tokens_in=4, tokens_out=2))
     with pytest.raises(GatewayError) as caught:
         port.step(_request(), run_state())
     error = caught.value
     assert error.kind is GatewayErrorKind.invalid_output
-    assert (error.tokens_in, error.tokens_out, error.cost_usd, error.model) == (4, 2, Decimal("0.001"),
+    assert len(gateway.calls) == 2  # un solo reintento, nunca más
+    # el uso de las dos llamadas se informa junto: el nodo cobra lo que costó de verdad
+    assert (error.tokens_in, error.tokens_out, error.cost_usd, error.model) == (8, 4, Decimal("0.002"),
                                                                                   "scripted-1")
+
+
+def test_one_invalid_step_is_retried_once_with_feedback_and_both_calls_are_counted() -> None:
+    good = _step({"kind": "final", "output": {"ok": 1}}, tokens_in=3, tokens_out=1)
+    port, gateway = _port(_step({"kind": "tool_call"}, tokens_in=4, tokens_out=2), good)
+    result = port.step(_request(), run_state())
+    assert isinstance(result.action, AgentFinal)
+    assert result.model_calls == 2 and result.tokens == 10 and result.cost_usd == Decimal("0.002")
+    assert gateway.calls[0].inputs["feedback"] is None
+    assert isinstance(gateway.calls[1].inputs["feedback"], str) and gateway.calls[1].inputs["feedback"]
+
+
+def test_an_invalid_output_raised_by_the_gateway_is_retried_once() -> None:
+    bad = GatewayError(GatewayErrorKind.invalid_output, tokens_in=2, tokens_out=1, model="m")
+    port, gateway = _port(bad, _step({"kind": "final", "output": {"ok": 1}}))
+    result = port.step(_request(), run_state())
+    assert isinstance(result.action, AgentFinal) and result.model_calls == 2 and len(gateway.calls) == 2
 
 
 def test_a_tool_outside_tools_allowed_passes_through_for_m2_to_deny() -> None:  # T-U5-15
