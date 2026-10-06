@@ -15,8 +15,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project
 COPY agent_core ./agent_core
 COPY agent_telemetry ./agent_telemetry
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --no-editable
+# La capa del proyecto NO usa la caché de uv: una caché de otro checkout de la misma versión entregaba el
+# wheel de fuentes viejas con el GIT_SHA nuevo (A11). Las dependencias ya están instaladas arriba.
+COPY scripts/verify_installed_code.py /opt/verify_installed_code.py
+RUN UV_NO_CACHE=1 uv sync --frozen --no-dev --no-editable --reinstall-package agent-core \
+    && cd /opt && /app/.venv/bin/python verify_installed_code.py /app
 
 FROM python:3.12-slim-bookworm@sha256:54c85f3c47607a77f32adec749d3c81d1348bf25833671f512b26a9b6d778cb3
 ARG GIT_SHA=""
